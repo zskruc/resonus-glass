@@ -32,6 +32,10 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { CACHED_COVER, COVER, songCoverUrl, star, unstar, type Song } from '@/api/data';
 import { ArtistPlayerCard } from '@/components/ArtistPlayerCard';
 import { AudioQualityBadge } from '@/components/AudioQualityBadge';
+import { PlayerAudioQualitySheet } from '@/components/PlayerAudioQualitySheet';
+import { PlayerOutputDevice } from '@/components/PlayerOutputDevice';
+import { PlayerSystemVolume } from '@/components/PlayerSystemVolume';
+import { usePlayerPalette } from '@/hooks/usePlayerPalette';
 import { SeekBar } from '@/components/SeekBar';
 import { Cover, useRedrawOnReturn, useSettledSource } from '@/components/Cover';
 import { ExplicitBadge } from '@/components/ExplicitBadge';
@@ -42,7 +46,7 @@ import { OutputSheet } from '@/components/OutputSheet';
 import { SpeedSheet } from '@/components/SpeedSheet';
 import { StarRating } from '@/components/StarRating';
 import { useAnimatedCover } from '@/hooks/useAnimatedCover';
-import { toneOf, useDominantColor } from '@/hooks/useDominantColor';
+import { toneOf, useCoverTint } from '@/hooks/useDominantColor';
 import { useFavoriteIds } from '@/hooks/useFavoriteIds';
 import { useForegroundEffect } from '@/hooks/useForegroundEffect';
 import { useImageAnimation } from '@/hooks/useImageAnimation';
@@ -258,6 +262,10 @@ export default function PlayerScreen() {
   const openArtistPicker = useArtistPicker((s) => s.open);
   const t = useT();
   const showQualityBadge = useSettings((s) => s.showAudioQuality);
+  const showSystemVolume = useSettings((s) => s.showSystemVolume);
+  const showOutputDevice = useSettings((s) => s.showOutputDevice);
+  const paletteEnabled = useSettings((s) => s.playerArtworkPalette);
+  const openAudioQuality = useRef<() => void>(() => {});
   const showRating = useSettings((s) => s.showRating);
   const showAlbumInfo = useSettings((s) => s.showAlbumInfo);
   const showLyricsCard = useSettings((s) => s.showLyricsCard);
@@ -350,7 +358,8 @@ export default function PlayerScreen() {
   // (toggle in Settings → Theme). The color transitions smoothly on song
   // change: a flat color is animated and the gradient toward the background is
   // a fixed overlay (same look as animating the gradient, which can't be done).
-  const background = useSettings((s) => s.playerBackground);
+  const configuredBackground = useSettings((s) => s.playerBackground);
+  const background = paletteEnabled ? 'color' : configuredBackground;
   const colorBackground = background === 'color';
   const animatedCoverBg = useSettings((s) => s.animatedCoverBackground);
   // An animated cover (GIF, animated WebP, APNG) can take the whole screen
@@ -360,7 +369,7 @@ export default function PlayerScreen() {
   // empty, so it keeps the ordinary layout, where `Cover` knows how to read it.
   const { isAnimated: isAnimatedDetected, onCoverLoad } = useAnimatedCover(cover);
   const isAnimatedCover =
-    animatedCoverBg && isAnimatedDetected && !!cover && !cover.startsWith(CACHED_COVER);
+    !paletteEnabled && animatedCoverBg && isAnimatedDetected && !!cover && !cover.startsWith(CACHED_COVER);
   // The backdrop holds the previous artwork on purpose while the next decodes,
   // so on its own it cannot tell "not decoded yet" from "never will be". Coming
   // back from the background is the second case (see `useRedrawOnReturn`), and
@@ -387,25 +396,41 @@ export default function PlayerScreen() {
   );
   // The full-screen animated cover needs the colour too, whatever the
   // background setting says: the gradient under it fades into that colour.
-  const dominant = useDominantColor(colorBackground || isAnimatedCover ? cover : undefined);
+  const coverTint = useCoverTint(colorBackground || isAnimatedCover ? cover : undefined);
+  // Preserve the previous tint while decoding, while the palette gate also
+  // receives `known` so it cannot associate an old seed with the next artwork.
+  const [lastDominant, setLastDominant] = useState(coverTint.color);
+  if (coverTint.known && coverTint.color !== lastDominant) setLastDominant(coverTint.color);
+  const dominant = coverTint.known ? coverTint.color : lastDominant;
   const lightMode = useThemeMode() === 'light';
+  const { palette, transitionDuration } = usePlayerPalette({
+    artworkKey: cover && !cover.startsWith(CACHED_COVER) ? cover : undefined,
+    seed: coverTint.color, ready: coverTint.known, enabled: paletteEnabled, dark: !lightMode,
+  });
+  const paletteTextStyle = palette ? { color: palette.text } : undefined;
+  const paletteSecondaryStyle = palette ? { color: palette.textSecondary } : undefined;
   // Play, the played part of the bar and, on light, the controls: pale with a
   // deep icon on dark, deep with a pale icon on light. Neutral whatever
   // background shade is picked, so they never pick up its hue.
   const tintBase = BACKGROUND_TINTS.neutral.dark.surfaceHighlight;
-  const playFill = lightMode ? toneOf(tintBase, 0.22, 0.2) : toneOf(tintBase, 0.9, 0.3);
-  const playInk = lightMode ? toneOf(tintBase, 0.97, 0.2) : toneOf(tintBase, 0.14, 0.3);
-  const ink = lightMode ? toneOf(tintBase, 0.2, 0.2) : colors.text;
+  const playFill = palette?.accent ?? (lightMode ? toneOf(tintBase, 0.22, 0.2) : toneOf(tintBase, 0.9, 0.3));
+  const playInk = palette?.onAccent ?? (lightMode ? toneOf(tintBase, 0.97, 0.2) : toneOf(tintBase, 0.14, 0.3));
+  const ink = palette?.text ?? (lightMode ? toneOf(tintBase, 0.2, 0.2) : colors.text);
   // Under the blurred artwork the flat colour is irrelevant, but it still
   // paints the frame before the image decodes, so it stays dark rather than
   // flashing the old grey.
-  const targetBg = colorBackground ? dominant : background === 'cover' ? colors.background : colors.playerPlain;
+  const targetBg = palette?.background ?? (paletteEnabled ? colors.playerPlain : colorBackground ? dominant : background === 'cover' ? colors.background : colors.playerPlain);
   const bgColor = useSharedValue(targetBg);
+  const previousBackgroundTheme = useRef(lightMode);
   useEffect(() => {
     // reduceMotion Never: the color fade is part of the look and some devices
     // (battery saver / "reduce motion") would skip it.
-    bgColor.value = withTiming(targetBg, { duration: motion.duration.tint, reduceMotion: ReduceMotion.Never });
-  }, [targetBg, bgColor]);
+    const themeChanged = previousBackgroundTheme.current !== lightMode;
+    previousBackgroundTheme.current = lightMode;
+    bgColor.value = themeChanged ? targetBg : withTiming(targetBg, {
+      duration: paletteEnabled ? transitionDuration : motion.duration.tint, reduceMotion: ReduceMotion.Never,
+    });
+  }, [targetBg, bgColor, paletteEnabled, transitionDuration, lightMode]);
   const bgStyle = useAnimatedStyle(() => ({ backgroundColor: bgColor.value }));
   // Same query used by the lyrics card (cached): here only to know if there
   // are lyrics and let the card peek below the first page.
@@ -1010,11 +1035,11 @@ export default function PlayerScreen() {
         ) : null}
         {/* Only the lower half, where the controls are: the top is left to
             the cover's colour. */}
-        <LinearGradient
+        {!paletteEnabled ? <LinearGradient
           colors={[colors.background + '00', colors.background + 'B3'] as const}
           locations={[0.45, 1]}
           style={StyleSheet.absoluteFill}
-        />
+        /> : null}
         {/* Insets from JS, not a native `SafeAreaView`: that one pads a frame
             late, and the page measured in that frame overwrote the remembered
             layout, so a pulled-up player was seen settling in three steps. */}
@@ -1250,10 +1275,10 @@ export default function PlayerScreen() {
                   hitSlop={6}
                   onPress={() => router.push(`/album/${song.albumId}` as never)}
                 >
-                  <MarqueeText text={title} style={styles.title} enabled={marqueeTitles} />
+                  <MarqueeText text={title} style={[styles.title, paletteTextStyle]} enabled={marqueeTitles} />
                 </GlassPressable>
               ) : (
-                <MarqueeText text={title} style={styles.title} enabled={marqueeTitles} />
+                <MarqueeText text={title} style={[styles.title, paletteTextStyle]} enabled={marqueeTitles} />
               )}
               {(() => {
                 const targets = artistTargets(song);
@@ -1275,7 +1300,7 @@ export default function PlayerScreen() {
                     <View style={styles.artistRow}>
                       <ExplicitBadge status={song.explicitStatus} />
                       <Text
-                        style={styles.artist}
+                        style={[styles.artist, paletteTextStyle]}
                         numberOfLines={1}
                         onPress={goArtist}
                         suppressHighlighting
@@ -1295,7 +1320,7 @@ export default function PlayerScreen() {
                         <GlassPressable enabled={false} style={styles.albumLine} hitSlop={6} onPress={goAlbum}>
                           <MarqueeText
                             text={albumInfo}
-                            style={styles.album}
+                            style={[styles.album, paletteSecondaryStyle]}
                             enabled={marqueeTitles}
                           />
                         </GlassPressable>
@@ -1303,14 +1328,14 @@ export default function PlayerScreen() {
                         <View style={styles.albumLine}>
                           <MarqueeText
                             text={albumInfo}
-                            style={styles.album}
+                            style={[styles.album, paletteSecondaryStyle]}
                             enabled={marqueeTitles}
                           />
                         </View>
                       )
                     ) : showAlbumInfo ? (
                       <View style={styles.albumLine}>
-                        <Text style={styles.album}>{'\u00A0'}</Text>
+                        <Text style={[styles.album, paletteSecondaryStyle]}>{'\u00A0'}</Text>
                       </View>
                     ) : null}
                   </>
@@ -1330,7 +1355,7 @@ export default function PlayerScreen() {
 
           {showQualityBadge ? (
             <View style={styles.subInfo}>
-              <AudioQualityBadge song={song} />
+              <AudioQualityBadge song={song} onPress={() => openAudioQuality.current()} color={palette?.textSecondary} />
             </View>
           ) : null}
 
@@ -1456,9 +1481,12 @@ export default function PlayerScreen() {
           {/* Grouped in the middle, each one where it always is: one that
               cannot do anything for this song is dimmed rather than taken out,
               so the others do not move from song to song. */}
+          {showSystemVolume ? <PlayerSystemVolume tint={ink} active={isFocused} style={{ marginTop: 8 }} /> : null}
+
           <View
             style={[
               styles.bottomRow,
+              showOutputDevice && playerButtons.filter((button) => button.enabled).length >= 4 && { gap: 20 },
               spreadButtons && styles.bottomRowSpread,
               // Set a little apart from the controls, in the room the padding
               // below gave up.
@@ -1473,6 +1501,11 @@ export default function PlayerScreen() {
                   // downloads cast from the phone, so offline there is
                   // something to send, and going offline mid-cast used to
                   // leave the way out barred.
+                  if (showOutputDevice && (enabled || remoteDevice)) return (
+                    <PlayerOutputDevice key={key} onPress={() => setOutputOpen(true)} remoteName={remoteDevice}
+                      tint={ink} activeTint={colors.accent} active={isFocused}
+                      style={{ flexShrink: 1, minWidth: 28, maxWidth: 96 }} />
+                  );
                   return (enabled && canDevices) || remoteDevice ? (
                     <GlassPressable
                       key={key}
@@ -1564,6 +1597,7 @@ export default function PlayerScreen() {
         </View>
         <OutputSheet visible={outputOpen} onClose={() => setOutputOpen(false)} />
         <SpeedSheet openRef={openSpeedSheet} />
+        <PlayerAudioQualitySheet openRef={openAudioQuality} />
       </Animated.View>
     </GestureDetector>
   );

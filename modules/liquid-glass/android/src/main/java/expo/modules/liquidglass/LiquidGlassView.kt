@@ -10,6 +10,7 @@ import android.os.Build
 import android.view.MotionEvent
 import android.view.View
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas as ComposeCanvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -435,6 +437,11 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
     val enabled = glassEnabled
     val preset = materialPreset
     val amPlusMaterial = preset == "amPlus"
+    // Media popup recipes: AM-plus-plus-media-plugin b9e043c (GPL-3.0),
+    // GlassPlayerDialog/GlassPlayerMoreMenu. Reuse this shared source; these
+    // materials never create an independent capture or a press-animation job.
+    val mediaBottomPopup = preset == "mediaPopupBottom"
+    val mediaMoreMenu = preset == "mediaMenu"
     val amPlusButtonHighlight = if (amPlusMaterial && tabsCount == 0)
       remember { AmPlusInteractiveHighlight() } else null
     val officialMaterial = preset != "custom"
@@ -525,19 +532,17 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
           dark = isDark
         )
       } else {
+        val glassShape = if (amPlusMaterial) RoundedCornerShape(50) else RoundedCornerShape(
+          topStart = (if (isLtr) topLeft else topRight).dp,
+          topEnd = (if (isLtr) topRight else topLeft).dp,
+          bottomEnd = (if (isLtr) bottomRight else bottomLeft).dp,
+          bottomStart = (if (isLtr) bottomLeft else bottomRight).dp
+        )
         Box(
           Modifier.fillMaxSize().drawBackdrop(
             backdrop = backdrop,
-            shape = {
-              // The JS API names physical corners. Mapping them to start/end lets
-              // Backdrop's lens and Compose's outline agree in RTL as well as LTR.
-              if (amPlusMaterial) RoundedCornerShape(50) else RoundedCornerShape(
-                topStart = (if (isLtr) topLeft else topRight).dp,
-                topEnd = (if (isLtr) topRight else topLeft).dp,
-                bottomEnd = (if (isLtr) bottomRight else bottomLeft).dp,
-                bottomStart = (if (isLtr) bottomLeft else bottomRight).dp
-              )
-            },
+            // Physical corners map to start/end for RTL, as with the RN card.
+            shape = { glassShape },
             effects = {
               if (enabled) {
                 if (dialogMaterial) {
@@ -547,11 +552,12 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
                 }
                 if (!uniformButtonOptics) {
                   blur(glassBlur.dp.toPx())
-                  val edge = if (amPlusMaterial && glassRefraction > 0f && glassRefractionHeight > 0f)
+                  val boundedLens = amPlusMaterial || mediaBottomPopup
+                  val edge = if (boundedLens && glassRefraction > 0f && glassRefractionHeight > 0f)
                     AmPlusDockGeometry.edgeLens(size.height, size.width, 24f.dp.toPx()) else 0f
                   lens(
-                    if (amPlusMaterial) edge else glassRefractionHeight.dp.toPx(),
-                    if (amPlusMaterial) edge else glassRefraction.dp.toPx(),
+                    if (boundedLens) edge else glassRefractionHeight.dp.toPx(),
+                    if (boundedLens) edge else glassRefraction.dp.toPx(),
                     depthEffect = !amPlusMaterial && glassDepthEffect,
                     chromaticAberration = !amPlusMaterial && glassChromaticAberration
                   )
@@ -560,6 +566,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
             },
             highlight = {
               when {
+                mediaMoreMenu -> null
                 dialogMaterial -> Highlight(style = HighlightStyle.Plain)
                 officialMaterial -> Highlight.Default
                 else -> Highlight(width = glassHighlightWidth.dp, alpha = glassHighlightOpacity)
@@ -591,7 +598,9 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
                 }
               }
             }
-          )
+          ).then(if (mediaMoreMenu) Modifier.border(.6.dp, Brush.linearGradient(listOf(
+            Color.White.copy(alpha = .28f), Color.White.copy(alpha = .07f),
+            Color.White.copy(alpha = .18f))), glassShape) else Modifier)
         )
       }
     }

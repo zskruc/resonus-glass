@@ -856,6 +856,10 @@ interface SettingsState extends Omit<AutoSetters, CustomSetter> {
   language: Language;
   /** Show format/bitrate/Hi-Res label (player only). */
   showAudioQuality: boolean;
+  /** Optional AM++ companion features, confined to the full player. */
+  showSystemVolume: boolean;
+  showOutputDevice: boolean;
+  playerArtworkPalette: boolean;
   /** Star rating bar for the current song in the player. */
   showRating: boolean;
   /** Show album and year below title/artist in the player. */
@@ -1226,6 +1230,9 @@ const DEFAULTS = {
   songCacheLimitGb: 4,
   language: 'en' as Language,
   showAudioQuality: false,
+  showSystemVolume: true,
+  showOutputDevice: true,
+  playerArtworkPalette: false,
   showRating: false,
   showAlbumInfo: false,
   swapPlayerButtons: false,

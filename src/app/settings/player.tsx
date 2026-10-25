@@ -2,6 +2,10 @@
 import { DockScrollView } from '@/components/DockScrollView';
 import { useRouter } from 'expo-router';
 import { Platform, Text } from 'react-native';
+import { useEffect } from 'react';
+import { usePlayerGlass } from '@/store/playerGlass';
+import { type PlayerGlassRecipe } from '@/theme/playerGlassRecipes';
+import { useToast } from '@/store/toast';
 
 import { canBlurBars } from '@/components/BarBlur';
 import {
@@ -54,6 +58,16 @@ export default function PlayerSettings() {
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
   const t = useT();
+  const toast = useToast((state) => state.show);
+  const glassRecipe = usePlayerGlass((state) => state.recipe);
+  const setGlassRecipe = usePlayerGlass((state) => state.setRecipe);
+  useEffect(() => { void usePlayerGlass.getState().hydrate(); }, []);
+  const showSystemVolume = useSettings((state) => state.showSystemVolume);
+  const setShowSystemVolume = useSettings((state) => state.setShowSystemVolume);
+  const showOutputDevice = useSettings((state) => state.showOutputDevice);
+  const setShowOutputDevice = useSettings((state) => state.setShowOutputDevice);
+  const playerArtworkPalette = useSettings((state) => state.playerArtworkPalette);
+  const setPlayerArtworkPalette = useSettings((state) => state.setPlayerArtworkPalette);
   const router = useRouter();
   // Rating is a Subsonic thing: needs a server account and doesn't apply to
   // Jellyfin. It does work offline (queued in the outbox and uploaded on
@@ -116,8 +130,28 @@ export default function PlayerSettings() {
   return (
     <SettingsPage title={t('Player')}>
       <DockScrollView contentContainerStyle={settingsStyles.content}>
+        <Text style={[settingsStyles.sectionTitle, { marginTop: 0 }]}>{t('AM++ player features')}</Text>
+        <SettingsGroup>
+          <SelectList<PlayerGlassRecipe>
+            label={t('Floating popup glass')}
+            options={[
+              { value: 'dock', label: t('Same as bottom bar') },
+              { value: 'menu', label: t('Same as More menu') },
+              { value: 'clear', label: t('Untinted glass') },
+              { value: 'original', label: t('Previous appearance') },
+            ]}
+            value={glassRecipe}
+            onChange={(value) => { void setGlassRecipe(value).catch(() => toast(t("Couldn't complete the action"))); }}
+          />
+          <SwitchList options={[
+            { label: t('Show system volume'), value: showSystemVolume, onChange: setShowSystemVolume },
+            { label: t('Show output device name'), value: showOutputDevice, onChange: setShowOutputDevice },
+            { label: t('Artwork palette in full player'), value: playerArtworkPalette, onChange: setPlayerArtworkPalette },
+          ]} />
+        </SettingsGroup>
+        <Text style={[settingsStyles.rowDescription, { marginHorizontal: 16, marginTop: 8 }]}>{t('Popup presets keep their reference blur. Artwork colors affect only the full player, never the mini player or tabs.')}</Text>
         {/* The first title sticks to the header (no section margin). */}
-        <Text style={[settingsStyles.sectionTitle, { marginTop: 0 }]}>{t('Background')}</Text>
+        <Text style={settingsStyles.sectionTitle}>{t('Background')}</Text>
         <SelectList<ScreenBackground>
           label={t('Player background')}
           options={[

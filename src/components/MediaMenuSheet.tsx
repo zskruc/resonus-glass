@@ -336,7 +336,7 @@ function MediaMenuContent({ item, session }: { item: MediaMenuItem; session: num
             style={[styles.sheet, { paddingBottom: insets.bottom + spacing.md }, sheetStyle]}
             onLayout={onSheetLayout}
           >
-            <MenuGlassBackdrop radius={0} radiusTopLeft={radius.xxl} radiusTopRight={radius.xxl} highContrast />
+            <MenuGlassBackdrop kind="menu" radius={0} radiusTopLeft={radius.xxl} radiusTopRight={radius.xxl} highContrast />
             {/* Spotify-style grabber: the visual cue that the sheet can be
                 dragged down to dismiss. */}
             <View style={styles.grabber} />

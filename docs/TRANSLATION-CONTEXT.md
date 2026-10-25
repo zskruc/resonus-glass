@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 858 of them.
+Every string the app can show, under the screen it shows up on. 886 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -419,12 +419,21 @@ you are actually typing into, which is easier than reading it here.
 | --- | --- |
 | `About the artist` | The label over the photo on the artist card, the one below the player controls |
 | `Add to the group` | Read out by the screen reader, never shown: the + beside a Sonos room in the output sheet, which sets that room playing along with the one already playing. Sonos only, and `group` is a group of SPEAKERS in the sense Sonos itself uses — rooms playing the same thing together. Whatever word Sonos uses in your language is the one |
+| `Audio output` |  |
+| `Audio quality` |  |
 | `Back {n} seconds` | Read out by the screen reader for the seek button. `{n}` is how many seconds it is set to |
+| `Bluetooth audio` |  |
+| `Cached audio` |  |
+| `Controls the connected playback device` |  |
 | `Currently playing on` | Heading above the output the music is coming out of right now, at the top of the output sheet |
 | `Devices` | The audio output devices to cast to |
+| `Downloaded audio` |  |
 | `Explicit` | A value of `Content`: the recording carries a parental advisory (strong language). Also read out for the E badge next to a title |
 | `Forward {n} seconds` | Read out by the screen reader for the seek button. `{n}` is how many seconds it is set to |
+| `Headphones` |  |
 | `History` | The listening history: what was played and when |
+| `Local audio` |  |
+| `Media volume` |  |
 | `Mix of “{name}”` | What the player calls the queue once it has grown past its album into songs the app picked itself. `{name}` is the song it was grown from |
 | `No devices found` |  |
 | `No lyrics available for this song.` | Empty state on the lyrics screen |
@@ -434,8 +443,11 @@ you are actually typing into, which is easier than reading it here.
 | `Playback stopped` | The mini player when there is nothing playing any more |
 | `PLAYING FROM` | Small label above the cover, followed by the name of the album, playlist or mix it is playing from, or by `Queue` while the song is one that was added to the queue by hand. Written in capitals by the design, so it can be capitals in your language too, or not, whichever reads right |
 | `Previous` | Player control: the previous track (accessibility label) |
+| `Quality & playback` |  |
+| `Quality follows the source and playback settings; the output device may process audio separately.` |  |
 | `Queue` | The list of songs waiting to play. Not a playlist |
 | `Radio` | Internet radio stations. Most languages keep the word |
+| `Remote volume` |  |
 | `Remove from the group` | The − beside `Add to the group`, and the same in reverse: it takes that room out of the group so it stops playing along. Read out by the screen reader, never shown, and Sonos only |
 | `Repeat` | Start again at the end |
 | `Search again` |  |
@@ -445,8 +457,15 @@ you are actually typing into, which is easier than reading it here.
 | `Show remaining time` |  |
 | `Show total time` |  |
 | `Sleep timer` | Stop playing after a while, for falling asleep to |
+| `Song info` |  |
+| `Streamed audio` |  |
+| `Synchronized with the phone volume buttons` |  |
+| `System audio output` |  |
+| `System output picker is unavailable; opened volume controls` |  |
 | `This phone` | The on-device profile, with no server account |
+| `Unknown` |  |
 | `View queue` | Read out by the screen reader for the button that opens the queue |
+| `Volume is controlled by the output device` |  |
 
 ## Playlist
 
@@ -1048,7 +1067,9 @@ you are actually typing into, which is easier than reading it here.
 | String | What it is |
 | --- | --- |
 | `Always previous track` | A value of `Previous button`: never restarts, always goes back a song |
+| `AM++ player features` |  |
 | `Animated cover background` | A setting: an animated cover (GIF, animated WebP) is shown full screen behind the player instead of inside the square |
+| `Artwork palette in full player` |  |
 | `Background` | Section header over what is drawn behind the player. Its two values are `Plain` and `Blurred cover` |
 | `Blur inactive lyrics` | A switch in the Lyrics section: progressively softens synchronized lyric rows away from the current line |
 | `Blurred cover` | A value of `Background`: the album art, blurred, behind the player |
@@ -1063,6 +1084,7 @@ you are actually typing into, which is easier than reading it here.
 | `Elements` | Which player elements to show |
 | `Favorite` | One of the values of “Buttons next to play” |
 | `Fit cover art` | Show the whole cover even if it is not square, instead of cropping it to fill |
+| `Floating popup glass` |  |
 | `Go to album` | Leave this sheet and open the album the song is on |
 | `Keep paused when skipping` |  |
 | `Left` | One of the values of “Lyrics alignment” |
@@ -1086,25 +1108,32 @@ you are actually typing into, which is easier than reading it here.
 | `Play or pause` | One of its options: the same as the play button |
 | `Player` |  |
 | `Player background` | What is drawn behind the player: the blurred artwork, or a flat tint |
+| `Popup presets keep their reference blur. Artwork colors affect only the full player, never the mini player or tabs.` |  |
 | `Prefer local lyrics` | A value of `Lyrics source`: use the ones that came with the file first |
 | `Prefer online search` | A value of `Lyrics source`: look them up on the internet first |
 | `Previous and next` | One of the values of “Buttons next to play” |
+| `Previous appearance` | One of the values of “Floating popup glass” |
 | `Previous button` | What the previous button does when a song is already playing. Its values are the two lines below it |
 | `Queue` | The list of songs waiting to play. Not a playlist |
 | `Regular font weight` | One of the values of “Lyrics weight” |
 | `Restart, then previous track` | A value of `Previous button`: the first press goes back to the start of this song, the second to the one before |
+| `Same as bottom bar` | One of the values of “Floating popup glass” |
+| `Same as More menu` | One of the values of “Floating popup glass” |
 | `Scroll long titles` | A title too long to fit slides sideways, over and over, instead of being cut off |
 | `Semi-bold font weight` | One of the values of “Lyrics weight” |
 | `Show album & year` |  |
 | `Show artist card` |  |
 | `Show lyrics card` |  |
 | `Show lyrics on the cover` | A value of `On cover tap`: the lyrics take the cover's place, without leaving the player |
+| `Show output device name` |  |
 | `Show previous tracks` | Whether the queue keeps the songs already played, dimmed, above the current one |
 | `Show quality label` |  |
 | `Show rating` |  |
+| `Show system volume` |  |
 | `Skip buttons` | The seek forward / back buttons setting |
 | `Slightly blur synchronized lyrics other than the current line to emphasize what is playing.` | Help text under that switch. Only the current synchronized lyric line stays sharp |
 | `Swap favorite and menu` | Exchange the places of those two buttons in the player, for whichever hand you hold the phone in |
+| `Untinted glass` | One of the values of “Floating popup glass” |
 | `Where to get lyrics from. Online search uses LRCLIB (sends the artist and title).` |  |
 
 ## Settings › Player buttons

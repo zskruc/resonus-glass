@@ -493,7 +493,7 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
           onLayout={onSheetLayout}
           accessibilityViewIsModal
         >
-          {isCard ? <MenuGlassBackdrop radius={28} />
+          {isCard ? <MenuGlassBackdrop kind="menu" radius={28} />
             : <GlassBackdrop radius={0} radiusTopLeft={radius.xxl} radiusTopRight={radius.xxl} tint={colors.surface} variant="prominent" />}
           <MenuCardContext.Provider value={isCard}>
           <MenuContent card={isCard} maxHeight={cardMaxHeight} contentKey={`${song.id}:${mode}`}>

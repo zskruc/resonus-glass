@@ -12,6 +12,7 @@
  * playing, the same as in every other sheet in the app.
  */
 import Icon from '@/components/Icon';
+import { useMediaControls, openSystemAudioOutput, systemMediaControlsAvailable } from '@/hooks/useMediaControls';
 import { MenuGlassCardFrame, MenuGlassCardHeader } from '@/components/MenuGlassCard';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, AppState, Modal, Pressable, ScrollView, Text, View } from 'react-native';
@@ -94,6 +95,7 @@ export function OutputSheet({ visible, onClose }: { visible: boolean; onClose: (
   const jukeboxActive = useJukebox((s) => s.active);
   const jukeboxAvailable = useJukebox((s) => s.available);
   const phoneActive = !upnpId && !jukeboxActive;
+  const mediaControls = useMediaControls(visible);
   const { dismiss, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
     visible,
     onClose,
@@ -174,7 +176,7 @@ export function OutputSheet({ visible, onClose }: { visible: boolean; onClose: (
 
   /** What the phone is playing through, named the way the row would name it. */
   const currentLabel = phoneActive
-    ? t('This phone')
+    ? mediaControls.routeName || t('This phone')
     : jukeboxActive
       ? t('Server speakers (Jukebox)')
       : activeSonosGroupMode
@@ -294,6 +296,18 @@ export function OutputSheet({ visible, onClose }: { visible: boolean; onClose: (
             active={phoneActive}
             onPress={phoneActive ? undefined : () => void pickPhone()}
           />
+
+          {systemMediaControlsAvailable ? (
+            <Row icon={<Icon name="headset-outline" size={22} color={colors.text} />}
+              label={t('System audio output')}
+              onPress={() => dismiss(() => {
+                onClose();
+                void openSystemAudioOutput().then((result) => {
+                  if (result === 'volumePanel') toast(t('System output picker is unavailable; opened volume controls'));
+                  else if (result === 'unavailable') toast(t("Couldn't complete the action"));
+                });
+              })} />
+          ) : null}
 
           {jukeboxAvailable ? (
             <Row

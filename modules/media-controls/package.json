@@ -1,0 +1,7 @@
+{
+  "name": "media-controls",
+  "version": "0.1.0",
+  "description": "System music volume and actual selected audio output",
+  "main": "index.ts",
+  "private": true
+}

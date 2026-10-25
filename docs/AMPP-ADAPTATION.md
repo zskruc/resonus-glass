@@ -110,3 +110,24 @@ For eligible opaque uniform settings sources, Clamp blur and coordinate-only len
 AM++ 参考模式下，设置分组背景采用纯色系统卡片，不再把非交互的大容器当作LiquidButton。开关、滑条、操作按钮、真实浮动菜单和底栏继续各自的玻璃材料。Kyant及其他比较模式保留原卡片材质和上述静态源优化。这个范围区别避免为整组几十行内容反复建立大型玻璃图层，布局、分隔线、描述和触摸行为不变。
 
 In AM++ reference mode, noninteractive settings groups use plain system-style cards rather than stretching a LiquidButton material across a large container. Toggles, sliders, action buttons, floating menus and the dock retain their respective glass materials. Comparison modes retain their existing card materials with the static-source optimization.
+
+## 媒体增强测试版 / Media companion preview
+
+`0.8.4.1-ampp.6` / Android versionCode `79`, branch `preview/ampp-player-features`.
+上文“本轮预览”记录的是 dock 版78；本节才是后续实际接入的媒体增强范围。
+
+- 共享浮动卡片加入「与底栏一致／与更多菜单一致／无着色玻璃／之前的外观」选择。默认与底栏一致，设置独立保存，不覆盖 dock 或自定义参数。更多菜单保留自己的中性玻璃材料；之前的外观恢复旧的处理。明亮主题适配浅色填充和深色文字。
+- 点击播放页音质标签可打开详情卡片，再进入歌曲信息或音质设置。沿用真实下载/缓存/在线播放选择逻辑；显示的是音源与请求参数，不声称测量耳机 DAC 或最终蓝牙编码。
+- 播放器显示实际系统媒体输出名称；设备卡片内另有系统输出入口，原有本机、Jukebox、UPnP/Sonos 选择继续可用。Android34+尝试公开输出面板；厂商不支持时明确提示并回退系统音量面板。
+- 本机音量条与系统媒体音量、硬件键同步，投放时只调用已有远程音量接口。观察为事件驱动，隐藏/后台停止，换设备取消旧拖动；写入前再次核对设备ID和硬件范围。没有启动时写音量，也没有新增蓝牙权限、后台轮询或屏幕捕获。
+- 可选封面配色仅用于完整播放器，默认关闭。复用现有封面取色，Oklab角色和对比度保护、64项缓存、900ms稳定等待和380ms背景渐变；主题变化直接切换背景以保护文字对比度。没有另加封面下载，也不是原始24×24像素量化器的完整移植。
+
+This later preview implements the listed companion features, while retaining
+the dock preview's existing rendering and lifecycle fixes. The glass choice
+applies to shared floating cards, not only the player. System output controls
+use public platform APIs with an explicitly reported volume-panel fallback.
+The volume row separates local STREAM_MUSIC from existing remote volume APIs.
+The optional full-player palette reuses existing extraction and never mutates
+the mini player, tabs or global theme. No sharing/export/Cimu/TTML/tablet features
+are included. Build and on-device validation are recorded for the actual APK;
+these features do not establish constant120FPS across all workloads.

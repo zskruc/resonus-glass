@@ -42,3 +42,24 @@ Adapted files: AM++ GlassPolicy.kt, GlassBarCollapse.kt, GlassBarCollapseLayout.
 NativeLiquidButton.kt and LiquidBottomTabs.kt; integration and control ownership
 are implemented for Resonus rather than Apple Music/Xposed. No Apple image
 resources or AMLL tablet-media implementation is included in this adaptation.
+
+## AM++ media companion and full-player palette
+
+Floating popup recipes in `src/theme/playerGlassRecipes.ts` and the native
+media popup/menu material variants, plus
+`modules/media-controls/android/src/main/java/expo/modules/mediacontrols/SystemAudioOutput.kt`,
+are adapted from [Kifranei/AM-plus-plus-media-plugin](https://github.com/Kifranei/AM-plus-plus-media-plugin),
+commit `b9e043c10ee8bdba62f155acba296be566b9b71d` (GPL-3.0).
+Resonus implements its own playback integration, system-volume lifecycle and
+quality card. The light popup fill follows the current theme rather than the
+reference plugin's always-dark popup host. No Apple speaker/AirPods images,
+Apple Music code, Xposed hooks or companion resource bundles are copied.
+
+The optional full-player Oklab roles and stable-artwork timing in
+`src/lib/playerPalette.ts` are adapted from
+[Kifranei/AM-plus-plus-monet-plugin](https://github.com/Kifranei/AM-plus-plus-monet-plugin),
+commit `0408c9f9dc7d6f4f893e22f847f60dc443cf9f70` (GPL-3.0).
+Oklab conversion credits Björn Ottosson's public-domain reference. Resonus
+reuses its existing cover-color extraction; it does not duplicate the plugin's
+24×24 quantizer, resource hooks or global theme injection. These additions are
+distributed under GPLv3 with the rest of this GPL-3.0-or-later project; see LICENSE.

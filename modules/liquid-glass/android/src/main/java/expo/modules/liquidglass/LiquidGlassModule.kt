@@ -30,7 +30,7 @@ class LiquidGlassModule : Module() {
       Events("onMotionHostReady")
       Prop("materialPreset") { view: LiquidGlassView, value: String ->
         view.materialPreset = when (value) {
-          "custom", "button", "tabs", "dialog", "amPlus" -> value
+          "custom", "button", "tabs", "dialog", "amPlus", "mediaPopup", "mediaPopupBottom", "mediaMenu" -> value
           else -> "button"
         }
       }

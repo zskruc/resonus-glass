@@ -2,7 +2,7 @@ import React from 'react';
 import { Platform, processColor, View, type ColorValue, type NativeSyntheticEvent, type ViewProps } from 'react-native';
 import { requireNativeView, requireOptionalNativeModule } from 'expo';
 
-export type LiquidGlassMaterialPreset = 'custom' | 'button' | 'tabs' | 'dialog' | 'amPlus';
+export type LiquidGlassMaterialPreset = 'custom' | 'button' | 'tabs' | 'dialog' | 'amPlus' | 'mediaPopup' | 'mediaPopupBottom' | 'mediaMenu';
 
 export type LiquidGlassViewProps = Omit<ViewProps, 'children'> & {
   /** Official catalog material or the previous user-tuned rendering. Defaults to button. */
