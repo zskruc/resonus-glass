@@ -3,7 +3,7 @@ name: Glass ARM64 test APK
 # Manual test build, not a release. Every run uses a new disposable signing key,
 # so it cannot update an existing Glass install (including the owner's phone).
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 permissions:
   contents: read

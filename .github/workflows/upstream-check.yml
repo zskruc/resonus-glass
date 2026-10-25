@@ -2,7 +2,7 @@ name: Check upstream updates
 
 # Manual comparison only: never merges, pushes, publishes, or opens a PR.
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 permissions:
   contents: read
