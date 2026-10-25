@@ -10,6 +10,7 @@ import android.util.Log
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,7 +57,7 @@ import com.kyant.backdrop.shadow.Shadow
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** One recorded bar is displayed and sampled, rather than drawing it twice. */
+/** Records one material for the selected lens without another screen capture. */
 private class SinglePassTabsBackdrop(
   val layer: GraphicsLayer,
   val selectorScaleX: () -> Float,
@@ -82,7 +83,10 @@ private class SinglePassTabsBackdrop(
   }
 }
 
-private fun Modifier.recordTabsBackdrop(backdrop: SinglePassTabsBackdrop?): Modifier {
+private fun Modifier.recordTabsBackdrop(
+  backdrop: SinglePassTabsBackdrop?,
+  drawRecordedToScreen: Boolean = true
+): Modifier {
   if (backdrop == null) return this
   return onGloballyPositioned { backdrop.sourceCoordinates = it }.drawWithContent {
     backdrop.layer.record(
@@ -98,8 +102,18 @@ private fun Modifier.recordTabsBackdrop(backdrop: SinglePassTabsBackdrop?): Modi
         graphicsLayer = drawContext.graphicsLayer
       ) { this@drawWithContent.drawContent() }
     }
-    drawLayer(backdrop.layer)
+    if (drawRecordedToScreen) drawLayer(backdrop.layer)
   }
+}
+
+private fun DrawScope.drawTabsInteractiveHighlight(progress: Float, center: Offset) {
+  if (progress <= 0f) return
+  drawRect(Color.White.copy(alpha = 0.08f * progress), blendMode = BlendMode.Plus)
+  drawRect(
+    Brush.radialGradient(listOf(Color.White.copy(alpha = 0.15f * progress), Color.Transparent),
+      center = center, radius = size.height * 1.5f),
+    blendMode = BlendMode.Plus
+  )
 }
 
 @Composable
@@ -115,6 +129,7 @@ internal fun LiquidBottomTabsMaterial(
   velocity: () -> Float,
   panelOffset: () -> Float,
   selectionOpacity: () -> Float,
+  officialMaterial: Boolean,
   blurRadius: Float,
   refraction: Float,
   refractionHeight: Float,
@@ -172,7 +187,7 @@ internal fun LiquidBottomTabsMaterial(
     Box(
       Modifier.fillMaxSize().graphicsLayer {
         translationX = panelOffset().dp.toPx()
-      }.recordTabsBackdrop(materialBackdrop).drawBackdrop(
+      }.recordTabsBackdrop(if (officialMaterial) null else materialBackdrop).drawBackdrop(
         backdrop = panelScene,
         shape = { RoundedCornerShape(50) },
         effects = {
@@ -181,8 +196,8 @@ internal fun LiquidBottomTabsMaterial(
           lens(refractionHeight.dp.toPx(), refraction.dp.toPx(),
             depthEffect = depthEffect, chromaticAberration = chromaticAberration)
         },
-        highlight = { Highlight(width = highlightWidth.dp, alpha = highlightOpacity) },
-        shadow = null,
+        highlight = { if (officialMaterial) Highlight.Default else Highlight(width = highlightWidth.dp, alpha = highlightOpacity) },
+        shadow = if (officialMaterial) ({ Shadow.Default }) else null,
         layerBlock = {
           val scale = 1f + 16f.dp.toPx() / size.width.coerceAtLeast(1f) * pressProgress()
           scaleX = scale
@@ -193,13 +208,8 @@ internal fun LiquidBottomTabsMaterial(
           val progress = pressProgress()
           if (progress > 0f) {
             val boundedPosition = position().coerceIn(0f, (tabsCount - 1).toFloat())
-            val center = Offset(insetPx + (boundedPosition + 0.5f) * tabWidthPx, size.height / 2f)
-            drawRect(Color.White.copy(alpha = 0.08f * progress), blendMode = BlendMode.Plus)
-            drawRect(
-              Brush.radialGradient(listOf(Color.White.copy(alpha = 0.15f * progress), Color.Transparent),
-                center = center, radius = size.height * 1.5f),
-              blendMode = BlendMode.Plus
-            )
+            drawTabsInteractiveHighlight(progress,
+              Offset(insetPx + (boundedPosition + 0.5f) * tabWidthPx, size.height / 2f))
           }
         }
       )
@@ -216,6 +226,42 @@ internal fun LiquidBottomTabsMaterial(
         drawContent()
       })
       return@BoxWithConstraints
+    }
+
+    if (officialMaterial) {
+      // The catalog's selected lens samples a separate, progress-dependent
+      // material, not the visible bar's fixed 24/24 lens. Record it only while
+      // interacting; do not display it or duplicate RN labels and icons.
+      val auxiliaryScene = rememberCanvasBackdrop {
+        val offsetPx = with(density) { panelOffset().dp.toPx() }
+        withTransform({ translate(-offsetPx, -topPx) }) {
+          with(backdrop) { drawBackdrop(density, null, null) }
+        }
+      }
+      Box(
+        Modifier.fillMaxWidth().height(tabHeight).graphicsLayer {
+          translationX = panelOffset().dp.toPx()
+          translationY = topPx
+        }.recordTabsBackdrop(materialBackdrop, drawRecordedToScreen = false).drawBackdrop(
+          backdrop = auxiliaryScene,
+          shape = { RoundedCornerShape(50) },
+          effects = {
+            val progress = pressProgress()
+            vibrancy()
+            blur(8f.dp.toPx())
+            lens(24f.dp.toPx() * progress, 24f.dp.toPx() * progress,
+              depthEffect = false, chromaticAberration = false)
+          },
+          highlight = { Highlight.Default.copy(alpha = pressProgress()) },
+          shadow = { Shadow.Default },
+          onDrawSurface = { drawRect(tint.copy(alpha = tintOpacity() * tint.alpha)) },
+          onDrawFront = {
+            val boundedPosition = position().coerceIn(0f, (tabsCount - 1).toFloat())
+            drawTabsInteractiveHighlight(pressProgress(),
+              Offset(insetPx + (boundedPosition + 0.5f) * tabWidthPx, size.height / 2f))
+          }
+        )
+      )
     }
 
     // CanvasBackdrop has no layout coordinates. Offset the same retained scene
@@ -245,11 +291,19 @@ internal fun LiquidBottomTabsMaterial(
         shape = { RoundedCornerShape(50) },
         effects = {
           val progress = pressProgress()
-          lens((refractionHeight * 10f / 14f).dp.toPx() * progress,
-            refraction.dp.toPx() * progress,
-            depthEffect = depthEffect, chromaticAberration = chromaticAberration)
+          if (officialMaterial) {
+            lens(10f.dp.toPx() * progress, 14f.dp.toPx() * progress,
+              depthEffect = false, chromaticAberration = true)
+          } else {
+            lens((refractionHeight * 10f / 14f).dp.toPx() * progress,
+              refraction.dp.toPx() * progress,
+              depthEffect = depthEffect, chromaticAberration = chromaticAberration)
+          }
         },
-        highlight = { Highlight(width = highlightWidth.dp, alpha = highlightOpacity * pressProgress()) },
+        highlight = {
+          if (officialMaterial) Highlight.Default.copy(alpha = pressProgress())
+          else Highlight(width = highlightWidth.dp, alpha = highlightOpacity * pressProgress())
+        },
         shadow = { Shadow(alpha = pressProgress()) },
         innerShadow = { InnerShadow(radius = 8f.dp * pressProgress(), alpha = pressProgress()) },
         layerBlock = {

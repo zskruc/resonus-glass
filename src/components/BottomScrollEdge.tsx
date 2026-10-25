@@ -11,6 +11,7 @@ import { useScreenSize } from '@/hooks/useScreenSize';
 import { useMiniPlayerShown, useTabBarShown } from '@/hooks/useTabBar';
 import { MINI_PLAYER_HEIGHT, TAB_BAR_BOTTOM_GAP, TAB_BAR_HEIGHT, useTheme, useThemeMode } from '@/theme';
 import { motion } from '@/theme/motion';
+import { useGlassTuning } from '@/store/glassTuning';
 import { isLiquidGlassAvailable, LiquidGlassView, updateNativeDockProgress } from '../../modules/liquid-glass';
 
 const EDGE_TRANSITION_HEIGHT = 40;
@@ -24,6 +25,7 @@ function alpha(hex: string, opacity: number): string {
 export function BottomScrollEdge() {
   const colors = useTheme();
   const dark = useThemeMode() === 'dark';
+  const kyantDefaults = useGlassTuning((state) => state.mode === 'kyantDefault');
   const insets = useSafeAreaInsets();
   const { width } = useScreenSize();
   const bar = useTabBarShown();
@@ -74,7 +76,7 @@ export function BottomScrollEdge() {
     }, (finished) => { if (finished) scheduleOnRN(setMaterialOn, false); }));
   }, [shown, opacity]);
   const fade = useAnimatedStyle(() => ({ opacity: opacity.get() }));
-  const useNativeMaterial = isLiquidGlassAvailable && geometry.blurred && materialOn;
+  const useNativeMaterial = !kyantDefaults && isLiquidGlassAvailable && geometry.blurred && materialOn;
   const nativeHost = useSharedValue(0);
   const motionActive = useSharedValue(useNativeMaterial);
   const lastNativeMotion = useSharedValue<number[]>([]);
@@ -100,11 +102,15 @@ export function BottomScrollEdge() {
     return { transform: [{ scaleY: height / hostHeight }] };
   }, [geometry.expandedHeight, geometry.compactHeight, hostHeight]);
 
+  // Upstream materials sample the raw page. The app's additional scroll-edge
+  // blur would otherwise pre-blur the same background before the glass does.
+  if (kyantDefaults) return null;
+
   return (
     <Animated.View pointerEvents="none" accessible={false} collapsable={false}
       style={[styles.frame, { height: hostHeight }, fade]}>
       {useNativeMaterial ? (
-        <LiquidGlassView style={StyleSheet.absoluteFill} progressiveBlur radius={0}
+        <LiquidGlassView style={StyleSheet.absoluteFill} progressiveBlur radius={0} materialPreset="custom"
           blur={18} refraction={0} refractionHeight={0}
           highlightWidth={0} highlightOpacity={0} depthEffect={false} chromaticAberration={false}
           tintColor={colors.background} tintOpacity={0.46} dark={dark}

@@ -2,7 +2,11 @@ import React from 'react';
 import { Platform, processColor, View, type ColorValue, type NativeSyntheticEvent, type ViewProps } from 'react-native';
 import { requireNativeView, requireOptionalNativeModule } from 'expo';
 
+export type LiquidGlassMaterialPreset = 'custom' | 'button' | 'tabs' | 'dialog';
+
 export type LiquidGlassViewProps = Omit<ViewProps, 'children'> & {
+  /** Official catalog material or the previous user-tuned rendering. Defaults to button. */
+  materialPreset?: LiquidGlassMaterialPreset;
   /** Corner radius, in density-independent pixels. */
   radius?: number;
   /** Physical corner radii; omitted/null corners inherit radius. */
@@ -20,13 +24,13 @@ export type LiquidGlassViewProps = Omit<ViewProps, 'children'> & {
   isolateModalForeground?: boolean;
   /** Edge lens refraction amount. Android 13+; Android 12 keeps blur. */
   refraction?: number;
-  /** Edge lens depth, in dp. Omitted/null uses refraction * 0.65. */
+  /** Edge lens height, in dp. Defaults to 12; custom null retains refraction * 0.65. */
   refractionHeight?: number | null;
-  /** Width of the library's directional highlight, in dp. Default 0.4. */
+  /** Custom highlight width in dp; official presets use Highlight.Default (0.5). */
   highlightWidth?: number;
-  /** Highlight alpha; omitted/null uses the existing light/dark defaults. */
+  /** Custom highlight alpha; official presets use the library default (1). */
   highlightOpacity?: number | null;
-  /** Enable depth shading in the lens shader. Default true. */
+  /** Enable depth shading in the lens shader. Defaults to false. */
   depthEffect?: boolean;
   /** Enable the library's real lens dispersion shader. Default false. */
   chromaticAberration?: boolean;
@@ -108,13 +112,13 @@ const NativeGlass: React.ComponentType<NativeProps> | null = nativeModule
 const NativeTabs = NativeGlass as React.ComponentType<NativeTabsProps> | null;
 
 /** Native material only; original RN tabs retain their touch/accessibility. */
-export function LiquidGlassTabsView({ tintColor = '#FFFFFF', ...props }: LiquidGlassTabsProps) {
+export function LiquidGlassTabsView({ materialPreset = 'button', tintColor = 'transparent', ...props }: LiquidGlassTabsProps) {
   if (!NativeTabs || !isLiquidGlassAvailable) {
     return <View style={props.style} pointerEvents="none" accessible={false} />;
   }
   const color = processColor(tintColor);
-  return <NativeTabs {...props} pointerEvents="none" accessible={false}
-    tintColor={typeof color === 'number' ? color : processColor('#FFFFFF') as number} />;
+  return <NativeTabs {...props} materialPreset={materialPreset} pointerEvents="none" accessible={false}
+    tintColor={typeof color === 'number' ? color : processColor('transparent') as number} />;
 }
 
 /**
@@ -122,23 +126,24 @@ export function LiquidGlassTabsView({ tintColor = '#FFFFFF', ...props }: LiquidG
  * wrapper, behind that wrapper's interactive children, using absoluteFill.
  */
 export function LiquidGlassView({
+  materialPreset = 'button',
   radius = 0,
   radiusTopLeft = null,
   radiusTopRight = null,
   radiusBottomLeft = null,
   radiusBottomRight = null,
-  blur = 14,
+  blur = materialPreset === 'custom' ? 14 : 2,
   progressiveBlur = false,
   preferUnblurredBackdrop = false,
   isolateModalForeground = false,
-  refraction = 18,
-  refractionHeight = null,
-  highlightWidth = 0.4,
+  refraction = materialPreset === 'custom' ? 18 : 24,
+  refractionHeight = materialPreset === 'custom' ? null : 12,
+  highlightWidth = materialPreset === 'custom' ? 0.4 : 0.5,
   highlightOpacity = null,
-  depthEffect = true,
+  depthEffect = materialPreset === 'custom',
   chromaticAberration = false,
-  tintColor = '#FFFFFF',
-  tintOpacity = 0.18,
+  tintColor = materialPreset === 'custom' ? '#FFFFFF' : 'transparent',
+  tintOpacity = materialPreset === 'custom' ? 0.18 : 0,
   dark = false,
   enabled = true,
   ...viewProps
@@ -152,6 +157,7 @@ export function LiquidGlassView({
       {...viewProps}
       pointerEvents="none"
       accessible={false}
+      materialPreset={materialPreset}
       radius={radius}
       radiusTopLeft={radiusTopLeft}
       radiusTopRight={radiusTopRight}
@@ -167,7 +173,7 @@ export function LiquidGlassView({
       highlightOpacity={highlightOpacity}
       depthEffect={depthEffect}
       chromaticAberration={chromaticAberration}
-      tintColor={typeof color === 'number' ? color : processColor('#FFFFFF') as number}
+      tintColor={typeof color === 'number' ? color : processColor('transparent') as number}
       tintOpacity={tintOpacity}
       dark={dark}
       enabled={enabled}

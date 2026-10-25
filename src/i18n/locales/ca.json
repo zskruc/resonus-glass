@@ -1,4 +1,7 @@
 {
+  "Kyant defaults": "Valors de Kyant",
+  "Uses AndroidLiquidGlass’s original button, bottom tabs, and dialog materials. Your saved custom parameters are kept.": "Utilitza els materials originals dels botons, les pestanyes inferiors i els diàlegs d’AndroidLiquidGlass. Es conserven els paràmetres personalitzats desats.",
+  "Export keeps your three custom styles; the default materials do not overwrite them.": "L’exportació conserva els tres estils personalitzats; els materials per defecte no els sobreescriuen.",
   "Diagnostics": "Diagnòstic",
   "Profile": "Perfil",
   "Share report": "Comparteix l'informe",

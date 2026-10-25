@@ -38,9 +38,12 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.colorControls
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.highlight.HighlightStyle
+import com.kyant.backdrop.shadow.Shadow
 import com.facebook.react.uimanager.PointerEvents
 import com.facebook.react.uimanager.ReactPointerEventsView
 import kotlin.math.roundToInt
@@ -62,21 +65,22 @@ class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(conte
   internal var radiusTopRight: Float? by mutableStateOf(null)
   internal var radiusBottomLeft: Float? by mutableStateOf(null)
   internal var radiusBottomRight: Float? by mutableStateOf(null)
-  internal var blurRadius by mutableFloatStateOf(14f)
+  internal var materialPreset by mutableStateOf("button")
+  internal var blurRadius by mutableFloatStateOf(2f)
   internal var progressiveBlur by mutableStateOf(false)
     private set
   internal var preferUnblurredBackdrop by mutableStateOf(false)
     private set
   internal var isolateModalForeground = false
     private set
-  internal var refraction by mutableFloatStateOf(18f)
+  internal var refraction by mutableFloatStateOf(24f)
   internal var refractionHeight: Float? by mutableStateOf(null)
-  internal var highlightWidth by mutableFloatStateOf(0.4f)
+  internal var highlightWidth by mutableFloatStateOf(0.5f)
   internal var highlightOpacity: Float? by mutableStateOf(null)
-  internal var depthEffect by mutableStateOf(true)
+  internal var depthEffect by mutableStateOf(false)
   internal var chromaticAberration by mutableStateOf(false)
-  internal var tintColor by mutableIntStateOf(AndroidColor.WHITE)
-  internal var tintOpacity by mutableFloatStateOf(0.18f)
+  internal var tintColor by mutableIntStateOf(AndroidColor.TRANSPARENT)
+  internal var tintOpacity by mutableFloatStateOf(0f)
   internal var dark by mutableStateOf(false)
   // Only the complete bottom navigation opts into this interactive material.
   // Reanimated updates these on the UI thread; the shared capture is unchanged.
@@ -403,9 +407,12 @@ class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(conte
     val opacity = tintOpacity
     val isDark = dark
     val enabled = glassEnabled
-    val glassRefractionHeight = refractionHeight ?: (glassRefraction * 0.65f)
+    val preset = materialPreset
+    val officialMaterial = preset != "custom"
+    val dialogMaterial = preset == "dialog"
+    val glassRefractionHeight = refractionHeight ?: if (officialMaterial) 12f else glassRefraction * 0.65f
     val glassHighlightWidth = highlightWidth
-    val glassHighlightOpacity = highlightOpacity ?: if (isDark) 0.28f else 0.20f
+    val glassHighlightOpacity = highlightOpacity ?: if (officialMaterial) 1f else if (isDark) 0.28f else 0.20f
     val glassDepthEffect = depthEffect
     val glassChromaticAberration = chromaticAberration
     val backdrop = rememberCanvasBackdrop {
@@ -465,6 +472,7 @@ class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(conte
           velocity = { tabVelocity },
           panelOffset = { tabPanelOffset },
           selectionOpacity = { tabSelectionOpacity },
+          officialMaterial = officialMaterial,
           blurRadius = if (enabled) glassBlur else 0f,
           refraction = if (enabled) glassRefraction else 0f,
           refractionHeight = if (enabled) glassRefractionHeight else 0f,
@@ -492,7 +500,11 @@ class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(conte
             },
             effects = {
               if (enabled) {
-                vibrancy()
+                if (dialogMaterial) {
+                  colorControls(brightness = if (isDark) 0f else 0.2f, saturation = 1.5f)
+                } else {
+                  vibrancy()
+                }
                 blur(glassBlur.dp.toPx())
                 lens(
                   glassRefractionHeight.dp.toPx(),
@@ -502,8 +514,14 @@ class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(conte
                 )
               }
             },
-            highlight = { Highlight(width = glassHighlightWidth.dp, alpha = glassHighlightOpacity) },
-            shadow = null,
+            highlight = {
+              when {
+                dialogMaterial -> Highlight(style = HighlightStyle.Plain)
+                officialMaterial -> Highlight.Default
+                else -> Highlight(width = glassHighlightWidth.dp, alpha = glassHighlightOpacity)
+              }
+            },
+            shadow = if (officialMaterial) ({ Shadow.Default }) else null,
             onDrawSurface = {
               // API 31/32 retain true background blur, but Android's shader lens
               // and directional highlight require API 33 (handled by Backdrop).

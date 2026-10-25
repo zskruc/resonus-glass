@@ -22,6 +22,7 @@ const TARGETS: { value: GlassTarget; label: string }[] = [
   { value: 'controls', label: 'Other surfaces' },
 ];
 const MODES: { value: GlassAppearanceMode; label: string }[] = [
+  { value: 'kyantDefault', label: 'Kyant defaults' },
   { value: 'iphoneReference', label: 'iPhone reference' },
   { value: 'custom', label: 'Custom parameters' },
 ];
@@ -105,7 +106,7 @@ export default function GlassTuningSettings() {
   const showToast = useToast((state) => state.show);
   const profile = resolveGlassProfile(target, dark, overrides[target], mode);
   const parameters = target === 'miniPlayer' ? PARAMETERS.filter((parameter) => parameter.key !== 'tintOpacity') : PARAMETERS;
-  const editingDisabled = !hydrated || mode === 'iphoneReference';
+  const editingDisabled = !hydrated || mode !== 'custom';
   const enabled = target === 'miniPlayer' ? blurMiniPlayer : target === 'navigation' ? blurBars : true;
 
   async function saveParameters() {
@@ -186,6 +187,7 @@ export default function GlassTuningSettings() {
       </View>
       <DockScrollView style={styles.scroll} contentContainerStyle={styles.content}>
         <Text style={styles.introduction}>{t('Changes apply live. Save to keep them after restarting. Export your finished settings and send them to me.')}</Text>
+        {mode === 'kyantDefault' ? <Text style={styles.notice}>{t('Uses AndroidLiquidGlass’s original button, bottom tabs, and dialog materials. Your saved custom parameters are kept.')}</Text> : null}
         {mode === 'iphoneReference' ? <Text style={styles.notice}>{t('iPhone reference approximates the observed appearance; it does not copy Apple’s private parameters. Switch to Custom parameters to restore and edit your saved styles.')}</Text> : null}
         {!isLiquidGlassAvailable ? <Text style={styles.notice}>{t('Native liquid glass is unavailable on this device. This preview uses a solid fallback.')}</Text> : null}
         {!enabled ? (
@@ -267,12 +269,13 @@ export default function GlassTuningSettings() {
         <Text style={styles.sectionTitle}>{t('Current parameters')}</Text>
         <Text style={styles.description}>{t('You can copy or screenshot these values. Export includes all three control styles.')}</Text>
         {mode === 'iphoneReference' ? <Text style={styles.description}>{t('Export keeps your three custom styles; the reference style does not overwrite them.')}</Text> : null}
+        {mode === 'kyantDefault' ? <Text style={styles.description}>{t('Export keeps your three custom styles; the default materials do not overwrite them.')}</Text> : null}
         <Text selectable style={styles.summary}>{[
           `${t(MODES.find((item) => item.value === mode)!.label)} · ${t(TARGETS.find((item) => item.value === target)!.label)}`,
           ...parameters.map((parameter) => `${t(parameter.label)}: ${parameter.percent
             ? `${Math.round(profile[parameter.key] * 100)}%`
             : `${Number(profile[parameter.key].toFixed(2))} dp`}`),
-          `${t('Glass tint')}: ${target === 'miniPlayer' ? t('Off') : profile.tintColor ?? t('Automatic tint')}`,
+          `${t('Glass tint')}: ${profile.tintOpacity === 0 ? t('Off') : profile.tintColor ?? t('Automatic tint')}`,
           `${t('Depth effect')}: ${t(profile.depthEffect ? 'On' : 'Off')}`,
           `${t('Color dispersion')}: ${t(profile.chromaticAberration ? 'On' : 'Off')}`,
         ].join('\n')}</Text>

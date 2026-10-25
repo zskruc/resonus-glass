@@ -25,6 +25,12 @@ class LiquidGlassModule : Module() {
 
     View(LiquidGlassView::class) {
       Events("onMotionHostReady")
+      Prop("materialPreset") { view: LiquidGlassView, value: String ->
+        view.materialPreset = when (value) {
+          "custom", "button", "tabs", "dialog" -> value
+          else -> "button"
+        }
+      }
       Prop("radius") { view: LiquidGlassView, value: Double -> view.radius = value.toFloat().coerceIn(0f, 200f) }
       Prop("radiusTopLeft") { view: LiquidGlassView, value: Double? -> view.radiusTopLeft = value?.toFloat()?.coerceIn(0f, 200f) }
       Prop("radiusTopRight") { view: LiquidGlassView, value: Double? -> view.radiusTopRight = value?.toFloat()?.coerceIn(0f, 200f) }

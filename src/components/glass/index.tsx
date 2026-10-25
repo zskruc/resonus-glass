@@ -12,6 +12,7 @@ import { SafeAreaView, type SafeAreaViewProps } from 'react-native-safe-area-con
 import { LiquidGlassView, isLiquidGlassAvailable, updateNativeDockProgress } from '../../../modules/liquid-glass';
 import { resolveGlassProfile, useGlassTuning, type GlassTarget } from '@/store/glassTuning';
 import { useTheme, useThemeMode } from '@/theme';
+import { getKyantGlassProfile } from '@/theme/glassDefaults';
 
 export type GlassVariant = 'regular' | 'prominent' | 'subtle';
 export interface GlassMaterial {
@@ -45,31 +46,37 @@ function clearFill(style: StyleProp<ViewStyle>): ViewStyle {
 /** Decorative material inside an existing, non-collapsible native container. */
 export function GlassBackdrop({
   radius = 0, radiusTopLeft, radiusTopRight, radiusBottomLeft, radiusBottomRight,
-  tint, enabled = true, blurred = true,
+  variant = 'regular', tint, enabled = true, blurred = true,
 }: GlassMaterial) {
   const colors = useTheme();
   const dark = useThemeMode() === 'dark';
   const overrides = useGlassTuning((s) => s.overrides.controls);
   const mode = useGlassTuning((s) => s.mode);
   if (!enabled) return null;
-  const profile = resolveGlassProfile('controls', dark, overrides, mode);
+  const kyantDefaults = mode === 'kyantDefault';
+  const materialPreset = kyantDefaults ? (variant === 'prominent' ? 'dialog' : 'button') : 'custom';
+  const profile = kyantDefaults
+    ? getKyantGlassProfile(variant === 'prominent' ? 'dialog' : 'button', dark)
+    : resolveGlassProfile('controls', dark, overrides, mode);
   const shape = { borderRadius: radius, borderTopLeftRadius: radiusTopLeft, borderTopRightRadius: radiusTopRight,
     borderBottomLeftRadius: radiusBottomLeft, borderBottomRightRadius: radiusBottomRight };
   return isLiquidGlassAvailable ? (
     <LiquidGlassView pointerEvents="none" style={StyleSheet.absoluteFill}
+      materialPreset={materialPreset}
       radius={radius} radiusTopLeft={radiusTopLeft} radiusTopRight={radiusTopRight}
       radiusBottomLeft={radiusBottomLeft} radiusBottomRight={radiusBottomRight}
       blur={blurred ? profile.blur : 0}
       refraction={profile.refraction} refractionHeight={profile.refractionHeight}
       highlightWidth={profile.highlightWidth} highlightOpacity={profile.highlightOpacity}
       depthEffect={profile.depthEffect} chromaticAberration={profile.chromaticAberration}
-      tintColor={profile.tintColor ?? tint ?? colors.surface} tintOpacity={profile.tintOpacity} dark={dark} enabled />
+      tintColor={kyantDefaults ? profile.tintColor ?? 'transparent' : profile.tintColor ?? tint ?? colors.surface}
+      tintOpacity={profile.tintOpacity} dark={dark} enabled />
   ) : (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, shape, { backgroundColor: tint ?? colors.surface }]} />
   );
 }
 
-/** Clear bottom chrome; contrast is supported by the scroll edge behind it. */
+/** Floating control material; layout and foreground stay with the RN control. */
 type FloatingGlassProps = Pick<GlassMaterial, 'radius' | 'tint' | 'blurred'> & {
   appearance?: 'bar' | 'selection';
   target?: Exclude<GlassTarget, 'controls'>;
@@ -102,6 +109,7 @@ export function FloatingGlassBackdrop({ radius, tint, blurred = true, appearance
   const dark = useThemeMode() === 'dark';
   const overrides = useGlassTuning((s) => s.overrides[target]);
   const mode = useGlassTuning((s) => s.mode);
+  const kyantDefaults = mode === 'kyantDefault';
   const profile = resolveGlassProfile(target, dark, overrides, mode);
   // The mini's transparent RGBA also prevents the native no-frame fallback
   // from adding a fill before its first backdrop image arrives.
@@ -114,15 +122,18 @@ export function FloatingGlassBackdrop({ radius, tint, blurred = true, appearance
   return (
     isLiquidGlassAvailable ? (
         <LiquidGlassView pointerEvents="none" style={StyleSheet.absoluteFill}
-          preferUnblurredBackdrop={target === 'miniPlayer' && blurred}
+          materialPreset={kyantDefaults ? (target === 'miniPlayer' ? 'button' : 'tabs') : 'custom'}
+          preferUnblurredBackdrop={!kyantDefaults && target === 'miniPlayer' && blurred}
           dockCompactWidth={dockCompactWidth} dockCompactHeight={dockCompactHeight} dockCompactOffsetX={dockCompactOffsetX}
           onMotionHostReady={dockProgress ? (event) => host.set(event.nativeEvent.hostId) : undefined}
           radius={radius} blur={blurred ? profile.blur : 0} refraction={blurred ? profile.refraction : 0}
           refractionHeight={blurred ? profile.refractionHeight : 0}
           highlightWidth={profile.highlightWidth} highlightOpacity={profile.highlightOpacity}
           depthEffect={profile.depthEffect} chromaticAberration={profile.chromaticAberration}
-          tintColor={target === 'miniPlayer' ? 'transparent' : profile.tintColor ?? tint ?? colors.surface}
-          tintOpacity={target === 'miniPlayer' ? 0 : blurred ? profile.tintOpacity : 1}
+          tintColor={kyantDefaults ? profile.tintColor ?? 'transparent'
+            : target === 'miniPlayer' ? 'transparent' : profile.tintColor ?? tint ?? colors.surface}
+          tintOpacity={kyantDefaults ? (blurred ? profile.tintOpacity : 1)
+            : target === 'miniPlayer' ? 0 : blurred ? profile.tintOpacity : 1}
           dark={dark} enabled />
       ) : (
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, fallbackDockStyle, {

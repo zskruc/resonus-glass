@@ -386,6 +386,7 @@ export function GlobalTabBar() {
         <View collapsable={false} style={styles.bar} pointerEvents={compact ? 'box-none' : 'auto'}>
           {blurOn ? isLiquidGlassAvailable && tabs.length > 0 ? (
             <LiquidGlassTabsView style={StyleSheet.absoluteFill} radius={TAB_BAR_HEIGHT / 2}
+              materialPreset={glassMode === 'kyantDefault' ? 'tabs' : 'custom'}
               tabsCount={tabs.length} tabHorizontalInset={HORIZONTAL_INSET} tabVerticalInset={INNER_GAP}
               dockCompactWidth={COMPACT_DOCK_SIZE} dockCompactHeight={COMPACT_DOCK_SIZE}
               dockCompactOffsetX={geometry.compactNavigationOffsetX}

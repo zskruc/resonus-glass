@@ -2,6 +2,8 @@ import { StyleSheet, View } from 'react-native';
 
 import { LiquidGlassView, isLiquidGlassAvailable } from '../../modules/liquid-glass';
 import { useTheme, useThemeMode } from '@/theme';
+import { useGlassTuning } from '@/store/glassTuning';
+import { getKyantGlassProfile } from '@/theme/glassDefaults';
 
 type MenuGlassBackdropProps = {
   radius?: number;
@@ -17,30 +19,43 @@ export function MenuGlassBackdrop({ radius = 28, radiusTopLeft, radiusTopRight,
   radiusBottomLeft, radiusBottomRight, highContrast = false }: MenuGlassBackdropProps) {
   const colors = useTheme();
   const dark = useThemeMode() === 'dark';
+  const kyantDefaults = useGlassTuning((state) => state.mode === 'kyantDefault');
+  const profile = kyantDefaults ? getKyantGlassProfile('dialog', dark) : {
+    blur: 12,
+    refraction: 10,
+    refractionHeight: 7,
+    depthEffect: true,
+    chromaticAberration: false,
+    highlightWidth: 0.6,
+    highlightOpacity: dark ? 0.45 : 0.7,
+    tintColor: dark ? '#202026' : '#FFFFFF',
+    tintOpacity: highContrast ? (dark ? 0.78 : 0.64) : (dark ? 0.3 : 0.24),
+  };
 
-  // A menu has its own contrast preset; the three saved glass profiles remain
-  // independent. The existing modal/window capture excludes the whole card.
+  // Use the upstream dialog material in the defaults preview. Legacy modes
+  // retain their separate contrast preset and saved profiles.
   if (isLiquidGlassAvailable) {
     return (
       <LiquidGlassView
         pointerEvents="none"
         accessible={false}
         isolateModalForeground
+        materialPreset={kyantDefaults ? 'dialog' : 'custom'}
         style={StyleSheet.absoluteFill}
         radius={radius}
         radiusTopLeft={radiusTopLeft}
         radiusTopRight={radiusTopRight}
         radiusBottomLeft={radiusBottomLeft}
         radiusBottomRight={radiusBottomRight}
-        blur={12}
-        refraction={10}
-        refractionHeight={7}
-        depthEffect
-        chromaticAberration={false}
-        highlightWidth={0.6}
-        highlightOpacity={dark ? 0.45 : 0.7}
-        tintColor={dark ? '#202026' : '#FFFFFF'}
-        tintOpacity={highContrast ? (dark ? 0.78 : 0.64) : (dark ? 0.3 : 0.24)}
+        blur={profile.blur}
+        refraction={profile.refraction}
+        refractionHeight={profile.refractionHeight}
+        depthEffect={profile.depthEffect}
+        chromaticAberration={profile.chromaticAberration}
+        highlightWidth={profile.highlightWidth}
+        highlightOpacity={profile.highlightOpacity}
+        tintColor={profile.tintColor ?? 'transparent'}
+        tintOpacity={profile.tintOpacity}
         dark={dark}
       />
     );

@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 853 of them.
+Every string the app can show, under the screen it shows up on. 856 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -803,6 +803,7 @@ you are actually typing into, which is easier than reading it here.
 | `Enable glass` |  |
 | `Enable glass for this control to see your changes.` |  |
 | `Explore` | The tab holding everything the server has: all albums, artists, songs, genres, stations and folders |
+| `Export keeps your three custom styles; the default materials do not overwrite them.` |  |
 | `Export keeps your three custom styles; the reference style does not overwrite them.` |  |
 | `Export parameters` |  |
 | `Glass in motion` |  |
@@ -816,6 +817,7 @@ you are actually typing into, which is easier than reading it here.
 | `Highlight width` |  |
 | `iPhone reference` |  |
 | `iPhone reference approximates the observed appearance; it does not copy Apple’s private parameters. Switch to Custom parameters to restore and edit your saved styles.` |  |
+| `Kyant defaults` | The original AndroidLiquidGlass component presets. These are not Apple’s private optical parameters. Saved custom styles remain available in Custom parameters. |
 | `Lens and light` |  |
 | `Lens edge depth` |  |
 | `Live glass preview · sample content` |  |
@@ -838,6 +840,7 @@ you are actually typing into, which is easier than reading it here.
 | `These parameters apply to panels, dialogs, and fields. Buttons use their original styles.` |  |
 | `Thickness of the light along the glass edge.` |  |
 | `Tint opacity` |  |
+| `Uses AndroidLiquidGlass’s original button, bottom tabs, and dialog materials. Your saved custom parameters are kept.` |  |
 | `White` |  |
 | `You can copy or screenshot these values. Export includes all three control styles.` |  |
 | `Your library` | The tab with your albums, artists and playlists |
