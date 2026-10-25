@@ -16,8 +16,8 @@
  * Search has its own glass circle on the right; the other tabs share a capsule.
  */
 import Icon from '@/components/Icon';
-import { useRouter, useSegments } from 'expo-router';
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useNavigationContainerRef, useRouter, useSegments } from 'expo-router';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { I18nManager, Pressable, StyleSheet, Text, View, type PressableProps } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -31,7 +31,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { scheduleOnRN } from 'react-native-worklets';
+import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 
 import { useBarBlur } from '@/components/BarBlur';
 import { FloatingGlassBackdrop } from '@/components/glass';
@@ -42,7 +42,8 @@ import { COMPACT_DOCK_GAP, COMPACT_DOCK_SIZE, useLiquidDock } from '@/hooks/useL
 import { useScreenSize } from '@/hooks/useScreenSize';
 import { motion } from '@/theme/motion';
 import { useT } from '@/i18n';
-import { rememberTab, requestSearchFocus, reselectTab, tabOrigin, TABS } from '@/lib/tabOrigin';
+import { rememberTab, requestSearchFocus, reselectTab, tabOrigin, TABS, type TabSegment } from '@/lib/tabOrigin';
+import { getActiveTabJumpAction } from '@/lib/tabNavigation';
 import { getLiquidDockGeometry } from '@/lib/liquidDock';
 import { useSettings } from '@/store/settings';
 import { resolveGlassProfile, useGlassTuning } from '@/store/glassTuning';
@@ -96,11 +97,13 @@ export function GlobalTabBar() {
   const rtl = I18nManager.isRTL;
   const reduceMotion = useReducedMotion();
   const { width: screenWidth } = useScreenSize();
-  const { progress: sourceDockProgress, compact: targetCompact, expand, hasSearch: dockHasSearch } = useLiquidDock();
+  const { progress: sourceDockProgress, compact: targetCompact, uiCompact: dockCompactTarget,
+    expand, hasSearch: dockHasSearch } = useLiquidDock();
   const navigationOverrides = useGlassTuning((s) => s.overrides.navigation);
   const glassMode = useGlassTuning((s) => s.mode);
   const glass = resolveGlassProfile('navigation', dark, navigationOverrides, glassMode);
   const router = useRouter();
+  const navigationRef = useNavigationContainerRef();
   const t = useT();
   const segments = useSegments() as string[];
   const shown = useTabBarShown();
@@ -119,6 +122,18 @@ export function GlobalTabBar() {
     if (value !== null) frozenDockProgress.set(value);
   });
   const dockProgress = useDerivedValue(() => uiShown.value ? sourceDockProgress.value : frozenDockProgress.value);
+  // Mirror only the transition boundary. JS taps must not synchronously wait
+  // for a UI-thread shared-value read while the glass is being rendered.
+  const dockNavigationBlocked = useRef(compact);
+  const updateDockNavigationBlocked = useCallback((blocked: boolean) => {
+    dockNavigationBlocked.current = blocked;
+  }, []);
+  useLayoutEffect(() => {
+    if (compact) dockNavigationBlocked.current = true;
+  }, [compact]);
+  useAnimatedReaction(() => dockCompactTarget.get() || dockProgress.value > 0.001, (blocked, previous) => {
+    if (blocked !== previous) scheduleOnRN(updateDockNavigationBlocked, blocked);
+  });
   // It is also the bar of the tab screens (the tabs navigator draws none):
   // the blur only works from out here (`BarBlur`). The setting only decides
   // where else it shows.
@@ -153,6 +168,7 @@ export function GlobalTabBar() {
   if (selectedIndex >= 0 && tabs[selectedIndex].segment !== lastMainTab) setLastMainTab(tabs[selectedIndex].segment);
   const compactTab = tabs[selectedIndex] ?? tabs.find((tab) => tab.segment === lastMainTab) ?? tabs[0];
   const selectionPosition = useSharedValue(0);
+  const selectionDestination = useSharedValue(-1);
   const selectionOpacity = useSharedValue(0);
   const pressProgress = useSharedValue(0);
   const scaleX = useSharedValue(1);
@@ -163,35 +179,47 @@ export function GlobalTabBar() {
   const dragFinished = useSharedValue(false);
   const dragging = useSharedValue(false);
   const geometryGeneration = useSharedValue(0);
+  const geometryGenerationRef = useRef(0);
   const dragGeneration = useSharedValue(0);
-  const positioned = useSharedValue(false);
+  const positioned = useRef(false);
   const nativeMotionHost = useSharedValue(0);
   const lastNativeMotion = useSharedValue<number[]>([]);
   const motionEnabled = useSharedValue(false);
   useEffect(() => {
     // A rotation, hidden bar, or reordered tabs invalidates a gesture that
     // started with different coordinates. It must not select an old index.
-    geometryGeneration.set((value) => value + 1);
-    dragging.set(false);
-    dragFinished.set(false);
-    pressProgress.set(0);
-    scaleX.set(1);
-    scaleY.set(1);
-    dragVelocity.set(0);
-    panelOffset.set(0);
-    scheduleOnRN(setGlassPressed, false);
+    const nextGeneration = ++geometryGenerationRef.current;
+    scheduleOnUI(() => {
+      geometryGeneration.set(nextGeneration);
+      dragging.set(false);
+      dragFinished.set(false);
+      pressProgress.set(0);
+      scaleX.set(1);
+      scaleY.set(1);
+      dragVelocity.set(0);
+      panelOffset.set(0);
+      scheduleOnRN(setGlassPressed, false);
+    });
   }, [tabWidth, tabOrder, shown, compact, geometryGeneration, dragging, dragFinished, pressProgress, scaleX, scaleY, dragVelocity, panelOffset]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (tabWidth <= 0 || selectedIndex < 0) {
       selectionOpacity.set(withTiming(0, { duration: motion.duration.exit }));
       return;
     }
     const target = rtl ? tabs.length - 1 - selectedIndex : selectedIndex;
-    routeSelection.set(target);
-    selectionPosition.set(positioned.value && !reduceMotion ? withSpring(target, SELECTION_SPRING) : target);
-    positioned.set(true);
-    selectionOpacity.set(withTiming(inTabs ? 1 : 0.38, { duration: motion.duration.exit }));
-  }, [tabWidth, selectedIndex, tabs.length, inTabs, positioned, routeSelection, selectionPosition, selectionOpacity, reduceMotion, rtl]);
+    const animate = positioned.current && !reduceMotion;
+    positioned.current = true;
+    scheduleOnUI(() => {
+      routeSelection.set(target);
+      // A completed drag already started this same spring on the UI thread.
+      // Ordinary taps start it with the route commit, never ahead of the page.
+      if (selectionDestination.get() !== target) {
+        selectionDestination.set(target);
+        selectionPosition.set(animate ? withSpring(target, SELECTION_SPRING) : target);
+      }
+      selectionOpacity.set(withTiming(inTabs ? 1 : 0.38, { duration: motion.duration.exit }));
+    });
+  }, [tabWidth, selectedIndex, tabs.length, inTabs, routeSelection, selectionDestination, selectionPosition, selectionOpacity, reduceMotion, rtl]);
   const selectionStyle = useAnimatedStyle(() => {
     const progress = Math.max(0, Math.min(1, dockProgress.value));
     return {
@@ -220,22 +248,28 @@ export function GlobalTabBar() {
     lastNativeMotion.set(motionState);
   });
 
-  const press = () => {
+  const press = (drag = false) => {
     'worklet';
     if (reduceMotion) return;
-    pressProgress.set(withSpring(1, PRESS_SPRING));
+    if (!drag) {
+      pressProgress.set(withSpring(1, PRESS_SPRING));
+      return;
+    }
     // A single full-width tab cannot grow sideways beyond the screen margins.
     const horizontalScale = tabs.length === 1 ? 1 : tabs.length === 2 ? 1.1 : PRESSED_SCALE;
     scaleX.set(withSpring(horizontalScale, SCALE_X_SPRING));
     scaleY.set(withSpring(PRESSED_SCALE, SCALE_Y_SPRING));
   };
-  const release = () => {
+  const release = (drag = false) => {
     'worklet';
-    pressProgress.set(reduceMotion ? 0 : withDelay(120, withSpring(0, PRESS_SPRING)));
-    scaleX.set(reduceMotion ? 1 : withDelay(120, withSpring(1, SCALE_X_SPRING)));
-    scaleY.set(reduceMotion ? 1 : withDelay(120, withSpring(1, SCALE_Y_SPRING)));
-    dragVelocity.set(reduceMotion ? 0 : withSpring(0, RELEASE_SPRING));
-    panelOffset.set(reduceMotion ? 0 : withSpring(0, RELEASE_SPRING));
+    pressProgress.set(reduceMotion ? 0 : drag
+      ? withDelay(120, withSpring(0, PRESS_SPRING)) : withSpring(0, PRESS_SPRING));
+    if (drag) {
+      scaleX.set(reduceMotion ? 1 : withDelay(120, withSpring(1, SCALE_X_SPRING)));
+      scaleY.set(reduceMotion ? 1 : withDelay(120, withSpring(1, SCALE_Y_SPRING)));
+      dragVelocity.set(reduceMotion ? 0 : withSpring(0, RELEASE_SPRING));
+      panelOffset.set(reduceMotion ? 0 : withSpring(0, RELEASE_SPRING));
+    }
   };
   const foregroundShadow = {
     textShadowColor: dark ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.85)',
@@ -297,7 +331,16 @@ export function GlobalTabBar() {
   }, [expandedSearchIconTop]);
 
   /** Leaves for a tab, dropping the screens piled on top of it. */
-  const go = (href: string) => {
+  const go = (href: string, segment: TabSegment) => {
+    if (inTabs && navigationRef.isReady()) {
+      const action = getActiveTabJumpAction(navigationRef.getRootState(), segment);
+      if (action) {
+        // Expo Router's URL API queues navigation until a later React effect.
+        // An existing tab can switch directly in the current event instead.
+        navigationRef.dispatch(action);
+        return;
+      }
+    }
     // `canDismiss`, not `canGoBack`: inside the tabs there is history to go
     // back to but no stack to pop, and asking for it anyway is the navigator
     // warning about POP_TO_TOP going unhandled.
@@ -308,33 +351,33 @@ export function GlobalTabBar() {
   const selectTab = (index: number, allowReselect = true) => {
     const tab = tabs[index];
     if (!tab || !shown) return;
-    const target = rtl ? tabs.length - 1 - index : index;
-    selectionPosition.set(reduceMotion ? target : withSpring(target, SELECTION_SPRING));
     if (allowReselect && current === tab.segment) reselectTab(tab.segment);
-    go(tab.href);
+    go(tab.href, tab.segment);
   };
   const tabsPan = Gesture.Pan()
     .enabled(shown && !compact && tabWidth > 0 && tabs.length > 1)
     .activeOffsetX([-6, 6])
     .failOffsetY([-8, 8])
     .onBegin(() => {
-      if (dockProgress.value > 0.001) {
+      if (dockCompactTarget.get() || dockProgress.value > 0.001) {
         dragGeneration.set(-1);
         return;
       }
       dragGeneration.set(geometryGeneration.value);
       dragFinished.set(false);
       dragging.set(false);
-      scheduleOnRN(setGlassPressed, true);
       press();
     })
     .onStart(() => {
       if (dragGeneration.value !== geometryGeneration.value) return;
       dragging.set(true);
+      scheduleOnRN(setGlassPressed, true);
+      press(true);
     })
     .onUpdate((event) => {
       if (dragGeneration.value !== geometryGeneration.value) return;
       const target = Math.max(0, Math.min(tabs.length - 1, (event.x - HORIZONTAL_INSET) / tabWidth - 0.5));
+      selectionDestination.set(target);
       selectionPosition.set(reduceMotion ? target : withSpring(target, SELECTION_SPRING));
       if (!reduceMotion) {
         dragVelocity.set(Math.max(-10, Math.min(10, event.velocityX / tabWidth / Math.max(1, tabs.length - 1))));
@@ -346,22 +389,23 @@ export function GlobalTabBar() {
       if (!success || dragGeneration.value !== geometryGeneration.value) return;
       const physicalIndex = Math.max(0, Math.min(tabs.length - 1, Math.round((event.x - HORIZONTAL_INSET) / tabWidth - 0.5)));
       dragFinished.set(true);
-      dragging.set(false);
+      selectionDestination.set(physicalIndex);
       selectionPosition.set(reduceMotion ? physicalIndex : withSpring(physicalIndex, SELECTION_SPRING));
-      release();
       const logicalIndex = rtl ? tabs.length - 1 - physicalIndex : physicalIndex;
       scheduleOnRN(selectTab, logicalIndex, false);
     })
     .onFinalize(() => {
       // Vertical pulls and system interruptions give the glass back to the
       // actual route; a completed horizontal drag keeps its chosen destination.
+      const wasDragging = dragging.get();
       dragging.set(false);
-      scheduleOnRN(setGlassPressed, false);
+      if (wasDragging) scheduleOnRN(setGlassPressed, false);
       if (dragGeneration.value !== geometryGeneration.value) return;
-      if (!dragFinished.value) {
+      if (wasDragging && !dragFinished.value) {
+        selectionDestination.set(routeSelection.value);
         selectionPosition.set(reduceMotion ? routeSelection.value : withSpring(routeSelection.value, SELECTION_SPRING));
       }
-      release();
+      release(wasDragging);
     });
 
   if (tabs.length === 0 && !searchTab) return null;
@@ -432,16 +476,16 @@ export function GlobalTabBar() {
                   // touch session. Activating it cancels RN Pressability and
                   // its onPressOut must not shrink a lens still being dragged.
                   onPressedChange={tabs.length === 1 ? (pressed) => {
-                    if (dockProgress.value > 0.001) return;
+                    if (compact || dockNavigationBlocked.current) return;
                     setGlassPressed(pressed);
                     if (pressed) press();
-                    else if (!dragging.value) release();
+                    else release();
                   } : undefined}
                   accessibilityRole="tab"
                   accessibilityState={{ selected: here }}
                   accessibilityLabel={t(tab.label)}
                   onPress={() => {
-                    if (dockProgress.value > 0.001) {
+                    if (compact || dockNavigationBlocked.current) {
                       expand();
                       return;
                     }
@@ -501,7 +545,7 @@ export function GlobalTabBar() {
               if (current === 'search') reselectTab('search');
               else requestSearchFocus();
               expand();
-              go(searchTab.href);
+              go(searchTab.href, searchTab.segment);
             }} />
           <Animated.View pointerEvents="none" style={[styles.searchIcon,
             { top: expandedSearchIconTop }, searchIconStyle]}>

@@ -22,6 +22,7 @@ import android.view.Choreographer
 import android.view.View
 import android.view.ViewTreeObserver
 import androidx.annotation.RequiresApi
+import androidx.compose.runtime.snapshots.Snapshot
 import com.facebook.react.uimanager.util.ReactFindViewUtil
 import java.time.Duration
 import java.lang.ref.WeakReference
@@ -402,7 +403,7 @@ internal class WindowBackdrop(
     if (!nativePage.observe(source)) return
     pageChangeCount++
     frame = null
-    surfaces.forEach { if (it.onBackdropFrame()) hostRestoreCount++ }
+    notifyBackdropDrawingChanged(surfaces)
     sceneVersion++
     ownRedrawsToSkip = 0
     requestFrameClock()
@@ -1010,9 +1011,16 @@ internal class WindowBackdrop(
     // results that the worker has prepared but the UI has not published yet.
     while (frames.size > 2) frames.removeFirst().image.close()
     closeUnusedReaders()
-    targets.filter { isMaterialVisible(it, screenRect) }.forEach {
-      if (it.onBackdropFrame()) hostRestoreCount++
-    }
+    notifyBackdropDrawingChanged(targets.filter { isMaterialVisible(it, screenRect) })
+  }
+
+  private fun notifyBackdropDrawingChanged(targets: Iterable<LiquidGlassView>) {
+    targets.forEach { if (it.onBackdropFrame()) hostRestoreCount++ }
+    // Image delivery and page invalidation can occur after Compose's frame
+    // callback. Apply their draw-state observers together before this window
+    // draws, rather than leaving old display lists for another display frame.
+    Snapshot.sendApplyNotifications()
+    targets.forEach { it.invalidateBackdropDrawing() }
   }
 
   private fun failCapture(exception: Exception) {
@@ -1020,7 +1028,7 @@ internal class WindowBackdrop(
     Log.w("ResonusGlass", "GPU backdrop unavailable ($failureClass); using material fallback")
     captureFailed = true
     frame = null
-    surfaces.forEach { if (it.onBackdropFrame()) hostRestoreCount++ }
+    notifyBackdropDrawingChanged(surfaces)
     releaseCapture()
   }
 

@@ -1,8 +1,8 @@
-import { useIsFocused, useSegments } from 'expo-router';
+import { useIsFocused, usePathname, useSegments } from 'expo-router';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react';
 import { Keyboard } from 'react-native';
 import { makeMutable, ReduceMotion, useAnimatedScrollHandler, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
-import { scheduleOnRN } from 'react-native-worklets';
+import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 
 import { createLiquidDockScrollState, updateLiquidDockScroll, type LiquidDockScrollState } from '@/lib/liquidDock';
 import { currentSong, usePlayerStore } from '@/store/player';
@@ -39,7 +39,10 @@ const LiquidDockScrollContext = createContext<LiquidDockScroll>(defaultDock);
 
 export function LiquidDockProvider({ children }: PropsWithChildren) {
   const segments = useSegments() as string[];
-  const route = segments.join('/');
+  // Segments contain file patterns: two different artists both use [id].
+  // Include the resolved path so their shared dock still resets on navigation.
+  const pathname = usePathname();
+  const route = `${segments.join('/')}:${pathname}`;
   const withBar = useTabBarShown();
   const hasSong = usePlayerStore((state) => currentSong(state) !== null);
   const entries = useSettings((state) => state.bottomTabs);
@@ -60,6 +63,7 @@ export function LiquidDockProvider({ children }: PropsWithChildren) {
   if (targetState.scope !== scope) setTargetState({ scope, compact: false });
   const compact = targetState.scope === scope && targetState.compact;
   const enabledRef = useRef(enabled);
+  const generationRef = useRef(0);
 
   useEffect(() => {
     const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
@@ -69,21 +73,28 @@ export function LiquidDockProvider({ children }: PropsWithChildren) {
 
   useLayoutEffect(() => {
     enabledRef.current = enabled;
-    generation.set(generation.get() + 1);
-    uiEnabled.set(enabled);
-    uiCompact.set(false);
-    progress.set(0);
+    const nextGeneration = ++generationRef.current;
+    scheduleOnUI(() => {
+      generation.set(nextGeneration);
+      uiEnabled.set(enabled);
+      uiCompact.set(false);
+      progress.set(0);
+    });
   }, [route, enabled, hasSearch, generation, progress, uiCompact, uiEnabled]);
 
   const notifyCompact = useCallback((target: boolean, eventGeneration: number) => {
-    if (!enabledRef.current || eventGeneration !== generation.get()) return;
+    if (!enabledRef.current || eventGeneration !== generationRef.current) return;
     setTargetState((previous) => previous.compact === target ? previous : { ...previous, compact: target });
-  }, [generation]);
+  }, []);
   const expand = useCallback(() => {
     // A tap cancels a previous list's momentum decision until the next drag.
-    generation.set(generation.get() + 1);
-    uiCompact.set(false);
-    progress.set(withSpring(0, DOCK_SPRING));
+    const nextGeneration = ++generationRef.current;
+    scheduleOnUI(() => {
+      generation.set(nextGeneration);
+      const wasCompact = uiCompact.get();
+      uiCompact.set(false);
+      if (wasCompact || progress.get() !== 0) progress.set(withSpring(0, DOCK_SPRING));
+    });
     setTargetState((previous) => previous.compact ? { ...previous, compact: false } : previous);
   }, [generation, progress, uiCompact]);
   const value = useMemo(() => ({ progress, compact, expand, enabled, hasSearch, uiEnabled, uiCompact, generation, notifyCompact }),
@@ -109,19 +120,10 @@ interface ScrollContext extends Record<string, unknown> {
 
 /** Attach only to a screen's primary vertical animated list/scroll view. */
 export function useLiquidDockScrollHandler() {
-  const { progress, uiEnabled, uiCompact, generation, notifyCompact, expand, enabled } = useContext(LiquidDockScrollContext);
+  const { progress, uiEnabled, uiCompact, generation, notifyCompact } = useContext(LiquidDockScrollContext);
   const focused = useIsFocused();
-  const lastScope = useRef<{ focused: boolean; enabled: boolean; expand: () => void } | null>(null);
-  useLayoutEffect(() => {
-    const previous = lastScope.current;
-    lastScope.current = { focused, enabled, expand };
-    // Suspense replays layout effects on return from the background. Expand
-    // for a real focus/availability change, while keeping a folded dock on
-    // the same screen when only its layout effects are being restored.
-    const changed = !previous || previous.focused !== focused
-      || previous.enabled !== enabled || previous.expand !== expand;
-    if (changed && focused && enabled) expand();
-  }, [focused, enabled, expand]);
+  // The provider resets the dock for every real route/availability change.
+  // Replaying an incoming screen's layout effects must not expand it again.
   return useAnimatedScrollHandler<ScrollContext>({
     onBeginDrag: (event, context) => {
       context.generation = generation.get();

@@ -370,6 +370,12 @@ class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(conte
     return restoreDisplayListAfterCapture()
   }
 
+  /** Called after the window has applied one batch of frame drawing changes. */
+  internal fun invalidateBackdropDrawing() {
+    composeView.invalidate()
+    invalidate()
+  }
+
   internal fun restoreDisplayListAfterCapture(): Boolean {
     if (needsDisplayListRestore) {
       needsDisplayListRestore = false
@@ -481,7 +487,7 @@ class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(conte
           depthEffect = glassDepthEffect,
           chromaticAberration = glassChromaticAberration,
           tint = tint,
-          tintOpacity = { if (enabled && snapshot?.frame != null) opacity else maxOf(opacity, 0.82f) },
+          tintOpacity = { if (enabled && (officialMaterial || snapshot?.frame != null)) opacity else maxOf(opacity, 0.82f) },
           dark = isDark
         )
       } else {
@@ -526,7 +532,9 @@ class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(conte
               // API 31/32 retain true background blur, but Android's shader lens
               // and directional highlight require API 33 (handled by Backdrop).
               val hasFrame = snapshot?.frame != null
-              val materialOpacity = if (enabled && hasFrame) opacity else maxOf(opacity, 0.82f)
+              // A page boundary briefly has no image. Official materials keep
+              // their own surface alpha rather than flashing the old .82 fill.
+              val materialOpacity = if (enabled && (officialMaterial || hasFrame)) opacity else maxOf(opacity, 0.82f)
               // Keep the source fill's own RGBA alpha; no extra white wash.
               drawRect(tint.copy(alpha = materialOpacity * tint.alpha))
             }

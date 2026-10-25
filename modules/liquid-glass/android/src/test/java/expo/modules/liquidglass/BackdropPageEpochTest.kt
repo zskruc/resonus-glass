@@ -47,6 +47,73 @@ class BackdropPageEpochTest {
     assertTrue(policy.accepts(policy.epoch))
   }
 
+  @Test fun changingTabInsideSameOuterPageRejectsPreviousTabTicket() {
+    val policy = BackdropPageEpoch()
+    val outerPage = Any()
+    val home = Any()
+    val library = Any()
+    policy.observe(outerPage, true, home)
+    val homeTicket = policy.epoch
+    assertTrue(policy.observe(outerPage, true, library))
+    assertFalse(policy.accepts(homeTicket))
+    assertTrue(policy.accepts(policy.epoch))
+    assertTrue(policy.allowsIsolatedSource(true, true))
+  }
+
+  @Test fun rapidTabRoundTripRejectsBothEarlierVisits() {
+    val policy = BackdropPageEpoch()
+    val outerPage = Any()
+    val home = Any()
+    val library = Any()
+    policy.observe(outerPage, true, home)
+    val firstHomeTicket = policy.epoch
+    policy.observe(outerPage, true, library)
+    val libraryTicket = policy.epoch
+    policy.observe(outerPage, true, home)
+    assertFalse(policy.accepts(firstHomeTicket))
+    assertFalse(policy.accepts(libraryTicket))
+    assertTrue(policy.accepts(policy.epoch))
+  }
+
+  @Test fun unchangedOuterAndTabDoNotScheduleWork() {
+    val policy = BackdropPageEpoch()
+    val outerPage = Any()
+    val home = Any()
+    policy.observe(outerPage, true, home)
+    val ticket = policy.epoch
+    repeat(1_000) {
+      assertFalse(policy.observe(outerPage, true, home))
+      assertEquals(ticket, policy.epoch)
+      assertTrue(policy.accepts(ticket))
+    }
+  }
+
+  @Test fun selectedTabMustAttachBeforeItsFirstFrameCanBeAccepted() {
+    val policy = BackdropPageEpoch()
+    val outerPage = Any()
+    policy.observe(outerPage, true, Any())
+    val oldTicket = policy.epoch
+    val nextTab = Any()
+    policy.observe(outerPage, false, nextTab)
+    val nextTabEpoch = policy.epoch
+    assertFalse(policy.accepts(oldTicket))
+    assertFalse(policy.accepts(nextTabEpoch))
+    assertFalse(policy.allowsIsolatedSource(true, true))
+    assertTrue(policy.observe(outerPage, true, nextTab))
+    assertEquals(nextTabEpoch, policy.epoch)
+    assertTrue(policy.accepts(nextTabEpoch))
+  }
+
+  @Test fun sameChildUnderNewOuterPageIsStillANewVisit() {
+    val policy = BackdropPageEpoch()
+    val child = Any()
+    policy.observe(Any(), true, child)
+    val oldTicket = policy.epoch
+    assertTrue(policy.observe(Any(), true, child))
+    assertFalse(policy.accepts(oldTicket))
+    assertTrue(policy.accepts(policy.epoch))
+  }
+
   @Test fun newUnattachedTopCannotAcceptOrCaptureOldScreen() {
     val policy = BackdropPageEpoch()
     policy.observe(Any(), true)

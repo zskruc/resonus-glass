@@ -9,19 +9,23 @@ package expo.modules.liquidglass
 internal class BackdropPageEpoch {
   private var initialized = false
   private var page: Any? = null
+  private var childPage: Any? = null
   var epoch = 0L
     private set
   var captureAllowed = false
     private set
 
   /** True only at a page boundary or a change in its drawable availability. */
-  fun observe(nextPage: Any?, ready: Boolean): Boolean {
+  fun observe(nextPage: Any?, ready: Boolean, nextChildPage: Any? = null): Boolean {
     val allowed = nextPage != null && ready
-    val identityChanged = !initialized || page !== nextPage
+    // Tab screens share their outer Stack screen. Keep both identities so a
+    // new tab invalidates tickets without changing which opaque outer page draws.
+    val identityChanged = !initialized || page !== nextPage || childPage !== nextChildPage
     val availabilityChanged = captureAllowed != allowed
     if (identityChanged || (captureAllowed && !allowed)) epoch++
     initialized = true
     page = nextPage
+    childPage = nextChildPage
     captureAllowed = allowed
     return identityChanged || availabilityChanged
   }
