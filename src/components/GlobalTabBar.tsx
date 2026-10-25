@@ -286,7 +286,12 @@ export function GlobalTabBar() {
     if (!motionState || !updateNativeTabsMotion || motionState[0] <= 0) return;
     const previous = lastNativeMotion.value;
     if (previous.length === motionState.length && motionState.every((value, index) => value === previous[index])) return;
-    updateNativeTabsMotion(motionState[0], motionState[1], motionState[2], motionState[3], motionState[4],
+    // A dock-only frame does not change the selected lens. In particular, the
+    // AM++ spring keeps moving after the selector has faded completely out.
+    // Do not create a native mutable snapshot for the same eight tab values.
+    let tabsChanged = previous.length !== motionState.length;
+    for (let i = 0; !tabsChanged && i < 8; i++) tabsChanged = previous[i] !== motionState[i];
+    if (tabsChanged) updateNativeTabsMotion(motionState[0], motionState[1], motionState[2], motionState[3], motionState[4],
       motionState[5], motionState[6], motionState[7]);
     if (previous[0] !== motionState[0] || previous[8] !== motionState[8]) updateNativeDockProgress?.(motionState[0], motionState[8]);
     lastNativeMotion.set(motionState);

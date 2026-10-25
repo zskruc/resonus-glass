@@ -48,7 +48,7 @@ AM++'s main project is GPL-3.0; Kyant's Backdrop and catalog components are Apac
 
 ## 本轮预览 / This preview
 
-`0.8.4.1-ampp.2` / Android versionCode `75`，源码分支 `preview/ampp-dock`。
+`0.8.4.1-ampp.3` / Android versionCode `76`，源码分支 `preview/ampp-dock`。
 
 - 新增可切换的「AM++ 参考」外观；它只替换本轮 dock 的布局、材质与动画，其他控件保留 Kyant 默认材料。旧的 Kyant 默认、参考及自定义外观仍可选，原有参数不覆盖。
 - 手机 nav56dp、mini43dp、边距16dp、间隔8dp、底部额外16dp；展开时搜索并入导航，折叠时在右侧独立出现，左侧保留当前页面图标。
