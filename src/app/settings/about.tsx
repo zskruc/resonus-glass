@@ -1,4 +1,4 @@
-/** Settings › About: version, repository, report bugs, community, and the one
+/** Settings › About: version, repository, report bugs, and the one
  *  action that reaches every setting there is. */
 import { DockScrollView } from '@/components/DockScrollView';
 import Constants from 'expo-constants';
@@ -10,13 +10,13 @@ import { Dialog } from '@/components/Dialog';
 import { Field, SettingRow, SettingsGroup, SettingsPage, SwitchList, settingsStyles } from '@/components/SettingsUI';
 import { useT } from '@/i18n';
 import { fullReport } from '@/lib/diagnosticsReport';
+import { GITHUB_REPOSITORY, PROJECT_NAME, RELEASES_PAGE, REPOSITORY_URL, SOURCE_BRANCH } from '@/lib/project';
 import { pickSettingsFile, shareSettingsFile } from '@/lib/settingsFile';
 import { useSettings } from '@/store/settings';
 import { useToast } from '@/store/toast';
 import { useUpdate } from '@/store/update';
 import { useTheme } from '@/theme';
 
-const REPO_URL = 'https://github.com/juananzzz/resonus';
 /**
  * The bug form itself, not the page that asks which kind of issue this is:
  * whoever pressed a button called "Report a bug" has already answered that.
@@ -28,22 +28,20 @@ const REPO_URL = 'https://github.com/juananzzz/resonus';
  * renaming it there quietly stops filling it in here.
  */
 function bugReportUrl(version: string | undefined): string {
-  const form = `${REPO_URL}/issues/new?template=bug_report.yml`;
+  const form = `${REPOSITORY_URL}/issues/new?template=bug_report.yml`;
   return version ? `${form}&version=${encodeURIComponent(version)}` : form;
 }
 /**
  * The FAQ is a page on GitHub and not a screen in here on purpose: what gets
  * asked most is what changes most (the car, casting, offline), and an answer
  * written into the app is frozen until the next APK reaches everybody. Linking
- * to `main` means the answer somebody reads today is the one written this
+ * to the Glass branch means the answer somebody reads today is the one written this
  * morning.
  *
  * Its headings are anchors (`#android-auto`), so this can grow into links from
  * the screen each question is about rather than only this one.
  */
-const FAQ_URL = `${REPO_URL}/blob/main/docs/FAQ.md`;
-const DISCORD_URL = 'https://discord.gg/pecE8MTPVr';
-const KOFI_URL = 'https://ko-fi.com/juananzzz';
+const FAQ_URL = `${REPOSITORY_URL}/blob/${SOURCE_BRANCH}/docs/FAQ.md`;
 
 export default function AboutSettings() {
   // Repaints on a change of appearance or accent: a stack keeps this screen
@@ -89,15 +87,14 @@ export default function AboutSettings() {
               router.push('/settings/diagnostics');
             }}
           >
-            <Field label={t('Version')} value={`Resonus v${version ?? '?'}`} />
+            <Field label={t('Version')} value={`${PROJECT_NAME} v${version ?? '?'}`} />
           </Pressable>
           <SettingRow
             icon="sparkles-outline"
             label={t("What's new")}
-            onPress={() => Linking.openURL(`${REPO_URL}/releases`)}
+            onPress={() => Linking.openURL(RELEASES_PAGE)}
           />
         </SettingsGroup>
-        {/* Everything from here to Ko-fi leaves the app. */}
         {/* Above the bug report because half of what arrives there is a
             question, and this is where the answer already is. */}
         <SettingsGroup>
@@ -109,8 +106,8 @@ export default function AboutSettings() {
           <SettingRow
             icon="logo-github"
             label="GitHub"
-            description="juananzzz/resonus"
-            onPress={() => Linking.openURL(REPO_URL)}
+            description={GITHUB_REPOSITORY}
+            onPress={() => Linking.openURL(REPOSITORY_URL)}
           />
           <SettingRow
             icon="bug-outline"
@@ -125,19 +122,6 @@ export default function AboutSettings() {
             icon="document-text-outline"
             label={t('Share diagnostic report')}
             onPress={() => void Share.share({ message: fullReport(screensOpen) })}
-          />
-          <SettingRow
-            icon="logo-discord"
-            label="Discord"
-            onPress={() => Linking.openURL(DISCORD_URL)}
-          />
-          {/* Last of the links and never in the way: the app asks for nothing to
-              work, and this is the one place where it is fair to mention that
-              somebody is paying for the time it takes. */}
-          <SettingRow
-            icon="cafe-outline"
-            label={t('Support Resonus')}
-            onPress={() => Linking.openURL(KOFI_URL)}
           />
           {/* Asking now sits against the switch that asks by itself: same
               question, one of them answered on the spot and the other left

@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 854 of them.
+Every string the app can show, under the screen it shows up on. 853 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -29,6 +29,8 @@ you are actually typing into, which is easier than reading it here.
 
 | String | What it is |
 | --- | --- |
+| `{app} {new} is out. You have {old}.` |  |
+| `{app} {new} is out. You have {old}. The download is about {mb} MB.` |  |
 | `{n} minutes` | A value of the sleep timer, in minutes from now |
 | `{n} more` | Under a heading of the update prompt: how many more lines of that kind the release notes have |
 | `{n} songs, {size}, copied into a folder of their own.` | The line under that title |
@@ -58,7 +60,7 @@ you are actually typing into, which is easier than reading it here.
 | `Disc {n}` | Heading over the songs of one disc of a multi-disc album. `{n}` is its number |
 | `Don't remind me` | Its other button: never show this again |
 | `Download removed` | Toast: the file was deleted, the song stays in the library |
-| `Downloading Resonus {version}` |  |
+| `Downloading {app} {version}` |  |
 | `Duration` | Label of a field in the song information sheet: how long the song is |
 | `Explicit` | A value of `Content`: the recording carries a parental advisory (strong language). Also read out for the E badge next to a title |
 | `Export “{name}”?` | Confirms getting the files of an album or playlist out of the app |
@@ -85,8 +87,6 @@ you are actually typing into, which is easier than reading it here.
 | `Recents` | Library section and its sort order: recently opened items |
 | `Remove from playlist` | Menu action: take this song out of the playlist it was opened from |
 | `Removed from playlist` | Toast, with an undo button next to it |
-| `Resonus {new} is out. You have {old}.` |  |
-| `Resonus {new} is out. You have {old}. The download is about {mb} MB.` |  |
 | `Sample rate` | A property of the audio, in kHz |
 | `Save to a folder` | A value of `Export`: write the file somewhere on the phone |
 | `Saved as “{name}”` | Where the exported file ended up. `{name}` is the file's name |
@@ -640,7 +640,6 @@ you are actually typing into, which is easier than reading it here.
 | `Settings imported` |  |
 | `Settings restored` | Toast after putting the settings back to their defaults |
 | `Share diagnostic report` | Settings › About, under “Report a bug”: hands over a plain-text report (setup and recent playback errors) through the share sheet |
-| `Support Resonus` | The row for whoever wants to give something. The app needs nothing to work |
 | `Version` | Which version of Resonus this is. Tapping it five times opens Diagnostics |
 | `What's new` | Opens what changed in this version |
 | `You're on the latest version` | Answer when that check finds nothing newer |

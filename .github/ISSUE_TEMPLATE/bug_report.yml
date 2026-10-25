@@ -6,9 +6,9 @@ body:
   - type: input
     id: version
     attributes:
-      label: Resonus version
-      description: Under Settings › About. If it isn't the latest [release](https://github.com/juananzzz/resonus/releases), please try that one first.
-      placeholder: "0.6.0"
+      label: Resonus Glass version
+      description: Under Settings › About. If it isn't the latest [release](https://github.com/zskruc/resonus-glass/releases/latest), please try that one first.
+      placeholder: "0.8.4"
     validations:
       required: true
   - type: dropdown

@@ -1,86 +1,90 @@
-# Publicar una release (APK en GitHub Releases)
+# 发布 Resonus Glass Android APK
 
-El APK se genera y se publica con GitHub Actions (`.github/workflows/release.yml`)
-al empujar un tag `v*`. El workflow hace `expo prebuild` + `gradlew assembleRelease`
-firmando con tu keystore (guardada en los Secrets del repo) y crea un **borrador**
-de Release con el APK adjunto, para que lo revises antes de publicarlo.
+正式版本发布到 [zskruc/resonus-glass Releases](https://github.com/zskruc/resonus-glass/releases)，默认源码分支为 `glass`。App 的版本检查、更新摘要与 APK 下载读取本仓库已发布的最新正式 Release；草稿和预发布不会触发正式更新提示。
 
-## Una sola vez: keystore + secrets
+目前正式 APK 在维护者本机使用既有签名构建，再上传到 GitHub Release。保留的上游 `Release APK` 和 iOS IPA 工作流只在原项目仓库运行，不负责发布 Glass。`Glass ARM64 test APK` 工作流每次生成临时测试签名，**不能替代当前手机安装使用的签名，也不能作为覆盖更新的正式安装包**。
 
-1. Genera tu keystore de release (¡guárdala y haz copia! si la pierdes no podrás
-   actualizar la app para quien ya la tenga instalada):
+## 版本与更新内容
 
-   ```sh
-   keytool -genkeypair -v -keystore resonus-release.jks \
-     -alias resonus -keyalg RSA -keysize 2048 -validity 10000
-   ```
+- 本次版本为 `0.8.4`，Android `versionCode` 为 `67`，Git tag 为 `v0.8.4`。
+- 三段版本跟随最近审查的上游正式版基线，不表示已合并上游的全部功能。发布说明必须列出实际采用的改动与未包含的范围。
+- 同一基线内的 Glass 修订可以用第四段，如 `0.8.4.1`；下一上游基线使用 `0.8.5`。当前更新比较支持逐段数字比较。
+- 每次发布都递增 `app.json` 的 `expo.android.versionCode`，即使仅修改第四段版本。`expo.version`、Git tag 和 Release 标题中的版本须一致。
+- 在 `CHANGELOG.md` 顶部增加 Glass 版本条目。Release 说明使用该条目的正文；保留 `### Added`、`### Changed` 和 `### Fixed` 等英文小节标题，小节内容可以使用中文。App 据这些标题生成更新摘要。
 
-2. Pásala a base64 (una sola línea):
+`Source.json` 和上游 iOS 发布资料不属于 Glass Android 发布流程，不要把本次 APK 版本写成原项目 iOS 更新。
 
-   ```sh
-   base64 -w0 resonus-release.jks > keystore.b64
-   ```
+## 本机签名
 
-3. En GitHub: **Settings → Secrets and variables → Actions → New repository secret**,
-   crea estos cuatro:
+覆盖更新必须继续使用 `com.zskruc.resonus.glasspreview` 包名和原安装的签名。请备份原密钥及其密码；重新生成密钥不能更新已有安装。不要为绕过签名不一致而卸载 App，否则会删除登录资料、设置和离线下载。
 
-   | Secret | Valor |
-   |---|---|
-   | `ANDROID_KEYSTORE_BASE64` | contenido de `keystore.b64` |
-   | `ANDROID_KEYSTORE_PASSWORD` | la contraseña del almacén |
-   | `ANDROID_KEY_ALIAS` | `resonus` |
-   | `ANDROID_KEY_PASSWORD` | la contraseña de la clave |
+在被 Git 忽略的 `.local-signing/env.sh` 中配置：
 
-   La keystore y `keystore.b64` **no** se suben a git.
-
-## Cada release
-
-1. Sube la versión en `app.json`: `expo.version` (nombre visible) y
-   `expo.android.versionCode` (entero, debe **incrementarse** en cada release).
-   Cuadra también el texto de la pantalla About si hace falta.
-2. Commitea, crea el tag y empújalo:
-
-   ```sh
-   git tag v0.1.0-beta
-   git push origin v0.1.0-beta
-   ```
-
-3. El workflow construye el APK y crea un **borrador** de Release con
-   `resonus-v0.1.0-beta.apk`. El mismo tag dispara
-   `.github/workflows/unsignedipa.yaml`, que adjunta `resonus-v0.1.0-beta.ipa`
-   a ese mismo borrador. Ábrelo en la pestaña Releases, revisa las notas y
-   pulsa **Publish**.
-4. Añade la versión a `Source.json` (ver abajo).
-
-## `Source.json`: la fuente de iOS
-
-`Source.json`, en la raíz del repo, es la fuente de AltStore/SideStore desde la
-que se instala la versión de iOS. Dos cosas:
-
-- **No lo muevas de sitio ni lo renombres.** Su URL está guardada dentro del
-  AltStore de cada persona suscrita a la fuente, así que cambiarla se las rompe
-  a todas a la vez y no hay manera de avisarlas. Por lo mismo, el enlace que se
-  reparte tiene que ser el de `raw.githubusercontent.com`: la URL de `blob`
-  devuelve la página HTML de GitHub y AltStore espera JSON.
-- **Añade una entrada por release**, y ponla **la primera del array
-  `versions`**: AltStore toma la primera como la última versión, así que una
-  añadida al final deja el fichero válido y a nadie actualizado.
-
-Cada entrada lleva `version`, `date` en ISO 8601, `size` en bytes, el
-`downloadURL` del `.ipa` de la Release y `localizedDescription` con el changelog
-de esa versión en texto plano. El tamaño exacto se saca sin descargar nada:
-
-```sh
-gh release view v0.1.0-beta --json assets --jq '.assets[] | "\(.name) \(.size)"'
+```bash
+export RESONUS_KEYSTORE_FILE='/absolute/local/path/to/existing-release-keystore.jks'
+export RESONUS_KEYSTORE_PASSWORD='local-secret'
+export RESONUS_KEY_ALIAS='existing-key-alias'
+export RESONUS_KEY_PASSWORD='local-secret'
 ```
 
-## Notas
+示例中的路径、别名和密码需要替换为现有签名配置。构建脚本自动读取此文件。不要把密钥、密码、`env.sh`、私有备份或设备诊断材料提交到仓库、Release 附件或日志；当前流程不需要把它们上传到 GitHub Secrets。
 
-- La firma se inyecta con el config plugin `plugins/withReleaseSigning.js` durante
-  el prebuild (la carpeta `android/` está en `.gitignore` y se regenera). En builds
-  locales sin esas variables de entorno, el release sigue firmándose con la clave de
-  debug, así que no afecta al desarrollo.
-- El APK es universal pero solo con arquitecturas de dispositivos reales
-  (`armeabi-v7a` + `arm64-v8a`); x86/x86_64 (emuladores) se excluyen para
-  reducir tamaño. El release además va minificado con R8 (`enableProguardInReleaseBuilds`
-  y `enableShrinkResourcesInReleaseBuilds` en `app.json`).
+没有上述签名配置时，Android 构建可能退回开发签名；构建成功本身不能证明可以覆盖当前手机。发布前必须检查最终 APK 的证书，与既有正式 APK 或设备上安装包的证书比较。
+
+## 构建与本地验收
+
+使用本机开发目录，按 [README](./README.md#从源码构建-android) 配置 Node.js 24、pnpm 11、Java 17 与 Android SDK。确认工作区内容属于本轮发布，再执行：
+
+```bash
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm i18n:check
+bash scripts/build-glass-preview.sh
+```
+
+涉及播放解码时另跑 `pnpm harness:extractor`。脚本输出 `artifacts/Resonus-Glass-preview.apk`，本次正式文件按版本命名：
+
+```bash
+cp artifacts/Resonus-Glass-preview.apk artifacts/Resonus-Glass-v0.8.4-arm64-v8a.apk
+(cd artifacts && shasum -a 256 Resonus-Glass-v0.8.4-arm64-v8a.apk > Resonus-Glass-v0.8.4-arm64-v8a.apk.sha256)
+```
+
+使用 Android SDK 的 `aapt` 或 `apkanalyzer` 检查版本为 `0.8.4`、更新编号为 `67`、包名为 `com.zskruc.resonus.glasspreview`，并确认 APK 含 ARM64 原生库。用 `apksigner verify --print-certs` 验证签名及证书指纹。工具路径取决于本机 SDK 安装位置。
+
+在支持的设备做覆盖安装，检查关于页、仓库链接、更新内容、检查更新，以及登录、离线资料和主要播放交互。发布说明只写本轮真正完成的验证；没有设备验收时明确记录，不把构建通过当作实机通过。
+
+## GitHub 草稿、核对与发布
+
+以下命令显式选择自己的仓库。先将经过验证的源码提交推送到 `origin` 的 `glass` 分支，再为该提交创建 tag。已发布的 tag 或附件不可直接覆盖；修订版本使用新版本号和更高的 `versionCode`。
+
+```bash
+git push origin glass
+git tag v0.8.4
+git push origin v0.8.4
+```
+
+把本轮更新说明保存到被忽略的本地文件，例如 `artifacts/release-notes-v0.8.4.md`。从 `CHANGELOG.md` 提取对应版本的正文，保留英文小节标题；不要使用自动生成的原项目全量提交日志替代 Glass 的实际更新说明。创建草稿并上传 APK 及校验值：
+
+```bash
+gh release create v0.8.4 \
+  --repo zskruc/resonus-glass \
+  --verify-tag \
+  --draft \
+  --title 'Resonus Glass 0.8.4' \
+  --notes-file artifacts/release-notes-v0.8.4.md \
+  artifacts/Resonus-Glass-v0.8.4-arm64-v8a.apk \
+  artifacts/Resonus-Glass-v0.8.4-arm64-v8a.apk.sha256
+
+gh release view v0.8.4 --repo zskruc/resonus-glass --json tagName,targetCommitish,isDraft,isPrerelease,body,assets
+```
+
+确认 tag 指向预期源码、说明只描述本分支实际改动、APK 文件名和大小正确，并从草稿下载附件到本地缓存比对 SHA-256。确认文件可访问后发布为正式 Release：
+
+```bash
+gh release edit v0.8.4 --repo zskruc/resonus-glass --draft=false --prerelease=false --latest
+gh release view --repo zskruc/resonus-glass --json tagName,url,assets
+```
+
+最后检查 [最新 Release 地址](https://github.com/zskruc/resonus-glass/releases/latest) 及 GitHub 的 `/repos/zskruc/resonus-glass/releases/latest` API：应为刚发布的版本，包含正式 APK 和正确的更新说明。App 已安装同版本时，“检查更新”正常结果是没有更高版本；不应通过临时发布虚假高版本来测试更新提示。

@@ -1,11 +1,35 @@
 # Changelog
 
-All notable changes to Resonus are documented here. The format is based on
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
-follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+All notable changes to Resonus and Resonus Glass are documented here. The format
+is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Upstream
+release history follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+Glass releases are maintained independently. Their first three version numbers
+follow the reviewed upstream baseline; an optional fourth number identifies a
+Glass-only revision. Matching the upstream version does not imply that every
+upstream feature has been merged. The Unreleased and older entries below are
+preserved upstream history.
 
 Releases before 0.2.1 are only listed on the
 [GitHub releases page](https://github.com/juananzzz/resonus/releases).
+
+## [0.8.4] - 2026-10-26
+
+### Added
+
+- 通过本仓库 GitHub Releases 提供 Resonus Glass 的 ARM64 APK 下载。
+
+### Changed
+
+- 设置 → 关于显示 Glass 版本 0.8.4；版本号跟随已审查的上游基线，保留独立的 Glass 修订规则。
+- 关于页的 GitHub、检查更新和更新内容统一指向 zskruc/resonus-glass；更新提示读取本仓库的 Release 说明和 APK。
+- 隐藏关于页中的“支持 Resonus”和 Discord 入口；保留源码许可证及上游贡献者署名。
+- 保留现有玻璃外观、保存的材质参数、mini player 与底栏折叠交互。本版本选择性移植修复，不包含上游 0.8.4 的全部新功能。
+
+### Fixed
+
+- 合入选定的后台恢复、转码播放进度、歌词时间排序、搜索容错、服务器响应超时及媒体封面地址隐私修复。
+- 更新已有 Glass 安装后，原版仓库的检查记录不再延迟首次检查本仓库更新。
 
 ## [Unreleased]
 

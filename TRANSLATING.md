@@ -1,7 +1,7 @@
-# Translating Resonus
+# Translating Resonus Glass
 
-Thanks for helping translate Resonus. If anything here is unclear, open an issue
-or ask on [Discord](https://discord.gg/pecE8MTPVr).
+Thanks for helping translate Resonus Glass. If anything here is unclear, open an
+[issue in this repository](https://github.com/zskruc/resonus-glass/issues).
 
 ## How it works
 

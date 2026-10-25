@@ -18,10 +18,11 @@ import { hashKey, readTags } from './localLibrary';
 import { parseLrc } from './lrc';
 import { parseTtml } from './ttml';
 import { isManualOffline } from '@/api/netGate';
+import { PROJECT_NAME, REPOSITORY_URL } from './project';
 
 const LRCLIB_CACHE_DIR = FileSystem.documentDirectory + 'lyrics-cache/';
 /** Who is asking, for LRCLIB. Sent as both headers: see `fetchLrclib`. */
-const CLIENT_UA = 'Resonus (https://github.com/juananzzz/resonus)';
+const CLIENT_UA = `${PROJECT_NAME} (${REPOSITORY_URL})`;
 const AUDIO_EXT_RE = /\.[a-z0-9]{1,5}$/i;
 
 /** URI of a sibling file next to an audio file (works for `file://` and SAF). */

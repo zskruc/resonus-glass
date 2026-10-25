@@ -1,7 +1,6 @@
 # FAQ
 
-Not here? Ask on [Discord](https://discord.gg/pecE8MTPVr) or open an
-[issue](https://github.com/juananzzz/resonus/issues).
+Not here? Open an [issue](https://github.com/zskruc/resonus-glass/issues).
 
 ## How do I get Resonus to show up in Android Auto?
 
@@ -17,19 +16,15 @@ accept the rest. The switch is on the phone and you only set it once:
 
 Resonus should be in the car's app list from then on.
 
-## How do I install Resonus on iOS?
+## How do I install Resonus Glass?
 
-Resonus on iOS is provided as an unsigned .ipa file, so it has to be sideloaded.
+Download the Android ARM64 APK from [this repository's Releases](https://github.com/zskruc/resonus-glass/releases/latest).
+For an in-place update, use a release signed with the same key as the existing
+installation. Do not uninstall to work around a signature mismatch: doing so
+would remove the app's data and offline downloads.
 
-There are various sideloading methods available on iOS and anyone that can install an unsigned ipa works fine.
-The sideloading methods we suggest are:
-1. SideStore:
-   Official guide (requires a PC) [Prerequisites](https://docs.sidestore.io/docs/installation/prerequisites), [Installation](https://docs.sidestore.io/docs/installation/install)<br>
-   Unofficial method (on device, doesn't require a PC) [SideInstaller guide](https://sideinstaller.net/)
-2. AltStore:
-   Official guide (requires a PC) [Windows](https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows), [MacOS](https://faq.altstore.io/altstore-classic/how-to-install-altstore-macos)
-
-You can also [add Resonus repository as an altsource](https://altdirect.app/?url=https://raw.githubusercontent.com/juananzzz/resonus/main/Source.json).
+This Glass branch currently publishes Android builds only. It does not provide
+an iOS release or an AltStore source.
 
 ## How do I get lyrics that light up word by word?
 

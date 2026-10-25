@@ -566,7 +566,6 @@
     "Changes": "Heading in the update prompt over what a release changes",
     "Fixes": "Heading in the update prompt over the bugs a release fixes",
     "{n} more": "Under a heading of the update prompt: how many more lines of that kind the release notes have",
-    "Support Resonus": "The row for whoever wants to give something. The app needs nothing to work",
 
     // ── Radio ────────────────────────────────────────────────────────────────
     "Station name": "The name field when adding an internet radio station",

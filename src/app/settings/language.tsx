@@ -5,13 +5,14 @@ import { Linking, Text } from 'react-native';
 import { SelectList, SettingRow, SettingsPage, settingsStyles } from '@/components/SettingsUI';
 import { useT } from '@/i18n';
 import { LANGUAGES } from '@/i18n/languages';
+import { REPOSITORY_URL, SOURCE_BRANCH } from '@/lib/project';
 import { useSettings } from '@/store/settings';
 import { useTheme } from '@/theme';
 
 // How to contribute a translation, rather than the folder of locale files: the
 // guide explains what to do with them. The help text follows the app language;
 // language names stay in their own language so each option is recognizable.
-const TRANSLATIONS_URL = 'https://github.com/juananzzz/resonus/blob/main/TRANSLATING.md';
+const TRANSLATIONS_URL = `${REPOSITORY_URL}/blob/${SOURCE_BRANCH}/TRANSLATING.md`;
 
 // Derived from the single source: a row added there appears here by itself.
 // Sorted once, and by a fixed collation: with no locale given, `localeCompare`

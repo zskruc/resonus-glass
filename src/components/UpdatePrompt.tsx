@@ -42,6 +42,7 @@ import {
 import { useAccent } from '@/hooks/useAccent';
 import { useT } from '@/i18n';
 import { clearDownloadedApk, currentVersion, RELEASES_PAGE } from '@/lib/appUpdate';
+import { PROJECT_NAME } from '@/lib/project';
 import { summarize, type NoteKind, type ReleaseNotes } from '@/lib/releaseNotes';
 import { useAuthStore } from '@/store/auth';
 import { useNetworkType } from '@/store/networkType';
@@ -138,12 +139,14 @@ export function UpdatePrompt() {
           // no way to do anything about it. Now the sentence decides, which is
           // where a decision about wording belongs.
           cellular && megabytes > 0
-            ? t('Resonus {new} is out. You have {old}. The download is about {mb} MB.', {
+            ? t('{app} {new} is out. You have {old}. The download is about {mb} MB.', {
+                app: PROJECT_NAME,
                 new: version ?? '',
                 old: currentVersion(),
                 mb: megabytes,
               })
-            : t('Resonus {new} is out. You have {old}.', {
+            : t('{app} {new} is out. You have {old}.', {
+                app: PROJECT_NAME,
                 new: version ?? '',
                 old: currentVersion(),
               })
@@ -179,7 +182,7 @@ export function UpdatePrompt() {
           <View collapsable={false} style={[styles.card, { backgroundColor: 'transparent' }]}>
             <GlassBackdrop radius={radius.lg} tint={colors.surface} variant="prominent" />
             <Text style={styles.title}>
-              {t('Downloading Resonus {version}', { version: version ?? '' })}
+              {t('Downloading {app} {version}', { app: PROJECT_NAME, version: version ?? '' })}
             </Text>
             <View style={styles.track}>
               <View

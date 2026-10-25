@@ -15,17 +15,17 @@ import Constants from 'expo-constants';
 import { Directory, File, Paths } from 'expo-file-system';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 
+import { GITHUB_REPOSITORY, RELEASES_API, RELEASES_PAGE } from './project';
 import { parseReleaseNotes, type ReleaseNotes } from './releaseNotes';
 import { getItem, setItem } from './storage';
+
+export { RELEASES_PAGE } from './project';
 
 const native = requireOptionalNativeModule<{
   canInstall: () => boolean;
   openInstallSettings: () => boolean;
   install: (fileUri: string) => boolean;
 }>('ApkInstall');
-
-const RELEASES_API = 'https://api.github.com/repos/juananzzz/resonus/releases/latest';
-export const RELEASES_PAGE = 'https://github.com/juananzzz/resonus/releases/latest';
 
 /**
  * Every six hours. It used to be a day, which sounds like plenty until you
@@ -36,7 +36,9 @@ export const RELEASES_PAGE = 'https://github.com/juananzzz/resonus/releases/late
  * lands at least once in a normal day's use, and it is still one request.
  */
 const CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
-const LAST_CHECK_KEY = 'update_last_check';
+// A check of the original project's releases must not delay the first check
+// of this fork after updating an existing Glass installation.
+const LAST_CHECK_KEY = `update_last_check:${GITHUB_REPOSITORY}`;
 
 export interface Release {
   /** Without the leading `v`, to compare with the app's own version. */
