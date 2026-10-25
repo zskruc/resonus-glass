@@ -7,10 +7,11 @@
  * so dragging does not repaint the whole app behind it frame by frame.
  */
 import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import ColorPicker, { HueSlider, Panel1 } from 'reanimated-color-picker';
 
+import { GlassPressable, GlassSurface, GlassTextInput } from '@/components/glass';
 import { useT } from '@/i18n';
 import { colors, fontSize, radius, spacing, themed, tracking } from '@/theme';
 
@@ -38,7 +39,7 @@ export function ColorPickerDialog({
       <GestureHandlerRootView style={StyleSheet.absoluteFill}>
         <Pressable style={styles.backdrop} onPress={onCancel} />
         <View style={styles.center} pointerEvents="box-none">
-          <View style={styles.card}>
+          <GlassSurface radius={radius.lg} variant="prominent" style={styles.card}>
             <Text style={styles.title}>{t('Custom color')}</Text>
             <ColorPicker
               value={pickerValue}
@@ -57,7 +58,7 @@ export function ColorPickerDialog({
             </ColorPicker>
             <View style={styles.row}>
               <View style={[styles.preview, { backgroundColor: hex }]} />
-              <TextInput
+              <GlassTextInput
                 style={styles.input}
                 value={text}
                 onChangeText={(v) => {
@@ -75,14 +76,14 @@ export function ColorPickerDialog({
               />
             </View>
             <View style={styles.actions}>
-              <Pressable hitSlop={8} onPress={onCancel}>
+              <GlassPressable variant="subtle" hitSlop={8} onPress={onCancel}>
                 <Text style={styles.cancel}>{t('Cancel')}</Text>
-              </Pressable>
-              <Pressable hitSlop={8} onPress={() => onSave(hex)}>
+              </GlassPressable>
+              <GlassPressable hitSlop={8} onPress={() => onSave(hex)}>
                 <Text style={[styles.confirm, { color: colors.accent }]}>{t('Save')}</Text>
-              </Pressable>
+              </GlassPressable>
             </View>
-          </View>
+          </GlassSurface>
         </View>
       </GestureHandlerRootView>
     </Modal>

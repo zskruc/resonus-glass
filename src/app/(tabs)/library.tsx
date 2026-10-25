@@ -1,4 +1,5 @@
 /** Library: lists (with fixed access to Favorites) and artists. Settings. */
+import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useFocusEffect } from 'expo-router';
@@ -6,7 +7,6 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import {
   ActivityIndicator,
   BackHandler,
-  FlatList,
   Keyboard,
   Modal,
   Pressable,
@@ -50,6 +50,7 @@ import { useSettings, type LibrarySort } from '@/store/settings';
 import { useAccent } from '@/hooks/useAccent';
 import { useToast } from '@/store/toast';
 import { colors, fontSize, lineHeight, radius, SHEET_MAX_WIDTH, spacing, themed, useTheme, tracking } from '@/theme';
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
 import { columnsFor, useListPadding, useScreenSize } from '@/hooks/useScreenSize';
 import { listPerf } from '@/lib/listPerf';
@@ -139,10 +140,10 @@ function SortBar({ onPress }: { onPress: () => void }) {
   const t = useT();
   const sort = useSettings((s) => s.librarySort);
   return (
-    <Pressable style={styles.sortBar} hitSlop={8} onPress={onPress}>
+    <GlassPressable variant="subtle" style={styles.sortBar} hitSlop={8} onPress={onPress}>
       <Icon name="swap-vertical" size={15} color={colors.textSecondary} />
       <Text style={styles.sortBarText}>{t(SORT_LABELS[sort])}</Text>
-    </Pressable>
+    </GlassPressable>
   );
 }
 
@@ -168,10 +169,11 @@ function SortSheet({ visible, onClose }: { visible: boolean; onClose: () => void
         {/* One drag around the whole sheet: what's in here never scrolls,
             so nothing else competes for the gesture. */}
         <GestureDetector gesture={pan}>
-          <Animated.View
+          <Animated.View collapsable={false}
             style={[styles.sheet, { paddingBottom: insets.bottom + spacing.md }, sheetStyle]}
             onLayout={onSheetLayout}
           >
+            <GlassBackdrop radius={0} radiusTopLeft={radius.xxl} radiusTopRight={radius.xxl} tint={colors.surface} variant="prominent" />
             {/* Spotify-style grabber: the visual cue that the sheet can be
                 dragged down to dismiss. */}
             <View style={styles.grabber} />
@@ -258,6 +260,7 @@ function PlaylistsTab({
   /** Set by the second row of chips; without it, all of them. */
   owner?: Owner | null;
 }) {
+  const dockScroll = useLiquidDockScrollHandler();
   const canFetch = useAuthStore((s) => !!s.auth || s.offline);
   const username = useAuthStore((s) => s.auth?.username);
   const t = useT();
@@ -306,7 +309,9 @@ function PlaylistsTab({
   // remains the full-width header.
   const listData: Playlist[] = grid ? [{ id: FAVORITES_ID, name: '' }, ...playlists] : playlists;
   return (
-    <FlatList
+    <Animated.FlatList
+      onScroll={dockScroll}
+      scrollEventThrottle={16}
       key={grid ? `grid-${columns}` : 'list'}
       {...listPerf}
       // With the filter box open, a tap opens the row instead of only closing the keyboard.
@@ -369,6 +374,7 @@ function PlaylistsTab({
 }
 
 function ArtistsTab({ query }: { query: string }) {
+  const dockScroll = useLiquidDockScrollHandler();
   const canFetch = useAuthStore((s) => !!s.auth || s.offline);
   const t = useT();
   const lang = useSettings((s) => s.language);
@@ -401,7 +407,9 @@ function ArtistsTab({ query }: { query: string }) {
   if (isLoading) return <Loader />;
   if (isError) return <Message text={t("Couldn't load artists.")} onRetry={() => refetch()} />;
   return (
-    <FlatList
+    <Animated.FlatList
+      onScroll={dockScroll}
+      scrollEventThrottle={16}
       key={grid ? `grid-${columns}` : 'list'}
       {...listPerf}
       keyboardShouldPersistTaps="handled"
@@ -452,6 +460,7 @@ function NoResults({ query }: { query: string }) {
 }
 
 function AlbumsTab({ query }: { query: string }) {
+  const dockScroll = useLiquidDockScrollHandler();
   const canFetch = useAuthStore((s) => !!s.auth || s.offline);
   const t = useT();
   const sort = useSettings((s) => s.librarySort);
@@ -492,7 +501,9 @@ function AlbumsTab({ query }: { query: string }) {
   if (isLoading) return <Loader />;
   if (isError) return <Message text={t("Couldn't load albums.")} onRetry={() => refetch()} />;
   return (
-    <FlatList
+    <Animated.FlatList
+      onScroll={dockScroll}
+      scrollEventThrottle={16}
       key={grid ? `grid-${columns}` : 'list'}
       {...listPerf}
       keyboardShouldPersistTaps="handled"
@@ -564,6 +575,7 @@ interface LibItem {
  * its name, because in one list a record and a playlist are the same square.
  */
 function AllTab({ query, onNew }: { query: string; onNew?: () => void }) {
+  const dockScroll = useLiquidDockScrollHandler();
   const canFetch = useAuthStore((s) => !!s.auth || s.offline);
   const t = useT();
   const sort = useSettings((s) => s.librarySort);
@@ -661,7 +673,9 @@ function AllTab({ query, onNew }: { query: string; onNew?: () => void }) {
     ? [{ kind: 'playlist', id: FAVORITES_ID, name: '', href: '', recent: 0, added: 0 }, ...items]
     : items;
   return (
-    <FlatList
+    <Animated.FlatList
+      onScroll={dockScroll}
+      scrollEventThrottle={16}
       key={grid ? `grid-${columns}` : 'list'}
       {...listPerf}
       keyboardShouldPersistTaps="handled"
@@ -745,14 +759,14 @@ function LayoutToggle() {
   const setLayout = useSettings((s) => s.setLibraryLayout);
   const grid = layout === 'grid';
   return (
-    <Pressable
+    <GlassPressable variant="subtle"
       hitSlop={10}
       accessibilityRole="button"
       accessibilityLabel={grid ? t('List view') : t('Grid view')}
       onPress={() => setLayout(grid ? 'list' : 'grid')}
     >
       <Icon name={grid ? 'list' : 'grid-outline'} size={20} color={colors.textSecondary} />
-    </Pressable>
+    </GlassPressable>
   );
 }
 
@@ -958,7 +972,7 @@ export default function LibraryScreen() {
     (s) => {
       const active = s.key === segment;
       return (
-        <Pressable
+        <GlassPressable tint={active ? accent : undefined} variant={active ? 'prominent' : 'regular'}
           key={s.key}
           style={[
             styles.segment,
@@ -970,7 +984,7 @@ export default function LibraryScreen() {
           onPress={() => (active ? clearSegment() : setSegment(s.key))}
         >
           <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{t(s.label)}</Text>
-        </Pressable>
+        </GlassPressable>
       );
     },
   );
@@ -980,7 +994,7 @@ export default function LibraryScreen() {
     .map((key) => {
       const active = key === shownOwner;
       return (
-        <Pressable
+        <GlassPressable tint={active ? accent : undefined} variant={active ? 'prominent' : 'regular'}
           key={key}
           style={[
             styles.segment,
@@ -994,7 +1008,7 @@ export default function LibraryScreen() {
           <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
             {t(OWNER_LABEL[key])}
           </Text>
-        </Pressable>
+        </GlassPressable>
       );
     });
 
@@ -1007,7 +1021,7 @@ export default function LibraryScreen() {
         <Text style={styles.heading}>{t('Your library')}</Text>
         <View style={styles.headerActions}>
           <OfflineIndicator />
-          <Pressable
+          <GlassPressable variant="subtle"
             hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel={searchOpen ? t('Close') : t('Search')}
@@ -1018,15 +1032,15 @@ export default function LibraryScreen() {
               size={24}
               color={searchOpen ? colors.accent : colors.text}
             />
-          </Pressable>
-          <Pressable
+          </GlassPressable>
+          <GlassPressable variant="subtle"
             hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel={t('New playlist')}
             onPress={() => setCreating(true)}
           >
             <Icon name="add" size={28} color={colors.text} />
-          </Pressable>
+          </GlassPressable>
         </View>
       </View>
 
@@ -1035,7 +1049,8 @@ export default function LibraryScreen() {
           word across lists, albums and artists. */}
       {searchOpen ? (
         <View style={styles.searchRow}>
-          <View style={styles.searchBar}>
+          <View collapsable={false} style={styles.searchBar}>
+            <GlassBackdrop radius={radius.pill} tint={colors.surfaceHighlight} variant="regular" />
             <Icon name="search" size={18} color={colors.textMuted} />
             <TextInput
               style={styles.searchInput}
@@ -1049,14 +1064,14 @@ export default function LibraryScreen() {
               returnKeyType="search"
             />
             {query.length > 0 ? (
-              <Pressable
+              <GlassPressable variant="subtle"
                 hitSlop={10}
                 accessibilityRole="button"
                 accessibilityLabel={t('Clear')}
                 onPress={() => setQuery('')}
               >
                 <Icon name="close-circle" size={18} color={colors.textMuted} />
-              </Pressable>
+              </GlassPressable>
             ) : null}
           </View>
         </View>
@@ -1081,7 +1096,7 @@ export default function LibraryScreen() {
         contentContainerStyle={[styles.segmentsContent, { paddingHorizontal: headerPad }]}
       >
         {segment ? (
-          <Pressable
+          <GlassPressable
             style={[
               styles.segment,
               styles.segmentIcon,
@@ -1092,7 +1107,7 @@ export default function LibraryScreen() {
             onPress={clearSegment}
           >
             <Icon name="close" size={18} color={colors.text} />
-          </Pressable>
+          </GlassPressable>
         ) : null}
 
         {/* Once one of the pair is picked the other goes and the two that are
@@ -1217,7 +1232,7 @@ const styles = themed((colors) => ({
     alignItems: 'center',
     gap: spacing.sm,
     height: 44,
-    backgroundColor: colors.surfaceHighlight,
+    backgroundColor: 'transparent',
     paddingHorizontal: spacing.lg,
     borderRadius: radius.pill,
   },
@@ -1267,7 +1282,7 @@ const styles = themed((colors) => ({
     alignSelf: 'center',
     width: '100%',
     maxWidth: SHEET_MAX_WIDTH,
-    backgroundColor: colors.surface,
+    backgroundColor: 'transparent',
     borderTopLeftRadius: radius.xxl,
     borderTopRightRadius: radius.xxl,
     paddingHorizontal: spacing.lg,

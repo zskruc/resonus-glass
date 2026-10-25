@@ -1,8 +1,11 @@
 blank_issues_enabled: false
 contact_links:
-  - name: FAQ
+  - name: Resonus Glass 问题与反馈
+    url: https://github.com/zskruc/resonus-glass/issues/new?template=bug_report.yml
+    about: 本分支的玻璃、导航和定制问题请提交到这里。
+  - name: 上游 Resonus FAQ
     url: https://github.com/juananzzz/resonus/blob/main/docs/FAQ.md
-    about: The questions that come up most often, answered. Worth a look first.
-  - name: Questions & feedback
+    about: 原项目常见问题；Glass 定制行为请以本仓库文档为准。
+  - name: 上游 Resonus 社区
     url: https://discord.gg/pecE8MTPVr
-    about: Ask questions or chat with the community on Discord.
+    about: 原项目的 Discord 社区，不负责本分支的 Glass 定制支持。

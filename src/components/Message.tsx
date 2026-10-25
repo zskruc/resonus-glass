@@ -1,5 +1,6 @@
 /** Centered message for error or empty states, with optional retry. */
-import { Pressable, Text, View } from 'react-native';
+import { GlassPressable } from '@/components/glass';
+import { Text, View } from 'react-native';
 
 import { useT } from '@/i18n';
 import { fontSize, radius, spacing, themed } from '@/theme';
@@ -16,9 +17,9 @@ export function Message({
     <View style={styles.container}>
       <Text style={styles.text}>{text}</Text>
       {onRetry ? (
-        <Pressable style={styles.button} onPress={onRetry}>
+        <GlassPressable variant="regular" style={styles.button} onPress={onRetry}>
           <Text style={styles.buttonText}>{t('Retry')}</Text>
-        </Pressable>
+        </GlassPressable>
       ) : null}
     </View>
   );

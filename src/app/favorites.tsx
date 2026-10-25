@@ -248,8 +248,9 @@ export default function FavoritesScreen() {
             <Pressable
               style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
               onPress={() => {
-                close();
-                if (displaySongs.length > 0) setAddingSongs(displaySongs);
+                close(() => {
+                  if (displaySongs.length > 0) setAddingSongs(displaySongs);
+                });
               }}
             >
               <Icon name="add" size={24} color={colors.text} />
@@ -291,8 +292,7 @@ export default function FavoritesScreen() {
               <Pressable
                 style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
                 onPress={() => {
-                  close();
-                  setConfirmDeleteDl(true);
+                  close(() => setConfirmDeleteDl(true));
                 }}
               >
                 <Icon name="trash-outline" size={24} color={colors.text} />

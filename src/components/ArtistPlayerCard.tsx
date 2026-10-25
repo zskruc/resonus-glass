@@ -7,6 +7,7 @@
  * before it makes room for it: a card holding a name and an empty space under
  * it is worse than no card.
  */
+import { GlassPressable } from '@/components/glass';
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -58,7 +59,12 @@ export function ArtistPlayerCard() {
       <Pressable accessibilityRole="button" onPress={() => router.push(`/artist/${artistId}`)}>
         <View style={styles.photo}>
           {imageUri ? (
-            <Image source={{ uri: imageUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
+            <Image
+              source={{ uri: imageUri }}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+              autoplay={false}
+            />
           ) : null}
           <Text style={styles.label}>{t('About the artist')}</Text>
         </View>
@@ -70,13 +76,13 @@ export function ArtistPlayerCard() {
             {info.biography}
           </Text>
           {info.biography.length > BIO_TOGGLE_AT ? (
-            <Pressable
+            <GlassPressable variant="subtle"
               accessibilityRole="button"
               hitSlop={8}
               onPress={() => setBioExpanded((on) => !on)}
             >
               <Text style={styles.more}>{bioExpanded ? t('Show less') : t('Show more')}</Text>
-            </Pressable>
+            </GlassPressable>
           ) : null}
         </View>
       </Pressable>

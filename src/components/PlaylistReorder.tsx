@@ -21,6 +21,7 @@ import { useSettings } from '@/store/settings';
 import { colors, fontSize, spacing, SCREEN_BOTTOM_PADDING, themed, useTheme } from '@/theme';
 import { Cover } from './Cover';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 
 // ReorderableList needs the cells mounted to animate the drag.
 const perf = {
@@ -66,6 +67,7 @@ export function PlaylistReorder({
   onSave: (songIds: string[]) => void;
 }) {
   const t = useT();
+  const dockScroll = useLiquidDockScrollHandler();
   const bottomPad = useScreenBottomPadding();
   const [list, setList] = useState(songs);
   // Repaints on a change of appearance or accent.
@@ -91,6 +93,7 @@ export function PlaylistReorder({
 
       <ReorderableList
         {...perf}
+        onScroll={dockScroll}
         data={list}
         keyExtractor={(item, i) => `${item.id}-${i}`}
         renderItem={({ item }) => <ReorderRow song={item} />}

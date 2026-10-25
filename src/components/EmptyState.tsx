@@ -1,6 +1,7 @@
 /** Rich empty state: icon, title, subtitle, and optional action. */
+import { GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { colors, fontSize, radius, spacing, themed, tracking } from '@/theme';
 
@@ -20,9 +21,9 @@ export function EmptyState({ icon, title, subtitle, action }: Props) {
       <Text style={styles.title}>{title}</Text>
       {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
       {action ? (
-        <Pressable style={[styles.button, { backgroundColor: colors.accent }]} onPress={action.onPress}>
+        <GlassPressable variant="prominent" tint={colors.accent} style={[styles.button, { backgroundColor: colors.accent }]} onPress={action.onPress}>
           <Text style={styles.buttonText}>{action.label}</Text>
-        </Pressable>
+        </GlassPressable>
       ) : null}
     </View>
   );

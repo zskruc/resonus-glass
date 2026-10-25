@@ -6,8 +6,10 @@
  * With none active the entire row disappears from Home. The switch on top
  * turns them all on or off at once; it is not a separate setting.
  */
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
+import { GlassSurface, GlassSwitch } from '@/components/glass';
 import Icon from '@/components/Icon';
-import { Pressable, Switch, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import ReorderableList, {
   useReorderableDrag,
   type ReorderableListReorderEvent,
@@ -55,7 +57,7 @@ function ChipRow({ chip, disabled }: { chip: HomeChip; disabled?: boolean }) {
   return (
     // Still draggable while greyed out: where it goes is a preference about the
     // Home screen you get back, and it costs nothing to set now.
-    <View style={[styles.row, disabled && { opacity: 0.5 }]}>
+    <GlassSurface radius={radius.md} style={[styles.row, disabled && { opacity: 0.5 }]}>
       <Pressable
         hitSlop={8}
         onPressIn={() => {
@@ -68,14 +70,14 @@ function ChipRow({ chip, disabled }: { chip: HomeChip; disabled?: boolean }) {
         <Icon name="reorder-two" size={24} color={colors.textSecondary} />
       </Pressable>
       <Text style={styles.label}>{t(LABEL[chip.key])}</Text>
-      <Switch
+      <GlassSwitch
         value={chip.enabled}
         onValueChange={(v) => setHomeChip(chip.key, v)}
         disabled={disabled}
         trackColor={{ false: colors.control, true: accent }}
         thumbColor={colors.knob}
       />
-    </View>
+    </GlassSurface>
   );
 }
 
@@ -88,6 +90,7 @@ function ChipRow({ chip, disabled }: { chip: HomeChip; disabled?: boolean }) {
 const SERVER_ONLY: HomeChipKey[] = ['genres', 'radio'];
 
 export default function HomeChipsSettings() {
+  const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
@@ -118,6 +121,7 @@ export default function HomeChipsSettings() {
       </View>
       <Text style={styles.hint}>{t('Drag to reorder, toggle to show or hide.')}</Text>
       <ReorderableList
+        onScroll={dockScroll}
         data={visible}
         keyExtractor={(item) => item.key}
         renderItem={({ item }) => (

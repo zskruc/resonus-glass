@@ -1,9 +1,11 @@
 /** Settings › Library: scanning, server libraries and cache clearing. */
+import { DockScrollView } from '@/components/DockScrollView';
+import { GlassPressable, GlassSurface } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { rescanLocal } from '@/api/data';
@@ -145,7 +147,7 @@ export default function LibrarySettings() {
 
   return (
     <SettingsPage title={offline ? t('Local music') : t('Library')}>
-      <ScrollView contentContainerStyle={settingsStyles.content}>
+      <DockScrollView contentContainerStyle={settingsStyles.content}>
         {offline ? (
           <>
             <Field
@@ -156,22 +158,22 @@ export default function LibrarySettings() {
               <>
                 <Text style={settingsStyles.sectionTitle}>{t('Music folders')}</Text>
                 {folderUris.map((uri) => (
-                  <View key={uri} style={[settingsStyles.cardBox, settingsStyles.row]}>
+                  <GlassSurface radius={radius.lg} key={uri} style={[settingsStyles.cardBox, settingsStyles.row]}>
                     <Icon name="folder-outline" size={20} color={colors.text} />
                     <View style={settingsStyles.rowLabelBox}>
                       <Text style={settingsStyles.rowLabel} numberOfLines={1}>
                         {folderNameFromUri(uri)}
                       </Text>
                     </View>
-                    <Pressable
+                    <GlassPressable
                       hitSlop={12}
                       accessibilityRole="button"
                       accessibilityLabel={t('Remove')}
                       onPress={() => removeFolder(uri)}
                     >
                       <Icon name="close" size={20} color={colors.textMuted} />
-                    </Pressable>
-                  </View>
+                    </GlassPressable>
+                  </GlassSurface>
                 ))}
                 <SettingRow icon="add" label={t('Add another folder')} onPress={addFolder} />
               </>
@@ -214,7 +216,7 @@ export default function LibrarySettings() {
         {/* Separated from scanning/source: it's maintenance, not configuration. */}
         <Text style={settingsStyles.sectionTitle}>{t('Storage')}</Text>
         <SettingRow icon="trash-outline" label={t('Clear cache')} onPress={clearCache} />
-      </ScrollView>
+      </DockScrollView>
 
       <Modal
         transparent
@@ -223,25 +225,25 @@ export default function LibrarySettings() {
         onRequestClose={() => setChanging(false)}
       >
         <Pressable style={sheetStyles.backdrop} onPress={() => setChanging(false)} />
-        <View style={[sheetStyles.sheet, { paddingBottom: insets.bottom + spacing.md }]}>
+        <GlassSurface radius={0} radiusTopLeft={radius.xxl} radiusTopRight={radius.xxl} variant="prominent" style={[sheetStyles.sheet, { paddingBottom: insets.bottom + spacing.md }]}>
           <Text style={sheetStyles.title}>{t('Where should we get your music?')}</Text>
 
-          <Pressable style={sheetStyles.option} onPress={chooseFolder}>
+          <GlassPressable radius={radius.md} variant="regular" style={sheetStyles.option} onPress={chooseFolder}>
             <Icon name="folder-outline" size={26} color={colors.accent} />
             <View style={{ flex: 1 }}>
               <Text style={sheetStyles.optionTitle}>{t('Choose a folder (recommended)')}</Text>
               <Text style={sheetStyles.optionSub}>{t('Only the music in the folder you choose.')}</Text>
             </View>
-          </Pressable>
+          </GlassPressable>
 
-          <Pressable style={sheetStyles.option} onPress={chooseDevice}>
+          <GlassPressable radius={radius.md} variant="regular" style={sheetStyles.option} onPress={chooseDevice}>
             <Icon name="phone-portrait-outline" size={26} color={colors.accent} />
             <View style={{ flex: 1 }}>
               <Text style={sheetStyles.optionTitle}>{t('Scan the whole phone')}</Text>
               <Text style={sheetStyles.optionSub}>{t('All the music on your device.')}</Text>
             </View>
-          </Pressable>
-        </View>
+          </GlassPressable>
+        </GlassSurface>
       </Modal>
     </SettingsPage>
   );

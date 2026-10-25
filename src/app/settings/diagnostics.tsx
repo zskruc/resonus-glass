@@ -6,9 +6,10 @@
  * thing as plain text, which is easier to paste into an issue than a
  * screenshot is to read.
  */
+import { DockScrollView } from '@/components/DockScrollView';
 import { useRootNavigationState } from 'expo-router';
 import { useState } from 'react';
-import { ScrollView, Share, Text, View } from 'react-native';
+import { Share, Text, View } from 'react-native';
 
 import { SettingRow, SettingsPage, settingsStyles } from '@/components/SettingsUI';
 import { useT } from '@/i18n';
@@ -51,19 +52,16 @@ export default function DiagnosticsSettings() {
 
   return (
     <SettingsPage title={t('Diagnostics')}>
-      <ScrollView
+      <DockScrollView
         contentContainerStyle={settingsStyles.content}
         // Any scroll refreshes the numbers; no timer polling behind this.
         onScrollEndDrag={() => setTick(tick + 1)}
       >
-        {/* The measurements are in English in every language, on purpose, and
-            kept out of `t()` so no locale can translate them: they end up in
-            GitHub issues, often as a screenshot, read by people who don't speak
-            every language we ship. The shared report is English for the same
-            reason. */}
+        {/* Localize the screen's explanations; raw record fields and the shared
+            report stay in English so an issue can still be read across locales. */}
         <Text style={settingsStyles.sectionDescription}>
           {enabled
-            ? `Measured over the last ${minutes} min of use.`
+            ? t('Measured over the last {n} min of use.', { n: minutes })
             : t('Measuring is off (Settings › About), so there is nothing to show.')}
         </Text>
 
@@ -81,12 +79,12 @@ export default function DiagnosticsSettings() {
           </Text>
         ))}
 
-        <Text style={settingsStyles.sectionTitle}>Recent problems</Text>
+        <Text style={settingsStyles.sectionTitle}>{t('Recent problems')}</Text>
         <Text style={settingsStyles.sectionDescription}>
-          Kept even with measuring off, the last 30.
+          {t('Kept even with measuring off, the last 30.')}
         </Text>
         {events.length === 0 ? (
-          <Text style={styles.line}>None.</Text>
+          <Text style={styles.line}>{t('None')}</Text>
         ) : (
           events.map((line, i) => (
             <Text key={i} style={styles.line}>
@@ -103,7 +101,7 @@ export default function DiagnosticsSettings() {
                 'Everything asked of the server, most often first. The music itself is not here: the player opens that connection and this never sees it.',
               )}
             </Text>
-            <Text style={styles.line}>{`${netCalls} in total · ${netKb} KB declared`}</Text>
+            <Text style={styles.line}>{t('{n} in total · {size} KB declared', { n: netCalls, size: netKb })}</Text>
             {nets.map((n) => (
               <View key={n.tag} style={styles.row}>
                 <Text style={styles.tag} numberOfLines={1}>
@@ -117,12 +115,12 @@ export default function DiagnosticsSettings() {
           </>
         ) : null}
 
-        <Text style={settingsStyles.sectionTitle}>Interface freezes</Text>
+        <Text style={settingsStyles.sectionTitle}>{t('Interface freezes')}</Text>
         <Text style={settingsStyles.sectionDescription}>
-          Moments when the app stopped responding, longest first.
+          {t('Moments when the app stopped responding, longest first.')}
         </Text>
         {blocks.length === 0 ? (
-          <Text style={styles.line}>None over 120 ms.</Text>
+          <Text style={styles.line}>{t('None over 120 ms.')}</Text>
         ) : (
           blocks.map((b, i) => (
             <Text key={i} style={styles.line}>
@@ -131,9 +129,9 @@ export default function DiagnosticsSettings() {
           ))
         )}
 
-        <Text style={settingsStyles.sectionTitle}>Time spent</Text>
+        <Text style={settingsStyles.sectionTitle}>{t('Time spent')}</Text>
         {ops.length === 0 ? (
-          <Text style={styles.line}>Nothing measured yet.</Text>
+          <Text style={styles.line}>{t('Nothing measured yet.')}</Text>
         ) : (
           ops.slice(0, 20).map((o) => (
             <View key={o.tag} style={styles.row}>
@@ -203,7 +201,7 @@ export default function DiagnosticsSettings() {
             setTick(tick + 1);
           }}
         />
-      </ScrollView>
+      </DockScrollView>
     </SettingsPage>
   );
 }

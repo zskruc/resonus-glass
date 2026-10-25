@@ -893,13 +893,18 @@ export const tracking = {
 export const SHEET_MAX_WIDTH = 560;
 
 /** Height of the tab bar (not including the bottom safe area). */
-export const TAB_BAR_HEIGHT = 60;
+export const TAB_BAR_HEIGHT = 62;
 
-/** Approximate height of the floating MiniPlayer (44px artwork + padding). */
-export const MINI_PLAYER_HEIGHT = 60;
+/** Floating bottom capsules share their edge inset and safe-area clearance. */
+export const TAB_BAR_BOTTOM_GAP = 0;
+export const BOTTOM_BAR_HORIZONTAL_MARGIN = 20;
+export const BOTTOM_BAR_MAX_WIDTH = 560;
+
+/** Compact capsule measured against Apple Music on the preview phone. */
+export const MINI_PLAYER_HEIGHT = 48;
 
 /** Air between the MiniPlayer and the navigation bar, so it floats. */
-export const MINI_PLAYER_GAP = spacing.xs;
+export const MINI_PLAYER_GAP = spacing.sm;
 
 /**
  * Fixed bottom spacing for screen lists WITHOUT a tab bar: the MiniPlayer
@@ -910,4 +915,4 @@ export const MINI_PLAYER_GAP = spacing.xs;
  * between gesture nav vs. 3-button nav); those screens use
  * `useScreenBottomPadding()`, not this constant.
  */
-export const SCREEN_BOTTOM_PADDING = 140;
+export const SCREEN_BOTTOM_PADDING = 160;

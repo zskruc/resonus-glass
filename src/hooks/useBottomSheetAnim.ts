@@ -26,30 +26,40 @@ const DISMISS_RATIO = 0.3;
 /** Downward fling (px/s) that closes it regardless of how far it was dragged. */
 const DISMISS_VELOCITY = 800;
 
-export function useBottomSheetAnim(open: boolean, onClose?: () => void) {
+export function useBottomSheetAnim(open: boolean, onClose?: () => void, presentation: 'sheet' | 'card' = 'sheet', sessionKey?: unknown) {
+  const isCard = presentation === 'card';
+  const timingIn = isCard ? { ...TIMING_IN, duration: 180 } : TIMING_IN;
+  const timingOut = isCard ? { ...TIMING_OUT, duration: 120 } : TIMING_OUT;
   const progress = useSharedValue(0);
+  const dismissing = useSharedValue(false);
   // Actual sheet height (measured on first layout); until then, a full screen
   // height so the first frame stays safely out of view.
   const sheetH = useSharedValue(SCREEN_H);
 
   useEffect(() => {
+    dismissing.value = false;
     if (open) {
-      progress.value = withTiming(1, TIMING_IN);
+      progress.value = withTiming(1, isCard ? { ...TIMING_IN, duration: 180 } : TIMING_IN);
     } else {
       progress.value = 0;
     }
-  }, [open, progress]);
+  }, [open, progress, dismissing, isCard, sessionKey]);
 
   const dismiss = (after: () => void) => {
-    progress.value = withTiming(0, TIMING_OUT, (f) => {
+    dismissing.value = true;
+    progress.value = withTiming(0, timingOut, (f) => {
       if (f) scheduleOnRN(after);
     });
   };
 
   const backdropStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
-  const sheetStyle = useAnimatedStyle(() => ({
+  const sheetStyle = useAnimatedStyle(() => isCard ? {
+    opacity: progress.value,
+    transformOrigin: 'right top',
+    transform: [{ translateY: (1 - progress.value) * -8 }, { scale: 0.96 + progress.value * 0.04 }],
+  } : {
     transform: [{ translateY: (1 - progress.value) * sheetH.value }],
-  }));
+  }, [isCard]);
   const onSheetLayout = (e: LayoutChangeEvent) => {
     sheetH.value = e.nativeEvent.layout.height;
   };
@@ -68,24 +78,28 @@ export function useBottomSheetAnim(open: boolean, onClose?: () => void) {
    * they all drive the same `progress`.
    */
   const makePan = () => Gesture.Pan()
+    .enabled(!isCard)
     // Downward only and after 10 px, so taps on the actions still get through
     // and an upward drag never lifts the sheet above its place.
     .activeOffsetY(10)
     .failOffsetY(-10)
     .onUpdate((e) => {
+      if (dismissing.value) return;
       progress.value = Math.min(1, Math.max(0, 1 - e.translationY / sheetH.value));
     })
     .onEnd((e) => {
+      if (dismissing.value) return;
       const closes =
         e.translationY > sheetH.value * DISMISS_RATIO || e.velocityY > DISMISS_VELOCITY;
       if (closes && onClose) {
-        progress.value = withTiming(0, TIMING_OUT, (f) => {
+        dismissing.value = true;
+        progress.value = withTiming(0, timingOut, (f) => {
           if (f) scheduleOnRN(onClose);
         });
       } else {
-        progress.value = withTiming(1, TIMING_IN);
+        progress.value = withTiming(1, timingIn);
       }
     });
 
-  return { dismiss, pan: makePan(), makePan, backdropStyle, sheetStyle, onSheetLayout };
+  return { dismiss, dismissing, pan: makePan(), makePan, backdropStyle, sheetStyle, onSheetLayout };
 }

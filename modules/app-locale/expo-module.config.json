@@ -1,6 +1,9 @@
 {
   "platforms": ["android"],
   "android": {
-    "modules": ["expo.modules.applocale.AppLocaleModule"]
+    "modules": [
+      "expo.modules.applocale.AppLocaleModule",
+      "expo.modules.applocale.SystemTypographyModule"
+    ]
   }
 }

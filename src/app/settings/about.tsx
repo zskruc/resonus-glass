@@ -1,9 +1,10 @@
 /** Settings › About: version, repository, report bugs, community, and the one
  *  action that reaches every setting there is. */
+import { DockScrollView } from '@/components/DockScrollView';
 import Constants from 'expo-constants';
 import { useRootNavigationState, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Linking, Pressable, ScrollView, Share } from 'react-native';
+import { Linking, Pressable, Share } from 'react-native';
 
 import { Dialog } from '@/components/Dialog';
 import { Field, SettingRow, SettingsGroup, SettingsPage, SwitchList, settingsStyles } from '@/components/SettingsUI';
@@ -78,7 +79,7 @@ export default function AboutSettings() {
 
   return (
     <SettingsPage title={t('About::app')}>
-      <ScrollView contentContainerStyle={settingsStyles.content}>
+      <DockScrollView contentContainerStyle={settingsStyles.content}>
         <SettingsGroup>
           <Pressable
             onPress={() => {
@@ -213,7 +214,7 @@ export default function AboutSettings() {
           destructive
           onPress={() => setConfirmReset(true)}
         />
-      </ScrollView>
+      </DockScrollView>
 
       <Dialog
         visible={confirmReset}

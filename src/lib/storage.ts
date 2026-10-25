@@ -24,6 +24,17 @@ export async function getItem(key: string): Promise<string | null> {
   return SecureStore.getItemAsync(key);
 }
 
+/** Explicit save actions need write failures to reach their caller. */
+export async function setItemStrict(key: string, value: string): Promise<void> {
+  if (isWeb) {
+    const storage = globalThis.localStorage;
+    if (!storage) throw new Error('Persistent storage is unavailable');
+    storage.setItem(key, value);
+    return;
+  }
+  await SecureStore.setItemAsync(key, value);
+}
+
 export async function setItem(key: string, value: string): Promise<void> {
   if (isWeb) {
     try {

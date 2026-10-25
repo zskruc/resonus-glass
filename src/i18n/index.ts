@@ -56,11 +56,11 @@ export function useT(): TFunction {
  * languages like Russian (one/few/many).
  */
 const PLURALS: Record<string, Partial<Record<Language, string[]>>> = {
-  song: { es: ['canción', 'canciones'], en: ['song', 'songs'], de: ['Titel', 'Titel'], ca: ['cançó', 'cançons'], ru: ['композиция', 'композиции', 'композиций'], it: ['canzone', 'canzoni'], uk: ['пісня', 'пісні', 'пісень'], pl: ['utwór', 'utwory', 'utworów'], sv: ['låt', 'låtar'], 'pt-BR': ['música', 'músicas'] },
-  album: { es: ['álbum', 'álbumes'], en: ['album', 'albums'], de: ['Album', 'Alben'], ca: ['àlbum', 'àlbums'], ru: ['альбом', 'альбома', 'альбомов'], it: ['album', 'album'], uk: ['альбом', 'альбоми', 'альбомів'], pl: ['album', 'albumy', 'albumów'], sv: ['album', 'album'], 'pt-BR': ['álbum', 'álbuns'] },
-  playlist: { es: ['lista', 'listas'], en: ['playlist', 'playlists'], de: ['Playlist', 'Playlists'], ca: ['llista', 'llistes'], ru: ['плейлист', 'плейлиста', 'плейлистов'], it: ['playlist', 'playlist'], uk: ['плейлист', 'плейлисти', 'плейлистів'], pl: ['playlista', 'playlisty', 'playlist'], sv: ['spellista', 'spellistor'], 'pt-BR': ['playlist', 'playlists'] },
-  artist: { es: ['artista', 'artistas'], en: ['artist', 'artists'], ca: ['artista', 'artistes'], uk: ['виконавець', 'виконавці', 'виконавців'], pl: ['artysta', 'artyści', 'artystów'], sv: ['artist', 'artister'], 'pt-BR': ['artista', 'artistas'] },
-  episode: { es: ['episodio', 'episodios'], en: ['episode', 'episodes'], ca: ['episodi', 'episodis'], uk: ['епізод', 'епізоди', 'епізодів'], pl: ['odcinek', 'odcinki', 'odcinków'], sv: ['avsnitt', 'avsnitt'], 'pt-BR': ['episódio', 'episódios'] },
+  song: { 'zh-CN': ['首歌曲'], es: ['canción', 'canciones'], en: ['song', 'songs'], de: ['Titel', 'Titel'], ca: ['cançó', 'cançons'], ru: ['композиция', 'композиции', 'композиций'], it: ['canzone', 'canzoni'], uk: ['пісня', 'пісні', 'пісень'], pl: ['utwór', 'utwory', 'utworów'], sv: ['låt', 'låtar'], 'pt-BR': ['música', 'músicas'] },
+  album: { 'zh-CN': ['张专辑'], es: ['álbum', 'álbumes'], en: ['album', 'albums'], de: ['Album', 'Alben'], ca: ['àlbum', 'àlbums'], ru: ['альбом', 'альбома', 'альбомов'], it: ['album', 'album'], uk: ['альбом', 'альбоми', 'альбомів'], pl: ['album', 'albumy', 'albumów'], sv: ['album', 'album'], 'pt-BR': ['álbum', 'álbuns'] },
+  playlist: { 'zh-CN': ['个播放列表'], es: ['lista', 'listas'], en: ['playlist', 'playlists'], de: ['Playlist', 'Playlists'], ca: ['llista', 'llistes'], ru: ['плейлист', 'плейлиста', 'плейлистов'], it: ['playlist', 'playlist'], uk: ['плейлист', 'плейлисти', 'плейлистів'], pl: ['playlista', 'playlisty', 'playlist'], sv: ['spellista', 'spellistor'], 'pt-BR': ['playlist', 'playlists'] },
+  artist: { 'zh-CN': ['位艺术家'], es: ['artista', 'artistas'], en: ['artist', 'artists'], ca: ['artista', 'artistes'], uk: ['виконавець', 'виконавці', 'виконавців'], pl: ['artysta', 'artyści', 'artystów'], sv: ['artist', 'artister'], 'pt-BR': ['artista', 'artistas'] },
+  episode: { 'zh-CN': ['期节目'], es: ['episodio', 'episodios'], en: ['episode', 'episodes'], ca: ['episodi', 'episodis'], uk: ['епізод', 'епізоди', 'епізодів'], pl: ['odcinek', 'odcinki', 'odcinków'], sv: ['avsnitt', 'avsnitt'], 'pt-BR': ['episódio', 'episódios'] },
 };
 
 /**
@@ -70,6 +70,7 @@ const PLURALS: Record<string, Partial<Record<Language, string[]>>> = {
  * provide its forms in PLURALS.
  */
 const PLURAL_RULE: Partial<Record<Language, (n: number) => number>> = {
+  'zh-CN': () => 0,
   // Russian (CLDR): 3 forms [one, few, many]. one 1,21,31… · few 2–4,22–24… ·
   // many 0,5–20,25… (11–14 fall into many due to exceptions).
   ru: (n) => {
@@ -106,7 +107,7 @@ function countLabel(kind: keyof typeof PLURALS, n: number, lang: Language): stri
   const forms = PLURALS[kind][lang] ?? PLURALS[kind].en!;
   // Clamp in case the rule asks for an index that language didn't fill in.
   const idx = Math.min(pluralIndex(lang, n), forms.length - 1);
-  return `${n} ${forms[idx]}`;
+  return lang === 'zh-CN' ? `${n}${forms[idx]}` : `${n} ${forms[idx]}`;
 }
 
 /** "N song/songs" (or equivalent) per language. */

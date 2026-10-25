@@ -7,6 +7,7 @@
     "@expo/vector-icons": "^15.1.1",
     "@react-native-community/datetimepicker": "9.1.0",
     "@react-native-community/slider": "5.2.0",
+    "@react-native-masked-view/masked-view": "0.3.2",
     "@tanstack/react-query": "^5.101.1",
     "expo": "~57.0.15",
     "expo-asset": "~57.0.13",
@@ -36,6 +37,7 @@
     "expo-web-browser": "~57.0.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-freeze": "^1.0.4",
     "react-native": "0.86.2",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-image-colors": "^2.6.0",
@@ -80,6 +82,7 @@
       ],
       "buildFromSource": [
         "expo-audio",
+        "expo-file-system",
         "expo-network"
       ]
     }

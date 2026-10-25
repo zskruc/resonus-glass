@@ -132,6 +132,8 @@ export const GenreCard = memo(function GenreCard({
   return (
     <Link href={`/genre/${encodeURIComponent(name)}`} asChild>
       <Pressable
+        // Reuse one texture for the static rotated covers and their shadows.
+        renderToHardwareTextureAndroid
         style={StyleSheet.flatten([
           styles.card,
           { backgroundColor: card },

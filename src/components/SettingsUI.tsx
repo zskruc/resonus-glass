@@ -5,16 +5,14 @@
  * compact floating menu.
  */
 import Icon from '@/components/Icon';
-import Slider from '@react-native-community/slider';
+import { GlassBackdrop, GlassPressable, GlassSlider, GlassSurface, GlassSwitch, GlassTextInput } from '@/components/glass';
 import { Children, createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   Modal,
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaFrame, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -89,14 +87,14 @@ export function SettingsGroup({ children }: { children: React.ReactNode }) {
   if (rows.length === 0) return null;
   return (
     <GroupContext.Provider value>
-      <View style={settingsStyles.cardBox}>
+      <GlassSurface radius={radius.lg} style={settingsStyles.cardBox}>
         {rows.map((row, i) => (
           <View key={i}>
             {i > 0 ? <View style={settingsStyles.groupDivider} /> : null}
             {row}
           </View>
         ))}
-      </View>
+      </GlassSurface>
     </GroupContext.Provider>
   );
 }
@@ -145,7 +143,12 @@ export function SettingRow({
     </>
   );
   if (!onPress) {
-    return <View style={[box, settingsStyles.row]}>{body}</View>;
+    return (
+      <View style={[box, settingsStyles.row, box && { backgroundColor: 'transparent' }]}>
+        {box ? <GlassBackdrop radius={radius.lg} tint={colors.surface} /> : null}
+        {body}
+      </View>
+    );
   }
   return (
     <Pressable
@@ -244,7 +247,7 @@ export function SelectList<T extends string | number | boolean>({
 
   if (!collapsible) {
     return (
-      <View style={box}>
+      <GlassSurface enabled={!!box} radius={radius.lg} style={box}>
         {options.map((opt, i) => {
           const isActive = opt.value === value;
           return (
@@ -268,7 +271,7 @@ export function SelectList<T extends string | number | boolean>({
             </Pressable>
           );
         })}
-      </View>
+      </GlassSurface>
     );
   }
 
@@ -322,7 +325,9 @@ export function SelectList<T extends string | number | boolean>({
       >
         <Pressable style={StyleSheet.absoluteFill} onPress={() => setAnchor(null)} />
         {menu != null ? (
-          <View
+          <GlassSurface
+            radius={radius.md}
+            variant="prominent"
             // Invisible on the first frame (before height is measured): avoids
             // seeing it jump when it opens upward.
             style={[
@@ -368,7 +373,7 @@ export function SelectList<T extends string | number | boolean>({
                 );
               })}
             </ScrollView>
-          </View>
+          </GlassSurface>
         ) : null}
       </Modal>
     </>
@@ -418,7 +423,7 @@ export function SliderRow({
   const shown = live ?? value;
 
   return (
-    <View style={[box, disabled && { opacity: 0.5 }]}>
+    <GlassSurface enabled={!!box} radius={radius.lg} style={[box, disabled && { opacity: 0.5 }]}>
       <View style={[settingsStyles.row, { paddingBottom: 0 }]}>
         <View style={settingsStyles.rowLabelBox}>
           <Text style={settingsStyles.rowLabel}>{label}</Text>
@@ -466,7 +471,7 @@ export function SliderRow({
           onClose={() => setTuning(false)}
         />
       ) : null}
-      <Slider
+      <GlassSlider
         style={settingsStyles.slider}
         disabled={disabled}
         minimumValue={min}
@@ -482,7 +487,7 @@ export function SliderRow({
         maximumTrackTintColor={colors.control}
         thumbTintColor={colors.knob}
       />
-    </View>
+    </GlassSurface>
   );
 }
 
@@ -601,7 +606,8 @@ function FineTunePad({
   const arrow = (direction: number, icon: 'chevron-up' | 'chevron-down') => {
     const spent = direction > 0 ? draft >= max : draft <= min;
     return (
-      <Pressable
+      <GlassPressable
+        variant="subtle"
         accessibilityRole="button"
         style={({ pressed }) => [settingsStyles.padArrow, pressed && { opacity: 0.6 }]}
         onPressIn={() => hold(direction)}
@@ -613,7 +619,7 @@ function FineTunePad({
         onTouchCancel={release}
       >
         <Icon name={icon} size={28} color={spent ? colors.textMuted : colors.text} />
-      </Pressable>
+      </GlassPressable>
     );
   };
 
@@ -621,15 +627,15 @@ function FineTunePad({
     <Modal transparent statusBarTranslucent visible={visible} animationType="fade" onRequestClose={close}>
       <Pressable style={settingsStyles.padBackdrop} onPress={close} />
       <View style={settingsStyles.padCenter} pointerEvents="box-none">
-        <View style={settingsStyles.padCard}>
+        <GlassSurface radius={radius.lg} variant="prominent" style={settingsStyles.padCard}>
           <Text style={settingsStyles.padTitle}>{title}</Text>
           {arrow(1, 'chevron-up')}
           <Text style={settingsStyles.padValue}>{formatValue(draft)}</Text>
           {arrow(-1, 'chevron-down')}
-          <Pressable hitSlop={8} style={settingsStyles.padDone} onPress={close}>
+          <GlassPressable variant="subtle" hitSlop={8} style={settingsStyles.padDone} onPress={close}>
             <Text style={[settingsStyles.padDoneLabel, { color: accent }]}>{doneLabel}</Text>
-          </Pressable>
-        </View>
+          </GlassPressable>
+        </GlassSurface>
       </View>
     </Modal>
   );
@@ -655,7 +661,7 @@ export function SwitchList({
   const accent = useAccent();
   const box = useCardBox();
   return (
-    <View style={box}>
+    <GlassSurface enabled={!!box} radius={radius.lg} style={box}>
       {options.map((opt, i) => (
         // The whole row and not the switch alone. A switch is a small thing to
         // hit with a thumb, and it sits at the far edge of the screen, which on
@@ -685,7 +691,7 @@ export function SwitchList({
               <Text style={settingsStyles.rowDescription}>{opt.description}</Text>
             ) : null}
           </View>
-          <Switch
+          <GlassSwitch
             value={opt.value}
             onValueChange={opt.onChange}
             disabled={opt.disabled}
@@ -696,7 +702,7 @@ export function SwitchList({
           />
         </Pressable>
       ))}
-    </View>
+    </GlassSurface>
   );
 }
 
@@ -724,7 +730,7 @@ export function TextRow({
   const near = value.length >= maxLength - 3;
   const box = useCardBox();
   return (
-    <View style={[box, settingsStyles.textRow]}>
+    <GlassSurface enabled={!!box} radius={radius.lg} style={[box, settingsStyles.textRow]}>
       <View style={settingsStyles.textRowTop}>
         <View style={settingsStyles.rowLabelBox}>
           <Text style={settingsStyles.rowLabel}>{label}</Text>
@@ -736,7 +742,7 @@ export function TextRow({
           </Text>
         ) : null}
       </View>
-      <TextInput
+      <GlassTextInput
         style={settingsStyles.textInput}
         value={value}
         onChangeText={onChange}
@@ -746,19 +752,19 @@ export function TextRow({
         autoCorrect={false}
         returnKeyType="done"
       />
-    </View>
+    </GlassSurface>
   );
 }
 
 export function Field({ label, value }: { label: string; value: string }) {
   const box = useCardBox();
   return (
-    <View style={[box, settingsStyles.field]}>
+    <GlassSurface enabled={!!box} radius={radius.lg} style={[box, settingsStyles.field]}>
       <Text style={settingsStyles.fieldLabel}>{label}</Text>
       <Text style={settingsStyles.fieldValue} numberOfLines={1}>
         {value}
       </Text>
-    </View>
+    </GlassSurface>
   );
 }
 

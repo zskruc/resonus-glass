@@ -1,4 +1,5 @@
 /** Sheet to edit a playlist: cover, name, description, and visibility. */
+import { GlassPressable, GlassSwitch, GlassTextInput } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useEffect, useState } from 'react';
 import {
@@ -9,9 +10,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -85,21 +84,21 @@ export function PlaylistEditSheet({
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={onCancel}
+      onRequestClose={cover.askPassword ? cover.cancelPassword : onCancel}
     >
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.header}>
-          <Pressable hitSlop={12} onPress={onCancel}>
+          <GlassPressable variant="subtle" hitSlop={12} onPress={onCancel}>
             <Text style={[styles.headerAction, { color: colors.accent }]}>{t('Cancel')}</Text>
-          </Pressable>
+          </GlassPressable>
           <Text style={styles.title}>{t('Edit playlist')}</Text>
-          <Pressable
+          <GlassPressable variant="subtle"
             hitSlop={12}
             disabled={!canSave}
             onPress={() => onSave({ name: name.trim(), comment: comment.trim(), public: isPublic })}
           >
             <Text style={[styles.headerAction, { color: colors.accent }, !canSave && styles.disabled]}>{t('Save')}</Text>
-          </Pressable>
+          </GlassPressable>
         </View>
 
         <KeyboardAvoidingView
@@ -124,10 +123,10 @@ export function PlaylistEditSheet({
                       </View>
                     ) : (
                       <View style={styles.coverBadges}>
-                        <View style={styles.coverBadge}>
+                        <View collapsable={false} style={styles.coverBadge}>
                           <Icon name="camera" size={16} color={colors.onArtwork} />
                         </View>
-                        <Pressable
+                        <GlassPressable variant="prominent" tint={'rgba(0,0,0,0.65)'}
                           hitSlop={6}
                           accessibilityRole="button"
                           accessibilityLabel={t('Remove cover')}
@@ -135,7 +134,7 @@ export function PlaylistEditSheet({
                           style={({ pressed }) => [styles.coverBadge, pressed && { opacity: 0.7 }]}
                         >
                           <Icon name="trash-outline" size={16} color={colors.onArtwork} />
-                        </Pressable>
+                        </GlassPressable>
                       </View>
                     )}
                   </Pressable>
@@ -147,7 +146,7 @@ export function PlaylistEditSheet({
             </View>
 
             <Text style={styles.label}>{t('Name')}</Text>
-            <TextInput
+            <GlassTextInput
               style={styles.input}
               value={name}
               onChangeText={setName}
@@ -156,7 +155,7 @@ export function PlaylistEditSheet({
             />
 
             <Text style={styles.label}>{t('Description')}</Text>
-            <TextInput
+            <GlassTextInput
               style={[styles.input, styles.multiline]}
               value={comment}
               onChangeText={setComment}
@@ -168,25 +167,26 @@ export function PlaylistEditSheet({
             />
 
             {hidePublic ? null : (
-              <Pressable style={styles.switchRow} onPress={() => setIsPublic((v) => !v)}>
+              <GlassPressable variant="regular" style={styles.switchRow} onPress={() => setIsPublic((v) => !v)}>
                 <View style={styles.switchInfo}>
                   <Text style={styles.switchTitle}>{t('Public playlist')}</Text>
                   <Text style={styles.switchSub}>{t('Visible to other users on the server')}</Text>
                 </View>
-                <Switch
+                <GlassSwitch
                   value={isPublic}
                   onValueChange={setIsPublic}
                   trackColor={{ true: colors.accent, false: colors.control }}
                   thumbColor={colors.knob}
                 />
-              </Pressable>
+              </GlassPressable>
             )}
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
 
       <Dialog
-        visible={cover.askPassword}
+        inline
+        visible={visible && cover.askPassword}
         title={t('Confirm your password')}
         message={t('Your password is needed to upload images and will be stored securely.')}
         input={{ placeholder: t('Password'), secure: true }}

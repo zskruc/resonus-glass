@@ -1,0 +1,7 @@
+{
+  "name": "network-recovery",
+  "version": "0.0.1",
+  "description": "Current-network IPv6 DNS recovery for the app's native HTTP clients",
+  "main": "index.ts",
+  "private": true
+}

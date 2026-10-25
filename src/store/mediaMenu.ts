@@ -2,7 +2,7 @@
 import type Icon from '@/components/Icon';
 import { create } from 'zustand';
 
-import { type Album, type Playlist } from '@/api/subsonic';
+import type { Album, Playlist } from '@/api/subsonic';
 
 /** An entry a screen adds to the album sheet, above the stock ones. */
 export type MediaMenuExtraAction = {
@@ -17,12 +17,14 @@ export type MediaMenuItem =
 
 interface MediaMenuState {
   item: MediaMenuItem | null;
+  session: number;
   open: (item: MediaMenuItem) => void;
   close: () => void;
 }
 
 export const useMediaMenu = create<MediaMenuState>((set) => ({
   item: null,
-  open: (item) => set({ item }),
-  close: () => set({ item: null }),
+  session: 0,
+  open: (item) => set((state) => ({ item, session: state.session + 1 })),
+  close: () => set((state) => ({ item: null, session: state.session + 1 })),
 }));

@@ -15,6 +15,7 @@
  * No pins. What is pinned is a thing you did to your own library, and this
  * side is the server's.
  */
+import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'expo-router';
@@ -22,12 +23,12 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
-  FlatList,
   Pressable,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import Animated from 'react-native-reanimated';
 
 import { COVER, coverArtUrl, getPlaylists, type Playlist } from '@/api/data';
 import { BrowseToolbar } from '@/components/BrowseToolbar';
@@ -37,6 +38,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { Message } from '@/components/Message';
 import { PlaylistCard } from '@/components/PlaylistCard';
 import { useGridColumns } from '@/hooks/useGridColumns';
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
 import { useListPadding } from '@/hooks/useScreenSize';
 import { songsLabel, useT } from '@/i18n';
@@ -62,6 +64,7 @@ const SORTS: { key: LibrarySort; label: string }[] = (
 ).map((key) => ({ key, label: SORT_LABELS[key] }));
 
 export function PlaylistsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) {
+  const dockScroll = useLiquidDockScrollHandler();
   const t = useT();
   const lang = useSettings((s) => s.language);
   const listPad = useListPadding(spacing.lg);
@@ -121,7 +124,9 @@ export function PlaylistsBrowser({ embedded, actionRef, searchOpen }: BrowserPro
   ) : shown.length === 0 ? (
     <EmptyState icon="list-outline" title={query.trim() ? t('No results') : t('No playlists yet')} />
   ) : (
-    <FlatList
+    <Animated.FlatList
+      onScroll={dockScroll}
+      scrollEventThrottle={16}
       {...listPerf}
       // Remounts when the shape of the list changes: FlatList keeps its
       // measurements otherwise, and rows measured as cards scroll wrong.
@@ -176,7 +181,8 @@ export function PlaylistsBrowser({ embedded, actionRef, searchOpen }: BrowserPro
     <View style={styles.frame}>
       {showSearch ? (
         <View style={styles.searchRow}>
-          <View style={styles.searchBar}>
+          <View collapsable={false} style={styles.searchBar}>
+            <GlassBackdrop radius={radius.pill} tint={colors.surfaceHighlight} variant="regular" />
             <Icon name="search" size={18} color={colors.textMuted} />
             <TextInput
               style={styles.input}
@@ -190,14 +196,14 @@ export function PlaylistsBrowser({ embedded, actionRef, searchOpen }: BrowserPro
               autoFocus={embedded}
             />
             {query.length > 0 ? (
-              <Pressable
+              <GlassPressable variant="subtle"
                 hitSlop={10}
                 accessibilityRole="button"
                 accessibilityLabel={t('Clear')}
                 onPress={() => setQuery('')}
               >
                 <Icon name="close-circle" size={18} color={colors.textMuted} />
-              </Pressable>
+              </GlassPressable>
             ) : null}
           </View>
         </View>
@@ -230,7 +236,7 @@ const styles = themed((colors) => ({
     alignItems: 'center',
     gap: spacing.sm,
     height: 44,
-    backgroundColor: colors.surfaceHighlight,
+    backgroundColor: 'transparent',
     paddingHorizontal: spacing.lg,
     borderRadius: radius.pill,
   },

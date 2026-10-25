@@ -170,6 +170,40 @@ function paletteUri(uri: string): string {
   return uri.replace(/([?&](?:size|fillWidth|fillHeight)=)\d+/g, `$1${PALETTE_SIZE}`);
 }
 
+/** A failed read must stay retryable instead of caching a plain tint. */
+async function readCoverColor(src: string, mode: ThemeMode, vivid: boolean): Promise<string | null> {
+  try {
+    const { getColors, cache } = await import('react-native-image-colors');
+    const fallback = theme.surfaceHighlight;
+    const res = await getColors(src, { fallback, cache: true, key: src, quality: 'high' });
+    if (!res) return null;
+    // Android computes average directly from the decoded bitmap, even when
+    // Palette returns no swatches for a pure black or white cover. That real
+    // colour keeps a valid neutral image out of the failed-read path.
+    const swatches = Object.entries(res).filter(
+      ([k]) => k !== 'platform' && k !== 'quality',
+    );
+    if (swatches.length > 0 && swatches.every(([, value]) => value === fallback)) {
+      cache.removeItem(src);
+      return null;
+    }
+    let color: string = fallback;
+    if (res.platform === 'android') {
+      // An absent vibrant swatch is the fallback, even when a black-and-white
+      // cover has a real muted or dominant swatch farther down the palette.
+      const found = [res.vibrant, res.darkVibrant, res.muted, res.dominant, res.average];
+      color = found.find((value) => value && value !== fallback) || fallback;
+    } else if (res.platform === 'ios') {
+      color = pickIosColor(res.background, res.primary, res.secondary, res.detail) || fallback;
+    } else if (res.platform === 'web') {
+      color = res.vibrant || res.darkVibrant || res.dominant || fallback;
+    }
+    return normalize(color, mode, vivid);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Colours already worked out, by palette URL, appearance and band. Filled as
  * covers are read, so a screen opened again draws its tint on the first frame
@@ -213,32 +247,12 @@ export function useCoverTint(uri?: string, vivid = false): { color: string; know
     // it decides how much of the image is looked at before averaging, and the
     // URL above already brought the cover down to `PALETTE_SIZE`, so there is
     // nothing to save by looking at less than all of it.
-    import('react-native-image-colors')
-      .then(({ getColors }) =>
-        getColors(src, {
-          fallback: theme.surfaceHighlight,
-          cache: true,
-          key: src,
-          quality: 'high',
-        }),
-      )
-      .then((res) => {
-        if (!res) return;
-        let c: string = theme.surfaceHighlight;
-        if (res.platform === 'android') {
-          c = res.vibrant || res.darkVibrant || res.muted || res.dominant || c;
-        } else if (res.platform === 'ios') {
-          c = pickIosColor(res.background, res.primary, res.secondary, res.detail) || c;
-        } else if (res.platform === 'web') {
-          c = res.vibrant || res.darkVibrant || res.dominant || c;
-        }
-        const color = normalize(c, mode, vivid);
-        resolved.set(key, color);
-        if (active) setRead({ key, color });
-      })
-      .catch(() => {
-        if (active) setRead({ key, color: theme.surfaceHighlight });
-      });
+    readCoverColor(src, mode, vivid).then((color) => {
+      // Failure only answers this screen: another visit can try the cover
+      // again, and a missing image never leaves the tint waiting indefinitely.
+      if (color) resolved.set(key, color);
+      if (active) setRead({ key, color: color ?? theme.surfaceHighlight });
+    });
     return () => {
       active = false;
     };

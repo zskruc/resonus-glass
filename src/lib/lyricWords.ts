@@ -5,7 +5,7 @@
  * TTML and enhanced LRC a timestamp in the middle of the text. What they all
  * come down to is where in the line each word starts, and when.
  */
-import type { LyricWord } from '@/api/subsonic';
+import type { LyricLine, LyricWord } from '@/api/subsonic';
 
 /** Where a word starts in its line (a string index) and when it is sung. */
 export interface WordMark {
@@ -111,4 +111,21 @@ export function wordsFromCues(
       return { at, ...time(c) };
     }),
   );
+}
+
+/**
+ * Synced lines in the order they are sung. The server may store a chorus
+ * after the verses even when it is sung between them. The player walks
+ * forward until a line starts later, so one late line near the top can keep
+ * the first line lit for the whole song. Stable, and a line without a time
+ * stays after the one before it. Cue words stay attached to their line.
+ */
+export function inTimeOrder(lines: LyricLine[]): LyricLine[] {
+  let last = 0;
+  const keyed = lines.map((line, i) => {
+    if (line.start !== undefined) last = line.start;
+    return { line, at: line.start ?? last, i };
+  });
+  keyed.sort((a, b) => a.at - b.at || a.i - b.i);
+  return keyed.map((k) => k.line);
 }

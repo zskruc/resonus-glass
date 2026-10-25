@@ -14,6 +14,7 @@
  * six-figure library is not something anybody scrolls, and pulling it down to
  * sort it on the phone is not something a phone can do.
  */
+import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
@@ -22,7 +23,6 @@ import {
   ActivityIndicator,
   Dimensions,
   Keyboard,
-  Pressable,
   Text,
   TextInput,
   View,
@@ -30,6 +30,7 @@ import {
 // The list must use gesture-handler so the row swipe-to-queue doesn't fight
 // the vertical scroll (with RN's FlatList the gesture is flaky).
 import { FlatList as GHFlatList } from 'react-native-gesture-handler';
+import Animated from 'react-native-reanimated';
 
 import { getSongList, searchSongs, songListSorts } from '@/api/data';
 import { type Song, type SongListSort } from '@/api/subsonic';
@@ -64,6 +65,7 @@ import {
   tracking,
 } from '@/theme';
 import { useGridColumns } from '@/hooks/useGridColumns';
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
 import { useListPadding } from '@/hooks/useScreenSize';
 import { BackChevron } from '@/components/BackChevron';
@@ -104,11 +106,14 @@ const SORT_LABEL: Record<SongListSort, string> = {
   random: 'Shuffle',
 };
 
+const AnimatedBrowserList = Animated.createAnimatedComponent(GHFlatList<Song>);
+
 export default function BrowseSongsScreen() {
   return <SongsBrowser />;
 }
 
 export function SongsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) {
+  const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
@@ -257,17 +262,17 @@ export function SongsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
   });
 
   const viewButton = (
-    <Pressable
+    <GlassPressable variant="subtle"
       hitSlop={10}
       accessibilityRole="button"
       accessibilityLabel={t('View')}
       onPress={openGridMenu}
     >
       <Icon name={grid ? 'grid-outline' : 'list'} size={22} color={colors.textSecondary} />
-    </Pressable>
+    </GlassPressable>
   );
   const selectAll = !selecting ? null : (
-    <Pressable
+    <GlassPressable variant="subtle"
       hitSlop={10}
       accessibilityRole="button"
       accessibilityLabel={t('Select all')}
@@ -282,7 +287,7 @@ export function SongsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
         size={24}
         color={songs.length > 0 && selectedIds.size === songs.length ? accent : colors.text}
       />
-    </Pressable>
+    </GlassPressable>
   );
 
   return (
@@ -297,13 +302,13 @@ export function SongsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
           {/* While selecting, the ✕ cancels the selection and nothing else: the
               long press out of here belongs to the chevron. */}
           {selecting ? (
-            <Pressable
+            <GlassPressable variant="subtle"
               hitSlop={10}
               onPress={() => setSelectedIds(null)}
               accessibilityLabel={t('Close')}
             >
               <Icon name="close" size={26} color={colors.text} />
-            </Pressable>
+            </GlassPressable>
           ) : embedded ? null : (
             <BackChevron />
           )}
@@ -323,7 +328,8 @@ export function SongsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
           the box is for. In the tab the magnifier asks for it. */}
       {showSearch ? (
         <View style={styles.searchRow}>
-          <View style={styles.searchBar}>
+          <View collapsable={false} style={styles.searchBar}>
+            <GlassBackdrop radius={radius.pill} tint={colors.surfaceHighlight} variant="regular" />
             <Icon name="search" size={18} color={colors.textMuted} />
             <TextInput
               style={styles.input}
@@ -338,22 +344,22 @@ export function SongsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
               autoFocus={embedded}
             />
             {query.length > 0 ? (
-              <Pressable
+              <GlassPressable variant="subtle"
                 hitSlop={10}
                 accessibilityRole="button"
                 accessibilityLabel={t('Clear')}
                 onPress={() => setQuery('')}
               >
                 <Icon name="close-circle" size={18} color={colors.textMuted} />
-              </Pressable>
+              </GlassPressable>
             ) : null}
           </View>
           {/* Only on its own screen: in the tab the X in the header is the way
               out of the bar. */}
           {searching && !embedded ? (
-            <Pressable hitSlop={8} accessibilityRole="button" onPress={clearSearch}>
+            <GlassPressable variant="subtle" hitSlop={8} accessibilityRole="button" onPress={clearSearch}>
               <Text style={styles.searchCancel}>{t('Cancel')}</Text>
-            </Pressable>
+            </GlassPressable>
           ) : null}
         </View>
       ) : null}
@@ -384,7 +390,9 @@ export function SongsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
       ) : isError ? (
         <Message text={t("Couldn't load songs.")} onRetry={() => refetch()} />
       ) : (
-        <GHFlatList
+        <AnimatedBrowserList
+          onScroll={dockScroll}
+          scrollEventThrottle={16}
           {...listPerf}
           ref={listRef}
           data={songs}
@@ -567,7 +575,7 @@ const styles = themed((colors) => ({
     alignItems: 'center',
     gap: spacing.sm,
     height: 44,
-    backgroundColor: colors.surfaceHighlight,
+    backgroundColor: 'transparent',
     paddingHorizontal: spacing.lg,
     borderRadius: radius.pill,
   },

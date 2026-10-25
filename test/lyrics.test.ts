@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { parseLrc, serializeLrc } from '@/lib/lrc';
-import { indexOfByte, wordsFromCues } from '@/lib/lyricWords';
+import { indexOfByte, inTimeOrder, wordsFromCues } from '@/lib/lyricWords';
 import { parseTtml, ttmlTime } from '@/lib/ttml';
 
 /** The start of the file attached to #165, and one line from its end. */
@@ -201,5 +201,53 @@ describe('OpenSubsonic cues', () => {
   it('counts a character outside the basic plane as four bytes and two units', () => {
     assert.equal(indexOfByte('a😀b', 5), 3);
     assert.equal(indexOfByte('a😀b', 2), -1);
+  });
+});
+
+describe('Server lyric time order', () => {
+  it('puts a chorus stored after the verses between them when it is sung', () => {
+    const lines = [
+      { start: 1000, value: 'Verse one' },
+      { start: 9000, value: 'Verse two' },
+      { start: 5000, value: 'Chorus' },
+      { start: 13000, value: 'Chorus' },
+    ];
+    assert.deepEqual(inTimeOrder(lines).map((line) => line.start), [1000, 5000, 9000, 13000]);
+    assert.deepEqual(lines.map((line) => line.start), [1000, 9000, 5000, 13000]);
+  });
+
+  it('keeps equal-time lines stable and untimed lines after their preceding line', () => {
+    const lines = [
+      { value: 'Opening credit' },
+      { start: 9000, value: 'Later' },
+      { value: 'Later continuation' },
+      { start: 1000, value: 'Earlier' },
+      { value: 'Earlier continuation' },
+      { start: 1000, value: 'Translation' },
+    ];
+    assert.deepEqual(inTimeOrder(lines).map((line) => line.value), [
+      'Opening credit',
+      'Earlier',
+      'Earlier continuation',
+      'Translation',
+      'Later',
+      'Later continuation',
+    ]);
+  });
+
+  it('moves cue words with their own line without changing their timing', () => {
+    const later = { start: 5000, value: 'La la', words: [{ start: 5000, end: 6000, value: 'La la' }] };
+    const earlier = { start: 1000, value: 'Hello', words: [{ start: 1000, end: 2000, value: 'Hello' }] };
+    const sorted = inTimeOrder([later, earlier]);
+    assert.equal(sorted[0], earlier);
+    assert.equal(sorted[1], later);
+    assert.equal(sorted[0].words, earlier.words);
+    assert.equal(sorted[1].words, later.words);
+  });
+
+  it('accepts no lines and preserves a wholly untimed transcript', () => {
+    assert.deepEqual(inTimeOrder([]), []);
+    const lines = [{ value: 'First' }, { value: 'Second' }];
+    assert.deepEqual(inTimeOrder(lines), lines);
   });
 });

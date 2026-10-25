@@ -1,8 +1,9 @@
 /** Font picker — list with radio on the active one, plus custom font. */
+import { DockScrollView } from '@/components/DockScrollView';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Font from 'expo-font';
 import { useState } from 'react';
-import { Alert, ScrollView } from 'react-native';
+import { Alert } from 'react-native';
 
 import { SettingRow, SelectList, SettingsGroup, SettingsPage, settingsStyles } from '@/components/SettingsUI';
 import { useT } from '@/i18n';
@@ -24,7 +25,7 @@ export default function FontSettings() {
     (Object.keys(APP_FONT_LABELS) as AppFont[]).filter((v) => v !== 'custom')
   ).map((value) => ({
     value,
-    label: value === 'system' ? `${APP_FONT_LABELS.system} (${t('default')})` : APP_FONT_LABELS[value],
+    label: value === 'system' ? `${t('System font')} (${t('default')})` : t(APP_FONT_LABELS[value]),
   }));
 
   async function pickFont() {
@@ -62,11 +63,11 @@ export default function FontSettings() {
 
   return (
     <SettingsPage title={t('Font')}>
-      <ScrollView contentContainerStyle={settingsStyles.content}>
+      <DockScrollView contentContainerStyle={settingsStyles.content}>
         <SelectList options={options} value={appFont} onChange={setAppFont} collapsible={false} />
         <SettingsGroup>
           <SettingRow
-            label={APP_FONT_LABELS.custom}
+            label={t(APP_FONT_LABELS.custom)}
             description={
               customActive
                 ? customFontUri?.split('/').pop() ?? t('Loaded')
@@ -84,7 +85,7 @@ export default function FontSettings() {
             />
           ) : null}
         </SettingsGroup>
-      </ScrollView>
+      </DockScrollView>
     </SettingsPage>
   );
 }

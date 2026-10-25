@@ -8,6 +8,7 @@ import android.net.Uri
 import android.util.LruCache
 import androidx.media3.common.MediaMetadata
 import java.io.ByteArrayOutputStream
+import java.security.MessageDigest
 
 /**
  * Cover art for Android Auto. The AA host draws the covers in its *own*
@@ -15,8 +16,10 @@ import java.io.ByteArrayOutputStream
  * file:// covers, which are private to the app. For those the bitmap is decoded
  * and scaled down in our process and the JPEG bytes are sent with
  * setArtworkData, which travels over the binder so the host can draw it without
- * touching the filesystem. Remote URLs still go as setArtworkUri: they are
- * small, and fetching them is the host's business.
+ * touching the filesystem. Remote URLs go as setArtworkUri, but never as
+ * themselves: a server's cover URL carries the account's credentials, so the
+ * host gets an opaque content uri that [CarArtProvider] serves (see
+ * [contentUri]).
  *
  * The bytes are kept small (320px at most, JPEG q80, so ~20-40KB) and cached by
  * path, so the album and queue items that share a cover are only decoded once.
@@ -46,10 +49,58 @@ internal object CarArtwork {
   /** Resolved here rather than written into the tree from JS: the package name
    *  carries the build's applicationId suffix, which JS has no way to know. */
   @Volatile private var drawableBase: String? = null
+  @Volatile private var artAuthority: String? = null
+
+  /** Recent superseded addresses, for a host finishing an older request. The
+   *  currently browsable tree and queue window are retained independently:
+   *  a large library must never evict an address we have just published. */
+  private val remote = LruCache<String, String>(2000)
+  @Volatile private var browseRemote: Map<String, String> = emptyMap()
+  @Volatile private var queueRemote: Map<String, String> = emptyMap()
 
   fun init(context: Context) {
     drawableBase = "android.resource://${context.packageName}/drawable/"
+    artAuthority = "${context.packageName}.carart"
   }
+
+  /** The content uri the host is given for a remote cover, or null when the
+   *  provider is not set up yet. */
+  private fun contentUri(url: String): Uri? {
+    val authority = artAuthority ?: return null
+    val id = remoteId(url) ?: return null
+    remote.put(id, url)
+    return Uri.parse("content://$authority/$id")
+  }
+
+  /** Lifetimes follow the actual source snapshots, rather than the order the
+   *  host happens to request covers. These immutable indexes are only as large
+   *  as the existing browse tree and the bounded queue window. Replacing one
+   *  releases its old references without evicting the other. */
+  fun retainBrowseArtwork(urls: Sequence<String>) {
+    browseRemote = indexRemote(urls)
+  }
+
+  fun retainQueueArtwork(urls: Sequence<String>) {
+    queueRemote = indexRemote(urls)
+  }
+
+  private fun indexRemote(urls: Sequence<String>): Map<String, String> =
+    buildMap {
+      for (url in urls.distinct()) remoteId(url)?.let { put(it, url) }
+    }
+
+  private fun remoteId(url: String): String? {
+    val scheme = Uri.parse(url).scheme
+    if (!scheme.equals("http", ignoreCase = true) &&
+        !scheme.equals("https", ignoreCase = true)) return null
+    return MessageDigest.getInstance("SHA-256")
+      .digest(url.toByteArray(Charsets.UTF_8))
+      .take(16)
+      .joinToString("") { "%02x".format(it) }
+  }
+
+  /** The address behind an id handed out by [contentUri]. */
+  fun realUrl(id: String): String? = queueRemote[id] ?: browseRemote[id] ?: remote.get(id)
 
   /**
    * Puts the cover on [builder]. With [embed] false a local file is never
@@ -74,6 +125,11 @@ internal object CarArtwork {
     if (bytes != null) {
       builder.setArtworkData(bytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
       return bytes.size
+    }
+    val scheme = Uri.parse(artworkUrl).scheme
+    if (scheme.equals("http", ignoreCase = true) || scheme.equals("https", ignoreCase = true)) {
+      contentUri(artworkUrl)?.let { builder.setArtworkUri(it) }
+      return 0
     }
     builder.setArtworkUri(Uri.parse(artworkUrl))
     return 0

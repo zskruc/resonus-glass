@@ -20,5 +20,11 @@
         <action android:name="android.media.browse.MediaBrowserService" />
       </intent-filter>
     </service>
+    <!-- The car reads covers from its own process. Opaque ids keep the
+         server address and credentials inside this application. -->
+    <provider
+      android:name="expo.modules.carauto.CarArtProvider"
+      android:authorities="${applicationId}.carart"
+      android:exported="true" />
   </application>
 </manifest>

@@ -1,14 +1,14 @@
 /** Full-screen player (modal): cover art, progress and controls. */
 import Icon from '@/components/Icon';
+import { GlassPressable } from '@/components/glass';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useIsFocused, useRouter } from 'expo-router';
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
-  Pressable,
   StyleSheet,
   Text,
   View,
@@ -44,6 +44,8 @@ import { StarRating } from '@/components/StarRating';
 import { useAnimatedCover } from '@/hooks/useAnimatedCover';
 import { toneOf, useDominantColor } from '@/hooks/useDominantColor';
 import { useFavoriteIds } from '@/hooks/useFavoriteIds';
+import { useForegroundEffect } from '@/hooks/useForegroundEffect';
+import { useImageAnimation } from '@/hooks/useImageAnimation';
 import { useLocalProfile } from '@/hooks/useLocalProfile';
 import { useLyrics } from '@/hooks/useLyrics';
 import { useScreenSize } from '@/hooks/useScreenSize';
@@ -148,7 +150,7 @@ function CircleButton({
   onPress: (e: GestureResponderEvent) => void;
 }) {
   return (
-    <Pressable
+    <GlassPressable
       style={styles.circle}
       hitSlop={8}
       accessibilityRole="button"
@@ -156,7 +158,7 @@ function CircleButton({
       onPress={onPress}
     >
       <Icon name={name} size={22} color={colors.text} />
-    </Pressable>
+    </GlassPressable>
   );
 }
 
@@ -181,14 +183,17 @@ function SleepButton({ onPress, color }: { onPress: () => void; color: string })
   const endsAt = usePlayerStore((s) => s.sleepEndsAt);
   const atSongEnd = usePlayerStore((s) => s.sleepAtSongEnd);
   const [, tick] = useReducer((n: number) => n + 1, 0);
-  useEffect(() => {
+  useForegroundEffect(useCallback(() => {
     if (!endsAt) return;
+    // Only the visible minutes need repainting. Resume with a fresh count,
+    // and stop on blur even if the native stack freezes this player.
+    tick();
     const id = setInterval(tick, 15_000);
     return () => clearInterval(id);
-  }, [endsAt]);
+  }, [endsAt]));
   const on = !!endsAt || atSongEnd;
   return (
-    <Pressable
+    <GlassPressable
       hitSlop={10}
       accessibilityRole="button"
       accessibilityLabel={t('Sleep timer')}
@@ -201,7 +206,7 @@ function SleepButton({ onPress, color }: { onPress: () => void; color: string })
           {`${Math.max(1, Math.ceil((endsAt - Date.now()) / 60_000))}′`}
         </Text>
       ) : null}
-    </Pressable>
+    </GlassPressable>
   );
 }
 
@@ -373,6 +378,13 @@ export default function PlayerScreen() {
   );
   const backdrop = useRedrawOnReturn(backdropRef, backdropSource.shown);
   const animatedBg = useRedrawOnReturn(animatedBgRef, isAnimatedCover ? cover : undefined);
+  const animatedBgAnimation = useImageAnimation(
+    animatedBgRef,
+    isFocused && isAnimatedCover,
+    isAnimatedCover ? cover : undefined,
+    animatedBg.nonce,
+    BACKDROP_FADE,
+  );
   // The full-screen animated cover needs the colour too, whatever the
   // background setting says: the gradient under it fades into that colour.
   const dominant = useDominantColor(colorBackground || isAnimatedCover ? cover : undefined);
@@ -397,7 +409,9 @@ export default function PlayerScreen() {
   const bgStyle = useAnimatedStyle(() => ({ backgroundColor: bgColor.value }));
   // Same query used by the lyrics card (cached): here only to know if there
   // are lyrics and let the card peek below the first page.
-  const { data: lyrics } = useLyrics(canLyrics ? (song ?? undefined) : undefined);
+  const { data: lyrics, isLoading: lyricsLoading } = useLyrics(
+    canLyrics ? (song ?? undefined) : undefined,
+  );
   // The only reason this screen scrolls at all: the room left under the first
   // page and the card itself both read this, and they must stay in step or the
   // player can be dragged for no reason (#107). What does NOT read it is the
@@ -692,10 +706,9 @@ export default function PlayerScreen() {
         offset.value = withSpring(target, { damping: 20, stiffness: 200 });
       }
     });
-  // Cover tap shows lyrics (if any). Coexists with swipe: tap only wins if
-  // there was no drag. `hasLyrics` is a boolean so it can be read from the
-  // gesture's UI thread.
-  const hasLyrics = !!lyrics;
+  // Open while the query is loading; once it answers with nothing, tapping
+  // stays put. A tap only wins if there was no drag.
+  const canOpenLyrics = !!song && canLyrics && (lyricsLoading || !!lyrics);
   // What tap does based on setting: «inline» shows lyrics in place of the
   // cover (toggle), «screen» opens the full screen, «none» nothing.
   const [inlineLyrics, setInlineLyrics] = useState(false);
@@ -730,9 +743,9 @@ export default function PlayerScreen() {
    * Every action the cover offers, wherever it was asked for.
    *
    * One tap and two share the list, so this is the one place that knows how to
-   * run any of them. The two lyrics actions are the only ones that can find
-   * nothing to do: a song with no lyrics leaves the tap where it was rather
-   * than opening an empty screen.
+   * run any of them. Lyrics open while loading, and a query that answers with
+   * nothing leaves the action disabled. An already-open card shows its empty
+   * state and keeps its return-to-cover button.
    *
    * Handed to `scheduleOnRN` by name, with the action as its argument: a
    * gesture's `onEnd` is a worklet, and a function written inside one is not
@@ -741,10 +754,10 @@ export default function PlayerScreen() {
   const runCoverAction = (action: CoverTapAction) => {
     switch (action) {
       case 'inline':
-        if (hasLyrics) setInlineLyrics((v) => !v);
+        if (canOpenLyrics) setInlineLyrics((v) => !v);
         break;
       case 'screen':
-        if (hasLyrics) pushOnce('/lyrics');
+        if (canOpenLyrics) pushOnce('/lyrics');
         break;
       case 'playPause':
         toggle();
@@ -931,7 +944,8 @@ export default function PlayerScreen() {
   // and the speed button while not at 1×, and then it is there.
   const buttonOn = (key: string) => playerButtons.some((b) => b.key === key && b.enabled);
   const menuOptions = () => ({
-    showLyrics: hasLyrics,
+    presentation: 'card' as const,
+    showLyrics: canOpenLyrics,
     queue: true,
     devices: !buttonOn('devices') && canDevices && !remoteDevice ? () => setOutputOpen(true) : undefined,
     speed: !buttonOn('speed') && canSpeed && speed === 1 ? () => openSpeedSheet.current() : undefined,
@@ -951,7 +965,11 @@ export default function PlayerScreen() {
               style={StyleSheet.absoluteFill}
               contentFit="cover"
               transition={BACKDROP_FADE}
-              onDisplay={animatedBg.onDisplay}
+              autoplay={animatedBgAnimation.autoplay}
+              onDisplay={() => {
+                animatedBg.onDisplay();
+                animatedBgAnimation.onDisplay();
+              }}
             />
             {/* Its bottom edge fades into the cover's own colour, so the
                 picture ends somewhere instead of being cut off. Inside the
@@ -1052,8 +1070,8 @@ export default function PlayerScreen() {
         >
         <View style={styles.topBar}>
           <CircleButton name="chevron-down" label={t('Close')} onPress={() => router.back()} />
-          <Pressable
-            style={styles.topTitleWrap}
+          <GlassPressable
+            enabled={false} style={styles.topTitleWrap}
             disabled={!canOpenSource}
             accessibilityRole={canOpenSource ? 'button' : undefined}
             onPress={() => {
@@ -1080,7 +1098,7 @@ export default function PlayerScreen() {
             ) : (
               <Text style={styles.topTitle}>{t('NOW PLAYING')}</Text>
             )}
-          </Pressable>
+          </GlassPressable>
           {/* Both of these used to sit behind `song.localUri && !offline`, meant
               to read as "the phone's own library, which has no server to favourite
               against or open a menu on". It never read as that. `markUnplayableOffline`
@@ -1157,7 +1175,7 @@ export default function PlayerScreen() {
                           size={coverSize}
                           contentFit={fitCoverArt ? 'contain' : 'cover'}
                           transition={0}
-                          autoplay={rel === 0}
+                          autoplay={rel === 0 && isFocused}
                           onAnimatedDetected={rel === 0 ? onCoverLoad : undefined}
                           placeholderIcon={paneSong.url ? 'radio' : 'musical-notes'}
                         />
@@ -1169,7 +1187,7 @@ export default function PlayerScreen() {
             </Animated.View>
           </GestureDetector>
           {/* Lyrics in place of the cover (setting): same frame, on top. */}
-          {inlineLyrics && hasLyrics ? (
+          {inlineLyrics && canLyrics ? (
             <View style={[styles.lyricsOverlay, { height: coverSize }]}>
               <CoverLyrics size={coverSize} onClose={() => setInlineLyrics(false)} />
             </View>
@@ -1227,13 +1245,13 @@ export default function PlayerScreen() {
             ) : null}
             <View style={{ flex: 1 }}>
               {song.albumId ? (
-                <Pressable
-                  style={styles.tapText}
+                <GlassPressable
+                  enabled={false} style={styles.tapText}
                   hitSlop={6}
                   onPress={() => router.push(`/album/${song.albumId}` as never)}
                 >
                   <MarqueeText text={title} style={styles.title} enabled={marqueeTitles} />
-                </Pressable>
+                </GlassPressable>
               ) : (
                 <MarqueeText text={title} style={styles.title} enabled={marqueeTitles} />
               )}
@@ -1274,13 +1292,13 @@ export default function PlayerScreen() {
                         and went per song resized it on the skip. */}
                     {albumInfo ? (
                       goAlbum ? (
-                        <Pressable style={styles.albumLine} hitSlop={6} onPress={goAlbum}>
+                        <GlassPressable enabled={false} style={styles.albumLine} hitSlop={6} onPress={goAlbum}>
                           <MarqueeText
                             text={albumInfo}
                             style={styles.album}
                             enabled={marqueeTitles}
                           />
-                        </Pressable>
+                        </GlassPressable>
                       ) : (
                         <View style={styles.albumLine}>
                           <MarqueeText
@@ -1323,7 +1341,7 @@ export default function PlayerScreen() {
           <SeekBar duration={duration} style={styles.progress} tint={playFill} />
 
           <View style={styles.controls}>
-            <Pressable
+            <GlassPressable
               hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel={t('Shuffle')}
@@ -1334,17 +1352,17 @@ export default function PlayerScreen() {
                 size={26}
                 color={shuffle ? colors.accent : ink}
               />
-            </Pressable>
-            <Pressable
+            </GlassPressable>
+            <GlassPressable
               hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel={t('Previous')}
               onPress={previous}
             >
               <Icon name="play-skip-back" size={34} color={ink} />
-            </Pressable>
+            </GlassPressable>
             {seekButtonsSec > 0 ? (
-              <Pressable
+              <GlassPressable
                 hitSlop={10}
                 accessibilityRole="button"
                 accessibilityLabel={t('Back {n} seconds', { n: seekButtonsSec })}
@@ -1359,10 +1377,10 @@ export default function PlayerScreen() {
                   size={28}
                   color={ink}
                 />
-              </Pressable>
+              </GlassPressable>
             ) : null}
-            <Pressable
-              style={[styles.playButton, { backgroundColor: playFill }]}
+            <GlassPressable
+              variant="prominent" tint={playFill} style={[styles.playButton, { backgroundColor: playFill }]}
               accessibilityRole="button"
               accessibilityLabel={isPlaying ? t('Pause') : t('Play')}
               onPress={toggle}
@@ -1390,9 +1408,9 @@ export default function PlayerScreen() {
                   color={playInk}
                 />
               )}
-            </Pressable>
+            </GlassPressable>
             {seekButtonsSec > 0 ? (
-              <Pressable
+              <GlassPressable
                 hitSlop={10}
                 accessibilityRole="button"
                 accessibilityLabel={t('Forward {n} seconds', { n: seekButtonsSec })}
@@ -1411,17 +1429,17 @@ export default function PlayerScreen() {
                   size={28}
                   color={ink}
                 />
-              </Pressable>
+              </GlassPressable>
             ) : null}
-            <Pressable
+            <GlassPressable
               hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel={t('Next')}
               onPress={next}
             >
               <Icon name="play-skip-forward" size={34} color={ink} />
-            </Pressable>
-            <Pressable
+            </GlassPressable>
+            <GlassPressable
               hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel={t('Repeat')}
@@ -1432,7 +1450,7 @@ export default function PlayerScreen() {
                 size={26}
                 color={repeatActive ? colors.accent : ink}
               />
-            </Pressable>
+            </GlassPressable>
           </View>
 
           {/* Grouped in the middle, each one where it always is: one that
@@ -1456,7 +1474,7 @@ export default function PlayerScreen() {
                   // something to send, and going offline mid-cast used to
                   // leave the way out barred.
                   return (enabled && canDevices) || remoteDevice ? (
-                    <Pressable
+                    <GlassPressable
                       key={key}
                       hitSlop={10}
                       accessibilityRole="button"
@@ -1474,27 +1492,27 @@ export default function PlayerScreen() {
                           {remoteDevice}
                         </Text>
                       ) : null}
-                    </Pressable>
+                    </GlassPressable>
                   ) : null;
                 case 'lyrics':
                   return enabled ? (
-                    <Pressable
+                    <GlassPressable
                       key={key}
                       hitSlop={10}
                       accessibilityRole="button"
                       accessibilityLabel={t('Lyrics')}
-                      disabled={!hasLyrics}
+                      disabled={!canOpenLyrics}
                       onPress={() => pushOnce('/lyrics')}
-                      style={[styles.bottomButton, !hasLyrics && styles.bottomButtonOff]}
+                      style={[styles.bottomButton, !canOpenLyrics && styles.bottomButtonOff]}
                     >
                       <Icon name="mic-outline" size={26} color={ink} />
-                    </Pressable>
+                    </GlassPressable>
                   ) : null;
                 case 'speed':
                   // Also while hidden, as long as the speed is not 1×: a mode
                   // that is on has to be seen to be turned off.
                   return enabled || speed !== 1 ? (
-                    <Pressable
+                    <GlassPressable
                       key={key}
                       hitSlop={10}
                       accessibilityRole="button"
@@ -1511,7 +1529,7 @@ export default function PlayerScreen() {
                       {/* The number only once it says something, in the accent
                           like the device name beside its own icon. */}
                       {speed === 1 ? null : <Text style={styles.speedText}>{`${speed}×`}</Text>}
-                    </Pressable>
+                    </GlassPressable>
                   ) : null;
                 case 'sleep':
                   return enabled ? (
@@ -1523,7 +1541,7 @@ export default function PlayerScreen() {
                   ) : null;
                 case 'queue':
                   return enabled ? (
-                    <Pressable
+                    <GlassPressable
                       key={key}
                       hitSlop={10}
                       accessibilityRole="button"
@@ -1532,7 +1550,7 @@ export default function PlayerScreen() {
                       style={styles.bottomButton}
                     >
                       <Icon name="layers-outline" size={26} color={ink} />
-                    </Pressable>
+                    </GlassPressable>
                   ) : null;
               }
             })}

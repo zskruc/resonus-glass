@@ -4,11 +4,13 @@
  * `getIndexes`; inner directories use `getMusicDirectory`. Reached from the
  * Library's "Folders" section (hidden by default).
  */
+import Animated from 'react-native-reanimated';
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import Icon from '@/components/Icon';
 import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { GlassScreen as SafeAreaView } from '@/components/glass';
 
 import { COVER, coverArtUrl, getFolderIndexes, getMusicDirectory, type Song } from '@/api/data';
 import { Cover } from '@/components/Cover';
@@ -29,6 +31,7 @@ type Row =
   | { kind: 'song'; song: Song; index: number };
 
 export default function FolderBrowseScreen() {
+  const dockScroll = useLiquidDockScrollHandler();
   const bottomPad = useScreenBottomPadding();
   // Rows stop growing at a reading measure and centre themselves (#131).
   const listPad = useListPadding(spacing.lg);
@@ -90,7 +93,9 @@ export default function FolderBrowseScreen() {
       ) : isError ? (
         <Message text={t("Couldn't load the folder.")} onRetry={() => refetch()} />
       ) : (
-        <FlatList
+        <Animated.FlatList
+          onScroll={dockScroll}
+          scrollEventThrottle={16}
           {...listPerf}
           data={rows}
           keyExtractor={(item) => (item.kind === 'dir' ? `d:${item.id}` : `s:${item.song.id}`)}

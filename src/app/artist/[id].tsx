@@ -1,4 +1,5 @@
 /** Artist detail, Spotify-style: large header, actions, sections. */
+import { GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -7,7 +8,6 @@ import { useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import {
   ActivityIndicator,
-  Animated,
   FlatList,
   Pressable,
   StyleSheet,
@@ -17,6 +17,15 @@ import {
 // gesture-handler ScrollView: needed so the "Popular" row swipe-to-queue
 // coexists with scrolling (see TrackRow).
 import { ScrollView } from 'react-native-gesture-handler';
+import Animated, {
+  Extrapolation,
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useComposedEventHandler,
+  useDerivedValue,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -43,6 +52,7 @@ import { TrackRow } from '@/components/TrackRow';
 import { useDominantColor } from '@/hooks/useDominantColor';
 import { useDownloadMessage } from '@/hooks/useDownloadMessage';
 import { useFavoriteIds } from '@/hooks/useFavoriteIds';
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { useT } from '@/i18n';
 import { splitArtistAlbums } from '@/lib/artistAlbums';
 import { groupArtistAlbums, RELEASE_GROUP_TITLE } from '@/lib/releaseGroups';
@@ -70,18 +80,8 @@ function headerHeight(width: number, height: number): number {
   return Math.round(Math.min(width, height * 0.6, 360));
 }
 /**
- * The page, with its scroll wired straight to the animations it drives.
- *
- * The header moves and fades with the scroll, and until this existed every
- * frame of that went through JS: the list scrolled natively while the photo,
- * the name and the top bar waited their turn behind whatever else the thread
- * was doing. With music playing there is always something else, twice a second
- * at least, and what it looks like is a header that stutters against a list
- * that does not (#154). Handing the scroll to the native side takes the whole
- * thing off the thread: it cannot be late any more, whatever JS is up to.
- *
- * What it costs is that only opacity and transforms can be animated this way,
- * which is all four of the ones below.
+ * The primary vertical scroll drives the header and the dock on the UI thread.
+ * Keep gesture-handler's ScrollView so popular-track swipes still coexist.
  */
 const AnimatedPage = Animated.createAnimatedComponent(ScrollView);
 
@@ -158,27 +158,24 @@ export default function ArtistScreen() {
   const { width: screenW, height: screenH } = useScreenSize();
   const headerH = headerHeight(screenW, screenH);
 
-  const scrollY = useRef(new Animated.Value(0)).current;
-  const barContentOpacity = scrollY.interpolate({
-    inputRange: [headerH * 0.45, headerH * 0.75],
-    outputRange: [0, 1],
-    extrapolate: 'clamp',
+  const scrollY = useSharedValue(0);
+  const headerScroll = useAnimatedScrollHandler({
+    onScroll: (event) => { scrollY.set(event.contentOffset.y); },
   });
-  const barBgOpacity = scrollY.interpolate({
-    inputRange: [0, headerH * 0.75],
-    outputRange: [0, 1],
-    extrapolate: 'clamp',
-  });
-  const nameOpacity = scrollY.interpolate({
-    inputRange: [0, headerH * 0.55],
-    outputRange: [1, 0],
-    extrapolate: 'clamp',
-  });
-  const imgTranslate = scrollY.interpolate({
-    inputRange: [-headerH, 0, headerH],
-    outputRange: [headerH / 2, 0, -headerH / 3],
-    extrapolate: 'clamp',
-  });
+  const dockScroll = useLiquidDockScrollHandler();
+  const onScroll = useComposedEventHandler([headerScroll, dockScroll]);
+  const barContentStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.get(), [headerH * 0.45, headerH * 0.75], [0, 1], Extrapolation.CLAMP),
+  }));
+  const barBgOpacity = useDerivedValue(() =>
+    interpolate(scrollY.get(), [0, headerH * 0.75], [0, 1], Extrapolation.CLAMP));
+  const nameStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.get(), [0, headerH * 0.55], [1, 0], Extrapolation.CLAMP),
+  }));
+  const imageStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(scrollY.get(), [-headerH, 0, headerH],
+      [headerH / 2, 0, -headerH / 3], Extrapolation.CLAMP) }],
+  }));
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['artist', id],
@@ -389,9 +386,7 @@ export default function ArtistScreen() {
       <AnimatedPage
         contentContainerStyle={{ paddingBottom: bottomPad }}
         scrollEventThrottle={16}
-        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
-          useNativeDriver: true,
-        })}
+        onScroll={onScroll}
       >
         <View style={[styles.headerWrap, { width: screenW, height: headerH }]}>
           {/* The header fills its space, so a photo that isn't the shape of
@@ -407,7 +402,8 @@ export default function ArtistScreen() {
               source={{ uri: headerUri }}
               style={[
                 styles.headerImg,
-                { width: screenW, height: headerH, transform: [{ translateY: imgTranslate }] },
+                { width: screenW, height: headerH },
+                imageStyle,
               ]}
               resizeMode="cover"
             />
@@ -421,7 +417,7 @@ export default function ArtistScreen() {
           />
           <Animated.Text
             pointerEvents="none"
-            style={[styles.name, { opacity: nameOpacity }]}
+            style={[styles.name, nameStyle]}
             numberOfLines={2}
           >
             {data.artist.name}
@@ -438,7 +434,7 @@ export default function ArtistScreen() {
           {/* Locally no: what's here is already on the device. Same criteria
               (and same look) as the album and playlist header. */}
           {!offline && albums.length > 0 ? (
-            <Pressable
+            <GlassPressable variant="subtle"
               hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel={t('Download')}
@@ -459,10 +455,10 @@ export default function ArtistScreen() {
               ) : (
                 <Icon name="arrow-down-circle-outline" size={26} color={colors.textSecondary} />
               )}
-            </Pressable>
+            </GlassPressable>
           ) : null}
           {albums.length > 0 ? (
-            <Pressable
+            <GlassPressable variant="subtle"
               hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel={t('More options')}
@@ -474,11 +470,11 @@ export default function ArtistScreen() {
               }}
             >
               <Icon name="ellipsis-horizontal" size={26} color={colors.text} />
-            </Pressable>
+            </GlassPressable>
           ) : null}
           <View style={{ flex: 1 }} />
           {/* Shuffle sits right next to Play, both on the right (Spotify-style). */}
-          <Pressable
+          <GlassPressable variant="subtle"
             hitSlop={10}
             accessibilityRole="button"
             accessibilityLabel={t('Shuffle')}
@@ -489,8 +485,8 @@ export default function ArtistScreen() {
             ) : (
               <Icon name="shuffle" size={26} color={shuffleActive ? colors.accent : colors.text} />
             )}
-          </Pressable>
-          <Pressable
+          </GlassPressable>
+          <GlassPressable variant="prominent" tint={colors.accent}
             style={[styles.playButton, { backgroundColor: colors.accent }]}
             accessibilityRole="button"
             accessibilityLabel={showPause ? t('Pause') : t('Play')}
@@ -518,7 +514,7 @@ export default function ArtistScreen() {
                 // Optical centring only for the play triangle; pause is symmetric.
               />
             )}
-          </Pressable>
+          </GlassPressable>
         </View>
 
         {top.length > 0 ? (
@@ -548,7 +544,7 @@ export default function ArtistScreen() {
               ))}
             </View>
             {top.length > 5 ? (
-              <Pressable
+              <GlassPressable variant="subtle"
                 hitSlop={8}
                 accessibilityRole="button"
                 onPress={() => setSongsExpanded((v) => !v)}
@@ -556,7 +552,7 @@ export default function ArtistScreen() {
                 <Text style={styles.bioToggle}>
                   {songsExpanded ? t('Show less') : t('Show more')}
                 </Text>
-              </Pressable>
+              </GlassPressable>
             ) : null}
           </View>
         ) : null}
@@ -594,7 +590,7 @@ export default function ArtistScreen() {
               {info.biography}
             </Text>
             {info.biography.length > 220 ? (
-              <Pressable
+              <GlassPressable variant="subtle"
                 hitSlop={8}
                 accessibilityRole="button"
                 onPress={() => setBioExpanded((v) => !v)}
@@ -602,7 +598,7 @@ export default function ArtistScreen() {
                 <Text style={styles.bioToggle}>
                   {bioExpanded ? t('Show less') : t('Show more')}
                 </Text>
-              </Pressable>
+              </GlassPressable>
             ) : null}
           </View>
         ) : null}
@@ -643,7 +639,7 @@ export default function ArtistScreen() {
             makes it visible over a photo, and it stays there once the bar has
             gone solid. */}
         <BackChevron size={28} color={colors.onArtwork} style={styles.back} label={t('Close')} />
-        <Animated.Text style={[styles.barTitle, { opacity: barContentOpacity }]} numberOfLines={1}>
+        <Animated.Text style={[styles.barTitle, barContentStyle]} numberOfLines={1}>
           {data.artist.name}
         </Animated.Text>
       </View>
@@ -745,8 +741,7 @@ export default function ArtistScreen() {
                 <Pressable
                   style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
                   onPress={() => {
-                    close();
-                    router.push(`/artist/discography/${id}`);
+                    close(() => router.push(`/artist/discography/${id}`));
                   }}
                 >
                   <Icon name="albums-outline" size={24} color={colors.text} />
@@ -756,8 +751,7 @@ export default function ArtistScreen() {
               <Pressable
                 style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
                 onPress={() => {
-                  close();
-                  void addToPlaylist();
+                  close(() => { void addToPlaylist(); });
                 }}
               >
                 <Icon name="add" size={24} color={colors.text} />
@@ -785,8 +779,7 @@ export default function ArtistScreen() {
                 <Pressable
                   style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
                   onPress={() => {
-                    close();
-                    setConfirmDeleteDl(true);
+                    close(() => setConfirmDeleteDl(true));
                   }}
                 >
                   <Icon name="trash-outline" size={24} color={colors.text} />

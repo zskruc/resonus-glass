@@ -1,4 +1,5 @@
 /** Sheet to create or edit a radio station: name, URL, and optional website. */
+import { GlassPressable, GlassTextInput } from '@/components/glass';
 import Icon from '@/components/Icon';
 import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useState } from 'react';
@@ -11,7 +12,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -122,15 +122,15 @@ export function RadioEditSheet({
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={onCancel}
+      onRequestClose={cover.askPassword ? cover.cancelPassword : onCancel}
     >
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.header}>
-          <Pressable hitSlop={12} onPress={onCancel}>
+          <GlassPressable variant="subtle" hitSlop={12} onPress={onCancel}>
             <Text style={[styles.headerAction, { color: colors.accent }]}>{t('Cancel')}</Text>
-          </Pressable>
+          </GlassPressable>
           <Text style={styles.title}>{editing ? t('Edit station') : t('Add station')}</Text>
-          <Pressable
+          <GlassPressable variant="subtle"
             hitSlop={12}
             disabled={!canSave}
             onPress={() =>
@@ -149,7 +149,7 @@ export function RadioEditSheet({
             >
               {t('Save')}
             </Text>
-          </Pressable>
+          </GlassPressable>
         </View>
 
         <KeyboardAvoidingView
@@ -174,11 +174,11 @@ export function RadioEditSheet({
                   </View>
                 ) : !coverEditable ? null : (
                   <View style={styles.coverBadges}>
-                    <View style={styles.coverBadge}>
+                    <View collapsable={false} style={styles.coverBadge}>
                       <Icon name="camera" size={16} color={colors.onArtwork} />
                     </View>
                     {canRemove ? (
-                      <Pressable
+                      <GlassPressable variant="prominent" tint={'rgba(0,0,0,0.65)'}
                         hitSlop={6}
                         accessibilityRole="button"
                         accessibilityLabel={t('Remove cover')}
@@ -186,7 +186,7 @@ export function RadioEditSheet({
                         style={({ pressed }) => [styles.coverBadge, pressed && { opacity: 0.7 }]}
                       >
                         <Icon name="trash-outline" size={16} color={colors.onArtwork} />
-                      </Pressable>
+                      </GlassPressable>
                     ) : null}
                   </View>
                 )}
@@ -196,7 +196,7 @@ export function RadioEditSheet({
             ) : null}
 
             <Text style={styles.label}>{t('Name')}</Text>
-            <TextInput
+            <GlassTextInput
               style={styles.input}
               value={name}
               onChangeText={setName}
@@ -206,7 +206,7 @@ export function RadioEditSheet({
             />
 
             <Text style={styles.label}>{t('Stream URL')}</Text>
-            <TextInput
+            <GlassTextInput
               style={styles.input}
               value={streamUrl}
               onChangeText={setStreamUrl}
@@ -224,7 +224,7 @@ export function RadioEditSheet({
             ) : null}
 
             <Text style={styles.label}>{t('Website (optional)')}</Text>
-            <TextInput
+            <GlassTextInput
               style={styles.input}
               value={homePageUrl}
               onChangeText={setHomePageUrl}
@@ -242,7 +242,8 @@ export function RadioEditSheet({
       {/* Profiles created before the password was stored: uploading needs
           Navidrome's own API, which asks for it. */}
       <Dialog
-        visible={cover.askPassword}
+        inline
+        visible={visible && cover.askPassword}
         title={t('Confirm your password')}
         message={t('Your password is needed to upload images and will be stored securely.')}
         input={{ placeholder: t('Password'), secure: true }}

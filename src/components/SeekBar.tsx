@@ -13,7 +13,7 @@
  * repainting the screen around it: the player is one large component (#50) and
  * the lyrics screen is following the song word by word.
  */
-import Slider from '@react-native-community/slider';
+import { GlassSlider as Slider } from '@/components/glass';
 import { useState } from 'react';
 import { Platform, Pressable, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 

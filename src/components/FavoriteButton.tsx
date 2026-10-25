@@ -19,9 +19,11 @@ interface Props {
   size?: number;
   /** Song lists only: take the favourite off behind an «Undo» toast (#98). */
   undo?: boolean;
+  /** Readable ink when this button sits over the floating glass player. */
+  unselectedColor?: string;
 }
 
-export function FavoriteButton({ id, type = 'song', starred, size = 22, undo }: Props) {
+export function FavoriteButton({ id, type = 'song', starred, size = 22, undo, unselectedColor }: Props) {
   const auth = useAuthStore((s) => s.auth);
   const offline = useAuthStore((s) => s.offline);
   const t = useT();
@@ -80,7 +82,7 @@ export function FavoriteButton({ id, type = 'song', starred, size = 22, undo }: 
       <Icon
         name={fav ? 'heart' : 'heart-outline'}
         size={size}
-        color={fav ? colors.accent : colors.textSecondary}
+        color={fav ? colors.accent : unselectedColor ?? colors.textSecondary}
       />
     </Pressable>
   );

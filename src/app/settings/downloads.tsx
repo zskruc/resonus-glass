@@ -6,10 +6,11 @@
  * server, but it is still where you left it. Used space and delete keep
  * working, since freeing space needs no network.
  */
+import { DockScrollView } from '@/components/DockScrollView';
 import { Paths } from 'expo-file-system';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { Dialog } from '@/components/Dialog';
 import {
@@ -149,7 +150,7 @@ export default function DownloadsSettings() {
 
   return (
     <SettingsPage title={t('Downloads & offline')}>
-      <ScrollView contentContainerStyle={settingsStyles.content}>
+      <DockScrollView contentContainerStyle={settingsStyles.content}>
         {/* The first title sticks to the header (no section margin). */}
         <Text style={[settingsStyles.sectionTitle, { marginTop: 0 }]}>{t('Downloading')}</Text>
         {/* Nothing can be downloaded without a server, so offline these are
@@ -365,7 +366,7 @@ export default function DownloadsSettings() {
             onPress={() => setConfirmDelete(true)}
           />
         ) : null}
-      </ScrollView>
+      </DockScrollView>
 
       <Dialog
         visible={confirmDelete}

@@ -1,4 +1,5 @@
 /** Album and song search on the server. */
+import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useFocusEffect, useNavigation } from 'expo-router';
@@ -14,6 +15,7 @@ import {
 // gesture-handler ScrollView: needed so the song row swipe-to-queue coexists
 // with scrolling (see TrackRow).
 import { ScrollView } from 'react-native-gesture-handler';
+import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COVER, coverArtUrl, getPlaylists, search } from '@/api/data';
@@ -36,8 +38,11 @@ import { useRecentSearches, type RecentItem } from '@/store/recentSearches';
 import { useSettings } from '@/store/settings';
 import { useAccent } from '@/hooks/useAccent';
 import { colors, fontSize, radius, spacing, themed, useTheme, tracking } from '@/theme';
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
 import { centredPadding, useScreenSize } from '@/hooks/useScreenSize';
+
+const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
 
 /**
  * What the chips under the box narrow the answer to.
@@ -60,6 +65,7 @@ const FILTERS: { key: SearchFilter; label: string }[] = [
 ];
 
 export default function SearchScreen() {
+  const dockScroll = useLiquidDockScrollHandler();
   // Counted, to answer whether a tab you have visited keeps working
   // afterwards: they stay mounted once opened, and freezing them is
   // supposed to stop them rendering while they are not on screen. If this
@@ -235,7 +241,8 @@ export default function SearchScreen() {
 
   return (
     <View style={[styles.safe, { paddingTop: insets.top }]}>
-      <View style={styles.searchBar}>
+      <View collapsable={false} style={styles.searchBar}>
+        <GlassBackdrop radius={radius.pill} tint={colors.surfaceHighlight} variant="regular" />
         <Icon name="search" size={20} color={colors.textMuted} />
         <TextInput
           ref={inputRef}
@@ -249,9 +256,9 @@ export default function SearchScreen() {
           returnKeyType="search"
         />
         {query.length > 0 ? (
-          <Pressable hitSlop={10} accessibilityLabel={t('Clear')} onPress={() => setQuery('')}>
+          <GlassPressable variant="subtle" hitSlop={10} accessibilityLabel={t('Clear')} onPress={() => setQuery('')}>
             <Icon name="close-circle" size={20} color={colors.textMuted} />
-          </Pressable>
+          </GlassPressable>
         ) : null}
         <OfflineIndicator />
       </View>
@@ -265,7 +272,7 @@ export default function SearchScreen() {
           {FILTERS.filter((f) => f.key !== 'radio' || canSearchStations).map((f) => {
             const active = f.key === filter;
             return (
-              <Pressable
+              <GlassPressable tint={active ? accent : undefined} variant={active ? 'prominent' : 'regular'}
                 key={f.key}
                 style={[styles.filter, active && { backgroundColor: accent }]}
                 accessibilityRole="button"
@@ -277,13 +284,15 @@ export default function SearchScreen() {
                 <Text style={[styles.filterText, active && styles.filterTextActive]}>
                   {t(f.label)}
                 </Text>
-              </Pressable>
+              </GlassPressable>
             );
           })}
         </View>
       )}
 
-      <ScrollView
+      <AnimatedScrollView
+        onScroll={dockScroll}
+        scrollEventThrottle={16}
         contentContainerStyle={[
           styles.content,
           { paddingBottom: bottomPad, paddingHorizontal: pagePad },
@@ -294,9 +303,9 @@ export default function SearchScreen() {
           <View style={styles.section}>
             <View style={styles.recentHeader}>
               <Text style={styles.sectionTitle}>{t('Recent searches')}</Text>
-              <Pressable hitSlop={8} onPress={() => clearRecent()}>
+              <GlassPressable variant="subtle" hitSlop={8} onPress={() => clearRecent()}>
                 <Text style={styles.clearAll}>{t('Clear all')}</Text>
-              </Pressable>
+              </GlassPressable>
             </View>
             <View>
               {recent.map((item) => (
@@ -315,13 +324,13 @@ export default function SearchScreen() {
                         {recentLabel(item)}
                       </Text>
                     </View>
-                    <Pressable
+                    <GlassPressable variant="subtle"
                       hitSlop={10}
                       accessibilityLabel={t('Clear')}
                       onPress={() => removeRecent(item)}
                     >
                       <Icon name="close" size={20} color={colors.textMuted} />
-                    </Pressable>
+                    </GlassPressable>
                   </Pressable>
                 </Link>
               ))}
@@ -529,7 +538,7 @@ export default function SearchScreen() {
             ))}
           </View>
         ) : null}
-      </ScrollView>
+      </AnimatedScrollView>
     </View>
   );
 }
@@ -543,7 +552,7 @@ const styles = themed((colors) => ({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: colors.surfaceHighlight,
+    backgroundColor: 'transparent',
     margin: spacing.lg,
     paddingHorizontal: spacing.lg,
     borderRadius: radius.pill,

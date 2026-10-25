@@ -1,0 +1,79 @@
+name: Glass ARM64 test APK
+
+# Manual test build, not a release. Every run uses a new disposable signing key,
+# so it cannot update an existing Glass install (including the owner's phone).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: glass-test-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      EXPO_PUBLIC_COMMIT: ${{ github.sha }}
+      RESONUS_KEY_ALIAS: glass-ci-test
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - name: Create disposable test signing key
+        shell: bash
+        run: |
+          ci_key_file="$RUNNER_TEMP/glass-ci-test.p12"
+          ci_key_password="$(openssl rand -hex 24)"
+          echo "::add-mask::$ci_key_password"
+          keytool -genkeypair -noprompt \
+            -keystore "$ci_key_file" -storetype PKCS12 \
+            -storepass "$ci_key_password" -keypass "$ci_key_password" \
+            -alias "$RESONUS_KEY_ALIAS" -keyalg RSA -keysize 2048 \
+            -validity 7 -dname 'CN=Resonus Glass CI Test, OU=Disposable Test Only'
+          echo "RESONUS_KEYSTORE_FILE=$ci_key_file" >> "$GITHUB_ENV"
+          echo "RESONUS_KEYSTORE_PASSWORD=$ci_key_password" >> "$GITHUB_ENV"
+          echo "RESONUS_KEY_PASSWORD=$ci_key_password" >> "$GITHUB_ENV"
+      - name: Build Glass ARM64 APK
+        run: bash scripts/build-glass-preview.sh
+      - name: Label test-only build
+        shell: bash
+        run: |
+          mv artifacts/Resonus-Glass-preview.apk artifacts/Resonus-Glass-CI-Test.apk
+          sha256sum artifacts/Resonus-Glass-CI-Test.apk > artifacts/Resonus-Glass-CI-Test.apk.sha256
+          cat > artifacts/CI-TEST-ONLY.txt <<'NOTICE'
+          TEST BUILD: signed with a disposable key generated for this CI run.
+          It cannot update the existing Samsung Glass installation or another CI build.
+          Do not uninstall an existing app to bypass a signature mismatch: app data
+          and offline downloads would be removed. Use a test device/profile, or build
+          locally with the original installation's signing key for an in-place update.
+          No private release signing key is included in this repository or artifact.
+          NOTICE
+          cat artifacts/CI-TEST-ONLY.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Resonus-Glass-CI-Test-${{ github.sha }}
+          path: |
+            artifacts/Resonus-Glass-CI-Test.apk
+            artifacts/Resonus-Glass-CI-Test.apk.sha256
+            artifacts/CI-TEST-ONLY.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove disposable signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/glass-ci-test.p12"

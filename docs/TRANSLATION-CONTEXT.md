@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 764 of them.
+Every string the app can show, under the screen it shows up on. 854 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -67,11 +67,11 @@ you are actually typing into, which is easier than reading it here.
 | `Genre` | Label of a field in the song information sheet |
 | `Go to album` | Leave this sheet and open the album the song is on |
 | `Go to artist` | Leave this sheet and open the artist |
-| `Home` | The first tab, and a folder in the car |
 | `Library` | The settings section, and a folder in the car |
 | `Mix of “{name}”` | What the player calls the queue once it has grown past its album into songs the app picked itself. `{name}` is the song it was grown from |
 | `Mix started` | The toast that says the app is now picking the songs |
 | `Moods` | Mood tags the server has on the song: mellow, energetic… |
+| `Navigation bar` | Settings screen: which tabs are on the bar at the bottom, and in what order |
 | `New features` | Heading in the update prompt over the new things a release brings. The lines under it stay in English |
 | `Open settings` | Its confirm button: goes to Android's own settings, not the app's |
 | `Pick a date…` | Opens the calendar to choose the day the link stops working |
@@ -319,7 +319,6 @@ you are actually typing into, which is easier than reading it here.
 | `Good evening` | Home's greeting. The hours it changes at are part of the language too, see TRANSLATING.md |
 | `Good morning` | Home's greeting. The hours it changes at are part of the language too, see TRANSLATING.md |
 | `Good night` | Home's greeting, for the small hours. Spanish uses the same words as for the evening, which is fine |
-| `Home` | The first tab, and a folder in the car |
 | `Left on {player}` | Same card, when that app is no longer playing but its queue is the last one saved: where the person left off. {player} is the app's name |
 | `Loading covers…` | Still pulling the pictures out of the phone's own files |
 | `Looking for music…` | Reading the phone's own files, before anything can be shown |
@@ -428,6 +427,7 @@ you are actually typing into, which is easier than reading it here.
 | `History` | The listening history: what was played and when |
 | `Mix of “{name}”` | What the player calls the queue once it has grown past its album into songs the app picked itself. `{name}` is the song it was grown from |
 | `No devices found` |  |
+| `No lyrics available for this song.` | Empty state on the lyrics screen |
 | `NOW PLAYING` | Small label above the cover, in the same place and style as `PLAYING FROM`, when there is nothing to name |
 | `Output` |  |
 | `Playback speed` |  |
@@ -667,16 +667,26 @@ you are actually typing into, which is easier than reading it here.
 
 | String | What it is |
 | --- | --- |
+| `{n} in total · {size} KB declared` | Diagnostics request summary. {n} is the request count; {size} is the total size reported by the response headers in kilobytes |
 | `Counted` | Section header on the Diagnostics screen: things that happened and how many times |
 | `Diagnostics` | The screen's title, and the row in About that opens it |
 | `Everything asked of the server, most often first. The music itself is not here: the player opens that connection and this never sees it.` | The line under that header, saying what the list covers and what it leaves out |
+| `Interface freezes` |  |
+| `Kept even with measuring off, the last 30.` |  |
+| `Measured over the last {n} min of use.` |  |
 | `Measuring is off (Settings › About), so there is nothing to show.` | Empty state on the Diagnostics screen when `Measure performance` has never been switched on |
+| `Moments when the app stopped responding, longest first.` |  |
+| `None` | One of the values of “Buttons next to play” |
+| `None over 120 ms.` |  |
+| `Nothing measured yet.` |  |
 | `Profile` | Section header over what kind of server the profile is. Not a user profile |
+| `Recent problems` |  |
 | `Requests` | Section header on the Diagnostics screen: how many times each server endpoint was asked, and how big the answers were |
 | `Share report` | Button: hands the numbers over as plain text, to paste into an issue |
 | `Start over` | Button: clears the measurements and starts counting again. Not "start playback" |
 | `State` | Section header on the Diagnostics screen: what the app is doing at this moment, as opposed to the timings above it |
 | `The player keeps beating twice a second while the app is away. Long silences here mean the app stopped following what it was playing.` | The line under `While minimized`. "The player" is the native audio engine, not the player screen, and "beating" is a heartbeat: it sends its state every 500 ms, and the position, the notification and the move to the next track all hang off that. Everything else on this screen stops measuring once the app is minimized, because the system takes its timers away, so this beat is the one clock still running out there. A long gap means the player itself went quiet, which is a different fault from the app coming back with a stale screen. Keep the medical sense of a pulse if your language has one |
+| `Time spent` |  |
 | `What happened, rather than how long it took.` | The line under `Counted`: that section is a tally of events, next to the sections above it which are timings |
 | `While minimized` | Section header on the Diagnostics screen, over what was measured with the app in the background rather than on screen. Minimized as in put away: the screen off or another app in front, with the music still going |
 
@@ -726,10 +736,20 @@ you are actually typing into, which is easier than reading it here.
 | String | What it is |
 | --- | --- |
 | `Bands` | The equalizer's frequency sliders |
+| `Classical` |  |
 | `Custom` | Settings › Equalizer, the first option of the preset list: none of the presets below it, the bands left wherever you dragged them. Also `Custom::color`, the heading over your own accent colour in Settings › Theme (add it to your file if the word needs another form for a colour) |
+| `Dance` |  |
 | `Equalizer` |  |
+| `Flat` |  |
+| `Folk` |  |
+| `Heavy metal` |  |
+| `Hip hop` |  |
+| `Jazz` |  |
+| `Normal` |  |
+| `Pop` |  |
 | `Preset` | An equalizer preset. Not a bitrate |
 | `Reset bands` | Put the equalizer's frequency sliders back to flat |
+| `Rock` |  |
 | `This device does not offer an equalizer.` |  |
 
 ## Settings › Explore sections
@@ -745,12 +765,83 @@ you are actually typing into, which is easier than reading it here.
 | --- | --- |
 | `Active` |  |
 | `Couldn't load the font` |  |
-| `default` | Lower case on purpose: it goes in brackets after the system font's name, `Roboto (default)` |
+| `default` | Lower case on purpose: it goes in brackets after the system font label, `System font (default)` |
 | `Font` |  |
 | `Load a .ttf or .otf file` |  |
 | `Loaded` |  |
 | `Make sure the file is a valid .ttf or .otf font.` |  |
 | `Remove custom font` |  |
+| `System font` | Font picker option that uses the device's default typeface and text weight settings |
+
+## Settings › Glass
+
+| String | What it is |
+| --- | --- |
+| `Adds a rounded three-dimensional lens shape.` |  |
+| `Adds subtle colored edges to refracted details.` |  |
+| `Applied to all glass controls` |  |
+| `Apply to all controls` |  |
+| `Auto` |  |
+| `Automatic tint` |  |
+| `Automatic tint follows each control’s original color.` |  |
+| `Background blur` |  |
+| `Black` |  |
+| `Brightness of the reflected edge light.` |  |
+| `Changes apply live. Save to keep them after restarting. Export your finished settings and send them to me.` |  |
+| `Choose a color; tint opacity controls how much it covers the background.` |  |
+| `Clear glass` |  |
+| `Color dispersion` |  |
+| `Controls how far the lens effect extends from the edge.` |  |
+| `Could not export glass parameters.` |  |
+| `Could not save glass parameters.` |  |
+| `Current parameters` |  |
+| `Custom color` |  |
+| `Custom parameters` |  |
+| `Defaults restored. Save to keep them.` |  |
+| `Depth effect` |  |
+| `Drag the background, or let it move slowly.` |  |
+| `Drag the sample background to inspect the glass` |  |
+| `Enable glass` |  |
+| `Enable glass for this control to see your changes.` |  |
+| `Explore` | The tab holding everything the server has: all albums, artists, songs, genres, stations and folders |
+| `Export keeps your three custom styles; the reference style does not overwrite them.` |  |
+| `Export parameters` |  |
+| `Glass in motion` |  |
+| `Glass parameters` |  |
+| `Glass parameters saved` |  |
+| `Glass tint` |  |
+| `Glass tuning` |  |
+| `Hex code` |  |
+| `Higher values bend the background more.` |  |
+| `Highlight intensity` |  |
+| `Highlight width` |  |
+| `iPhone reference` |  |
+| `iPhone reference approximates the observed appearance; it does not copy Apple’s private parameters. Switch to Custom parameters to restore and edit your saved styles.` |  |
+| `Lens and light` |  |
+| `Lens edge depth` |  |
+| `Live glass preview · sample content` |  |
+| `Lower values keep the background clear.` |  |
+| `Lower values show more of the background.` |  |
+| `Move background` |  |
+| `Native liquid glass is unavailable on this device. This preview uses a solid fallback.` |  |
+| `On` | An enabled switch, shown in the readable summary of glass parameters |
+| `Other surfaces` |  |
+| `Pause motion` |  |
+| `Refraction strength` |  |
+| `Reset this control` |  |
+| `Sample album` |  |
+| `Sample panel` |  |
+| `Save parameters` |  |
+| `Saving…` |  |
+| `Soft glass` |  |
+| `Starting styles` |  |
+| `Strong lens` |  |
+| `These parameters apply to panels, dialogs, and fields. Buttons use their original styles.` |  |
+| `Thickness of the light along the glass edge.` |  |
+| `Tint opacity` |  |
+| `White` |  |
+| `You can copy or screenshot these values. Export includes all three control styles.` |  |
+| `Your library` | The tab with your albums, artists and playlists |
 
 ## Settings › Greeting
 
@@ -790,6 +881,7 @@ you are actually typing into, which is easier than reading it here.
 
 | String | What it is |
 | --- | --- |
+| `Don't see your language, or want to improve an existing one? You can help by contributing a translation on GitHub. Pull requests are welcome.` |  |
 | `Help translate` |  |
 | `Language` |  |
 | `Translations` |  |
@@ -873,9 +965,9 @@ you are actually typing into, which is easier than reading it here.
 | `Explore sections` |  |
 | `Folder browsing` | Browsing the server's folders as folders, instead of by album and artist |
 | `Font` |  |
+| `Glass tuning` |  |
 | `Greeting` | Home's "Good morning" line |
 | `Haptic feedback` | The small vibration when something is tapped |
-| `Home` | The first tab, and a folder in the car |
 | `Home buttons` | The icons at the top right of Home (search, history, settings), which of them show and in what order |
 | `Home chips` | The row of tappable category chips |
 | `Home sections` | Reorder which sections appear on Home |
@@ -887,7 +979,6 @@ you are actually typing into, which is easier than reading it here.
 | `Navigation` | Section header: how you move around the app |
 | `Navigation bar` | Settings screen: which tabs are on the bar at the bottom, and in what order |
 | `Navigation bar blur` |  |
-| `Off` | A setting value meaning disabled (crossfade, normalization…) |
 | `Open the app on` | Which tab the app opens on, and comes back to after a while away |
 | `Playing on other devices` |  |
 | `Quick grid` | The grid of shortcut tiles on Home |
@@ -924,7 +1015,6 @@ you are actually typing into, which is easier than reading it here.
 | `No` | A setting value meaning none or zero, not the answer to a question: no crossfade, no seek buttons |
 | `Normalize volume` |  |
 | `Not used` | Replaces the codec's value when that network's quality is `Original`. Nothing is transcoded then, so the codec setting has nothing to do and the row is greyed out |
-| `Off` | A setting value meaning disabled (crossfade, normalization…) |
 | `On mobile data only` | A value of when a downloaded song is played from the file instead of streamed |
 | `On opening with nothing playing, take the newer queue another player left on the server.` |  |
 | `Only if it is the original file` | One of the values of “Play downloaded songs from the phone” |
@@ -956,12 +1046,13 @@ you are actually typing into, which is easier than reading it here.
 | `Always previous track` | A value of `Previous button`: never restarts, always goes back a song |
 | `Animated cover background` | A setting: an animated cover (GIF, animated WebP) is shown full screen behind the player instead of inside the square |
 | `Background` | Section header over what is drawn behind the player. Its two values are `Plain` and `Blurred cover` |
+| `Blur inactive lyrics` | A switch in the Lyrics section: progressively softens synchronized lyric rows away from the current line |
 | `Blurred cover` | A value of `Background`: the album art, blurred, behind the player |
+| `Bold font weight` | One of the values of “Lyrics weight” |
 | `Bottom row` |  |
 | `Buttons` | Which player buttons to show |
 | `Buttons next to play` |  |
 | `Centered` | One of the values of “Lyrics alignment” |
-| `Colored mini player` | Tint the mini player with the colour of the cover art |
 | `Cover art` | Three places, one word: a section header in Settings › Player, a line of the storage bar in Settings › Downloads, and what the screen reader calls the picture in the song information sheet |
 | `Cover color` | The colour taken from the cover art |
 | `Disable online search` | A value of `Lyrics source`: only ever use the ones that came with the file |
@@ -970,18 +1061,19 @@ you are actually typing into, which is easier than reading it here.
 | `Fit cover art` | Show the whole cover even if it is not square, instead of cropping it to fill |
 | `Go to album` | Leave this sheet and open the album the song is on |
 | `Keep paused when skipping` |  |
-| `Large` | One of the values of “Lyrics size” |
 | `Left` | One of the values of “Lyrics alignment” |
+| `Light font weight` | One of the values of “Lyrics weight” |
 | `Lyrics alignment` |  |
 | `Lyrics background` | What is drawn behind the lyrics screen, the full screen one |
 | `Lyrics card background` | What is drawn behind the small lyrics card that peeks under the player. Not the same thing as `Lyrics background` |
 | `Lyrics size` |  |
 | `Lyrics source` | Where lyrics are looked for. Its values are the three `Prefer…`/`Disable…` lines |
+| `Lyrics weight` |  |
+| `Medium font weight` | One of the values of “Lyrics weight” |
 | `Mini player` |  |
 | `Mini player blur` |  |
 | `No` | A setting value meaning none or zero, not the answer to a question: no crossfade, no seek buttons |
 | `None` | One of the values of “Buttons next to play” |
-| `Normal` | One of the values of “Lyrics size” |
 | `Nothing` | A value of `On cover tap`: tapping the cover does nothing |
 | `On cover double tap` | Settings > Player: what tapping the album artwork twice does |
 | `On cover tap` | What tapping the cover art in the player does. One tap and two share the same values, listed below |
@@ -995,18 +1087,19 @@ you are actually typing into, which is easier than reading it here.
 | `Previous and next` | One of the values of “Buttons next to play” |
 | `Previous button` | What the previous button does when a song is already playing. Its values are the two lines below it |
 | `Queue` | The list of songs waiting to play. Not a playlist |
+| `Regular font weight` | One of the values of “Lyrics weight” |
 | `Restart, then previous track` | A value of `Previous button`: the first press goes back to the start of this song, the second to the one before |
 | `Scroll long titles` | A title too long to fit slides sideways, over and over, instead of being cut off |
+| `Semi-bold font weight` | One of the values of “Lyrics weight” |
 | `Show album & year` |  |
 | `Show artist card` |  |
 | `Show lyrics card` |  |
 | `Show lyrics on the cover` | A value of `On cover tap`: the lyrics take the cover's place, without leaving the player |
 | `Show previous tracks` | Whether the queue keeps the songs already played, dimmed, above the current one |
-| `Show progress bar` |  |
 | `Show quality label` |  |
 | `Show rating` |  |
 | `Skip buttons` | The seek forward / back buttons setting |
-| `Small` | One of the values of “Lyrics size” |
+| `Slightly blur synchronized lyrics other than the current line to emphasize what is playing.` | Help text under that switch. Only the current synchronized lyric line stays sharp |
 | `Swap favorite and menu` | Exchange the places of those two buttons in the player, for whichever hand you hold the phone in |
 | `Where to get lyrics from. Online search uses LRCLIB (sends the artist and title).` |  |
 
@@ -1037,7 +1130,6 @@ you are actually typing into, which is easier than reading it here.
 | --- | --- |
 | `Done` | The button that leaves drag-to-reorder, or accepts a fine-tuned number |
 | `How far into a song it counts as played. Whichever of the two comes first.` | At the top of the `Scrobbling` screen, over the two rows below it |
-| `Off` | A setting value meaning disabled (crossfade, normalization…) |
 | `Part of the song` | How much of a song must have played before it counts, as a percentage. One of the two scrobble rules, and it can be `Off` |
 | `Restore defaults` | Button at the end of the `Scrobbling` screen, putting both rules back to what they came as |
 | `Scrobbling` | Reporting a song as played, to the user's own server and from there to Last.fm or ListenBrainz. The title of its own screen and the row that opens it. The word comes from Last.fm and most languages keep it; use whatever those services call it in yours if they do |
@@ -1122,10 +1214,12 @@ you are actually typing into, which is easier than reading it here.
 | `Ascending` | Sort option: the order of a list |
 | `Back` | Screen reader label for the back arrow. A direction, not a verb |
 | `Cancel` | The button that closes a dialog without doing anything, and the one beside a search box |
+| `Casual` | The informal handwritten-style system typeface option in Settings › Font |
 | `Clear` | Read out by the screen reader for the small x that empties a search box. A verb |
 | `Clear all` | Throw away the whole list: the history, the queue, or what you searched for |
 | `Close` | Read out by the screen reader for a button that closes what is open. A verb |
 | `Columns` | The same menu's title on a screen that has no list to switch to, so all it chooses is the density |
+| `Condensed` | A narrow typeface option in Settings › Font, not a condensed list layout |
 | `Connect to Wi-Fi to download` | Toast: downloading over mobile data is turned off in the settings |
 | `Could not connect to the server` |  |
 | `Couldn't add to the playlist` | Toast: the server refused |
@@ -1148,8 +1242,10 @@ you are actually typing into, which is easier than reading it here.
 | `Exporting…` | The file is being copied out |
 | `Favorites` | The songs, albums and artists you starred |
 | `Hold to go back to {tab}` | The hint on holding the back arrow. `{tab}` is Home, Search or Library |
+| `Home` | The first tab, and a folder in the car |
 | `List` | An option in that menu: one row per item, instead of cards |
 | `Lyrics` | The words of the song. Also a line of the storage bar, where it is their size on the phone |
+| `Monospace` | A typeface whose characters all have the same width, in Settings › Font |
 | `More` | A "see more" action, and the third button of the selection bar, the one that opens the rest of what it can do |
 | `More options` | Read out by the screen reader for the three-dot button, which is ⋮ on a song row and in the player and ⋯ in a screen's header |
 | `New playlist` | Row at the top of the playlist picker, and the button on an empty library: make one |
@@ -1159,8 +1255,10 @@ you are actually typing into, which is easier than reading it here.
 | `Not available offline` | This one is not downloaded, so it cannot play without a connection |
 | `Nothing here is downloaded` | Toast when playing something that is not downloaded, offline |
 | `Nothing to shuffle yet` | Empty state: there is nothing here to play in random order |
+| `Off` | A setting value meaning disabled (crossfade, normalization…) |
 | `Offline` | The toast shown when the app falls into offline mode by itself, and the badge that says it is in it |
 | `Pause` | Read out by the screen reader for the pause button. A verb |
+| `Pink` |  |
 | `Play` | Read out by the screen reader for the play button. A verb |
 | `Play next` | Action: put this song right after the one playing, without clearing the rest |
 | `Playing next` | The toast that says `Play next` worked. Not the same string, and not a heading |
@@ -1178,6 +1276,7 @@ you are actually typing into, which is easier than reading it here.
 | `Save` | The confirm button of an edit sheet. A verb |
 | `Search` | The search tab, and the action of searching |
 | `Select all` | Tick every song in the list at once |
+| `Serif` | A typeface with small strokes at the ends of letters, in Settings › Font |
 | `Server default` | Codec option meaning "let the server decide" what to transcode to |
 | `Server took too long to respond` |  |
 | `Session expired: sign in again` |  |

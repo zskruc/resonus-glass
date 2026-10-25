@@ -25,7 +25,7 @@ on:
       - 'docs/TRANSLATION-CONTEXT.md'
       - '.github/workflows/i18n.yml'
   push:
-    branches: [main]
+    branches: [glass, main]
     paths:
       - 'src/**'
       - 'scripts/i18n-*.mjs'
@@ -48,6 +48,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v7
         with:
           node-version: 22

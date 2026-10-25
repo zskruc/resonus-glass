@@ -4,9 +4,10 @@
  * carousel) or wrapping grid (Explore / Genre), at the same size as AlbumCard
  * so the layout doesn't jump when content arrives.
  */
-import { useEffect } from 'react';
+import { useCallback } from 'react';
 import { View } from 'react-native';
 import Animated, {
+  cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -14,6 +15,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { radius, spacing, themed } from '@/theme';
+import { useForegroundEffect } from '@/hooks/useForegroundEffect';
 import { motion } from '@/theme/motion';
 
 interface Props {
@@ -26,9 +28,11 @@ interface Props {
 
 export function AlbumCardsSkeleton({ width = 150, count = 6, horizontal }: Props) {
   const pulse = useSharedValue(1);
-  useEffect(() => {
-    pulse.value = withRepeat(withTiming(0.45, { duration: motion.duration.pulse }), -1, true);
-  }, [pulse]);
+  useForegroundEffect(useCallback(() => {
+    pulse.set(1);
+    pulse.set(withRepeat(withTiming(0.45, { duration: motion.duration.pulse }), -1, true));
+    return () => cancelAnimation(pulse);
+  }, [pulse]));
   const pulseStyle = useAnimatedStyle(() => ({ opacity: pulse.value }));
 
   return (

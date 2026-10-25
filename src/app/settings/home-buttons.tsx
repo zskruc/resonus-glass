@@ -7,8 +7,10 @@
  * only reachable from that icon, so turning it off would leave no way back to
  * this very screen.
  */
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
+import { GlassSurface, GlassSwitch } from '@/components/glass';
 import Icon from '@/components/Icon';
-import { Pressable, Switch, Text, View } from 'react-native';
+import { Pressable, Text } from 'react-native';
 import ReorderableList, {
   useReorderableDrag,
   type ReorderableListReorderEvent,
@@ -49,7 +51,7 @@ function ButtonRow({ button }: { button: HomeButton }) {
   // is there at all is not.
   const fixed = button.key === 'settings';
   return (
-    <View style={styles.row}>
+    <GlassSurface radius={radius.md} style={styles.row}>
       <Pressable
         hitSlop={8}
         onPressIn={() => {
@@ -66,18 +68,19 @@ function ButtonRow({ button }: { button: HomeButton }) {
       {fixed ? (
         <Text style={styles.fixed}>{t('Always shown')}</Text>
       ) : (
-        <Switch
+        <GlassSwitch
           value={button.enabled}
           onValueChange={(v) => setHomeButton(button.key, v)}
           trackColor={{ false: colors.control, true: accent }}
           thumbColor={colors.knob}
         />
       )}
-    </View>
+    </GlassSurface>
   );
 }
 
 export default function HomeButtonsSettings() {
+  const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
@@ -91,6 +94,7 @@ export default function HomeButtonsSettings() {
       <ScreenHeader title={t('Home buttons')} />
       <Text style={styles.hint}>{t('Drag to reorder, toggle to show or hide.')}</Text>
       <ReorderableList
+        onScroll={dockScroll}
         data={homeButtons}
         keyExtractor={(item) => item.key}
         renderItem={({ item }) => <ButtonRow button={item} />}

@@ -12,10 +12,12 @@
 import Icon from '@/components/Icon';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 
 import { getMusicFolders } from '@/api/data';
 import { Message } from '@/components/Message';
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
 import { useListPadding } from '@/hooks/useScreenSize';
 import { useT } from '@/i18n';
@@ -24,6 +26,7 @@ import { useAuthStore } from '@/store/auth';
 import { colors, fontSize, spacing, themed } from '@/theme';
 
 export function FoldersBrowser() {
+  const dockScroll = useLiquidDockScrollHandler();
   const listPad = useListPadding(spacing.lg);
   const t = useT();
   const router = useRouter();
@@ -40,7 +43,9 @@ export function FoldersBrowser() {
   if (isError) return <Message text={t("Couldn't load folders.")} onRetry={() => refetch()} />;
   const folders = data && data.length > 0 ? data : [{ id: 'root', name: t('Music') }];
   return (
-    <FlatList
+    <Animated.FlatList
+      onScroll={dockScroll}
+      scrollEventThrottle={16}
       {...listPerf}
       contentContainerStyle={[
         styles.list,

@@ -1,4 +1,5 @@
 /** Sheet to subscribe to a podcast: search the iTunes directory, or paste a feed. */
+import { GlassBackdrop, GlassPressable, GlassTextInput } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -83,9 +84,9 @@ export function PodcastAddSheet({ visible, subscribed, onCancel, onSubscribed }:
     >
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.header}>
-          <Pressable hitSlop={12} onPress={onCancel}>
+          <GlassPressable variant="subtle" hitSlop={12} onPress={onCancel}>
             <Text style={[styles.headerAction, { color: colors.accent }]}>{t('Cancel')}</Text>
-          </Pressable>
+          </GlassPressable>
           <Text style={styles.title}>{t('Add podcast')}</Text>
           <View style={styles.headerSpacer} />
         </View>
@@ -94,7 +95,8 @@ export function PodcastAddSheet({ visible, subscribed, onCancel, onSubscribed }:
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <View style={styles.searchBar}>
+          <View collapsable={false} style={styles.searchBar}>
+            <GlassBackdrop radius={radius.pill} tint={colors.surfaceHighlight} variant="regular" />
             <Icon name="search" size={18} color={colors.textMuted} />
             <TextInput
               style={styles.searchInput}
@@ -107,9 +109,9 @@ export function PodcastAddSheet({ visible, subscribed, onCancel, onSubscribed }:
               autoFocus
             />
             {term ? (
-              <Pressable hitSlop={8} onPress={() => setTerm('')} accessibilityLabel={t('Clear')}>
+              <GlassPressable variant="subtle" hitSlop={8} onPress={() => setTerm('')} accessibilityLabel={t('Clear')}>
                 <Icon name="close-circle" size={18} color={colors.textMuted} />
-              </Pressable>
+              </GlassPressable>
             ) : null}
           </View>
 
@@ -178,7 +180,7 @@ export function PodcastAddSheet({ visible, subscribed, onCancel, onSubscribed }:
           )}
 
           <View style={styles.pasteRow}>
-            <TextInput
+            <GlassTextInput
               style={styles.pasteInput}
               value={feedUrl}
               onChangeText={setFeedUrl}
@@ -189,7 +191,7 @@ export function PodcastAddSheet({ visible, subscribed, onCancel, onSubscribed }:
               keyboardType="url"
               inputMode="url"
             />
-            <Pressable
+            <GlassPressable variant="prominent" tint={colors.accent}
               disabled={!canPaste}
               onPress={() => void run(pasted, pasted)}
               accessibilityRole="button"
@@ -205,7 +207,7 @@ export function PodcastAddSheet({ visible, subscribed, onCancel, onSubscribed }:
               ) : (
                 <Text style={styles.subscribeText}>{t('Subscribe')}</Text>
               )}
-            </Pressable>
+            </GlassPressable>
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -233,7 +235,7 @@ const styles = themed((colors) => ({
     marginHorizontal: spacing.lg,
     paddingHorizontal: spacing.lg,
     borderRadius: radius.pill,
-    backgroundColor: colors.surfaceHighlight,
+    backgroundColor: 'transparent',
   },
   searchInput: { flex: 1, color: colors.text, fontSize: fontSize.md, padding: 0 },
   results: { padding: spacing.lg, gap: spacing.md },

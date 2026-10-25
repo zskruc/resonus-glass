@@ -3,11 +3,13 @@
  * accent colour of whichever one is on screen — each keeps its own. All of it
  * applies the moment it is chosen.
  */
+import { DockScrollView } from '@/components/DockScrollView';
 import { ColorPickerDialog } from '@/components/ColorPickerDialog';
 import Icon from '@/components/Icon';
 import { useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
+import { GlassPressable } from '@/components/glass';
 import { SelectList, SettingsGroup, SettingsPage, settingsStyles, SwitchList } from '@/components/SettingsUI';
 import { useT } from '@/i18n';
 import { ACCENT_OPTIONS, useSettings } from '@/store/settings';
@@ -59,7 +61,8 @@ function TintSwatches({
       {TINTS.map(({ key, name }) => {
         const active = key === value;
         return (
-          <Pressable
+          <GlassPressable
+            radius={radius.pill}
             key={key}
             onPress={() => onPick(key)}
             accessibilityRole="button"
@@ -73,7 +76,7 @@ function TintSwatches({
             ]}
           >
             {active ? <Icon name="checkmark" size={24} color={light ? '#000' : '#FFF'} /> : null}
-          </Pressable>
+          </GlassPressable>
         );
       })}
     </View>
@@ -89,7 +92,8 @@ function Swatches({ value, onPick }: { value: string; onPick: (hex: string) => v
       {ACCENT_OPTIONS.map((opt) => {
         const active = opt.color.toLowerCase() === value.toLowerCase();
         return (
-          <Pressable
+          <GlassPressable
+            radius={radius.pill}
             key={opt.color}
             onPress={() => onPick(opt.color)}
             accessibilityRole="button"
@@ -103,7 +107,7 @@ function Swatches({ value, onPick }: { value: string; onPick: (hex: string) => v
                 the same colour, taken down to where it can be read on
                 white. */}
             {active ? <Icon name="checkmark" size={24} color="#000" /> : null}
-          </Pressable>
+          </GlassPressable>
         );
       })}
     </View>
@@ -134,7 +138,8 @@ function CustomSwatch({
   return (
     <View style={styles.swatches}>
       {color ? (
-        <Pressable
+        <GlassPressable
+          radius={radius.pill}
           onPress={onPick}
           accessibilityRole="button"
           accessibilityLabel={t('Custom color')}
@@ -142,16 +147,17 @@ function CustomSwatch({
           style={[styles.swatch, { backgroundColor: color }, active && styles.swatchActive]}
         >
           {active ? <Icon name="checkmark" size={24} color={tickOn(color)} /> : null}
-        </Pressable>
+        </GlassPressable>
       ) : null}
-      <Pressable
+      <GlassPressable
+        radius={radius.pill}
         onPress={onEdit}
         accessibilityRole="button"
         accessibilityLabel={color ? t('Edit custom color') : t('Create custom color')}
         style={[styles.swatch, styles.tintSwatch, { backgroundColor: colors.surfaceHighlight }]}
       >
         <Icon name={color ? 'create-outline' : 'add'} size={24} color={colors.text} />
-      </Pressable>
+      </GlassPressable>
     </View>
   );
 }
@@ -182,7 +188,7 @@ export default function ThemeSettings() {
 
   return (
     <SettingsPage title={t('Theme')}>
-      <ScrollView contentContainerStyle={settingsStyles.content}>
+      <DockScrollView contentContainerStyle={settingsStyles.content}>
         {/* "Mode" and not "Appearance": Appearance is the screen this one hangs
             off, and two headings with the same word one level apart read as a
             mistake. */}
@@ -265,7 +271,7 @@ export default function ThemeSettings() {
             }}
           />
         ) : null}
-      </ScrollView>
+      </DockScrollView>
     </SettingsPage>
   );
 }

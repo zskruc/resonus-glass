@@ -1,5 +1,10 @@
 name: Release APK
 
+# Retained for upstream history. Glass has its own manual, test-only build;
+# upstream tags must never publish an original Resonus APK from this repository.
+permissions:
+  contents: read
+
 # Genera el APK firmado y lo publica como borrador de Release al empujar un
 # tag con formato v* (p. ej. v0.1.0-beta). El borrador se revisa y se publica
 # a mano desde GitHub.
@@ -15,6 +20,7 @@ on:
 
 jobs:
   build:
+    if: github.repository == 'juananzzz/resonus'
     runs-on: ubuntu-latest
     permissions:
       contents: write

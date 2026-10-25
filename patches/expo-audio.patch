@@ -1,3 +1,15 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index 4a212e23336ac6e6b8a17a7535b455faa8e45a6b..f1c5f741a86bf65e9440249f35a321f2fc179e24 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -23,6 +23,7 @@ repositories {
+ }
+ 
+ dependencies {
++  compileOnly 'com.facebook.react:react-android'
+   implementation 'androidx.appcompat:appcompat:1.7.1'
+   implementation 'androidx.core:core-ktx:1.15.0'
+ 
 diff --git a/android/src/main/AndroidManifest.xml b/android/src/main/AndroidManifest.xml
 index 36a19f2d9c4a979a940ab681a1fb844ce45f7c75..3509de4747f3ebdda1a014f05fb02f0710563498 100644
 --- a/android/src/main/AndroidManifest.xml
@@ -12,7 +24,7 @@ index 36a19f2d9c4a979a940ab681a1fb844ce45f7c75..3509de4747f3ebdda1a014f05fb02f07
 +  <uses-permission android:name="android.permission.WAKE_LOCK" />
  </manifest>
 diff --git a/android/src/main/java/expo/modules/audio/AudioModule.kt b/android/src/main/java/expo/modules/audio/AudioModule.kt
-index 992239ba7631ce0c97c0b41c5fbf61cc842386fe..3acd4b1b7e4bddc79bf9312323ddc3ac78f07bca 100644
+index 992239ba7631ce0c97c0b41c5fbf61cc842386fe..9bb783092adce775e1a8831bf310979d8bbf5b7c 100644
 --- a/android/src/main/java/expo/modules/audio/AudioModule.kt
 +++ b/android/src/main/java/expo/modules/audio/AudioModule.kt
 @@ -18,6 +18,7 @@ import androidx.media3.common.C.CONTENT_TYPE_HLS
@@ -23,7 +35,32 @@ index 992239ba7631ce0c97c0b41c5fbf61cc842386fe..3acd4b1b7e4bddc79bf9312323ddc3ac
  import androidx.media3.common.Player
  import androidx.media3.common.util.Util
  import androidx.media3.datasource.DataSource
-@@ -57,6 +58,8 @@ class AudioModule : Module() {
+@@ -28,6 +29,7 @@ import androidx.media3.exoplayer.hls.HlsMediaSource
+ import androidx.media3.exoplayer.smoothstreaming.SsMediaSource
+ import androidx.media3.exoplayer.source.MediaSource
+ import androidx.media3.exoplayer.source.ProgressiveMediaSource
++import expo.modules.audio.service.PreloadingBitmapLoader
+ import expo.modules.interfaces.permissions.Permissions
+ import expo.modules.kotlin.Promise
+ import expo.modules.kotlin.exception.Exceptions
+@@ -40,6 +42,7 @@ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.GlobalScope
+ import kotlinx.coroutines.launch
+ import kotlinx.coroutines.runBlocking
++import com.facebook.react.modules.network.OkHttpClientProvider
+ import okhttp3.OkHttpClient
+ import java.io.File
+ import java.util.concurrent.ConcurrentHashMap
+@@ -49,7 +52,7 @@ class AudioModule : Module() {
+   private lateinit var audioManager: AudioManager
+   private val context: Context
+     get() = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+-  private val httpClient = OkHttpClient()
++  private val httpClient = OkHttpClient.Builder().dns(OkHttpClientProvider.createClient().dns).build()
+ 
+   private val players = ConcurrentHashMap<String, AudioPlayer>()
+   private val recorders = ConcurrentHashMap<String, AudioRecorder>()
+@@ -57,6 +60,8 @@ class AudioModule : Module() {
    private var shouldPlayInBackground = false
    private var audioEnabled = true
    private var shouldRouteThroughEarpiece = false
@@ -32,7 +69,7 @@ index 992239ba7631ce0c97c0b41c5fbf61cc842386fe..3acd4b1b7e4bddc79bf9312323ddc3ac
    private var focusAcquired = false
    private var interruptionMode: InterruptionMode? = null
    private var allowsBackgroundRecording = false
-@@ -140,6 +143,17 @@ class AudioModule : Module() {
+@@ -140,6 +145,17 @@ class AudioModule : Module() {
      return playsInSilentMode || audioManager.ringerMode == AudioManager.RINGER_MODE_NORMAL
    }
  
@@ -50,7 +87,7 @@ index 992239ba7631ce0c97c0b41c5fbf61cc842386fe..3acd4b1b7e4bddc79bf9312323ddc3ac
    private fun requestAudioFocus() {
      if (focusAcquired || !audioEnabled || interruptionMode == InterruptionMode.MIX_WITH_OTHERS) {
        return
-@@ -148,14 +162,23 @@ class AudioModule : Module() {
+@@ -148,14 +164,23 @@ class AudioModule : Module() {
      val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
        val requestType = interruptionMode?.let {
          if (it == InterruptionMode.DO_NOT_MIX) {
@@ -76,7 +113,7 @@ index 992239ba7631ce0c97c0b41c5fbf61cc842386fe..3acd4b1b7e4bddc79bf9312323ddc3ac
              .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
              .build()
          )
-@@ -169,7 +192,7 @@ class AudioModule : Module() {
+@@ -169,7 +194,7 @@ class AudioModule : Module() {
      } else {
        @Suppress("DEPRECATION")
        val requestType = if (interruptionMode == InterruptionMode.DO_NOT_MIX) {
@@ -85,7 +122,7 @@ index 992239ba7631ce0c97c0b41c5fbf61cc842386fe..3acd4b1b7e4bddc79bf9312323ddc3ac
        } else {
          AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
        }
-@@ -363,7 +386,16 @@ class AudioModule : Module() {
+@@ -363,7 +388,16 @@ class AudioModule : Module() {
              bufferDurationMs
            )
            player.onPlaybackStateChange = { isPlaying ->
@@ -103,7 +140,7 @@ index 992239ba7631ce0c97c0b41c5fbf61cc842386fe..3acd4b1b7e4bddc79bf9312323ddc3ac
                releaseAudioFocus()
              }
            }
-@@ -376,6 +408,15 @@ class AudioModule : Module() {
+@@ -376,6 +410,15 @@ class AudioModule : Module() {
          player.id
        }
  
@@ -119,7 +156,7 @@ index 992239ba7631ce0c97c0b41c5fbf61cc842386fe..3acd4b1b7e4bddc79bf9312323ddc3ac
        Property("isBuffering") { player ->
          runOnMain {
            player.ref.playbackState == Player.STATE_BUFFERING
-@@ -507,6 +548,27 @@ class AudioModule : Module() {
+@@ -507,6 +550,27 @@ class AudioModule : Module() {
          }
        }
  
@@ -147,7 +184,7 @@ index 992239ba7631ce0c97c0b41c5fbf61cc842386fe..3acd4b1b7e4bddc79bf9312323ddc3ac
        Function("setActiveForLockScreen") { ref: AudioPlayer, active: Boolean, metadata: Metadata?, options: AudioLockScreenOptions? ->
          runOnMain {
            ref.setActiveForLockScreen(active, metadata, options)
-@@ -519,12 +581,26 @@ class AudioModule : Module() {
+@@ -519,12 +583,26 @@ class AudioModule : Module() {
          }
        }
  
@@ -174,7 +211,7 @@ index 992239ba7631ce0c97c0b41c5fbf61cc842386fe..3acd4b1b7e4bddc79bf9312323ddc3ac
        Function("setAudioSamplingEnabled") { player: AudioPlayer, enabled: Boolean ->
          runOnMain {
            player.setSamplingEnabled(enabled)
-@@ -685,7 +761,16 @@ class AudioModule : Module() {
+@@ -685,7 +763,16 @@ class AudioModule : Module() {
            }
            playlist.loadInitialPlaylist()
            playlist.onPlaybackStateChange = { isPlaying ->
@@ -192,7 +229,7 @@ index 992239ba7631ce0c97c0b41c5fbf61cc842386fe..3acd4b1b7e4bddc79bf9312323ddc3ac
                releaseAudioFocus()
              }
            }
-@@ -860,13 +945,29 @@ class AudioModule : Module() {
+@@ -860,13 +947,29 @@ class AudioModule : Module() {
  
    private fun createMediaItem(source: AudioSource?): MediaSource? = source?.uri?.let { uriString ->
      val uri = uriString.toUri()
@@ -215,7 +252,7 @@ index 992239ba7631ce0c97c0b41c5fbf61cc842386fe..3acd4b1b7e4bddc79bf9312323ddc3ac
 +          .setTitle(meta.title)
 +          .setArtist(meta.artist)
 +          .setAlbumTitle(meta.albumTitle)
-+          .setArtworkUri(meta.artworkUrl?.toString()?.toUri())
++          .setArtworkUri(PreloadingBitmapLoader.mask(meta.artworkUrl?.toString()))
 +          .setDurationMs(meta.durationMs)
 +          .build()
 +      ).build()
@@ -223,7 +260,7 @@ index 992239ba7631ce0c97c0b41c5fbf61cc842386fe..3acd4b1b7e4bddc79bf9312323ddc3ac
  
      val preloadedBytes = AudioPreloadManager.get(uriString)
      val factory: DataSource.Factory = if (preloadedBytes != null) {
-@@ -914,10 +1015,32 @@ class AudioModule : Module() {
+@@ -914,10 +1017,32 @@ class AudioModule : Module() {
      }
    }
  
@@ -257,7 +294,7 @@ index 992239ba7631ce0c97c0b41c5fbf61cc842386fe..3acd4b1b7e4bddc79bf9312323ddc3ac
    }
  
    private fun retrieveStreamType(uri: Uri): Int = Util.inferContentType(uri)
-@@ -931,7 +1054,7 @@ class AudioModule : Module() {
+@@ -931,7 +1056,7 @@ class AudioModule : Module() {
        CONTENT_TYPE_SS -> SsMediaSource.Factory(factory)
        CONTENT_TYPE_DASH -> DashMediaSource.Factory(factory)
        CONTENT_TYPE_HLS -> HlsMediaSource.Factory(factory)
@@ -703,10 +740,10 @@ index dca91c32a2787a7bc3ecba26f0f3f2ad9cc40d3d..089dcee0b9fe6a369f0809ecdf99a1fa
      .build()
  }
 diff --git a/android/src/main/java/expo/modules/audio/BaseAudioPlayer.kt b/android/src/main/java/expo/modules/audio/BaseAudioPlayer.kt
-index 149e9075c8630b14a69318aa6c37d9ff82b23f05..422d2d18677223f48b0106e44f573659b90160dd 100644
+index 149e9075c8630b14a69318aa6c37d9ff82b23f05..e0e5682e4af22b15a7c1e384d2fafcfc6cefa92b 100644
 --- a/android/src/main/java/expo/modules/audio/BaseAudioPlayer.kt
 +++ b/android/src/main/java/expo/modules/audio/BaseAudioPlayer.kt
-@@ -78,7 +78,6 @@ abstract class BaseAudioPlayer(
+@@ -78,7 +78,6 @@
      val listener = object : Player.Listener {
        override fun onIsPlayingChanged(isPlaying: Boolean) {
          playing = isPlaying
@@ -714,7 +751,7 @@ index 149e9075c8630b14a69318aa6c37d9ff82b23f05..422d2d18677223f48b0106e44f573659
  
          val isTransient = !isPlaying &&
            (ref.playbackState == Player.STATE_ENDED || ref.playbackState == Player.STATE_BUFFERING)
-@@ -86,9 +85,22 @@ abstract class BaseAudioPlayer(
+@@ -86,10 +85,40 @@
            intendedPlayingState = isPlaying
          }
  
@@ -735,8 +772,26 @@ index 149e9075c8630b14a69318aa6c37d9ff82b23f05..422d2d18677223f48b0106e44f573659
          }
 +        onPlaybackStateChange?.invoke(isPlaying)
          sendStatusUpdate(mapOf("playing" to isPlaying))
++      }
++
++      override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
++        val wasIntendedPlaying = intendedPlayingState
++        intendedPlayingState = playWhenReady
++        // Buffering makes isPlaying false without changing playback intent.
++        // A headset/system pause during that wait has no onIsPlayingChanged
++        // event, so report the explicit pause separately. Source replacement
++        // and ordinary network stalls leave playWhenReady unchanged.
++        if (!playWhenReady &&
++          (ref.playbackState == Player.STATE_BUFFERING || ref.playbackState == Player.STATE_IDLE)
++        ) {
++          // A real pause releases focus, while repeated reason reports and an
++          // IDLE transition already handled by onIsPlayingChanged do not.
++          if (wasIntendedPlaying) onPlaybackStateChange?.invoke(false)
++          sendStatusUpdate(mapOf("playing" to false, "playWhenReady" to false))
++        }
        }
  
+       override fun onIsLoadingChanged(isLoading: Boolean) {
 diff --git a/android/src/main/java/expo/modules/audio/FragmentSeekingExtractor.kt b/android/src/main/java/expo/modules/audio/FragmentSeekingExtractor.kt
 new file mode 100644
 index 0000000000000000000000000000000000000000..a4e9d208d0fa8f34440bc355de02f81129c91a76
@@ -1169,10 +1224,15 @@ index 0000000000000000000000000000000000000000..a4e9d208d0fa8f34440bc355de02f811
 +  }
 +}
 diff --git a/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt b/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
-index 196a5d57f887c2667a88543bd2f6a80044a044f2..4e093dc6d2dea7acb919a41f694db6bf04772752 100644
+index 196a5d57f887c2667a88543bd2f6a80044a044f2..f74435f1b33120db3799c7909e198df63d6252a4 100644
 --- a/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
 +++ b/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
-@@ -27,6 +27,7 @@ import expo.modules.audio.AudioLockScreenOptions
+@@ -23,10 +23,12 @@ import androidx.media3.session.MediaSession
+ import androidx.media3.session.MediaSessionService
+ import androidx.media3.session.MediaStyleNotificationHelper
+ import androidx.media3.session.SessionCommand
++import com.facebook.react.modules.network.OkHttpClientProvider
+ import expo.modules.audio.AudioLockScreenOptions
  import expo.modules.audio.AudioPlayer
  import expo.modules.audio.Metadata
  import expo.modules.audio.getPlaybackServiceErrorMessage
@@ -1180,7 +1240,27 @@ index 196a5d57f887c2667a88543bd2f6a80044a044f2..4e093dc6d2dea7acb919a41f694db6bf
  import expo.modules.kotlin.AppContext
  import kotlinx.coroutines.CoroutineScope
  import kotlinx.coroutines.Dispatchers
-@@ -90,6 +91,9 @@ class AudioControlsService : MediaSessionService() {
+@@ -34,6 +36,9 @@ import kotlinx.coroutines.Job
+ import kotlinx.coroutines.cancel
+ import kotlinx.coroutines.isActive
+ import kotlinx.coroutines.launch
++import okhttp3.OkHttpClient
++import okhttp3.Request
++import java.io.IOException
+ import java.lang.ref.WeakReference
+ import java.net.URL
+ 
+@@ -50,6 +55,9 @@ class AudioControlsService : MediaSessionService() {
+   private var currentArtworkUrl: URL? = null
+   private var currentArtwork: Bitmap? = null
+   private var artworkLoadJob: Job? = null
++  private val artworkHttpClient by lazy {
++    OkHttpClient.Builder().dns(OkHttpClientProvider.createClient().dns).build()
++  }
+   private val notificationId: Int
+     get() = currentPlayer?.hashCode() ?: CHANNEL_ID.hashCode()
+ 
+@@ -90,6 +98,9 @@ class AudioControlsService : MediaSessionService() {
  
          ACTION_SEEK_FORWARD -> currentPlayerRef.seekTo(currentPlayerRef.currentPosition + SEEK_INTERVAL_MS)
          ACTION_SEEK_BACKWARD -> currentPlayerRef.seekTo(currentPlayerRef.currentPosition - SEEK_INTERVAL_MS)
@@ -1190,7 +1270,7 @@ index 196a5d57f887c2667a88543bd2f6a80044a044f2..4e093dc6d2dea7acb919a41f694db6bf
        }
      }
  
-@@ -192,6 +196,18 @@ class AudioControlsService : MediaSessionService() {
+@@ -192,6 +203,18 @@ class AudioControlsService : MediaSessionService() {
        val compactViewIndices = mutableListOf<Int>()
        var currentIndex = 0
  
@@ -1209,7 +1289,7 @@ index 196a5d57f887c2667a88543bd2f6a80044a044f2..4e093dc6d2dea7acb919a41f694db6bf
        if (currentOptions?.showSeekBackward == true) {
          builder.addAction(
            NotificationCompat.Action(
-@@ -227,6 +243,33 @@ class AudioControlsService : MediaSessionService() {
+@@ -227,6 +250,33 @@ class AudioControlsService : MediaSessionService() {
            )
          )
          compactViewIndices.add(currentIndex)
@@ -1243,7 +1323,7 @@ index 196a5d57f887c2667a88543bd2f6a80044a044f2..4e093dc6d2dea7acb919a41f694db6bf
        }
  
        style.setShowActionsInCompactView(*compactViewIndices.toIntArray())
-@@ -240,19 +283,41 @@ class AudioControlsService : MediaSessionService() {
+@@ -240,19 +290,41 @@ class AudioControlsService : MediaSessionService() {
      val session = mediaSession ?: return
      val mediaButtons = mutableListOf<CommandButton>()
  
@@ -1288,7 +1368,7 @@ index 196a5d57f887c2667a88543bd2f6a80044a044f2..4e093dc6d2dea7acb919a41f694db6bf
      mediaButtons.add(
        CommandButton.Builder(if (isPlaying) CommandButton.ICON_PAUSE else CommandButton.ICON_PLAY)
          .setDisplayName(if (isPlaying) "Pause" else "Play")
-@@ -263,13 +328,47 @@ class AudioControlsService : MediaSessionService() {
+@@ -263,13 +335,47 @@ class AudioControlsService : MediaSessionService() {
      )
  
      // Add seek forward button if enabled
@@ -1338,7 +1418,7 @@ index 196a5d57f887c2667a88543bd2f6a80044a044f2..4e093dc6d2dea7acb919a41f694db6bf
            .build()
        )
      }
-@@ -278,6 +377,15 @@ class AudioControlsService : MediaSessionService() {
+@@ -278,6 +384,15 @@ class AudioControlsService : MediaSessionService() {
      session.setMediaButtonPreferences(mediaButtons)
    }
  
@@ -1354,7 +1434,7 @@ index 196a5d57f887c2667a88543bd2f6a80044a044f2..4e093dc6d2dea7acb919a41f694db6bf
    private fun postOrStartForegroundNotification(startInForeground: Boolean) {
      if (startInForeground) {
        postOrStartForegroundNotificationNow(startInForeground = true)
-@@ -321,12 +429,21 @@ class AudioControlsService : MediaSessionService() {
+@@ -321,12 +436,21 @@ class AudioControlsService : MediaSessionService() {
    }
  
    private fun resolveSessionPlayer(player: AudioPlayer, options: AudioLockScreenOptions?): Player {
@@ -1378,7 +1458,7 @@ index 196a5d57f887c2667a88543bd2f6a80044a044f2..4e093dc6d2dea7acb919a41f694db6bf
        override fun getAvailableCommands(): Player.Commands {
          return super.getAvailableCommands().buildUpon()
            .remove(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
-@@ -371,7 +488,14 @@ class AudioControlsService : MediaSessionService() {
+@@ -371,7 +495,14 @@ class AudioControlsService : MediaSessionService() {
            updateMetadata(metadata)
          }
          val session = MediaSession.Builder(context, sessionPlayer)
@@ -1394,7 +1474,7 @@ index 196a5d57f887c2667a88543bd2f6a80044a044f2..4e093dc6d2dea7acb919a41f694db6bf
            .build()
  
          // Replace the basic media session with a session connected to our playback service.
-@@ -452,7 +576,14 @@ class AudioControlsService : MediaSessionService() {
+@@ -452,7 +583,14 @@ class AudioControlsService : MediaSessionService() {
            updateMetadata(metadata)
          }
          val session = MediaSession.Builder(context, sessionPlayer)
@@ -1410,7 +1490,27 @@ index 196a5d57f887c2667a88543bd2f6a80044a044f2..4e093dc6d2dea7acb919a41f694db6bf
            .build()
  
          player.mediaSession.release()
-@@ -558,6 +689,9 @@ class AudioControlsService : MediaSessionService() {
+@@ -489,8 +627,17 @@ class AudioControlsService : MediaSessionService() {
+ 
+       artworkLoadJob = scope.launch {
+         try {
+-          val inputStream = url.openConnection().getInputStream()
+-          val bitmap = BitmapFactory.decodeStream(inputStream)
++          val bitmap = if (url.protocol == "http" || url.protocol == "https") {
++            val request = Request.Builder().url(url).build()
++            artworkHttpClient.newCall(request).execute().use { response ->
++              if (!response.isSuccessful) {
++                throw IOException("Artwork request failed")
++              }
++              response.body?.byteStream()?.use { BitmapFactory.decodeStream(it) }
++            }
++          } else {
++            url.openConnection().getInputStream().use { BitmapFactory.decodeStream(it) }
++          }
+ 
+           if (isActive) {
+             callback(bitmap)
+@@ -558,6 +705,9 @@ class AudioControlsService : MediaSessionService() {
  
      const val ACTION_SEEK_FORWARD = "expo.modules.audio.action.SEEK_FORWARD"
      const val ACTION_SEEK_BACKWARD = "expo.modules.audio.action.SEEK_BACKWARD"
@@ -1510,7 +1610,7 @@ index 839aaef12d7699ea1a89037b31849775daa079f4..1aff5091d68c19523e2374c0231f4c1d
      return super.onCustomCommand(session, controller, command, args)
    }
 diff --git a/android/src/main/java/expo/modules/audio/service/MetadataInjectingPlayer.kt b/android/src/main/java/expo/modules/audio/service/MetadataInjectingPlayer.kt
-index 18203a364d17dcf3de95d22a20175308e3363889..77155f4f348246f218c0736725b0f690f1f31d61 100644
+index 18203a364d17dcf3de95d22a20175308e3363889..317382e2b89ec80576a0878675e52636d621f0a8 100644
 --- a/android/src/main/java/expo/modules/audio/service/MetadataInjectingPlayer.kt
 +++ b/android/src/main/java/expo/modules/audio/service/MetadataInjectingPlayer.kt
 @@ -3,10 +3,20 @@ package expo.modules.audio.service
@@ -1573,7 +1673,7 @@ index 18203a364d17dcf3de95d22a20175308e3363889..77155f4f348246f218c0736725b0f690
    override fun addListener(listener: Player.Listener) {
      val forwardingListener = synchronized(listeners) {
        listeners.getOrPut(listener) { MetadataForwardingListener(listener) }
-@@ -37,6 +79,9 @@ internal class MetadataInjectingPlayer(
+@@ -37,13 +79,16 @@ internal class MetadataInjectingPlayer(
    }
  
    override fun getMediaMetadata(): MediaMetadata {
@@ -1583,6 +1683,14 @@ index 18203a364d17dcf3de95d22a20175308e3363889..77155f4f348246f218c0736725b0f690
      val metadata = injectedMetadata
      return super.getMediaMetadata()
        .buildUpon()
+       .setTitle(metadata?.title)
+       .setArtist(metadata?.artist)
+       .setAlbumTitle(metadata?.albumTitle)
+-      .setArtworkUri(metadata?.artworkUrl?.toString()?.toUri())
++      .setArtworkUri(PreloadingBitmapLoader.mask(metadata?.artworkUrl?.toString()))
+       .setArtworkData(null, null)
+       .build()
+   }
 @@ -56,6 +101,9 @@ internal class MetadataInjectingPlayer(
  
      val previousMetadata = mediaMetadata
@@ -1718,10 +1826,10 @@ index 18203a364d17dcf3de95d22a20175308e3363889..77155f4f348246f218c0736725b0f690
  }
 diff --git a/android/src/main/java/expo/modules/audio/service/PreloadingBitmapLoader.kt b/android/src/main/java/expo/modules/audio/service/PreloadingBitmapLoader.kt
 new file mode 100644
-index 0000000000000000000000000000000000000000..6ee23d594c66abe46d7991de793d6de992febdf9
+index 0000000000000000000000000000000000000000..9dcd6997d34e6b34c20eaa88b91563f67e4cb837
 --- /dev/null
 +++ b/android/src/main/java/expo/modules/audio/service/PreloadingBitmapLoader.kt
-@@ -0,0 +1,77 @@
+@@ -0,0 +1,120 @@
 +package expo.modules.audio.service
 +
 +import android.content.Context
@@ -1731,10 +1839,15 @@ index 0000000000000000000000000000000000000000..6ee23d594c66abe46d7991de793d6de9
 +import androidx.media3.common.util.BitmapLoader
 +import androidx.media3.common.util.UnstableApi
 +import androidx.media3.datasource.DataSourceBitmapLoader
++import androidx.media3.datasource.DefaultDataSource
++import androidx.media3.datasource.okhttp.OkHttpDataSource
++import com.facebook.react.modules.network.OkHttpClientProvider
 +import com.google.common.util.concurrent.FutureCallback
 +import com.google.common.util.concurrent.Futures
 +import com.google.common.util.concurrent.ListenableFuture
 +import com.google.common.util.concurrent.MoreExecutors
++import okhttp3.OkHttpClient
++import java.security.MessageDigest
 +
 +/**
 + * The media session's artwork loader, able to have a cover ready before the
@@ -1746,6 +1859,10 @@ index 0000000000000000000000000000000000000000..6ee23d594c66abe46d7991de793d6de9
 + * always come back for the second one: a Tesla keeps showing nothing. A cover
 + * fetched while the previous track plays is a done future, so the title and
 + * the picture reach the car in the same update.
++ *
++ * Network artwork addresses can carry server credentials. Only an opaque
++ * resonus-art:// id enters media metadata; the real address stays in this
++ * process and is resolved by this loader before the existing DNS-aware fetch.
 + */
 +@UnstableApi
 +internal class PreloadingBitmapLoader(context: Context) : BitmapLoader {
@@ -1756,11 +1873,36 @@ index 0000000000000000000000000000000000000000..6ee23d594c66abe46d7991de793d6de9
 +  override fun decodeBitmap(data: ByteArray): ListenableFuture<Bitmap> = delegate.decodeBitmap(data)
 +
 +  override fun loadBitmap(uri: Uri): ListenableFuture<Bitmap> {
-+    ready.get(uri.toString())?.let { return Futures.immediateFuture(it) }
-+    return load(delegate, uri)
++    val real = unmask(uri)
++    ready.get(real.toString())?.let { return Futures.immediateFuture(it) }
++    return load(delegate, real)
 +  }
 +
 +  companion object {
++    private const val MASKED_SCHEME = "resonus-art"
++    private val masked = LruCache<String, String>(256)
++
++    /** Never publish a network address as media-session artwork. Local files
++     *  and resources keep their existing loading behavior. */
++    fun mask(url: String?): Uri? {
++      if (url.isNullOrEmpty()) return null
++      val uri = Uri.parse(url)
++      if (!uri.scheme.equals("http", ignoreCase = true) &&
++          !uri.scheme.equals("https", ignoreCase = true)) return uri
++      val id = MessageDigest.getInstance("SHA-256")
++        .digest(url.toByteArray(Charsets.UTF_8))
++        .take(16)
++        .joinToString("") { "%02x".format(it) }
++      masked.put(id, url)
++      return Uri.parse("$MASKED_SCHEME://$id")
++    }
++
++    /** Only this in-process loader can resolve the opaque metadata id. */
++    fun unmask(uri: Uri): Uri {
++      if (uri.scheme != MASKED_SCHEME) return uri
++      return masked.get(uri.host ?: return uri)?.let(Uri::parse) ?: uri
++    }
++
 +    /** A few: the track playing, the one queued behind it, and some slack. */
 +    private val ready = LruCache<String, Bitmap>(4)
 +
@@ -1769,6 +1911,14 @@ index 0000000000000000000000000000000000000000..6ee23d594c66abe46d7991de793d6de9
 +    private fun loaderFor(context: Context): BitmapLoader =
 +      shared ?: synchronized(this) {
 +        shared ?: DataSourceBitmapLoader.Builder(context.applicationContext)
++          .setDataSourceFactory(
++            DefaultDataSource.Factory(
++              context.applicationContext,
++              OkHttpDataSource.Factory(
++                OkHttpClient.Builder().dns(OkHttpClientProvider.createClient().dns).build()
++              )
++            )
++          )
 +          // The session scales it down again to its own limit.
 +          .setMaximumOutputDimension(1024)
 +          .build()
@@ -1794,8 +1944,9 @@ index 0000000000000000000000000000000000000000..6ee23d594c66abe46d7991de793d6de9
 +
 +    /** Fetches a cover ahead of its track. Does nothing if it is already here. */
 +    fun preload(context: Context, uri: Uri?) {
-+      if (uri == null || ready.get(uri.toString()) != null) return
-+      load(loaderFor(context), uri)
++      val real = uri?.let(::unmask) ?: return
++      if (ready.get(real.toString()) != null) return
++      load(loaderFor(context), real)
 +    }
 +  }
 +}

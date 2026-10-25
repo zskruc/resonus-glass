@@ -1,10 +1,12 @@
 /** One podcast and its episodes, played straight from the publisher's files. */
+import Animated from 'react-native-reanimated';
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
+import { GlassPressable } from '@/components/glass';
 import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
   Linking,
   Pressable,
   RefreshControl,
@@ -41,6 +43,7 @@ function dayLabel(at: number, lang: string): string {
 }
 
 export default function PodcastScreen() {
+  const dockScroll = useLiquidDockScrollHandler();
   useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const t = useT();
@@ -122,7 +125,9 @@ export default function PodcastScreen() {
   const siteUrl = ch.siteUrl;
 
   return (
-    <FlatList
+    <Animated.FlatList
+      onScroll={dockScroll}
+      scrollEventThrottle={16}
       {...listPerf}
       data={list}
       keyExtractor={(item) => item.id}
@@ -152,22 +157,22 @@ export default function PodcastScreen() {
           ) : null}
           <View style={styles.actions}>
             {list.length > 0 ? (
-              <Pressable
+              <GlassPressable variant="prominent" tint={colors.accent}
                 style={({ pressed }) => [styles.primary, pressed && { opacity: 0.7 }]}
                 onPress={() => play(list, 0)}
               >
                 <Icon name="play" size={18} color={colors.onAccent} />
                 <Text style={styles.primaryText}>{t('Play latest')}</Text>
-              </Pressable>
+              </GlassPressable>
             ) : null}
             {siteUrl ? (
-              <Pressable
+              <GlassPressable variant="regular"
                 style={({ pressed }) => [styles.secondary, pressed && { opacity: 0.7 }]}
                 onPress={() => void Linking.openURL(siteUrl).catch(() => {})}
               >
                 <Icon name="link-outline" size={18} color={colors.text} />
                 <Text style={styles.secondaryText}>{t('Website')}</Text>
-              </Pressable>
+              </GlassPressable>
             ) : null}
           </View>
           {list.length > 0 ? <Text style={styles.sectionTitle}>{t('Episodes')}</Text> : null}

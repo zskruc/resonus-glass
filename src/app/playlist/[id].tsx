@@ -1,4 +1,5 @@
 /** Playlist detail with its songs. */
+import { GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -301,7 +302,7 @@ function SuggestedTracks({
           </Pressable>
         </Pressable>
       ))}
-      <Pressable
+      <GlassPressable variant="regular"
         onPress={() => void refresh()}
         style={({ pressed }) => [
           suggestedStyles.refreshButton,
@@ -309,7 +310,7 @@ function SuggestedTracks({
         ]}
       >
         <Text style={suggestedStyles.refreshText}>{t('Refresh')}</Text>
-      </Pressable>
+      </GlassPressable>
     </View>
   );
 }
@@ -718,21 +719,21 @@ export default function PlaylistScreen() {
       <CoverViewer
         visible={coverOpen}
         uri={coverChange.pickedUri ?? coverArtUrl(data.playlist.coverArt ?? data.playlist.id, COVER.full)}
-        onClose={() => setCoverOpen(false)}
+        onClose={coverChange.askPassword ? coverChange.cancelPassword : () => setCoverOpen(false)}
         footer={
           coverChange.enabled ? (
             <>
               {coverChange.uploading ? (
                 <ActivityIndicator color={colors.onArtwork} />
               ) : (
-                <Pressable
+                <GlassPressable variant="subtle"
                   hitSlop={10}
                   accessibilityRole="button"
                   onPress={() => void coverChange.pickAndUpload()}
                   style={({ pressed }) => pressed && { opacity: 0.6 }}
                 >
                   <Text style={styles.changeCover}>{t('Change cover')}</Text>
-                </Pressable>
+                </GlassPressable>
               )}
               {coverChange.error ? (
                 <Text style={styles.coverError}>{coverChange.error}</Text>
@@ -742,7 +743,8 @@ export default function PlaylistScreen() {
         }
       >
         <Dialog
-          visible={coverChange.askPassword}
+          inline
+          visible={coverOpen && coverChange.askPassword}
           title={t('Confirm your password')}
           message={t('Your password is needed to upload images and will be stored securely.')}
           input={{ placeholder: t('Password'), secure: true }}
@@ -782,8 +784,9 @@ export default function PlaylistScreen() {
             <Pressable
               style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
               onPress={() => {
-                close();
-                if (displaySongs.length > 0) setAddingSongs(displaySongs);
+                close(() => {
+                  if (displaySongs.length > 0) setAddingSongs(displaySongs);
+                });
               }}
             >
               <Icon name="add" size={24} color={colors.text} />
@@ -793,8 +796,7 @@ export default function PlaylistScreen() {
               <Pressable
                 style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
                 onPress={() => {
-                  close();
-                  setReordering(true);
+                  close(() => setReordering(true));
                 }}
               >
                 <Icon name="swap-vertical" size={24} color={colors.text} />
@@ -804,8 +806,7 @@ export default function PlaylistScreen() {
             <Pressable
               style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
               onPress={() => {
-                close();
-                setEditing(true);
+                close(() => setEditing(true));
               }}
             >
               <Icon name="create-outline" size={24} color={colors.text} />
@@ -815,16 +816,16 @@ export default function PlaylistScreen() {
               <Pressable
                 style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
                 onPress={() => {
-                  close();
                   // Turning it ON downloads the whole list right away and keeps
                   // doing so as it changes, so it asks first — with the size,
                   // like any other download. Turning it off deletes nothing and
                   // is instant, so there's nothing to confirm there.
                   if (useAutoDownloads.getState().ids[id]) {
+                    close();
                     useAutoDownloads.getState().toggle(id);
                     toast(t('Auto-download off'));
                   } else {
-                    setConfirmAuto(true);
+                    close(() => setConfirmAuto(true));
                   }
                 }}
               >
@@ -854,8 +855,7 @@ export default function PlaylistScreen() {
               <Pressable
                 style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
                 onPress={() => {
-                  close();
-                  useSharePicker.getState().open({ id, name: data.playlist.name });
+                  close(() => useSharePicker.getState().open({ id, name: data.playlist.name }));
                 }}
               >
                 <Icon name="share-social-outline" size={24} color={colors.text} />
@@ -869,8 +869,7 @@ export default function PlaylistScreen() {
               <Pressable
                 style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
                 onPress={() => {
-                  close();
-                  setConfirmDeleteDl(true);
+                  close(() => setConfirmDeleteDl(true));
                 }}
               >
                 <Icon name="trash-outline" size={24} color={colors.text} />
@@ -881,8 +880,7 @@ export default function PlaylistScreen() {
             <Pressable
               style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
               onPress={() => {
-                close();
-                setDeleting(true);
+                close(() => setDeleting(true));
               }}
             >
               <Icon name="trash-outline" size={24} color={colors.danger} />
@@ -945,6 +943,7 @@ export default function PlaylistScreen() {
         visible={confirmDownload}
         title={t('Download “{name}”?', { name: data.playlist.name })}
         message={downloadMsg.message}
+        messageColor="#FFFFFF"
         confirmLabel={t('Download')}
         onCancel={() => setConfirmDownload(false)}
         onConfirm={() => {

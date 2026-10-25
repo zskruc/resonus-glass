@@ -7,20 +7,23 @@
  * than a list it belongs to, and this sheet could never take one off. It is in
  * the ⋯ menu of the selection now (#164).
  */
+import { GlassBackdrop } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { scheduleOnRN } from 'react-native-worklets';
 
 import { addToPlaylist, COVER, coverArtUrl, createPlaylist, getPlaylist, getPlaylists } from '@/api/data';
 import { useScreenSize } from '@/hooks/useScreenSize';
 import { type Song } from '@/api/subsonic';
 import { useBottomSheetAnim } from '@/hooks/useBottomSheetAnim';
 import { songsLabel, useT } from '@/i18n';
+import { MenuRequestScope } from '@/lib/menuRequest';
 import { useAutoDownloads } from '@/store/autoDownloads';
 import { usePlaylistPicker } from '@/store/playlistPicker';
 import { useSettings } from '@/store/settings';
@@ -40,21 +43,64 @@ function playlistsMaxH(height: number): number {
  *  via `usePlaylistPicker.open(songs)` without rendering its own sheet. */
 export function GlobalPlaylistPicker() {
   const songs = usePlaylistPicker((s) => s.songs);
+  const session = usePlaylistPicker((s) => s.session);
   const close = usePlaylistPicker((s) => s.close);
-  return <PlaylistPickerSheet songs={songs} onClose={close} />;
+  return <PlaylistPickerSheet key={session} session={session} songs={songs} onClose={close} />;
 }
 
-
-export function PlaylistPickerSheet({
-  songs,
-  excludeId,
-  onClose,
-}: {
+type PlaylistPickerProps = {
   /** Songs to add; null = sheet hidden. */
   songs: Song[] | null;
   /** Playlist to hide from the list (the source one). */
   excludeId?: string;
   onClose: () => void;
+  /** Global instances also reject callbacks before a replacement has rendered. */
+  session?: number;
+};
+
+function pickerOwner(songs: Song[] | null, session: number | undefined, key: number) {
+  return {
+    songs, session, key,
+    request: new MenuRequestScope(() => session === undefined || usePlaylistPicker.getState().session === session),
+  };
+}
+
+class PickerLifetime {
+  private revision = 0;
+  private active = true;
+  constructor(private songs: Song[] | null) {}
+  advance(songs: Song[] | null) { this.songs = songs; this.revision++; }
+  setActive(active: boolean) { this.active = active; }
+  ownsClosed(revision: number) {
+    return this.active && this.revision === revision + 1 && this.songs === null;
+  }
+}
+
+/** Local callers also receive a fresh state and scope when their song batch changes. */
+export function PlaylistPickerSheet(props: PlaylistPickerProps) {
+  const [lifetime] = useState(() => new PickerLifetime(props.songs));
+  const [owner, setOwner] = useState(() => pickerOwner(props.songs, props.session, 0));
+  useEffect(() => {
+    lifetime.setActive(true);
+    return () => lifetime.setActive(false);
+  }, [lifetime]);
+  if (owner.songs !== props.songs || owner.session !== props.session) {
+    lifetime.advance(props.songs);
+    owner.request.dispose();
+    setOwner(pickerOwner(props.songs, props.session, owner.key + 1));
+  }
+  const canNotifyAfterClose = () => {
+    if (props.session === undefined) return lifetime.ownsClosed(owner.key);
+    const current = usePlaylistPicker.getState();
+    return current.session === props.session + 1 && current.songs === null;
+  };
+  return <PlaylistPickerSession key={owner.key} {...props} request={owner.request}
+    canNotifyAfterClose={canNotifyAfterClose} />;
+}
+
+function PlaylistPickerSession({ songs, excludeId, onClose, request, canNotifyAfterClose }: PlaylistPickerProps & {
+  request: MenuRequestScope;
+  canNotifyAfterClose: () => boolean;
 }) {
   const insets = useSafeAreaInsets();
   const { height: screenH } = useScreenSize();
@@ -62,20 +108,53 @@ export function PlaylistPickerSheet({
   const toast = useToast((s) => s.show);
   const t = useT();
   const lang = useSettings((s) => s.language);
+  const mounted = useRef(false);
+  const closing = useRef(false);
+  const gestureTicket = useRef<number | null>(null);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      request.invalidate();
+    };
+  }, [request]);
+  const owns = (ticket: number) => mounted.current && request.owns(ticket);
+  const closeAfterGesture = () => {
+    const ticket = gestureTicket.current;
+    if (ticket === null || !owns(ticket)) return;
+    closing.current = true;
+    request.invalidate();
+    onClose();
+  };
   const visible = !!songs && songs.length > 0;
-  const { dismiss, pan, makePan, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
+  const { dismiss, dismissing, makePan, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
     visible,
-    onClose,
+    closeAfterGesture,
   );
+  const canAct = () => mounted.current && !closing.current && !dismissing.value && request.isActive();
+  const startGesture = () => {
+    // UI onStart already accepted this gesture. Its queued JS callback may
+    // arrive after a normal swipe's UI onEnd has started dismissing.
+    if (mounted.current && !closing.current && request.isActive()) {
+      gestureTicket.current = request.begin();
+    }
+  };
+  const pan = makePan().onStart(() => { if (!dismissing.value) scheduleOnRN(startGesture); });
   // Second drag, for the grabber and the title (see the JSX below).
-  const headerPan = makePan();
+  const headerPan = makePan().onStart(() => { if (!dismissing.value) scheduleOnRN(startGesture); });
   // The list is scrolled to the top: only then does a downward drag belong to
   // the sheet, so pulling down mid-list scrolls instead of dismissing.
   const [atTop, setAtTop] = useState(true);
-  const close = () => dismiss(onClose);
-  const [creating, setCreating] = useState(false);
+  const close = () => {
+    if (!canAct()) return;
+    closing.current = true;
+    const ticket = request.begin();
+    dismiss(() => { if (owns(ticket)) onClose(); });
+  };
+  const [creating, setCreating] = useState<number | null>(null);
   // "Already in the playlist" prompt pending confirmation (Spotify style).
   const [dupPrompt, setDupPrompt] = useState<{
+    ticket: number;
     playlistId: string;
     name: string;
     /** The ones not in that playlist yet. Empty when every one of them is. */
@@ -90,13 +169,46 @@ export function PlaylistPickerSheet({
 
   if (!songs || songs.length === 0) return null;
 
-  /** Actually adds (without checking duplicates) and closes with a toast.
-   *  `which` is what to add, for when the answer to the warning was to leave
-   *  the ones that are already there alone. */
-  async function doAdd(playlistId: string, name: string, which?: Song[]) {
-    const adding = which ?? songs;
-    if (!adding || adding.length === 0) return;
-    close();
+  const beginAction = () => {
+    if (!canAct()) return null;
+    const ticket = request.begin();
+    setCreating(null);
+    setDupPrompt(null);
+    return ticket;
+  };
+  const cancelCreating = (ticket: number | null) => {
+    if (ticket === null || !owns(ticket)) return;
+    request.invalidate();
+    setCreating(null);
+  };
+  const cancelDuplicate = (ticket: number | undefined) => {
+    if (ticket === undefined || !owns(ticket)) return;
+    request.invalidate();
+    setDupPrompt(null);
+  };
+
+  /** A mutation keeps its batch; only its own close and notices remain cancellable. */
+  function transactionUi(ticket: number) {
+    let closeTicket: number | null = null;
+    let closed = false;
+    return {
+      current: () => closed ? canNotifyAfterClose() : owns(closeTicket ?? ticket),
+      close: () => {
+        if (!canAct() || !owns(ticket)) return;
+        closing.current = true;
+        closeTicket = request.begin();
+        const expected = closeTicket;
+        dismiss(() => {
+          if (!owns(expected)) return;
+          closed = true;
+          onClose();
+        });
+      },
+    };
+  }
+
+  async function addBatch(playlistId: string, name: string, adding: Song[], ui: ReturnType<typeof transactionUi>) {
+    ui.close();
     try {
       for (const s of adding) await addToPlaylist(playlistId, s.id);
       // Optimistic count in the Library (`songsLabel`): without this the
@@ -110,61 +222,87 @@ export function PlaylistPickerSheet({
       queryClient.invalidateQueries({ queryKey: ['playlists'] });
       // If the list has auto-download, fetch the newly added songs now.
       void useAutoDownloads.getState().reconcile(playlistId, true);
-      toast(
+      if (ui.current()) toast(
         adding.length === 1
           ? t('Added to “{name}”', { name })
           : t('{n} added to “{name}”', { n: adding.length, name }),
       );
     } catch {
-      toast(t("Couldn't add to the playlist"));
+      if (ui.current()) toast(t("Couldn't add to the playlist"));
     }
   }
 
-  async function addAllTo(playlistId: string, name: string) {
-    if (!songs) return;
+  /** Duplicate confirmation has not committed anything until this guard passes. */
+  async function doAdd(playlistId: string, name: string, ticket: number, which?: Song[]) {
+    if (!canAct() || !owns(ticket)) return;
+    const adding = [...(which ?? songs ?? [])];
+    if (adding.length === 0) return;
+    await addBatch(playlistId, name, adding, transactionUi(ticket));
+  }
+
+  async function addAllTo(playlistId: string, name: string, currentTicket?: number) {
+    const ticket = currentTicket ?? beginAction();
+    if (ticket === null || !songs || !owns(ticket)) return;
     // Spotify-style duplicate warning: if any already present, ask first. If
     // the check fails (network), add without warning: better than blocking.
     try {
       const { songs: existing } = await getPlaylist(playlistId);
+      if (!owns(ticket)) return;
       const have = new Set(existing.map((s) => s.id));
       const fresh = songs.filter((s) => !have.has(s.id));
       if (fresh.length < songs.length) {
-        setDupPrompt({ playlistId, name, fresh });
+        setAtTop(true);
+        setCreating(null);
+        setDupPrompt({ ticket, playlistId, name, fresh });
         return;
       }
     } catch {
       // ignore
     }
-    await doAdd(playlistId, name);
+    if (!owns(ticket)) return;
+    await doAdd(playlistId, name, ticket);
   }
 
   /** The warning has something to offer besides adding them all again. */
   const hasFresh = !!dupPrompt && dupPrompt.fresh.length > 0;
 
-  async function createAndAdd(name: string) {
-    setCreating(false);
-    if (!name.trim()) return;
+  async function createAndAdd(name: string, expectedTicket: number | null) {
+    if (expectedTicket === null || !owns(expectedTicket)) return;
+    const ticket = beginAction();
+    if (ticket === null) return;
+    const playlistName = name.trim();
+    const adding = [...(songs ?? [])];
+    if (!playlistName || adding.length === 0) return;
+    const ui = transactionUi(ticket);
     try {
-      const id = await createPlaylist(name.trim());
-      await addAllTo(id, name.trim());
+      // Creating commits the complete transaction. A new playlist is empty,
+      // so its originally confirmed songs need no duplicate preflight.
+      const id = await createPlaylist(playlistName);
+      await addBatch(id, playlistName, adding, ui);
     } catch {
-      close();
-      toast(t("Couldn't create the playlist"));
+      if (!ui.current()) return;
+      ui.close();
+      if (ui.current()) toast(t("Couldn't create the playlist"));
     }
   }
 
   return (
-    <Modal transparent animationType="none" visible onRequestClose={close}>
+    <Modal transparent animationType="none" visible onRequestClose={() => {
+      if (creating !== null) cancelCreating(creating);
+      else if (dupPrompt) cancelDuplicate(dupPrompt.ticket);
+      else close();
+    }}>
       {/* Gestures inside an RN Modal need a root view of their own: the Modal
           renders in a native hierarchy outside the app's. */}
-      <GestureHandlerRootView style={StyleSheet.absoluteFill}>
+      {creating === null && !dupPrompt && <GestureHandlerRootView style={StyleSheet.absoluteFill}>
         <Animated.View style={[styles.backdrop, backdropStyle]}>
           <Pressable style={StyleSheet.absoluteFill} onPress={close} />
         </Animated.View>
-        <Animated.View
+        <Animated.View collapsable={false}
           style={[styles.sheet, { paddingBottom: insets.bottom + spacing.md }, sheetStyle]}
           onLayout={onSheetLayout}
         >
+            <GlassBackdrop radius={0} radiusTopLeft={radius.xxl} radiusTopRight={radius.xxl} tint={colors.surface} variant="prominent" />
           {/* The header has its own drag, always enabled: it's the way out when
               the list below is scrolled and keeps the gesture for itself. Two
               detectors instead of one around everything so both can never fire
@@ -182,7 +320,12 @@ export function PlaylistPickerSheet({
             <View style={{ maxHeight: playlistsMaxH(screenH) }}>
               <Pressable
                 style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
-                onPress={() => setCreating(true)}
+                onPress={() => {
+                  const ticket = beginAction();
+                  if (ticket === null) return;
+                  setAtTop(true);
+                  setCreating(ticket);
+                }}
               >
                 <View style={styles.newPlaylistIcon}>
                   <Icon name="add" size={24} color={colors.text} />
@@ -215,15 +358,16 @@ export function PlaylistPickerSheet({
             </View>
           </GestureDetector>
         </Animated.View>
-      </GestureHandlerRootView>
+      </GestureHandlerRootView>}
 
       <Dialog
-        visible={creating}
+        inlineMenu
+        visible={creating !== null}
         title={t('New playlist')}
         input={{ placeholder: t('Playlist name') }}
         confirmLabel={t('Create')}
-        onCancel={() => setCreating(false)}
-        onConfirm={createAndAdd}
+        onCancel={() => cancelCreating(creating)}
+        onConfirm={(name) => createAndAdd(name, creating)}
       />
 
       {/* Three ways out rather than a switch inside the dialog (#132). A switch
@@ -232,6 +376,7 @@ export function PlaylistPickerSheet({
           of them new there is nothing to skip, so the pair collapses back into
           the single button it always was. */}
       <Dialog
+        inlineMenu
         visible={!!dupPrompt}
         title={t('Already added')}
         // The counts are in the sentence because the two cases used to be one
@@ -269,18 +414,20 @@ export function PlaylistPickerSheet({
                 align: 'end',
                 onPress: () => {
                   const d = dupPrompt;
+                  if (!d || !owns(d.ticket)) return;
                   setDupPrompt(null);
-                  if (d) void doAdd(d.playlistId, d.name);
+                  void doAdd(d.playlistId, d.name, d.ticket);
                 },
               }
             : undefined
         }
         confirmLabel={hasFresh ? t('Add only the new ones') : t('Add anyway')}
-        onCancel={() => setDupPrompt(null)}
+        onCancel={() => cancelDuplicate(dupPrompt?.ticket)}
         onConfirm={() => {
           const d = dupPrompt;
+          if (!d || !owns(d.ticket)) return;
           setDupPrompt(null);
-          if (d) void doAdd(d.playlistId, d.name, hasFresh ? d.fresh : undefined);
+          void doAdd(d.playlistId, d.name, d.ticket, hasFresh ? d.fresh : undefined);
         }}
       />
     </Modal>
@@ -296,7 +443,7 @@ const styles = themed((colors) => ({
     alignSelf: 'center',
     width: '100%',
     maxWidth: SHEET_MAX_WIDTH,
-    backgroundColor: colors.surface,
+    backgroundColor: 'transparent',
     borderTopLeftRadius: radius.xxl,
     borderTopRightRadius: radius.xxl,
     paddingHorizontal: spacing.lg,

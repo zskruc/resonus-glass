@@ -12,11 +12,9 @@
  * playing, the same as in every other sheet in the app.
  */
 import Icon from '@/components/Icon';
+import { MenuGlassCardFrame, MenuGlassCardHeader } from '@/components/MenuGlassCard';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ActivityIndicator, AppState, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 
 import { useBottomSheetAnim } from '@/hooks/useBottomSheetAnim';
 import { useT } from '@/i18n';
@@ -38,7 +36,7 @@ import {
   useUpnp,
   type UpnpDevice,
 } from '@/store/upnp';
-import { colors, fontSize, radius, SHEET_MAX_WIDTH, spacing, themed } from '@/theme';
+import { colors, fontSize, spacing, themed } from '@/theme';
 
 /**
  * One output. The tick and the accent name the one that is playing, which is
@@ -87,7 +85,6 @@ function outputIcon(kind: 'phone' | 'server' | 'group' | 'tv' | 'speaker', activ
 }
 
 export function OutputSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const insets = useSafeAreaInsets();
   const t = useT();
   const toast = useToast((s) => s.show);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -97,17 +94,13 @@ export function OutputSheet({ visible, onClose }: { visible: boolean; onClose: (
   const jukeboxActive = useJukebox((s) => s.active);
   const jukeboxAvailable = useJukebox((s) => s.available);
   const phoneActive = !upnpId && !jukeboxActive;
-  const { dismiss, pan, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
+  const { dismiss, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
     visible,
     onClose,
+    'card',
   );
-  // Animated close: the sheet slides down and then notifies the parent (which hides the Modal).
+  // Notify the parent after the card's exit animation.
   const close = () => dismiss(onClose);
-  // The list scrolls once there are a few speakers on the network, so the drag
-  // that dismisses the sheet only takes over at the top of it — the same deal
-  // the song menu makes, and for the same reason: otherwise the two gestures
-  // fight and scrolling up pulls the sheet down with it.
-  const [atTop, setAtTop] = useState(true);
 
   const activeUpnpDevice = useMemo(
     () => (upnpId ? devices.find((device) => device.id === upnpId) ?? null : null),
@@ -192,13 +185,29 @@ export function OutputSheet({ visible, onClose }: { visible: boolean; onClose: (
 
   useEffect(() => {
     if (!visible) return;
-    void upnpSearch();
-    void refreshJukeboxAvailability();
     // Re-scan periodically while the sheet is open: SSDP is lossy, so repeating
     // the search lets renderers that missed the first round appear on their own
     // (upnpSearch merges results and no-ops if a scan is still running).
-    const id = setInterval(() => void upnpSearch(), 10000);
-    return () => clearInterval(id);
+    let id: ReturnType<typeof setInterval> | null = null;
+    const stop = () => {
+      if (id) clearInterval(id);
+      id = null;
+    };
+    const start = () => {
+      if (AppState.currentState !== 'active' || id) return;
+      void upnpSearch();
+      void refreshJukeboxAvailability();
+      id = setInterval(() => void upnpSearch(), 10000);
+    };
+    start();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') start();
+      else stop();
+    });
+    return () => {
+      stop();
+      sub.remove();
+    };
   }, [visible]);
 
   async function pickPhone() {
@@ -261,189 +270,141 @@ export function OutputSheet({ visible, onClose }: { visible: boolean; onClose: (
 
   return (
     <Modal transparent visible={visible} animationType="none" onRequestClose={close}>
-      {/* Gestures inside an RN Modal need a root view of their own: the
-          Modal renders in a native hierarchy outside the app's. */}
-      <GestureHandlerRootView style={StyleSheet.absoluteFill}>
-        <Animated.View style={[styles.backdrop, backdropStyle]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={close} />
-        </Animated.View>
-        <GestureDetector gesture={pan.enabled(atTop)}>
-          <Animated.View
-            style={[styles.sheet, { paddingBottom: insets.bottom + spacing.md }, sheetStyle]}
-            onLayout={onSheetLayout}
-          >
-            {/* Spotify-style grabber: the visual cue that the sheet can be
-                dragged down to dismiss. */}
-            <View style={styles.grabber} />
-            {/* The title says what the sheet is; the line under it says where the
-                sound is going, which is the one thing you came to check and the
-                answer is a whole sentence for a Sonos group. The list below
-                still marks it, so this is a summary and not the only mark. */}
-            <Text style={styles.sheetTitle}>{t('Output')}</Text>
-            <Text style={styles.currentLine} numberOfLines={1}>
-              {t('Currently playing on')}: {currentLabel}
-            </Text>
+      <MenuGlassCardFrame
+        onClose={close}
+        backdropStyle={backdropStyle}
+        cardStyle={sheetStyle}
+        onLayout={onSheetLayout}
+      >
+        <MenuGlassCardHeader
+          title={t('Output')}
+          subtitle={`${t('Currently playing on')}: ${currentLabel}`}
+          onClose={close}
+        />
 
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.content}
-              onScroll={(e) => setAtTop(e.nativeEvent.contentOffset.y <= 4)}
-              scrollEventThrottle={16}
-              bounces={false}
-            >
-              <Row
-                icon={outputIcon('phone', phoneActive)}
-                label={t('This phone')}
-                active={phoneActive}
-                onPress={phoneActive ? undefined : () => void pickPhone()}
-              />
+        <ScrollView
+          style={styles.scroll}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.content}
+          bounces={false}
+        >
+          <Row
+            icon={outputIcon('phone', phoneActive)}
+            label={t('This phone')}
+            active={phoneActive}
+            onPress={phoneActive ? undefined : () => void pickPhone()}
+          />
 
-              {jukeboxAvailable ? (
-                <Row
-                  icon={outputIcon('server', jukeboxActive)}
-                  label={t('Server speakers (Jukebox)')}
-                  active={jukeboxActive}
-                  onPress={jukeboxActive ? undefined : () => void pickJukebox()}
-                />
-              ) : null}
+          {jukeboxAvailable ? (
+            <Row
+              icon={outputIcon('server', jukeboxActive)}
+              label={t('Server speakers (Jukebox)')}
+              active={jukeboxActive}
+              onPress={jukeboxActive ? undefined : () => void pickJukebox()}
+            />
+          ) : null}
 
-              {upnpAvailable
-                ? isSonosSession
-                  ? sortedIndividualRows.map((device) => {
-                      const active = device.id === upnpId;
-                      const inActiveGroup = device.groupId === activeGroupKey;
-                      const isActiveCoordinator = !!activeCoordinatorId && device.id === activeCoordinatorId;
-                      const canJoin = !!activeGroupKey && !inActiveGroup && device.id !== activeCoordinatorId;
-                      const canUngroup = inActiveGroup && (activeSonosGroupMode || !isActiveCoordinator);
-                      const actionKey = canJoin ? `join:${device.id}` : `ungroup:${device.id}`;
-                      const actionBusy = busyAction === actionKey;
-                      // Secondary to the row it sits on: pressing the name moves
-                      // the music, pressing this only changes who else is in the
-                      // group, so it is drawn the way every other secondary
-                      // action in the app is and not in a colour of its own.
-                      const action = device.isSonos && (canJoin || canUngroup) ? (
-                        <Pressable
-                          hitSlop={10}
-                          style={({ pressed }) => [pressed && { opacity: 0.6 }]}
-                          disabled={busyAction != null}
-                          accessibilityRole="button"
-                          accessibilityLabel={canJoin ? t('Add to the group') : t('Remove from the group')}
-                          onPress={(event) => {
-                            event.stopPropagation();
-                            if (canJoin) {
-                              void joinToCurrent(device.id);
-                              return;
-                            }
-                            if (!canUngroup) return;
-                            void ungroupDevice(device.id);
-                          }}
-                        >
-                          {actionBusy ? (
-                            <ActivityIndicator size="small" color={colors.textSecondary} />
-                          ) : (
-                            <Icon
-                              name={canJoin ? 'add-circle-outline' : 'remove-circle-outline'}
-                              size={22}
-                              color={colors.textSecondary}
-                            />
-                          )}
-                        </Pressable>
-                      ) : undefined;
-
-                      return (
-                        <Row
-                          key={device.id}
-                          icon={outputIcon(device.isTV ? 'tv' : 'speaker', active)}
-                          label={normalizeOutputDisplayName(device.name)}
-                          active={active}
-                          onPress={() => void switchToSonosDevice(device)}
-                          action={action}
+          {upnpAvailable
+            ? isSonosSession
+              ? sortedIndividualRows.map((device) => {
+                  const active = device.id === upnpId;
+                  const inActiveGroup = device.groupId === activeGroupKey;
+                  const isActiveCoordinator = !!activeCoordinatorId && device.id === activeCoordinatorId;
+                  const canJoin = !!activeGroupKey && !inActiveGroup && device.id !== activeCoordinatorId;
+                  const canUngroup = inActiveGroup && (activeSonosGroupMode || !isActiveCoordinator);
+                  const actionKey = canJoin ? `join:${device.id}` : `ungroup:${device.id}`;
+                  const actionBusy = busyAction === actionKey;
+                  // Secondary to the row it sits on: pressing the name moves
+                  // the music, pressing this only changes who else is in the
+                  // group, so it is drawn the way every other secondary
+                  // action in the app is and not in a colour of its own.
+                  const action = device.isSonos && (canJoin || canUngroup) ? (
+                    <Pressable
+                      hitSlop={10}
+                      style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+                      disabled={busyAction != null}
+                      accessibilityRole="button"
+                      accessibilityLabel={canJoin ? t('Add to the group') : t('Remove from the group')}
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        if (canJoin) {
+                          void joinToCurrent(device.id);
+                          return;
+                        }
+                        if (!canUngroup) return;
+                        void ungroupDevice(device.id);
+                      }}
+                    >
+                      {actionBusy ? (
+                        <ActivityIndicator size="small" color={colors.textSecondary} />
+                      ) : (
+                        <Icon
+                          name={canJoin ? 'add-circle-outline' : 'remove-circle-outline'}
+                          size={22}
+                          color={colors.textSecondary}
                         />
-                      );
-                    })
-                  : groupedUpnpRows.map((row) => (
-                      <Row
-                        key={row.key}
-                        icon={outputIcon(
-                          row.groupSize > 1 ? 'group' : row.device.isTV ? 'tv' : 'speaker',
-                          row.active,
-                        )}
-                        label={row.label}
-                        active={row.active}
-                        onPress={() => void pickDevice(row.device)}
-                      />
-                    ))
-                : null}
+                      )}
+                    </Pressable>
+                  ) : undefined;
 
-              {/* What the search is doing, and only while it is doing it: a line
-                  that says it is searching whether or not it is says nothing at
-                  all. When it has finished and found nothing, that is the news,
-                  and the way to try again goes with it. */}
-              {scanning ? (
-                <View style={styles.scanRow}>
-                  <ActivityIndicator size="small" color={colors.textSecondary} />
-                  <Text style={styles.scanText}>{t('Searching for devices…')}</Text>
-                </View>
-              ) : upnpAvailable ? (
-                <>
-                  {devices.length === 0 ? (
-                    <Text style={styles.scanText}>{t('No devices found')}</Text>
-                  ) : null}
-                  <Pressable
-                    style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
-                    onPress={() => void upnpSearch()}
-                  >
-                    <Icon name="refresh" size={20} color={colors.textSecondary} />
-                    <Text style={[styles.actionText, { color: colors.textSecondary }]}>
-                      {t('Search again')}
-                    </Text>
-                  </Pressable>
-                </>
+                  return (
+                    <Row
+                      key={device.id}
+                      icon={outputIcon(device.isTV ? 'tv' : 'speaker', active)}
+                      label={normalizeOutputDisplayName(device.name)}
+                      active={active}
+                      onPress={() => void switchToSonosDevice(device)}
+                      action={action}
+                    />
+                  );
+                })
+              : groupedUpnpRows.map((row) => (
+                  <Row
+                    key={row.key}
+                    icon={outputIcon(
+                      row.groupSize > 1 ? 'group' : row.device.isTV ? 'tv' : 'speaker',
+                      row.active,
+                    )}
+                    label={row.label}
+                    active={row.active}
+                    onPress={() => void pickDevice(row.device)}
+                  />
+                ))
+            : null}
+
+          {/* What the search is doing, and only while it is doing it: a line
+              that says it is searching whether or not it is says nothing at
+              all. When it has finished and found nothing, that is the news,
+              and the way to try again goes with it. */}
+          {scanning ? (
+            <View style={styles.scanRow}>
+              <ActivityIndicator size="small" color={colors.textSecondary} />
+              <Text style={styles.scanText}>{t('Searching for devices…')}</Text>
+            </View>
+          ) : upnpAvailable ? (
+            <>
+              {devices.length === 0 ? (
+                <Text style={styles.scanText}>{t('No devices found')}</Text>
               ) : null}
-            </ScrollView>
-          </Animated.View>
-        </GestureDetector>
-      </GestureHandlerRootView>
+              <Pressable
+                style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
+                onPress={() => void upnpSearch()}
+              >
+                <Icon name="refresh" size={20} color={colors.textSecondary} />
+                <Text style={[styles.actionText, { color: colors.textSecondary }]}>
+                  {t('Search again')}
+                </Text>
+              </Pressable>
+            </>
+          ) : null}
+        </ScrollView>
+      </MenuGlassCardFrame>
     </Modal>
   );
 }
 
 const styles = themed((colors) => ({
-  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: colors.backdrop },
-  sheet: {
-    position: 'absolute',
-    bottom: 0,
-    // Centred and no wider than a sheet wants to be (#131).
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: SHEET_MAX_WIDTH,
-    maxHeight: '84%',
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.xxl,
-    borderTopRightRadius: radius.xxl,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-  },
-  grabber: {
-    alignSelf: 'center',
-    width: 36,
-    height: 4,
-    borderRadius: radius.pill,
-    backgroundColor: colors.textMuted,
-    opacity: 0.5,
-    marginBottom: spacing.md,
-  },
-  sheetTitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    fontWeight: '500',
-  },
-  currentLine: {
-    color: colors.textMuted,
-    fontSize: fontSize.sm,
-    marginTop: 2,
-    marginBottom: spacing.sm,
-  },
+  scroll: { flexShrink: 1, minHeight: 0 },
   content: { paddingBottom: spacing.sm },
   action: {
     flexDirection: 'row',

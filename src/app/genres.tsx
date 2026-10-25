@@ -3,16 +3,16 @@
  *
  * A screen of its own and, `embedded`, the Genres section of the Explore tab.
  */
+import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 import {
-  FlatList,
-  Pressable,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import Animated from 'react-native-reanimated';
 
 import { type Genre } from '@/api/backend';
 import { getGenres } from '@/api/data';
@@ -35,6 +35,7 @@ import {
 import { listPerf } from '@/lib/listPerf';
 import { BackChevron } from '@/components/BackChevron';
 import { BrowseFrame, useSearchBox, type BrowserProps } from '@/components/BrowseFrame';
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
 import { columnsFor, useScreenSize } from '@/hooks/useScreenSize';
 
@@ -50,6 +51,7 @@ export default function GenresScreen() {
 }
 
 export function GenresBrowser({ embedded, searchOpen }: BrowserProps) {
+  const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
@@ -95,7 +97,8 @@ export function GenresBrowser({ embedded, searchOpen }: BrowserProps) {
       )}
 
       {showSearch ? (
-        <View style={styles.searchBar}>
+        <View collapsable={false} style={styles.searchBar}>
+          <GlassBackdrop radius={radius.pill} tint={colors.surfaceHighlight} variant="regular" />
           <Icon name="search" size={18} color={colors.textMuted} />
           <TextInput
             style={styles.input}
@@ -108,9 +111,9 @@ export function GenresBrowser({ embedded, searchOpen }: BrowserProps) {
             autoFocus={embedded}
           />
           {query.length > 0 ? (
-            <Pressable hitSlop={10} onPress={() => setQuery('')}>
+            <GlassPressable variant="subtle" hitSlop={10} onPress={() => setQuery('')}>
               <Icon name="close-circle" size={18} color={colors.textMuted} />
-            </Pressable>
+            </GlassPressable>
           ) : null}
         </View>
       ) : (
@@ -126,7 +129,9 @@ export function GenresBrowser({ embedded, searchOpen }: BrowserProps) {
       ) : isError ? (
         <Message text={t("Couldn't load genres.")} onRetry={() => refetch()} />
       ) : (
-        <FlatList
+        <Animated.FlatList
+      onScroll={dockScroll}
+      scrollEventThrottle={16}
         {...listPerf}
           // With the filter box open, a tap opens the row instead of only closing the keyboard.
           keyboardShouldPersistTaps="handled"
@@ -166,7 +171,7 @@ const styles = themed((colors) => ({
     alignItems: 'center',
     gap: spacing.sm,
     height: 44,
-    backgroundColor: colors.surfaceHighlight,
+    backgroundColor: 'transparent',
     marginHorizontal: spacing.lg,
     marginBottom: spacing.md,
     paddingHorizontal: spacing.lg,

@@ -7,7 +7,7 @@
  */
 import { create } from 'zustand';
 
-interface ShareTarget {
+export interface ShareTarget {
   /** Song, album or playlist id, as the server knows it. */
   id: string;
   /** Its name, used as the share's description and in the sheet's title. */
@@ -17,12 +17,14 @@ interface ShareTarget {
 interface SharePickerState {
   /** What to share; null = sheet closed. */
   target: ShareTarget | null;
+  session: number;
   open: (target: ShareTarget) => void;
   close: () => void;
 }
 
 export const useSharePicker = create<SharePickerState>((set) => ({
   target: null,
-  open: (target) => set({ target }),
-  close: () => set({ target: null }),
+  session: 0,
+  open: (target) => set((state) => ({ target, session: state.session + 1 })),
+  close: () => set((state) => ({ target: null, session: state.session + 1 })),
 }));

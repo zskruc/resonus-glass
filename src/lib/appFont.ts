@@ -1,75 +1,32 @@
 /**
- * Global text defaults. React Native doesn't inherit `fontFamily` at the app
- * level and its `Text` (RN 0.83) is a function component without `render` or
- * `defaultProps` (React 19 removed them), so the component can't be patched.
- * Instead we wrap the JSX runtime (`jsx`/`jsxs` and its development variant
- * `jsxDEV`): every time a `<Text>` or `<TextInput>` is created, a base style is
- * injected below its own style (own style wins).
- *
- * Two things go in that base style:
- *
- *  - The UI font, when one is chosen in Settings. Nothing in the app sets
- *    `fontFamily`, so the injected family applies. With the default option
- *    (`undefined`) the system font is left as it is.
- *
- *  - A weight, on Android, which is not a preference but a fix. See below.
- *
- * Both are read from module variables on every element creation, so changing
- * the setting applies to everything that gets re-painted.
+ * Global font defaults and Android system text weight. An explicit, adjusted
+ * weight lets RN measure and draw the same typeface; leaving this to TextView
+ * alone clips text because RN's separate measuring paint misses the setting.
  */
 /* eslint-disable @typescript-eslint/no-require-imports */
-import { Platform, Text, TextInput, type TextStyle } from 'react-native';
+import { createElement, forwardRef, useSyncExternalStore, type ComponentRef } from 'react';
+import { Platform, StyleSheet, Text, TextInput, type TextInputProps, type TextProps, type TextStyle } from 'react-native';
 
-/**
- * Why every piece of text is given an explicit weight on Android.
- *
- * Android's "Bold text" (Accessibility › Display size and text) sets
- * `Configuration.fontWeightAdjustment` to 300, and the platform adds that to
- * the weight of anything a `TextView` draws. React Native never learned about
- * it: there is not one mention of `fontWeightAdjustment` in its Android
- * sources. `TextLayoutManager` measures with a `TextPaint` of its own, built
- * from `Typeface.create` with no `Configuration` in sight, and then hands the
- * text to a real `TextView` whose paint the platform has already made heavier.
- * The box is measured for the normal font and filled with the bold one, so
- * whatever no longer fits is dropped: the tab said "Inic...", a track's artist
- * said "Sum ...", and the track menu lost the end of every line ("Add to a"
- * for "Add to a playlist"), with two identical "Go to" entries left in it.
- *
- * A `fontWeight` in the style is measured correctly, because RN puts it in a
- * `CustomStyleSpan`, which is metric-affecting and so applies to the measuring
- * paint as well as to the drawing one. Setting one also takes the decision
- * away from the platform: the span re-derives the typeface from the weight it
- * was given, and the adjustment is gone. That is why the app's headings, which
- * name a weight, were the only text that came out right.
- *
- * So the app names a weight everywhere, and what the system asks for is lost.
- * That is the trade we can make today: reading `fontWeightAdjustment` needs
- * native code, and until something reads it there is no honest way to be
- * bolder, because RN would measure that boldness as if it were not there.
- */
-const NEUTRALIZE_BOLD_TEXT = Platform.OS === 'android';
+import { adjustedFontWeight, preservesFontWeight } from '@/lib/fontWeight';
+import { getSystemFontWeightAdjustment, initSystemTypography, subscribeSystemFontWeightAdjustment } from '@/lib/systemTypography';
 
 let currentFamily: string | undefined;
+let publishedFamily: string | undefined;
+const familyListeners = new Set<() => void>();
 let injected: TextStyle | null = null;
 let installed = false;
 
-/** Rebuilds the base style. Null when there is nothing to inject. */
 function rebuildInjected(): void {
   const base: TextStyle = {};
   if (currentFamily) base.fontFamily = currentFamily;
-  if (NEUTRALIZE_BOLD_TEXT) base.fontWeight = 'normal';
+  // Imported single-face fonts and icons retain the previous explicit weight.
+  if (Platform.OS === 'android') base.fontWeight = 'normal';
   injected = Object.keys(base).length > 0 ? base : null;
 }
 
 rebuildInjected();
 
-/**
- * Sets the global font. `undefined` = system default font.
- *
- * Called on every render of the root layout, so it returns early when nothing
- * changed: the injected object has to keep its identity, or every `Text` in the
- * app is handed a new style on every repaint.
- */
+/** Called by the root render; this setter does not publish React updates. */
 export function setAppFont(family: string | undefined): void {
   const next = family || undefined;
   if (next === currentFamily) return;
@@ -77,17 +34,62 @@ export function setAppFont(family: string | undefined): void {
   rebuildInjected();
 }
 
-/** Wraps a `jsx(type, props, ...rest)` function to inject the base style. */
+/** Publish only after the root commits, so render never updates other text. */
+export function publishAppFont(): void {
+  if (publishedFamily === currentFamily) return;
+  publishedFamily = currentFamily;
+  for (const listener of [...familyListeners]) listener();
+}
+
+function typographySnapshot(): string {
+  // A primitive snapshot stays equal between reads and also tracks family
+  // changes in labels whose parents are memoized or kept behind a route.
+  return `${currentFamily ?? ''}:${getSystemFontWeightAdjustment()}`;
+}
+
+function subscribeTypography(listener: () => void): () => void {
+  familyListeners.add(listener);
+  const stopWeight = subscribeSystemFontWeightAdjustment(listener);
+  return () => {
+    familyListeners.delete(listener);
+    stopWeight();
+  };
+}
+
+function textStyle(style: TextProps['style'], adjustment: number): TextProps['style'] {
+  const own = StyleSheet.flatten(style);
+  const family = own?.fontFamily ?? currentFamily;
+  if (preservesFontWeight(family)) return [injected, style];
+  return [injected, style, {
+    fontWeight: adjustedFontWeight(own?.fontWeight, adjustment) as TextStyle['fontWeight'],
+  }];
+}
+
+// Subscribe at the actual native Text boundary. Memoized labels refresh when
+// system bold text changes, while Animated.Text does not apply the weight twice.
+// createElement bypasses our JSX wrapper; forwarded refs still point at RN views.
+const SystemText = forwardRef<ComponentRef<typeof Text>, TextProps>(function SystemText(props, ref) {
+  useSyncExternalStore(subscribeTypography, typographySnapshot, typographySnapshot);
+  const adjustment = getSystemFontWeightAdjustment();
+  return createElement(Text, { ...props, ref, style: textStyle(props.style, adjustment) });
+});
+
+const SystemTextInput = forwardRef<ComponentRef<typeof TextInput>, TextInputProps>(function SystemTextInput(props, ref) {
+  useSyncExternalStore(subscribeTypography, typographySnapshot, typographySnapshot);
+  const adjustment = getSystemFontWeightAdjustment();
+  return createElement(TextInput, { ...props, ref, style: textStyle(props.style, adjustment) });
+});
+
 function wrapJsx(orig: (...args: any[]) => any) {
   return function wrapped(type: unknown, props: any, ...rest: any[]) {
-    if (injected && (type === Text || type === TextInput) && props) {
-      props = { ...props, style: [injected, props.style] };
+    if ((type === Text || type === TextInput) && props) {
+      if (Platform.OS === 'android') type = type === Text ? SystemText : SystemTextInput;
+      else if (injected) props = { ...props, style: [injected, props.style] };
     }
     return orig(type, props, ...rest);
   };
 }
 
-/** Applies the wrapper to an already-required JSX runtime module. */
 function patchRuntime(rt: any): void {
   if (!rt) return;
   if (typeof rt.jsx === 'function') rt.jsx = wrapJsx(rt.jsx);
@@ -95,19 +97,19 @@ function patchRuntime(rt: any): void {
   if (typeof rt.jsxDEV === 'function') rt.jsxDEV = wrapJsx(rt.jsxDEV);
 }
 
-/** Installs the wrapper once, over both possible runtimes.
- * Requires literals: Metro can't resolve `require` with a variable. */
+/** Literal requires are needed by Metro; install once before root rendering. */
 export function installAppFont(): void {
   if (installed) return;
   installed = true;
+  initSystemTypography();
   try {
     patchRuntime(require('react/jsx-runtime'));
   } catch {
-      // No production runtime (e.g. in dev): ignored.
+    // This runtime may be absent in a test environment.
   }
   try {
     patchRuntime(require('react/jsx-dev-runtime'));
   } catch {
-      // No development runtime (e.g. in production): ignored.
+    // Production does not require the development runtime.
   }
 }

@@ -12,8 +12,9 @@
  * Download-related settings live in Settings › Downloads, and lyrics options in
  * Settings › Player.
  */
+import { DockScrollView } from '@/components/DockScrollView';
 import { useRouter } from 'expo-router';
-import { ScrollView, Text } from 'react-native';
+import { Text } from 'react-native';
 
 import {
   SelectList,
@@ -86,7 +87,7 @@ export default function PlaybackSettings() {
 
   return (
     <SettingsPage title={t('Quality & playback')}>
-      <ScrollView contentContainerStyle={settingsStyles.content}>
+      <DockScrollView contentContainerStyle={settingsStyles.content}>
         {/* Nothing here exists without a server to stream from, so the local
             profile does not get the section at all: it is the one profile where
             these will never do anything (see `useLocalProfile`). Everything
@@ -302,7 +303,7 @@ export default function PlaybackSettings() {
             },
           ]}
         />
-      </ScrollView>
+      </DockScrollView>
     </SettingsPage>
   );
 }

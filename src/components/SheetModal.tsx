@@ -5,21 +5,25 @@
  * the menu had a noticeable delay. The content comes as a function receiving
  * `close` to close after choosing an action.
  *
- * Slides up and down and closes with a swipe, like the song menu: these menus
- * open the same way and from the same ⋯, so they behave the same way too.
+ * The default presentation slides up and down and closes with a swipe. A
+ * floating card keeps the same self-contained visibility and close callbacks.
  */
-import { type MutableRefObject, type ReactNode, useState } from 'react';
+import { type MutableRefObject, type ReactNode, useCallback, useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { GlassBackdrop } from '@/components/glass';
+import { MenuGlassCardFrame } from '@/components/MenuGlassCard';
 import { useBottomSheetAnim } from '@/hooks/useBottomSheetAnim';
-import { radius, SHEET_MAX_WIDTH, spacing, themed } from '@/theme';
+import { MenuRequestScope } from '@/lib/menuRequest';
+import { colors, radius, SHEET_MAX_WIDTH, spacing, themed } from '@/theme';
 
 export function SheetModal({
   openRef,
   onClosed,
+  presentation = 'sheet',
   children,
 }: {
   /** The screen holds a ref and calls `openRef.current()` to open. */
@@ -27,39 +31,69 @@ export function SheetModal({
   /** Runs once the sheet is off screen, however it was closed. For an action
    *  that unmounts the sheet along with whatever declares it. */
   onClosed?: () => void;
-  children: (close: () => void) => ReactNode;
+  presentation?: 'sheet' | 'card';
+  children: (close: (after?: () => void) => void) => ReactNode;
 }) {
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
-  openRef.current = () => setOpen(true);
-  const closeNow = () => {
+  const [session, setSession] = useState(0);
+  const [lifecycle] = useState(() => new MenuRequestScope());
+  useEffect(() => {
+    openRef.current = () => {
+      setSession(lifecycle.begin());
+      setOpen(true);
+    };
+    return () => {
+      lifecycle.invalidate();
+      openRef.current = () => {};
+    };
+  }, [openRef, lifecycle]);
+  const closeNow = useCallback((after?: () => void) => {
+    if (!lifecycle.owns(session)) return;
+    lifecycle.invalidate();
     setOpen(false);
     onClosed?.();
-  };
+    after?.();
+  }, [session, onClosed, lifecycle]);
   const { dismiss, pan, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
     open,
     closeNow,
+    presentation,
+    session,
   );
-  // The sheet slides down and only then is the Modal unmounted. Actions close
-  // through here, so choosing one looks the same as swiping it away.
-  const close = () => dismiss(closeNow);
+  // Unmount the Modal only after its exit animation, for either presentation.
+  // A next modal opens only after this surface is offscreen, avoiding a
+  // background switch underneath two independently visible native windows.
+  const close = (after?: () => void) => dismiss(() => closeNow(after));
+
+  if (presentation === 'card') {
+    return (
+      <Modal transparent animationType="none" visible={open} onRequestClose={() => close()}>
+        <MenuGlassCardFrame onClose={() => close()} backdropStyle={backdropStyle}
+          cardStyle={sheetStyle} onLayout={onSheetLayout}>
+          {children(close)}
+        </MenuGlassCardFrame>
+      </Modal>
+    );
+  }
 
   return (
-    <Modal transparent animationType="none" visible={open} onRequestClose={close}>
+    <Modal transparent animationType="none" visible={open} onRequestClose={() => close()}>
       {/* Gestures inside an RN Modal need a root view of their own: the Modal
           renders in a native hierarchy outside the app's. */}
       <GestureHandlerRootView style={StyleSheet.absoluteFill}>
         <Animated.View style={[styles.backdrop, backdropStyle]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={close} />
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => close()} />
         </Animated.View>
         {/* One drag around everything: what goes in here is a short list of
             actions that never scrolls, so nothing else competes for the
             gesture (the song menu needs two because its list does scroll). */}
         <GestureDetector gesture={pan}>
           <Animated.View
-            style={[styles.sheet, { paddingBottom: insets.bottom + spacing.md }, sheetStyle]}
+            style={[styles.sheet, { paddingBottom: insets.bottom + spacing.md, backgroundColor: 'transparent' }, sheetStyle]}
             onLayout={onSheetLayout}
           >
+            <GlassBackdrop radius={0} radiusTopLeft={radius.xxl} radiusTopRight={radius.xxl} variant="prominent" tint={colors.surface} />
             {/* Spotify-style grabber: the visual cue that the sheet can be
                 dragged down to dismiss. */}
             <View style={styles.grabber} />

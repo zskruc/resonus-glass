@@ -1,8 +1,9 @@
 /** Brief pill-shaped message at the bottom (Spotify style). */
 import { useEffect } from 'react';
-import { Pressable, Text } from 'react-native';
+import { Text } from 'react-native';
 import Animated, { FadeInDown, FadeOut } from 'react-native-reanimated';
 
+import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import { useFloatingBottom } from '@/hooks/useScreenBottomPadding';
 import { useToast } from '@/store/toast';
 import { colors, fontSize, radius, spacing, themed } from '@/theme';
@@ -31,15 +32,17 @@ export function Toast() {
     <Animated.View
       entering={FadeInDown.duration(200)}
       exiting={FadeOut.duration(150)}
-      style={[styles.pill, actionLabel ? styles.pillRow : null, { bottom }]}
+      style={[styles.pill, actionLabel ? styles.pillRow : null, { bottom, backgroundColor: 'transparent' }]}
       // Without an action the toast is purely informational and shouldn't steal touches.
       pointerEvents={actionLabel ? 'box-none' : 'none'}
     >
+      <GlassBackdrop radius={radius.pill} variant="prominent" tint={colors.snackbar} />
       <Text style={[styles.text, actionLabel ? styles.textLeft : null]} numberOfLines={2}>
         {message}
       </Text>
       {actionLabel ? (
-        <Pressable
+        <GlassPressable
+          variant="subtle"
           hitSlop={12}
           accessibilityRole="button"
           onPress={() => {
@@ -51,7 +54,7 @@ export function Toast() {
           {/* The accent as picked, not the theme's: the pill is dark in both
               appearances, and the light theme darkens the accent for white. */}
           <Text style={[styles.action, { color: colors.accentVivid }]}>{actionLabel}</Text>
-        </Pressable>
+        </GlassPressable>
       ) : null}
     </Animated.View>
   );

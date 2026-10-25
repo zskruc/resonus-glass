@@ -58,6 +58,7 @@ object BrowseTreeCache {
     val sameAccount = profile == null || incoming.profile == null || profile == incoming.profile
     val keepWhatWeHave = incoming.partial && sameAccount
     nodes = if (keepWhatWeHave) nodes + incoming.nodes else incoming.nodes
+    retainArtwork()
     profile = incoming.profile ?: profile.takeIf { sameAccount }
     loaded = true
     runCatching {
@@ -81,6 +82,7 @@ object BrowseTreeCache {
       if (file.exists()) {
         parse(file.readText())?.let {
           nodes = it.nodes
+          retainArtwork()
           profile = it.profile
         }
       }
@@ -93,6 +95,12 @@ object BrowseTreeCache {
     // AA was browsing when a track was tapped, so that is the one worth keeping.
     if (children.any { it.playable }) lastBrowsedParent = parentId
     return children
+  }
+
+  private fun retainArtwork() {
+    CarArtwork.retainBrowseArtwork(
+      nodes.values.asSequence().flatMap { it.asSequence() }.mapNotNull { it.artworkUrl }
+    )
   }
 
   fun lastBrowsedParent(): String? = lastBrowsedParent

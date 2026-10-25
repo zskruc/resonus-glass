@@ -3,8 +3,11 @@
  * played first, with what each takes and when it came in. A row plays from
  * there; the bin on a row drops that song, the one in the bar drops them all.
  */
+import Animated from 'react-native-reanimated';
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
+import { GlassPressable } from '@/components/glass';
 import { useEffect, useState } from 'react';
-import { FlatList, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { COVER, markUnplayableOffline, songCoverUrl } from '@/api/data';
@@ -40,6 +43,7 @@ function shortDate(at: number, lang: string): string {
 }
 
 export default function CachedSongsScreen() {
+  const dockScroll = useLiquidDockScrollHandler();
   useTheme();
   const t = useT();
   const toast = useToast((s) => s.show);
@@ -79,14 +83,14 @@ export default function CachedSongsScreen() {
         <BackChevron size={28} label={t('Close')} />
         <Text style={styles.barTitle}>{t('Cached songs')}</Text>
         {list.length > 0 ? (
-          <Pressable
+          <GlassPressable
             hitSlop={10}
             accessibilityRole="button"
             accessibilityLabel={t('Clear song cache')}
             onPress={() => setConfirmClear(true)}
           >
             <Icon name="trash-outline" size={22} color={colors.textSecondary} />
-          </Pressable>
+          </GlassPressable>
         ) : null}
       </View>
 
@@ -99,7 +103,9 @@ export default function CachedSongsScreen() {
           />
         </View>
       ) : (
-        <FlatList
+        <Animated.FlatList
+          onScroll={dockScroll}
+          scrollEventThrottle={16}
           {...listPerf}
           data={list}
           keyExtractor={(item) => item.id}
@@ -138,14 +144,14 @@ export default function CachedSongsScreen() {
                     {t('Cached {date}', { date: shortDate(item.cachedAt, lang) })}
                   </Text>
                 </View>
-                <Pressable
+                <GlassPressable
                   hitSlop={10}
                   accessibilityRole="button"
                   accessibilityLabel={t('Remove from cache')}
                   onPress={() => void useSongCache.getState().remove([item.id])}
                 >
                   <Icon name="close" size={20} color={colors.textSecondary} />
-                </Pressable>
+                </GlassPressable>
               </Pressable>
             );
           }}

@@ -1,0 +1,38 @@
+diff --git a/src/PropsRegistryGarbageCollector.ts b/src/PropsRegistryGarbageCollector.ts
+index f917ce5a8586c02855f1d8d9ae73154592d22510..69cf272911f9f2a199f19309c215816617d7f070 100644
+--- a/src/PropsRegistryGarbageCollector.ts
++++ b/src/PropsRegistryGarbageCollector.ts
+@@ -25,15 +25,19 @@ export const PropsRegistryGarbageCollector = {
+       return;
+     }
+     this.viewsMap.set(viewTag, component);
+-    this.viewsCount++;
+-    if (this.viewsCount === 1) {
++    this.viewsCount = this.viewsMap.size;
++    if (this.intervalId === null) {
+       this.registerInterval();
+     }
+   },
+ 
+   unregisterView(viewTag: number) {
+-    this.viewsMap.delete(viewTag);
+-    this.viewsCount--;
++    // Nested AnimatedComponents share a tag and unregister independently.
++    // Match registerView's deduplication, including Suspense freeze/remounts.
++    if (!this.viewsMap.delete(viewTag)) {
++      return;
++    }
++    this.viewsCount = this.viewsMap.size;
+     if (this.viewsCount === 0) {
+       this.unregisterInterval();
+     }
+@@ -52,6 +56,9 @@ export const PropsRegistryGarbageCollector = {
+   },
+ 
+   registerInterval() {
++    if (this.intervalId !== null) {
++      return;
++    }
+     this.intervalId = setInterval(
+       this.syncPropsBackToReact.bind(this),
+       FLUSH_INTERVAL_MS

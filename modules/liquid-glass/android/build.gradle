@@ -1,0 +1,40 @@
+// Keep the Compose compiler matched to Expo's Kotlin compiler. The 1.0.0
+// Android artifact avoids the SDK 37 / Kotlin 2.4 requirements of Backdrop 2.x.
+buildscript {
+  repositories { mavenCentral() }
+  dependencies {
+    def kotlinCompilerVersion = rootProject.ext.kotlinVersion
+    classpath "org.jetbrains.kotlin:compose-compiler-gradle-plugin:${kotlinCompilerVersion}"
+  }
+}
+
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+apply plugin: 'org.jetbrains.kotlin.plugin.compose'
+
+group = 'expo.modules.liquidglass'
+version = '0.1.0'
+
+android {
+  namespace 'expo.modules.liquidglass'
+  defaultConfig {
+    versionCode 1
+    versionName '0.1.0'
+  }
+  buildFeatures { compose true }
+}
+
+dependencies {
+  // The app supplies React Android; this decorative view implements its touch-target contract.
+  compileOnly 'com.facebook.react:react-android'
+  // Already supplied by the app's autolinked navigator; no additional runtime copy.
+  compileOnly project(':react-native-screens')
+  implementation 'io.github.kyant0:backdrop:1.0.0'
+  implementation 'androidx.compose.foundation:foundation:1.9.4'
+  implementation 'androidx.compose.ui:ui:1.9.4'
+  implementation 'androidx.compose.ui:ui-graphics:1.9.4'
+  testImplementation 'junit:junit:4.13.2'
+}

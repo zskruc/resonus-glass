@@ -22,6 +22,7 @@ import {
   type AudioStatus,
 } from 'expo-audio';
 import { fetch as expoFetch } from 'expo/fetch';
+import * as Network from 'expo-network';
 import { AppState } from 'react-native';
 import { create } from 'zustand';
 
@@ -53,11 +54,19 @@ import { CACHED_COVER, COVER, coverArtUrl, getRandomSongs } from '@/api/data';
 import { prefetchLyrics } from '@/hooks/useLyrics';
 import { tg } from '@/i18n';
 import { transcodeTarget } from '@/lib/audioQuality';
+import {
+  BACKGROUND_RETRY_FIRST_MS,
+  BACKGROUND_RETRY_MS,
+  PlaybackOutage,
+  playbackIsRunning,
+  type PlaybackRecoveryTicket,
+} from '@/lib/backgroundPlayback';
 import { favoriteLabel, favoriteState, onFavoritesChange, toggleFavorite } from '@/lib/remoteFavorite';
 import type { Remap } from '@/lib/navidromeRemap';
 import { remapSong } from '@/lib/navidromeRemap';
 import { noteOwnReport } from '@/lib/ownReports';
 import { beat, bump, note, timed } from '@/lib/perfLog';
+import { plausibleDuration } from '@/lib/playbackDuration';
 import { queryClient } from '@/lib/query';
 import {
   appendEnd,
@@ -207,6 +216,7 @@ function abortSleepFade() {
 
 /** Pause due to expired sleep timer (from the timeout or onStatus). */
 function fireSleepTimer() {
+  cancelPlaybackRecovery();
   if (sleepTimeout) clearTimeout(sleepTimeout);
   sleepTimeout = null;
   // Pause BEFORE restoring volume: the other way around, the fade just left
@@ -562,7 +572,8 @@ async function ensureTranscodeOffsetSupport(): Promise<boolean> {
  * stream has no random access. Shared by the user's seek and by every path that
  * restores a saved position, which used to restart those streams from zero too.
  */
-function seekActive(sec: number) {
+function seekActive(sec: number, stillOwned?: () => boolean) {
+  if (stillOwned && !stillOwned()) return;
   const state = usePlayerStore.getState();
   const song = currentSong(state);
   pendingSeek = { sec, at: Date.now() };
@@ -591,6 +602,7 @@ function seekActive(sec: number) {
     bump('seek · offset answered');
     // If the track changed while resolving, don't touch the new player.
     if (currentSong(usePlayerStore.getState()) !== song) return;
+    if (stillOwned && !stillOwned()) return;
     const p = activePlayer();
     if (!p) return;
     pendingSeek = { sec, at: Date.now() }; // refreshes the wait window
@@ -888,7 +900,8 @@ let loadToken = 0;
  * says true: showing one song while another sounds is the one thing this must
  * never do.
  */
-async function loadIndex(index: number, autoplay: boolean): Promise<boolean> {
+async function loadIndex(index: number, autoplay: boolean, recoveryTicket?: PlaybackRecoveryTicket): Promise<boolean> {
+  if (recoveryTicket && recoveryTargetIndex(recoveryTicket) === null) return false;
   const token = ++loadToken;
   // Anything asked to play is the app in use, whoever asked: the button, the
   // notification, the car, a headset. The window is only for the track the
@@ -937,6 +950,11 @@ async function loadIndex(index: number, autoplay: boolean): Promise<boolean> {
   // that does — the report was tapping a song and being shown a different one,
   // with the right audio. Whoever came last owns playback; this one is done.
   if (token !== loadToken) return true;
+  if (recoveryTicket) {
+    const target = recoveryTargetIndex(recoveryTicket);
+    if (target === null) return false;
+    index = target;
+  }
   const song = usePlayerStore.getState().queue[index];
   if (!song) return false;
   // A song with no duration draws 0:00 and every seek on the bar lands on zero.
@@ -1241,13 +1259,15 @@ function endBootQuiet(catchUp = false) {
   if (!song) return;
   if (!song.url && !localSourceFor(song)) void ensureTranscodeOffsetSupport();
   scheduleNextSource();
-  prefetchLyrics(song);
+  if (AppState.currentState === 'active') prefetchLyrics(song);
   warmUpcoming();
   cacheUpcoming();
 }
 
 /** Now playing / history + syncs the queue on track change. */
 function onTrackChanged(song: Song) {
+  playbackOutage.trackChanged(song.id);
+  if (!playbackOutage.waiting) clearBackgroundRetryTimer();
   // Whatever the last stream announced was about the last stream. The
   // notification was built from it moments ago (this runs right after
   // `applyLockScreen`), so it has to be told again, or a station with nothing
@@ -1272,9 +1292,10 @@ function onTrackChanged(song: Song) {
   // handful of connections to the server at once, so speculative requests sent
   // right then put themselves in front of what the screens are waiting for
   // (#50). Nobody swipes to the next lyrics in the first five seconds.
-  if (!bootQuiet) prefetchLyrics(song);
+  if (!bootQuiet && AppState.currentState === 'active') prefetchLyrics(song);
   if (nextLyricsTimer) clearTimeout(nextLyricsTimer);
   nextLyricsTimer = setTimeout(() => {
+    if (AppState.currentState !== 'active') return;
     const { queue, index } = usePlayerStore.getState();
     if (queue.length > 1) prefetchLyrics(queue[(index + 1) % queue.length]);
   }, NEXT_LYRICS_DELAY_MS);
@@ -2394,6 +2415,12 @@ function maybeDetectStall(intendPlay: boolean, buffering: boolean, positionSec: 
     bump('player · fell back to the file after a stall');
     failedSource.set(song.id, 'stream');
     void reloadCurrent(positionSec, true);
+    return;
+  }
+  if (!stallFellBack && now - stallSince >= STALL_FALLBACK_MS && song && AppState.currentState !== 'active') {
+    stallFellBack = true;
+    saveQueueLocal(true);
+    rememberPlaybackOutage(song.id, positionSec, true);
   }
 }
 
@@ -2409,6 +2436,93 @@ let errorTrackId: string | null = null;
 let errorAttempts = 0;
 /** Two: enough to ride out a hiccup, few enough not to retry a dead source. */
 const MAX_ERROR_ATTEMPTS = 2;
+
+const playbackOutage = new PlaybackOutage();
+let backgroundRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let stoppingFailedPlayback = false;
+
+function recoveryTargetIndex(ticket: PlaybackRecoveryTicket) {
+  return playbackOutage.targetIndex(ticket, usePlayerStore.getState(), !!remoteKind());
+}
+
+/** This stop records a failed connection; a later network edge may resume it. */
+function stopFailedPlayback() {
+  stoppingFailedPlayback = true;
+  try {
+    usePlayerStore.setState({ isPlaying: false, isBuffering: false });
+  } finally {
+    stoppingFailedPlayback = false;
+  }
+}
+
+function clearBackgroundRetryTimer() {
+  if (backgroundRetryTimer) clearTimeout(backgroundRetryTimer);
+  backgroundRetryTimer = null;
+}
+
+/** Explicit controls own playback, including an already pending async reload. */
+function cancelPlaybackRecovery() {
+  if (playbackOutage.pending) loadToken++;
+  playbackOutage.cancel();
+  clearBackgroundRetryTimer();
+}
+
+function recoveryContext() {
+  const st = usePlayerStore.getState();
+  return {
+    songId: st.queue[st.index]?.id ?? null,
+    isPlaying: st.isPlaying,
+    background: AppState.currentState !== 'active',
+    remote: !!remoteKind(),
+  };
+}
+
+function rememberPlaybackOutage(songId: string, positionSec: number, background: boolean) {
+  if (playbackOutage.remember(songId, positionSec, Date.now(), background)) {
+    scheduleBackgroundRetry(BACKGROUND_RETRY_FIRST_MS);
+  }
+}
+
+function scheduleBackgroundRetry(delay: number) {
+  clearBackgroundRetryTimer();
+  backgroundRetryTimer = setTimeout(() => {
+    backgroundRetryTimer = null;
+    void retryInBackground();
+  }, delay);
+}
+
+async function retryInBackground() {
+  const wasWaiting = playbackOutage.waiting;
+  const context = recoveryContext();
+  const ticket = playbackOutage.retry(context);
+  if (!ticket) {
+    if (wasWaiting && playbackOutage.pending && context.background && context.isPlaying && !context.remote) {
+      stopFailedPlayback();
+    }
+    return;
+  }
+  bump('player · retrying the track in background');
+  try {
+    await reloadCurrent(ticket.positionSec, true, ticket);
+  } catch {
+    // A later round can retry; explicit controls invalidate this ticket.
+  }
+  if (playbackOutage.waiting && playbackOutage.owns(ticket)) {
+    scheduleBackgroundRetry(BACKGROUND_RETRY_MS);
+  }
+}
+
+async function resumeAfterNetworkReturn() {
+  const ticket = playbackOutage.networkReturned(recoveryContext(), Date.now());
+  if (!ticket) return;
+  clearBackgroundRetryTimer();
+  bump('player · resuming after the network came back');
+  try {
+    await reloadCurrent(ticket.positionSec, true, ticket);
+  } catch {
+    // Another native error can enter the bounded wait again.
+  }
+}
 
 /**
  * The error in its own words, with anything that looks like an address taken
@@ -2446,7 +2560,15 @@ function onPlaybackError(message: string, wasPlaying: boolean): void {
   );
   if (errorAttempts >= MAX_ERROR_ATTEMPTS) {
     bump('player · gave up on the track');
-    usePlayerStore.setState({ isPlaying: false, isBuffering: false });
+    saveQueueLocal(true);
+    // A paused/local/broken file is not a network outage. Leave automatic
+    // recovery only to an online stream the user actually wanted to hear.
+    if (wasPlaying && !remoteKind() && !useAuthStore.getState().offline && !song.url && !localSourceFor(song)) {
+      const background = AppState.currentState !== 'active';
+      rememberPlaybackOutage(song.id, st.positionSec, background);
+      if (background) return;
+    }
+    stopFailedPlayback();
     useToast.getState().show(tg("Couldn't play the song"));
     return;
   }
@@ -2476,19 +2598,20 @@ function onPlaybackError(message: string, wasPlaying: boolean): void {
 }
 
 /** Installs the current track again, at the second it had got to. */
-async function reloadCurrent(atSec: number, autoplay: boolean): Promise<void> {
+async function reloadCurrent(atSec: number, autoplay: boolean, recoveryTicket?: PlaybackRecoveryTicket): Promise<void> {
   const { index, queue } = usePlayerStore.getState();
   const song = queue[index];
   if (!song) return;
-  if (!(await loadIndex(index, autoplay))) return;
+  if (!(await loadIndex(index, autoplay, recoveryTicket))) return;
   // `loadIndex` starts the song at zero, which is right for everything else
   // that calls it: what failed here was in the middle of one. And only if it is
   // still the same song, since anything the person did while this loaded owns
   // the player now.
   const now = usePlayerStore.getState();
+  if (recoveryTicket && recoveryTargetIndex(recoveryTicket) === null) return;
   if (now.queue[now.index]?.id !== song.id) return;
   if (atSec > 0) {
-    seekActive(atSec);
+    seekActive(atSec, recoveryTicket ? () => recoveryTargetIndex(recoveryTicket) !== null : undefined);
     usePlayerStore.setState({ positionSec: atSec });
   }
 }
@@ -2496,9 +2619,11 @@ async function reloadCurrent(atSec: number, autoplay: boolean): Promise<void> {
 /** When the last status was taken in, and how close a next one means a pile. */
 let lastStatusAt = 0;
 const BACKLOG_GAP_MS = 200;
+const BACKGROUND_POSITION_PUSH_MS = 5000;
+let lastBackgroundPositionPush = 0;
 
 /** `live`: read from the player just now, never part of a pile. */
-function onStatus(status: AudioStatus, live = false) {
+function onStatus(status: AudioStatus & { playWhenReady?: boolean }, live = false) {
   // Before anything can decide not to use it. This beat is the only clock that
   // survives the app being minimized, so whether it arrives is the first thing
   // worth knowing about the minutes nobody was watching (see `beat`).
@@ -2506,6 +2631,11 @@ function onStatus(status: AudioStatus, live = false) {
   // With remote output (UPnP/DLNA) the local player is paused and its
   // states should not override those coming from the remote device.
   if (remoteKind()) return;
+  // Android's isPlaying was already false while buffering, so a headset or
+  // system pause has no new isPlaying transition. The patched native listener
+  // marks that explicit pause; a network stall and source replacement do not.
+  const nativePaused = status.playWhenReady === false;
+  if (nativePaused && !stoppingFailedPlayback) cancelPlaybackRecovery();
   // Sleep timer fallback: if setTimeout got frozen in background, the
   // native player heartbeat fires it here.
   const endsAt = sleepDeadline();
@@ -2550,7 +2680,7 @@ function onStatus(status: AudioStatus, live = false) {
   lastStatusAt = now;
   // Buffering if we want to play but audio isn't flowing yet (initial load,
   // streaming rebuffer, seek…). If paused, it's not buffering.
-  const intendPlay = status.playing || prev.isPlaying;
+  const intendPlay = !nativePaused && (status.playing || prev.isPlaying);
   // The player could not play what it was handed. Nothing below this applies:
   // the status that comes with a failure is a stopped player at a position that
   // is not going to move, and what to do about that is its own question.
@@ -2559,7 +2689,7 @@ function onStatus(status: AudioStatus, live = false) {
     return;
   }
   // Sound: whatever it took, this track is not the failing one any more.
-  if (status.playing && errorTrackId) {
+  if (playbackIsRunning(status) && errorTrackId) {
     errorTrackId = null;
     errorAttempts = 0;
   }
@@ -2578,7 +2708,8 @@ function onStatus(status: AudioStatus, live = false) {
   }
   // With a stream re-requested with timeOffset, the native player counts from 0:
   // the real position is the offset plus its time.
-  let positionSec = streamOffsetSec + (status.currentTime ?? 0);
+  const nativePositionSec = streamOffsetSec + (status.currentTime ?? 0);
+  let positionSec = nativePositionSec;
   if (pendingSeek) {
     if (Math.abs(positionSec - pendingSeek.sec) < 1 || Date.now() - pendingSeek.at > 2000) {
       pendingSeek = null; // the player reached the target (or we gave up)
@@ -2586,16 +2717,25 @@ function onStatus(status: AudioStatus, live = false) {
       positionSec = pendingSeek.sec;
     }
   }
-  usePlayerStore.setState({
-    positionSec,
-    // With offset active the native reports the duration of the remaining segment,
-    // not the song's: the known duration is kept.
-    durationSec: streamOffsetSec > 0 ? prev.durationSec : status.duration || prev.durationSec,
-    // During pause/resume fade the native player keeps playing for a few ms;
-    // we keep the already-set state so the button doesn't flicker.
-    isPlaying: pauseFadeTimer ? prev.isPlaying : status.playing,
-    isBuffering: buffering,
-  });
+  if (playbackOutage.observeStatus(prev.queue[prev.index]?.id ?? null, status, nativePositionSec)) {
+    clearBackgroundRetryTimer();
+  }
+  const nextDurationSec = streamOffsetSec > 0
+    ? prev.durationSec
+    : plausibleDuration(status.duration, prev.durationSec, currentSong(prev)?.duration);
+  // An unattended retry remains wanted while its replacement source loads.
+  // A loaded, paused native player still ends that intent (headset/lock screen).
+  const nextIsPlaying = nativePaused ? false
+    : pauseFadeTimer || (playbackOutage.pending && buffering)
+      ? prev.isPlaying
+      : status.playing;
+  const material = AppState.currentState === 'active' ||
+    nextIsPlaying !== prev.isPlaying || buffering !== prev.isBuffering ||
+    nextDurationSec !== prev.durationSec || status.didJustFinish;
+  if (material || now - lastBackgroundPositionPush >= BACKGROUND_POSITION_PUSH_MS) {
+    lastBackgroundPositionPush = now;
+    usePlayerStore.setState({ positionSec, durationSec: nextDurationSec, isPlaying: nextIsPlaying, isBuffering: buffering });
+  }
   maybeScrobbleThreshold(positionSec);
   maybeDetectStall(intendPlay, buffering, positionSec);
   // Queue sync with the server.
@@ -2775,6 +2915,9 @@ function saveQueueLocal(force = false) {
   } = usePlayerStore.getState();
   if (queue.length === 0) return;
   if (!force && !queueDirty && AppState.currentState === 'active') return;
+  // Position-only writes can wait in background; track/queue edits and the
+  // exact failure position still persist immediately through dirty/force.
+  if (!force && !queueDirty && Date.now() - localSavedAt < 120_000) return;
   queueDirty = false;
   // Size cap as a precaution for SecureStore; 500 songs is more than enough.
   const payload: StoredQueue = {
@@ -3019,11 +3162,23 @@ function periodicSync() {
   if (st.isPlaying) reportState('playing', st.queue[st.index], st.positionSec);
 }
 
+let syncWanted = false;
+
+function armPeriodicSync() {
+  if (syncInterval) clearInterval(syncInterval);
+  syncInterval = syncWanted
+    ? setInterval(periodicSync, AppState.currentState === 'active' ? 20_000 : 120_000)
+    : null;
+}
+
 function startPeriodicSync() {
-  if (!syncInterval) syncInterval = setInterval(periodicSync, 20000);
+  if (syncWanted && syncInterval) return;
+  syncWanted = true;
+  armPeriodicSync();
 }
 
 function stopPeriodicSync() {
+  syncWanted = false;
   if (syncInterval) {
     clearInterval(syncInterval);
     syncInterval = null;
@@ -3033,7 +3188,17 @@ function stopPeriodicSync() {
 function attachAppState() {
   if (appStateAttached) return;
   appStateAttached = true;
+  let networkUp = true;
+  Network.addNetworkStateListener((state) => {
+    const up = !!state.isConnected && state.isInternetReachable !== false;
+    if (!up) networkUp = false;
+    else if (!networkUp) {
+      networkUp = true;
+      void resumeAfterNetworkReturn();
+    }
+  });
   AppState.addEventListener('change', (st) => {
+    if (syncWanted) armPeriodicSync();
     if (st !== 'active') {
       // A ramp started an instant ago is about to lose its timer, and with it
       // whatever was waiting on the end of it (the pause, most of all). This is
@@ -3079,6 +3244,11 @@ function attachAppState() {
     // Not for a trip to another app and back, though: changing players takes
     // longer than that, and this is a request.
     if (Date.now() - wentAway > 30_000) void adoptNewerServerQueue();
+    if (playbackOutage.leaveBackground()) {
+      clearBackgroundRetryTimer();
+      stopFailedPlayback();
+      useToast.getState().show(tg("Couldn't play the song"));
+    }
   });
 }
 
@@ -3089,6 +3259,7 @@ function attachAppState() {
 export function initRemoteIntegration() {
   const events: RemoteEvents = {
     onConnected: () => {
+      cancelPlaybackRecovery();
       // Transfers the current track to the device and silences the local player.
       const { queue, index, positionSec, isPlaying, sleepEndsAt } = usePlayerStore.getState();
       cutCrossfade();
@@ -3114,7 +3285,7 @@ export function initRemoteIntegration() {
       usePlayerStore.setState({
         index,
         positionSec,
-        durationSec: durationSec || song.duration || state.durationSec,
+        durationSec: plausibleDuration(durationSec, song.duration || state.durationSec, song.duration),
       });
       onTrackChanged(song);
     },
@@ -3131,9 +3302,10 @@ export function initRemoteIntegration() {
       })();
     },
     onProgress: (positionSec, durationSec) => {
+      const current = usePlayerStore.getState();
       usePlayerStore.setState({
         positionSec,
-        durationSec: durationSec || usePlayerStore.getState().durationSec,
+        durationSec: plausibleDuration(durationSec, current.durationSec, currentSong(current)?.duration),
       });
       const st = usePlayerStore.getState();
       maybeScrobbleThreshold(positionSec);
@@ -3495,6 +3667,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       return false;
     }
     attachAppState();
+    cancelPlaybackRecovery();
     autoplayFetchedFor = null;
     autoplayRound = null;
     // A new queue starts the artist's catalogue over, even the same artist's:
@@ -3685,6 +3858,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   toggle: () => {
+    cancelPlaybackRecovery();
     // The one press that does not change track: what was restored is about to
     // be heard, so what the opening held back is due now.
     endBootQuiet(true);
@@ -3754,6 +3928,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   next: () => {
+    cancelPlaybackRecovery();
     endBootQuiet();
     const ni = nextIndex(true);
     if (ni != null) {
@@ -3763,6 +3938,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   previous: () => {
+    cancelPlaybackRecovery();
     endBootQuiet();
     const { index, positionSec } = get();
     // Like Spotify: past a few seconds, "previous" restarts the song. In
@@ -3812,6 +3988,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // module's `handleSeek`). A position the player cannot answer is not a seek
     // that goes nowhere, it is a player that stops.
     if (!Number.isFinite(sec)) return;
+    cancelPlaybackRecovery();
     const duration = get().durationSec;
     // A radio has no length to stay inside of, and a stream still loading has
     // not said its own yet.
@@ -3857,6 +4034,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     endBootQuiet();
     const { queue } = get();
     if (index < 0 || index >= queue.length) return;
+    cancelPlaybackRecovery();
     // Forward jump like any other: "previous" must be able to return.
     pushHistory();
     void loadIndex(index, kind === 'skip' ? skipAutoplay(get().isPlaying) : true);
@@ -4219,6 +4397,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   reset: async (forProfile = false) => {
+    cancelPlaybackRecovery();
     get().cancelSleepTimer();
     clearPlayedHere();
     autoplayFetchedFor = null;
@@ -4296,6 +4475,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 // hooking every action that touches them (add to queue, reorder, remove,
 // shuffle, autoplay…), where the queued track would go stale by omission.
 usePlayerStore.subscribe((st, prev) => {
+  if (st.queue[st.index]?.id !== prev.queue[prev.index]?.id) {
+    playbackOutage.trackChanged(st.queue[st.index]?.id ?? null);
+    if (!playbackOutage.waiting) clearBackgroundRetryTimer();
+  }
+  if (!st.isPlaying && prev.isPlaying && playbackOutage.pending && !stoppingFailedPlayback) cancelPlaybackRecovery();
   if (
     st.queue !== prev.queue ||
     st.index !== prev.index ||

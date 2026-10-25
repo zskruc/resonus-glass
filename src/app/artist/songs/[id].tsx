@@ -24,12 +24,15 @@
  * "Downloaded" among the fields, neither of which a paged list can honestly
  * offer.
  */
+import Animated from 'react-native-reanimated';
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
+import { GlassPressable, GlassScreen as SafeAreaView } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+
 import { useShallow } from 'zustand/react/shallow';
 
 import { getAlbum, getAppearsOn, getArtist, type Song } from '@/api/data';
@@ -71,6 +74,7 @@ import {
 } from '@/theme';
 
 export default function ArtistSongsScreen() {
+  const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
@@ -231,9 +235,9 @@ export default function ArtistSongsScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         {selecting ? (
-          <Pressable hitSlop={10} onPress={() => setSelectedIds(null)} accessibilityLabel={t('Close')}>
+          <GlassPressable variant="subtle" hitSlop={10} onPress={() => setSelectedIds(null)} accessibilityLabel={t('Close')}>
             <Icon name="close" size={26} color={colors.text} />
-          </Pressable>
+          </GlassPressable>
         ) : (
           <BackChevron />
         )}
@@ -241,7 +245,7 @@ export default function ArtistSongsScreen() {
           {selecting ? t('{n} selected', { n: selectedIds.size }) : (name ?? '')}
         </Text>
         {selecting ? (
-          <Pressable
+          <GlassPressable variant="subtle"
             hitSlop={10}
             accessibilityRole="button"
             accessibilityLabel={t('Select all')}
@@ -256,7 +260,7 @@ export default function ArtistSongsScreen() {
               size={24}
               color={shown.length > 0 && selectedIds.size === shown.length ? accent : colors.text}
             />
-          </Pressable>
+          </GlassPressable>
         ) : null}
       </View>
 
@@ -268,7 +272,7 @@ export default function ArtistSongsScreen() {
         <View style={styles.actions}>
           <View style={styles.actionsLeft}>
             {!offline ? (
-              <Pressable
+              <GlassPressable variant="subtle"
                 hitSlop={10}
                 accessibilityRole="button"
                 accessibilityLabel={t('Download')}
@@ -289,48 +293,50 @@ export default function ArtistSongsScreen() {
                     color={colors.textSecondary}
                   />
                 )}
-              </Pressable>
+              </GlassPressable>
             ) : null}
             {all.length > 1 ? (
-              <Pressable
+              <GlassPressable variant="subtle"
                 hitSlop={10}
                 accessibilityRole="button"
                 accessibilityLabel={t('Sort')}
                 onPress={openSort}
               >
                 <Icon name="swap-vertical" size={24} color={colors.textSecondary} />
-              </Pressable>
+              </GlassPressable>
             ) : null}
-            <Pressable
+            <GlassPressable variant="subtle"
               hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel={t('More options')}
               onPress={() => menuRef.current()}
             >
               <Icon name="ellipsis-horizontal" size={26} color={colors.textSecondary} />
-            </Pressable>
+            </GlassPressable>
           </View>
           <View style={styles.playRow}>
-            <Pressable
+            <GlassPressable variant="subtle"
               hitSlop={10}
               accessibilityLabel={t('Shuffle')}
               onPress={() => void playQueue(shown, 0, name, `/artist/${id}`, { shuffled: true })}
             >
               <Icon name="shuffle" size={26} color={colors.textSecondary} />
-            </Pressable>
-            <Pressable
+            </GlassPressable>
+            <GlassPressable variant="prominent" tint={accent}
               style={[styles.playButton, { backgroundColor: accent }]}
               accessibilityRole="button"
               accessibilityLabel={t('Play')}
               onPress={() => void playQueue(shown, 0, name, `/artist/${id}`)}
             >
               <Icon name="play" size={28} color={colors.onAccent} style={{ marginLeft: 3 }} />
-            </Pressable>
+            </GlassPressable>
           </View>
         </View>
       ) : null}
 
-      <FlatList
+      <Animated.FlatList
+        onScroll={dockScroll}
+        scrollEventThrottle={16}
         {...listPerf}
         data={shown}
         keyExtractor={(item, i) => `${item.id}-${i}`}
@@ -415,8 +421,7 @@ export default function ArtistSongsScreen() {
             <Pressable
               style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
               onPress={() => {
-                close();
-                openPlaylistPicker(all);
+                close(() => openPlaylistPicker(all));
               }}
             >
               <Icon name="add-circle-outline" size={22} color={colors.text} />
@@ -425,8 +430,7 @@ export default function ArtistSongsScreen() {
             <Pressable
               style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
               onPress={() => {
-                close();
-                void deleteArtistDownloads();
+                close(() => { void deleteArtistDownloads(); });
               }}
             >
               {/* Last, but not in red: a download comes back with one tap, and

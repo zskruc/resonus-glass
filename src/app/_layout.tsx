@@ -9,9 +9,10 @@ import { Stack } from 'expo-router';
 import { NavigationBar } from 'expo-navigation-bar';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, View } from 'react-native';
+import { useEffect, useLayoutEffect, useState } from 'react';
+import { ActivityIndicator, AppState, Platform, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Freeze } from 'react-freeze';
 
 import { AppStartupTab } from '@/components/AppStartupTab';
 import { ArtistPickerSheet } from '@/components/ArtistPickerSheet';
@@ -21,7 +22,9 @@ import { CarAutoSync } from '@/components/CarAutoSync';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { FrameMeter } from '@/components/FrameMeter';
 import { GlobalMiniPlayer } from '@/components/GlobalMiniPlayer';
+import { BottomScrollEdge } from '@/components/BottomScrollEdge';
 import { GlobalTabBar } from '@/components/GlobalTabBar';
+import { LiquidDockProvider } from '@/hooks/useLiquidDock';
 import { MediaMenuSheet } from '@/components/MediaMenuSheet';
 import { GlobalPlaylistPicker } from '@/components/PlaylistPickerSheet';
 import { GlobalShareSheet } from '@/components/ShareSheet';
@@ -29,7 +32,7 @@ import { SongInfoSheet } from '@/components/SongInfoSheet';
 import { SongMenuSheet } from '@/components/SongMenuSheet';
 import { Toast } from '@/components/Toast';
 import { UpdatePrompt } from '@/components/UpdatePrompt';
-import { installAppFont, setAppFont } from '@/lib/appFont';
+import { installAppFont, publishAppFont, setAppFont } from '@/lib/appFont';
 import { initAppLocale } from '@/lib/appLocale';
 import { initHomeWidget } from '@/lib/homeWidget';
 import { loadCustomFont } from '@/lib/customFont';
@@ -42,6 +45,7 @@ import { useAutoDownloads } from '@/store/autoDownloads';
 import { checkAutoUrlNow, initAutoUrl } from '@/store/autoUrl';
 import { anyDownloads, useDownloads } from '@/store/downloads';
 import { useEqualizer } from '@/store/equalizer';
+import { useGlassTuning } from '@/store/glassTuning';
 import { useLastPlayed } from '@/store/lastPlayed';
 import { useLibraries } from '@/store/libraries';
 import { useLibraryMirror } from '@/store/libraryMirror';
@@ -71,6 +75,15 @@ const FULL_MODAL = {
   animation: Platform.OS === 'ios' ? 'fade' : 'fade_from_bottom',
 } as const;
 
+// Keep the already-drawn player attached below lyrics on Android. Lyrics paints
+// its own opaque background; the native container must not detach the player
+// and expose the window's black background while rebuilding it on return.
+const LYRICS_MODAL = Platform.OS === 'android' ? {
+  presentation: 'containedTransparentModal',
+  animation: 'none',
+  contentStyle: { backgroundColor: 'transparent' },
+} as const : FULL_MODAL;
+
 /*
  * There is no `dangerouslySingular` on any route here, and there is not going
  * to be. It asks the router for one screen per name, and the router delivers by
@@ -99,7 +112,24 @@ const FULL_MODAL = {
  * which debounces the tap and never touches the stack.
  */
 
+/** Keep background UI changes from queuing a render for every song played. */
+function useAway(): boolean {
+  const [away, setAway] = useState(() => AppState.currentState === 'background');
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      // Inactive can still be visible behind the notification shade or a call.
+      if (state === 'background') setAway(true);
+      else if (state === 'active') setAway(false);
+    });
+    return () => sub.remove();
+  }, []);
+  return away;
+}
+
 export default function RootLayout() {
+  useEffect(() => {
+    void useGlassTuning.getState().hydrate();
+  }, []);
   // The selected font is applied on every render (and after hydrating settings):
   // so everything that gets repainted picks up the current family.
   const appFont = useSettings((s) => s.appFont);
@@ -121,15 +151,15 @@ export default function RootLayout() {
 
   // Apply the font to the JSX runtime patch. A custom font that isn't loaded
   // (yet, or at all) leaves the system font.
-  if (appFont === 'custom') {
-    setAppFont(
-      customFontFamily && (loadedCustom === customFontFamily || Font.isLoaded(customFontFamily))
-        ? customFontFamily
-        : undefined,
-    );
-  } else {
-    setAppFont(APP_FONT_FAMILY[appFont]);
-  }
+  const effectiveFontFamily = appFont === 'custom'
+    ? customFontFamily && (loadedCustom === customFontFamily || Font.isLoaded(customFontFamily))
+      ? customFontFamily
+      : undefined
+    : APP_FONT_FAMILY[appFont];
+  setAppFont(effectiveFontFamily);
+  useLayoutEffect(() => {
+    publishAppFont();
+  }, [effectiveFontFamily]);
   // The appearance. Everything mounted beside the Stack below (mini player, tab
   // bar, sheets, toast) repaints from here; the screens inside subscribe on
   // their own, because a stack keeps them mounted and out of this render.
@@ -271,6 +301,7 @@ export default function RootLayout() {
   // Keep screen awake (setting). The native flag only acts with the app in
   // the foreground, so it doesn't waste extra battery in the background.
   const keepScreenAwake = useSettings((s) => s.keepScreenAwake);
+  const away = useAway();
   useEffect(() => {
     if (!keepScreenAwake) return;
     void activateKeepAwakeAsync('setting');
@@ -282,6 +313,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
       <QueryClientProvider client={queryClient}>
+        <LiquidDockProvider>
         {/* The clock and the battery at the top, and the gesture pill or the
             buttons at the bottom, are painted by the system over our
             background: dark on the light theme, light on the dark one. */}
@@ -301,14 +333,16 @@ export default function RootLayout() {
         ) : (
           <ErrorBoundary>
           <View style={{ flex: 1 }}>
+            <Freeze freeze={away}>
             <BarBlurTarget>
             <Stack
-              screenOptions={{
+              screenOptions={({ route }) => ({
                 headerShown: false,
-                // Fast crossfade between screens: on Android native transition
-                // durations can't be adjusted and lateral pushes
-                // (slide/ios_from_right) felt sluggish.
-                animation: 'fade',
+                // Keep settings content opaque throughout Android navigation,
+                // including settings routes registered automatically by Router.
+                animation: Platform.OS === 'android' && route.name.startsWith('settings/')
+                  ? 'none'
+                  : 'fade',
                 // A screen you have navigated away from stops re-rendering
                 // until you come back. It stays mounted either way, which is
                 // the point of a stack, but without this every screen still
@@ -319,7 +353,7 @@ export default function RootLayout() {
                 // why the lag grew the more you browsed.
                 freezeOnBlur: true,
                 contentStyle: { backgroundColor: colors.background },
-              }}
+              })}
             >
               <Stack.Protected guard={ready}>
                 <Stack.Screen name="(tabs)" />
@@ -345,6 +379,7 @@ export default function RootLayout() {
                 <Stack.Screen name="settings/language" />
                 <Stack.Screen name="settings/font" />
                 <Stack.Screen name="settings/personalization" />
+                <Stack.Screen name="settings/glass" />
                 <Stack.Screen name="settings/home-chips" />
                 <Stack.Screen name="settings/home-sections" />
                 <Stack.Screen name="settings/equalizer" />
@@ -391,12 +426,12 @@ export default function RootLayout() {
               />
               <Stack.Screen
                 name="lyrics"
-                options={FULL_MODAL}
+                options={LYRICS_MODAL}
               />
             </Stack>
             </BarBlurTarget>
             {auth || offline ? <AppStartupTab /> : null}
-            <FrameMeter />
+            {auth || offline ? <BottomScrollEdge /> : null}
             {auth || offline ? <GlobalMiniPlayer /> : null}
             {auth || offline ? <GlobalTabBar /> : null}
             {auth || offline ? <SongMenuSheet /> : null}
@@ -405,6 +440,10 @@ export default function RootLayout() {
             {auth || offline ? <MediaMenuSheet /> : null}
             {auth || offline ? <GlobalPlaylistPicker /> : null}
             {auth || offline ? <GlobalShareSheet /> : null}
+            </Freeze>
+            {/* Background playback, car sync and lifecycle counters keep running
+                independently of the visible screens. */}
+            <FrameMeter />
             {auth || offline ? <CarAutoSync /> : null}
             {auth || offline ? <BatteryWarning /> : null}
             {/* Not behind the profile guard on a whim: the check reaches
@@ -415,6 +454,7 @@ export default function RootLayout() {
           </View>
           </ErrorBoundary>
         )}
+        </LiquidDockProvider>
       </QueryClientProvider>
     </GestureHandlerRootView>
   );

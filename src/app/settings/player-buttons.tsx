@@ -3,8 +3,10 @@
  * in what order. The same draggable list as the Home buttons, with no
  * exemption: every one of them has another way in.
  */
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
+import { GlassSurface, GlassSwitch } from '@/components/glass';
 import Icon from '@/components/Icon';
-import { Pressable, Switch, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import ReorderableList, {
   useReorderableDrag,
   type ReorderableListReorderEvent,
@@ -43,7 +45,7 @@ function ButtonRow({ button }: { button: PlayerButton }) {
   const accent = useAccent();
   const { label, icon } = BUTTONS[button.key];
   return (
-    <View style={styles.row}>
+    <GlassSurface radius={radius.md} style={styles.row}>
       <Pressable
         hitSlop={8}
         onPressIn={() => {
@@ -59,17 +61,18 @@ function ButtonRow({ button }: { button: PlayerButton }) {
       <View style={styles.text}>
         <Text style={styles.label}>{t(label)}</Text>
       </View>
-      <Switch
+      <GlassSwitch
         value={button.enabled}
         onValueChange={(v) => setPlayerButton(button.key, v)}
         trackColor={{ false: colors.control, true: accent }}
         thumbColor={colors.knob}
       />
-    </View>
+    </GlassSurface>
   );
 }
 
 export default function PlayerButtonsSettings() {
+  const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
@@ -96,6 +99,7 @@ export default function PlayerButtonsSettings() {
       </View>
       <Text style={styles.hint}>{t('Drag to reorder, toggle to show or hide.')}</Text>
       <ReorderableList
+        onScroll={dockScroll}
         data={playerButtons}
         keyExtractor={(item) => item.key}
         renderItem={({ item }) => <ButtonRow button={item} />}

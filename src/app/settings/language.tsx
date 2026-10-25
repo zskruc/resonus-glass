@@ -1,5 +1,6 @@
 /** Language picker — list with a radio on the active language. */
-import { Linking, ScrollView, Text } from 'react-native';
+import { DockScrollView } from '@/components/DockScrollView';
+import { Linking, Text } from 'react-native';
 
 import { SelectList, SettingRow, SettingsPage, settingsStyles } from '@/components/SettingsUI';
 import { useT } from '@/i18n';
@@ -8,9 +9,8 @@ import { useSettings } from '@/store/settings';
 import { useTheme } from '@/theme';
 
 // How to contribute a translation, rather than the folder of locale files: the
-// guide explains what to do with them. The help block is in English on purpose:
-// it's mostly read by those who don't find their language, so English is the
-// most universal.
+// guide explains what to do with them. The help text follows the app language;
+// language names stay in their own language so each option is recognizable.
 const TRANSLATIONS_URL = 'https://github.com/juananzzz/resonus/blob/main/TRANSLATING.md';
 
 // Derived from the single source: a row added there appears here by itself.
@@ -32,7 +32,7 @@ export default function LanguageSettings() {
 
   return (
     <SettingsPage title={t('Language')}>
-      <ScrollView contentContainerStyle={settingsStyles.content}>
+      <DockScrollView contentContainerStyle={settingsStyles.content}>
         <SelectList
           options={LANGUAGE_OPTIONS}
           value={language}
@@ -42,16 +42,14 @@ export default function LanguageSettings() {
 
         <Text style={settingsStyles.sectionTitle}>{t('Translations')}</Text>
         <Text style={settingsStyles.sectionDescription}>
-          {/* English on purpose, in every language: it is addressed to whoever
-              could translate the app, and a translator reads English. */}
-          {"Don't see your language, or want to improve an existing one? You can help by contributing a translation on GitHub. Pull requests are welcome."}
+          {t("Don't see your language, or want to improve an existing one? You can help by contributing a translation on GitHub. Pull requests are welcome.")}
         </Text>
         <SettingRow
           icon="globe-outline"
           label={t('Help translate')}
           onPress={() => Linking.openURL(TRANSLATIONS_URL)}
         />
-      </ScrollView>
+      </DockScrollView>
     </SettingsPage>
   );
 }

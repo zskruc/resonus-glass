@@ -87,7 +87,6 @@
     // ── Player, output & queue ───────────────────────────────────────────────
     "Devices": "The audio output devices to cast to",
     "Currently playing on": "Heading above the output the music is coming out of right now, at the top of the output sheet",
-    "Colored mini player": "Tint the mini player with the colour of the cover art",
     "Cover color": "The colour taken from the cover art",
     "Player background": "What is drawn behind the player: the blurred artwork, or a flat tint",
     "Skip buttons": "The seek forward / back buttons setting",
@@ -450,7 +449,8 @@
     "The player keeps beating twice a second while the app is away. Long silences here mean the app stopped following what it was playing.": "The line under `While minimized`. \"The player\" is the native audio engine, not the player screen, and \"beating\" is a heartbeat: it sends its state every 500 ms, and the position, the notification and the move to the next track all hang off that. Everything else on this screen stops measuring once the app is minimized, because the system takes its timers away, so this beat is the one clock still running out there. A long gap means the player itself went quiet, which is a different fault from the app coming back with a stale screen. Keep the medical sense of a pulse if your language has one",
 
     // ── Odds and ends ────────────────────────────────────────────────────────
-    "default": "Lower case on purpose: it goes in brackets after the system font's name, `Roboto (default)`",
+    "default": "Lower case on purpose: it goes in brackets after the system font label, `System font (default)`",
+    "System font": "Font picker option that uses the device's default typeface and text weight settings",
     "Rate {n} stars": "Read out by the screen reader for each star. `{n}` is which star it is",
     "Discography": "Everything an artist has released, albums and singles together",
     "Play discography": "Play the lot, in order",
@@ -583,6 +583,8 @@
     "Lyrics background": "What is drawn behind the lyrics screen, the full screen one",
     "Lyrics card background": "What is drawn behind the small lyrics card that peeks under the player. Not the same thing as `Lyrics background`",
     "Lyrics source": "Where lyrics are looked for. Its values are the three `Prefer…`/`Disable…` lines",
+    "Blur inactive lyrics": "A switch in the Lyrics section: progressively softens synchronized lyric rows away from the current line",
+    "Slightly blur synchronized lyrics other than the current line to emphasize what is playing.": "Help text under that switch. Only the current synchronized lyric line stays sharp",
     "Prefer local lyrics": "A value of `Lyrics source`: use the ones that came with the file first",
     "Prefer online search": "A value of `Lyrics source`: look them up on the internet first",
     "Disable online search": "A value of `Lyrics source`: only ever use the ones that came with the file",
@@ -727,7 +729,17 @@
     "Update": "The button that installs a newer version of Resonus. A verb, not a noun: `Update it`, not `An update`",
     "Check for updates": "Ask GitHub now whether a newer Resonus is out",
     "You're on the latest version": "Answer when that check finds nothing newer",
-    "Installing updates needs permission": "Shown when the user came back from Android's «install unknown apps» screen without granting it"
+    "Installing updates needs permission": "Shown when the user came back from Android's «install unknown apps» screen without granting it",
+
+    // ── Settings labels ──────────────────────────────────────────────────────
+    "Condensed": "A narrow typeface option in Settings › Font, not a condensed list layout",
+    "Serif": "A typeface with small strokes at the ends of letters, in Settings › Font",
+    "Monospace": "A typeface whose characters all have the same width, in Settings › Font",
+    "Casual": "The informal handwritten-style system typeface option in Settings › Font",
+    "On": "An enabled switch, shown in the readable summary of glass parameters",
+    "Normal::equalizer": "The standard Android equalizer preset, not font weight or playback speed",
+    "Flat::equalizer": "The Android equalizer preset with unchanged gains across the frequency bands, not a flat visual appearance",
+    "{n} in total · {size} KB declared": "Diagnostics request summary. {n} is the request count; {size} is the total size reported by the response headers in kilobytes"
   },
 
   // ── Custom font ────────────────────────────────────────────────────────
@@ -745,9 +757,13 @@
   "Square": "Corners of the cover art: sharp, not rounded at all",
   "Rounded": "Corners of the cover art: slightly rounded, the usual look",
   "More rounded": "Corners of the cover art: rounder than the usual",
-  "Small": "A lyrics size",
-  "Normal": "A lyrics size, the default one",
-  "Large": "A lyrics size",
+  "Lyrics size": "A slider for text size on every lyrics surface, from 20 to 40",
+  "Lyrics weight": "Thickness of text on every lyrics surface",
+  "Light font weight": "A lyrics font weight: thin strokes (300)",
+  "Regular font weight": "A lyrics font weight: regular strokes (400)",
+  "Medium font weight": "A lyrics font weight: medium strokes and the default (500)",
+  "Semi-bold font weight": "A lyrics font weight: semi-bold strokes (600)",
+  "Bold font weight": "A lyrics font weight: bold strokes (700)",
   "Left": "Lyrics alignment: lines start at the left edge",
   "Centered": "Lyrics alignment: each line centred",
   "Scheduled": "A theme mode: light from one hour of the day, dark from another",
@@ -769,8 +785,7 @@
 
   // Strings that are meant to stay in English, and are not counted as missing.
   //
-  // Empty for now. The Diagnostics measurements used to be listed here, and
-  // translators translated them anyway, so they no longer go through `t()` at
-  // all: see `src/app/settings/diagnostics.tsx`.
+  // Empty for now. Diagnostics headings and explanations are translated; raw
+  // record fields and exported reports remain English outside `t()`.
   "keepEnglish": []
 }

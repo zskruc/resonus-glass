@@ -132,7 +132,11 @@ AppState.addEventListener('change', (state) => {
   // Whatever happened out there is not ours to measure, and the clock starts
   // again here.
   lastTick = now;
-  if (!wasAwake && awake) onReturn();
+  if (wasAwake && !awake) stopJsFrames();
+  if (!wasAwake && awake) {
+    onReturn();
+    if (enabled) startJsFrames();
+  }
 });
 
 export interface TimeSplit {
@@ -176,7 +180,7 @@ export function startPerfLog(): void {
   backgroundMs = 0;
   trips = 0;
   bgTicks = 0;
-  startJsFrames();
+  if (awake) startJsFrames();
   timer = setInterval(() => {
     const now = Date.now();
     const late = now - lastTick - TICK_MS;
@@ -379,10 +383,15 @@ export function addUiFrames(delta: FrameCount): void {
 }
 
 let rafId: number | null = null;
+let rafGeneration = 0;
 let lastFrame = 0;
 
-function onJsFrame(t: number): void {
-  rafId = requestAnimationFrame(onJsFrame);
+function onJsFrame(t: number, generation: number, callback: (time: number) => void): void {
+  if (generation !== rafGeneration) return;
+  rafId = null;
+  // A queued callback may arrive after cancellation; do not restart it away.
+  if (!enabled || !awake) return;
+  rafId = requestAnimationFrame(callback);
   const dt = lastFrame ? t - lastFrame : 0;
   lastFrame = t;
   if (dt <= 0 || dt > AWAY_GAP_MS || !awake) return;
@@ -394,12 +403,15 @@ function onJsFrame(t: number): void {
 }
 
 function startJsFrames(): void {
-  if (rafId !== null) return;
+  if (rafId !== null || !enabled || !awake) return;
   lastFrame = 0;
-  rafId = requestAnimationFrame(onJsFrame);
+  const generation = ++rafGeneration;
+  const callback: (time: number) => void = (t) => onJsFrame(t, generation, callback);
+  rafId = requestAnimationFrame(callback);
 }
 
 function stopJsFrames(): void {
+  rafGeneration++;
   if (rafId !== null) cancelAnimationFrame(rafId);
   rafId = null;
 }

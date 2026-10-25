@@ -1,0 +1,67 @@
+diff --git a/android/src/main/java/expo/modules/filesystem/FileSystemDownload.kt b/android/src/main/java/expo/modules/filesystem/FileSystemDownload.kt
+index 0222bdc1bf39968fc4ecc43fa81c8fd0bd1326c5..5d4d0898f9eb7cde42ca76930e9639c94e21ed06 100644
+--- a/android/src/main/java/expo/modules/filesystem/FileSystemDownload.kt
++++ b/android/src/main/java/expo/modules/filesystem/FileSystemDownload.kt
+@@ -1,6 +1,7 @@
+ package expo.modules.filesystem
+ 
+ import android.webkit.URLUtil
++import com.facebook.react.modules.network.OkHttpClientProvider
+ import expo.modules.kotlin.services.FilePermissionService
+ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.currentCoroutineContext
+@@ -41,7 +42,9 @@
+ }
+ 
+ /** Shared OkHttpClient instance reused across all downloads. */
+-private val sharedHttpClient = OkHttpClient()
++private val sharedHttpClient = OkHttpClient.Builder()
++  .dns(OkHttpClientProvider.createClient().dns)
++  .build()
+ 
+ /**
+  * Executes a file download with optional progress reporting.
+diff --git a/android/src/main/java/expo/modules/filesystem/FileSystemDownloadTask.kt b/android/src/main/java/expo/modules/filesystem/FileSystemDownloadTask.kt
+index 44dd86d624d0065081dbae4073d0f1a272f643a0..1bee66da6653a376aa8fdb863e33f1eff096ec3e 100644
+--- a/android/src/main/java/expo/modules/filesystem/FileSystemDownloadTask.kt
++++ b/android/src/main/java/expo/modules/filesystem/FileSystemDownloadTask.kt
+@@ -43,6 +43,7 @@
+ class FileSystemDownloadTask : SharedObject() {
+   companion object {
+     private val client = OkHttpClientProvider.createClientBuilder()
++      .dns(OkHttpClientProvider.createClient().dns)
+       .connectTimeout(60, TimeUnit.SECONDS)
+       .readTimeout(60, TimeUnit.SECONDS)
+       .writeTimeout(60, TimeUnit.SECONDS)
+diff --git a/android/src/main/java/expo/modules/filesystem/FileSystemUploadTask.kt b/android/src/main/java/expo/modules/filesystem/FileSystemUploadTask.kt
+index d58a1320c85b1129c6e965784a0785674747b79b..89872ef683485d78f4dadc85dc977fe3051afb0b 100644
+--- a/android/src/main/java/expo/modules/filesystem/FileSystemUploadTask.kt
++++ b/android/src/main/java/expo/modules/filesystem/FileSystemUploadTask.kt
+@@ -70,6 +70,7 @@
+ class FileSystemUploadTask : SharedObject() {
+   companion object {
+     private val client = OkHttpClientProvider.createClientBuilder()
++      .dns(OkHttpClientProvider.createClient().dns)
+       .connectTimeout(60, TimeUnit.SECONDS)
+       .readTimeout(60, TimeUnit.SECONDS)
+       .writeTimeout(60, TimeUnit.SECONDS)
+diff --git a/android/src/main/java/expo/modules/filesystem/legacy/FileSystemLegacyModule.kt b/android/src/main/java/expo/modules/filesystem/legacy/FileSystemLegacyModule.kt
+index 4626dac32067ec203788ae69de4b0f1d5b03eec0..ca3fee72f47570da3682b3c8cac0e1570dc9a9bb 100644
+--- a/android/src/main/java/expo/modules/filesystem/legacy/FileSystemLegacyModule.kt
++++ b/android/src/main/java/expo/modules/filesystem/legacy/FileSystemLegacyModule.kt
+@@ -14,6 +14,7 @@
+ import android.util.Log
+ import androidx.core.content.FileProvider
+ import androidx.documentfile.provider.DocumentFile
++import com.facebook.react.modules.network.OkHttpClientProvider
+ import expo.modules.core.errors.ModuleDestroyedException
+ import expo.modules.kotlin.Promise
+ import expo.modules.kotlin.exception.Exceptions
+@@ -993,6 +994,7 @@
+     get() {
+       if (client == null) {
+         val builder = OkHttpClient.Builder()
++          .dns(OkHttpClientProvider.createClient().dns)
+           .connectTimeout(60, TimeUnit.SECONDS)
+           .readTimeout(60, TimeUnit.SECONDS)
+           .writeTimeout(60, TimeUnit.SECONDS)

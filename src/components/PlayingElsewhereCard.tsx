@@ -13,6 +13,7 @@
  * Nothing here can stop the other player: Subsonic has no remote control. So
  * the card only offers to carry on, and says where the music was.
  */
+import { GlassPressable } from '@/components/glass';
 import { useQuery } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -217,7 +218,7 @@ export function PlayingElsewhereCard() {
       accessibilityRole="button"
       accessibilityLabel={`${heading}: ${entry.song.title}. ${t('Play here')}`}
     >
-      <LinearGradient
+      <LinearGradient collapsable={false}
         colors={[vivid, calm] as const}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -237,7 +238,7 @@ export function PlayingElsewhereCard() {
             </Text>
           ) : null}
         </View>
-        <Pressable
+        <GlassPressable variant="prominent" tint={accent}
           hitSlop={8}
           disabled={busy}
           style={({ pressed }) => [
@@ -250,7 +251,7 @@ export function PlayingElsewhereCard() {
           accessibilityLabel={t('Play here')}
         >
           <Icon name="play" size={26} color={colors.onAccent} />
-        </Pressable>
+        </GlassPressable>
         {progress > 0 ? (
           <View style={styles.track}>
             <View style={[styles.bar, { width: `${progress}%`, backgroundColor: colors.text }]} />

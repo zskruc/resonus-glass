@@ -10,6 +10,7 @@
 import { File, UploadType, type UploadResult } from 'expo-file-system';
 import { fetch } from 'expo/fetch';
 import { type Album, type Song, type SortDirection, type SubsonicAuth } from './subsonic';
+import { DeadlineError, withDeadline } from './deadline';
 import { assertCanRequest } from './netGate';
 import { netTally } from '@/lib/perfLog';
 
@@ -40,6 +41,19 @@ export class NavidromeError extends Error {
 let cached: { key: string; token: string; at: number } | null = null;
 const TOKEN_TTL = 30 * 60 * 1000;
 
+/** Each request, its answer read included (see `withDeadline`). */
+const ND_TIMEOUT_MS = 15000;
+
+/** `withDeadline`, with running out said the way the rest of this file says things. */
+async function ndWithin<T>(work: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  try {
+    return await withDeadline(ND_TIMEOUT_MS, work);
+  } catch (e) {
+    if (e instanceof DeadlineError) throw new NavidromeError('Server took too long to respond', 'other');
+    throw e;
+  }
+}
+
 function tokenKey(auth: SubsonicAuth): string {
   return `${auth.serverUrl}|${auth.username}`;
 }
@@ -54,19 +68,22 @@ async function ndLogin(auth: SubsonicAuth, fresh = false): Promise<string> {
   if (!fresh && cached?.key === key && Date.now() - cached.at < TOKEN_TTL) return cached.token;
   // Offline mode stops here, before the socket (see netGate).
   assertCanRequest();
-  let res: Response;
-  try {
-    res = await fetch(`${auth.serverUrl}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: auth.username, password }),
-    });
-  } catch {
-    throw new NavidromeError('No se pudo conectar con el servidor', 'other');
-  }
-  if (res.status === 401) throw new NavidromeError('Credenciales incorrectas', 'auth');
-  if (!res.ok) throw new NavidromeError(`Error de red (${res.status})`, 'other');
-  const json = (await res.json()) as { token?: string };
+  const json = await ndWithin(async (signal) => {
+    let res: Response;
+    try {
+      res = await fetch(`${auth.serverUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: auth.username, password }),
+        signal,
+      });
+    } catch {
+      throw new NavidromeError('No se pudo conectar con el servidor', 'other');
+    }
+    if (res.status === 401) throw new NavidromeError('Credenciales incorrectas', 'auth');
+    if (!res.ok) throw new NavidromeError(`Error de red (${res.status})`, 'other');
+    return (await res.json()) as { token?: string };
+  });
   if (!json.token) throw new NavidromeError('Respuesta inesperada del servidor', 'other');
   cached = { key, token: json.token, at: Date.now() };
   return json.token;
@@ -85,18 +102,20 @@ function ndStatusError(status: number): NavidromeError {
 /** Authenticated request to the native API, with errors mapped to NavidromeError. */
 async function ndFetch(auth: SubsonicAuth, path: string, init: RequestInit): Promise<void> {
   const token = await ndLogin(auth, true);
-  let res: Response;
   netTally(`nd ${path.split('?')[0]}`);
-  try {
-    res = await fetch(`${auth.serverUrl}${path}`, {
-      ...init,
-      headers: { ...init.headers, 'x-nd-authorization': `Bearer ${token}` },
-    });
-  } catch {
-    throw new NavidromeError('No se pudo conectar con el servidor', 'other');
-  }
-  if (res.ok) return;
-  throw ndStatusError(res.status);
+  const status = await ndWithin(async (signal) => {
+    try {
+      const res = await fetch(`${auth.serverUrl}${path}`, {
+        ...init,
+        headers: { ...init.headers, 'x-nd-authorization': `Bearer ${token}` },
+        signal,
+      });
+      return res.ok ? 0 : res.status;
+    } catch {
+      throw new NavidromeError('No se pudo conectar con el servidor', 'other');
+    }
+  });
+  if (status) throw ndStatusError(status);
 }
 
 /**
@@ -318,26 +337,31 @@ function toSong(m: NdSong): Song {
 async function ndJson<T>(auth: SubsonicAuth, path: string): Promise<T> {
   for (const fresh of [false, true]) {
     const token = await ndLogin(auth, fresh);
-    let res: Response;
     // By the endpoint and not by the whole path: the sort and the window are
     // in the query string, and a table keyed by those would have one row per
     // call and say nothing.
     netTally(`nd ${path.split('?')[0]}`);
-    try {
-      res = await fetch(`${auth.serverUrl}${path}`, {
-        headers: { 'x-nd-authorization': `Bearer ${token}` },
-      });
-    } catch {
-      throw new NavidromeError('No se pudo conectar con el servidor', 'other');
-    }
-    // A token this old server no longer accepts: drop it and ask for another,
-    // once. Anything else is an answer, good or bad.
-    if (res.status === 401 && !fresh) continue;
-    if (res.status === 401) throw new NavidromeError('Credenciales incorrectas', 'auth');
-    if (res.status === 403) throw new NavidromeError('Sin permiso', 'forbidden');
-    if (res.status === 404) throw new NavidromeError('El servidor no lo soporta', 'unsupported');
-    if (!res.ok) throw new NavidromeError(`Error del servidor (${res.status})`, 'other');
-    return (await res.json()) as T;
+    const answer = await ndWithin(async (signal) => {
+      let res: Response;
+      try {
+        res = await fetch(`${auth.serverUrl}${path}`, {
+          headers: { 'x-nd-authorization': `Bearer ${token}` },
+          signal,
+        });
+      } catch {
+        throw new NavidromeError('No se pudo conectar con el servidor', 'other');
+      }
+      // A token this old server no longer accepts: drop it and ask for another,
+      // once. Anything else is an answer, good or bad.
+      if (res.status === 401 && !fresh) return { retry: true as const };
+      if (res.status === 401) throw new NavidromeError('Credenciales incorrectas', 'auth');
+      if (res.status === 403) throw new NavidromeError('Sin permiso', 'forbidden');
+      if (res.status === 404) throw new NavidromeError('El servidor no lo soporta', 'unsupported');
+      if (!res.ok) throw new NavidromeError(`Error del servidor (${res.status})`, 'other');
+      return { retry: false as const, value: (await res.json()) as T };
+    });
+    if (answer.retry) continue;
+    return answer.value;
   }
   throw new NavidromeError('Credenciales incorrectas', 'auth');
 }

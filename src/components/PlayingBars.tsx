@@ -10,7 +10,7 @@
  * Only ever one of these on screen at a time (one row of a list is current),
  * so the four looping animations are not a list's worth of work.
  */
-import { useEffect } from 'react';
+import { useCallback } from 'react';
 import { View } from 'react-native';
 import Animated, {
   cancelAnimation,
@@ -22,6 +22,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { useAccent } from '@/hooks/useAccent';
+import { useForegroundEffect } from '@/hooks/useForegroundEffect';
 import { usePlayerStore } from '@/store/player';
 import { radius } from '@/theme';
 import { motion } from '@/theme/motion';
@@ -40,24 +41,24 @@ const REST = 0.22;
 function Bar({ index, playing, color }: { index: number; playing: boolean; color: string }) {
   const height = useSharedValue(REST);
 
-  useEffect(() => {
+  useForegroundEffect(useCallback(() => {
     cancelAnimation(height);
     if (!playing) {
       // Down to the resting height rather than frozen mid-rise: a paused row
       // showing bars stopped at random heights looks like it is still going.
-      height.value = withTiming(REST, { duration: motion.duration.move });
-      return;
+      height.set(withTiming(REST, { duration: motion.duration.move }));
+      return () => cancelAnimation(height);
     }
-    height.value = withDelay(
+    height.set(withDelay(
       index * STAGGER,
       withRepeat(
         withTiming(1, { duration: DURATIONS[index], easing: motion.easing.loop }),
         -1,
         true,
       ),
-    );
+    ));
     return () => cancelAnimation(height);
-  }, [playing, index, height]);
+  }, [playing, index, height]));
 
   /**
    * Scaled rather than resized, and that is not a detail: a height in an

@@ -13,8 +13,10 @@
  * hint below), and the tab still leaves out what it has no answer for: a
  * Jellyfin account has no folder tree, and offline there are no stations.
  */
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
+import { GlassSurface, GlassSwitch } from '@/components/glass';
 import Icon from '@/components/Icon';
-import { Pressable, Switch, Text, View } from 'react-native';
+import { Pressable, Text } from 'react-native';
 import ReorderableList, {
   useReorderableDrag,
   type ReorderableListReorderEvent,
@@ -62,7 +64,7 @@ function SectionRow({
   // keep the previous accent while the screen stays mounted.
   const { accent } = useTheme();
   return (
-    <View style={styles.row}>
+    <GlassSurface radius={radius.md} style={styles.row}>
       <Pressable
         hitSlop={8}
         onPressIn={() => {
@@ -75,17 +77,18 @@ function SectionRow({
         <Icon name="reorder-two" size={24} color={colors.textSecondary} />
       </Pressable>
       <Text style={styles.label}>{t(LABEL[section.key])}</Text>
-      <Switch
+      <GlassSwitch
         value={section.enabled}
         onValueChange={onToggle}
         trackColor={{ false: colors.control, true: accent }}
         thumbColor={colors.knob}
       />
-    </View>
+    </GlassSurface>
   );
 }
 
 export default function ExploreSectionsSettings() {
+  const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
@@ -116,6 +119,7 @@ export default function ExploreSectionsSettings() {
           of surprise nobody asked for (#114). */}
       <Text style={styles.hint}>{t('Drag to reorder, toggle to show or hide.')}</Text>
       <ReorderableList
+        onScroll={dockScroll}
         data={sections}
         keyExtractor={(item) => item.key}
         renderItem={({ item }) => (

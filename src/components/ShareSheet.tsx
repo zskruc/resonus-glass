@@ -10,33 +10,31 @@
  * `useSharePicker.getState().open(...)`.
  */
 import Icon from '@/components/Icon';
+import { MenuGlassCardFrame, MenuGlassCardHeader } from '@/components/MenuGlassCard';
 import DateTimePicker, {
   DateTimePickerAndroid,
   type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
   Platform,
   Pressable,
-  StyleSheet,
+  ScrollView,
   Switch,
   Text,
   View,
 } from 'react-native';
-import { GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAccent } from '@/hooks/useAccent';
 import { useBottomSheetAnim } from '@/hooks/useBottomSheetAnim';
 import { useT } from '@/i18n';
 import { canShareDownloads, shareItem } from '@/lib/share';
 import { useSettings, SHARE_EXPIRIES, type ShareExpiry } from '@/store/settings';
-import { useSharePicker } from '@/store/sharePicker';
+import { useSharePicker, type ShareTarget } from '@/store/sharePicker';
 import { useToast } from '@/store/toast';
-import { colors, fontSize, radius, SHEET_MAX_WIDTH, spacing, themed } from '@/theme';
+import { colors, fontSize, spacing, themed } from '@/theme';
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -66,8 +64,25 @@ function expiryAt(kind: ShareExpiry): number {
 /** Global instance: mounted once, opens from the store. */
 export function GlobalShareSheet() {
   const target = useSharePicker((s) => s.target);
-  const close = useSharePicker((s) => s.close);
-  const insets = useSafeAreaInsets();
+  const session = useSharePicker((s) => s.session);
+  return target ? <ShareContent key={session} target={target} session={session} /> : null;
+}
+
+function ShareContent({ target, session }: { target: ShareTarget; session: number }) {
+  const mounted = useRef(true);
+  const inFlight = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const isOpenSession = () => {
+    const current = useSharePicker.getState();
+    return mounted.current && current.session === session && current.target !== null;
+  };
+  const closeNow = () => {
+    if (!isOpenSession()) return;
+    useSharePicker.getState().close();
+  };
   const t = useT();
   // From the store, not `colors.accent`: the sheet has to re-render for the
   // switch and the tick to follow a change of accent.
@@ -80,16 +95,17 @@ export function GlobalShareSheet() {
   // Only Navidrome can be told this, and only through its own API. Elsewhere
   // the row isn't there rather than being there and doing nothing.
   const canDownloads = canShareDownloads();
-  const { dismiss, pan, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
-    !!target,
-    close,
+  const { dismiss, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
+    true,
+    closeNow,
+    'card',
+    session,
   );
+  const close = () => dismiss(closeNow);
   /** The calendar is open (Android shows it as its own dialog). */
   const [pickingDate, setPickingDate] = useState(false);
   /** Waiting for the server to mint the link. */
   const [sharing, setSharing] = useState(false);
-
-  if (!target) return null;
 
   const labels: Record<ShareExpiry, string> = {
     hour: t('1 hour'),
@@ -107,6 +123,7 @@ export function GlobalShareSheet() {
 
   /** The calendar's answer: a date, or nothing if it was dismissed. */
   function onDatePicked(event: DateTimePickerEvent, date?: Date) {
+    if (!isOpenSession()) return;
     setPickingDate(false);
     if (event.type !== 'set' || !date) return;
     // End of the chosen day: picking "the 5th" means the link works through
@@ -124,6 +141,7 @@ export function GlobalShareSheet() {
    * to have a native dialog come up behind it.
    */
   function pickDate() {
+    if (!isOpenSession() || inFlight.current) return;
     if (Platform.OS !== 'android') {
       setPickingDate(true);
       return;
@@ -138,11 +156,16 @@ export function GlobalShareSheet() {
 
   /** Creates the link with this expiry and hands it to the system sheet. */
   async function share(expiresAt: number) {
-    if (!target || sharing) return;
+    if (!isOpenSession() || inFlight.current) return;
+    inFlight.current = true;
     setSharing(true);
     const res = await shareItem(target.id, target.name, expiresAt, canDownloads && downloads);
+    // The authorized share still completes; only its old card's UI work is
+    // discarded if another selection opened while the server/system was busy.
+    if (!isOpenSession()) return;
+    inFlight.current = false;
     setSharing(false);
-    dismiss(close);
+    close();
     if (!res.ok) toast(t("Couldn't create the link"));
     // The link is out and it plays; it is only the downloading part that didn't
     // take, and saying nothing would leave whoever gets it wondering.
@@ -150,82 +173,75 @@ export function GlobalShareSheet() {
   }
 
   return (
-    <Modal transparent animationType="none" visible onRequestClose={() => dismiss(close)}>
-      {/* Gestures inside an RN Modal need a root view of their own: the Modal
-          renders in a native hierarchy outside the app's. */}
-      <GestureHandlerRootView style={StyleSheet.absoluteFill}>
-        <Animated.View style={[styles.backdrop, backdropStyle]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => dismiss(close)} />
-        </Animated.View>
-        {/* One drag around everything: this is a short list that never
-            scrolls, so nothing else competes for the gesture. */}
-        <GestureDetector gesture={pan}>
-          <Animated.View
-            style={[styles.sheet, { paddingBottom: insets.bottom + spacing.md }, sheetStyle]}
-            onLayout={onSheetLayout}
-          >
-            <View style={styles.grabber} />
-            <Text style={styles.title} numberOfLines={1}>
-              {target.name ? t('Share “{name}”', { name: target.name }) : t('Share')}
-            </Text>
-            <Text style={styles.subtitle}>{t('The link expires in')}</Text>
-            <View style={styles.divider} />
-            {sharing ? (
-              <ActivityIndicator style={{ marginVertical: spacing.xl }} color={accent} />
-            ) : (
-              <>
-                {SHARE_EXPIRIES.map((kind) => (
-                  <Pressable
-                    key={kind}
-                    style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
-                    accessibilityRole="button"
-                    onPress={() => {
-                      setLastUsed(kind);
-                      void share(expiryAt(kind));
-                    }}
-                  >
-                    <Text style={styles.rowText}>{labels[kind]}</Text>
-                    {/* The last one used, so sharing the same way twice is a
-                        matter of tapping where the tick already is. */}
-                    {kind === lastUsed ? (
-                      <Icon name="checkmark" size={20} color={accent} />
-                    ) : null}
-                  </Pressable>
-                ))}
+    <Modal transparent animationType="none" visible onRequestClose={close}>
+      <MenuGlassCardFrame
+        onClose={close}
+        backdropStyle={backdropStyle}
+        cardStyle={sheetStyle}
+        onLayout={onSheetLayout}
+      >
+        <MenuGlassCardHeader
+          title={target.name ? t('Share “{name}”', { name: target.name }) : t('Share')}
+          subtitle={t('The link expires in')}
+          onClose={close}
+        />
+        <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+          <View style={styles.divider} />
+          {sharing ? (
+            <ActivityIndicator style={{ marginVertical: spacing.xl }} color={accent} />
+          ) : (
+            <>
+              {SHARE_EXPIRIES.map((kind) => (
                 <Pressable
+                  key={kind}
                   style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
                   accessibilityRole="button"
-                  onPress={pickDate}
+                  onPress={() => {
+                    setLastUsed(kind);
+                    void share(expiryAt(kind));
+                  }}
                 >
-                  <Text style={styles.rowText}>{t('Pick a date…')}</Text>
-                  <Icon name="calendar-outline" size={20} color={colors.textSecondary} />
+                  <Text style={styles.rowText}>{labels[kind]}</Text>
+                  {/* The last one used, so sharing the same way twice is a
+                      matter of tapping where the tick already is. */}
+                  {kind === lastUsed ? (
+                    <Icon name="checkmark" size={20} color={accent} />
+                  ) : null}
                 </Pressable>
-                {/* Below the line because it is not one of the answers: it does
-                    not share, it decides what the link will allow. */}
-                {canDownloads ? (
-                  <>
-                    <View style={styles.divider} />
-                    <Pressable
-                      style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
-                      accessibilityRole="switch"
-                      accessibilityState={{ checked: downloads }}
-                      onPress={() => setDownloads(!downloads)}
-                    >
-                      <Text style={styles.rowText}>{t('Allow downloads')}</Text>
-                      <Switch
-                        value={downloads}
-                        onValueChange={setDownloads}
-                        trackColor={{ false: colors.control, true: accent }}
-                        thumbColor={colors.knob}
-                      />
-                    </Pressable>
-                  </>
-                ) : null}
-              </>
-            )}
-          </Animated.View>
-        </GestureDetector>
-      </GestureHandlerRootView>
+              ))}
+              <Pressable
+                style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
+                accessibilityRole="button"
+                onPress={pickDate}
+              >
+                <Text style={styles.rowText}>{t('Pick a date…')}</Text>
+                <Icon name="calendar-outline" size={20} color={colors.textSecondary} />
+              </Pressable>
+              {/* Below the line because it is not one of the answers: it does
+                  not share, it decides what the link will allow. */}
+              {canDownloads ? (
+                <>
+                  <View style={styles.divider} />
+                  <Pressable
+                    style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked: downloads }}
+                    onPress={() => setDownloads(!downloads)}
+                  >
+                    <Text style={styles.rowText}>{t('Allow downloads')}</Text>
+                    <Switch
+                      value={downloads}
+                      onValueChange={setDownloads}
+                      trackColor={{ false: colors.control, true: accent }}
+                      thumbColor={colors.knob}
+                    />
+                  </Pressable>
+                </>
+              ) : null}
+            </>
+          )}
+        </ScrollView>
+      </MenuGlassCardFrame>
 
       {/* Everywhere that is not Android, where the calendar is a component. */}
       {pickingDate ? (
@@ -241,36 +257,7 @@ export function GlobalShareSheet() {
 }
 
 const styles = themed((colors) => ({
-  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: colors.backdrop },
-  sheet: {
-    position: 'absolute',
-    bottom: 0,
-    // Centred and no wider than a sheet wants to be (#131).
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: SHEET_MAX_WIDTH,
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.xxl,
-    borderTopRightRadius: radius.xxl,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-  },
-  grabber: {
-    alignSelf: 'center',
-    width: 36,
-    height: 4,
-    borderRadius: radius.pill,
-    backgroundColor: colors.textMuted,
-    opacity: 0.5,
-    marginBottom: spacing.md,
-  },
-  title: { color: colors.text, fontSize: fontSize.md, fontWeight: '500' },
-  subtitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    paddingTop: spacing.xs,
-    paddingBottom: spacing.md,
-  },
+  scroll: { flexShrink: 1, minHeight: 0 },
   divider: { height: 1, backgroundColor: colors.border, marginBottom: spacing.sm },
   row: {
     flexDirection: 'row',
@@ -279,5 +266,5 @@ const styles = themed((colors) => ({
     gap: spacing.lg,
     paddingVertical: spacing.md,
   },
-  rowText: { color: colors.text, fontSize: fontSize.md },
+  rowText: { color: colors.text, fontSize: fontSize.md, flex: 1 },
 }));

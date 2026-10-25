@@ -11,13 +11,10 @@
  * really filled in.
  */
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useEffect, useRef, useState } from 'react';
+import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 
-import { COVER, songCoverUrl } from '@/api/data';
+import { COVER, songCoverUrl, type Song } from '@/api/data';
 import { useBottomSheetAnim } from '@/hooks/useBottomSheetAnim';
 import { useT } from '@/i18n';
 import { artistTargets } from '@/lib/artistNav';
@@ -27,9 +24,10 @@ import { useDownloads } from '@/store/downloads';
 import { useNetworkType } from '@/store/networkType';
 import { useSettings } from '@/store/settings';
 import { useSongInfo } from '@/store/songInfo';
-import { fontSize, radius, SHEET_MAX_WIDTH, spacing, themed } from '@/theme';
+import { fontSize, spacing, themed } from '@/theme';
 import { Cover } from './Cover';
 import { CoverViewer } from './CoverViewer';
+import { MenuGlassCardFrame, MenuGlassCardHeader } from './MenuGlassCard';
 
 /** One label and its value. Long values wrap instead of being cut off. */
 function Row({ label, value }: { label: string; value: string }) {
@@ -47,11 +45,11 @@ function Row({ label, value }: { label: string; value: string }) {
 interface Chip {
   key: string;
   text: string;
-  onPress: () => void;
+  path: string;
 }
 
 /** Same row, with the value as chips that each browse somewhere. */
-function ChipRow({ label, chips }: { label: string; chips: Chip[] }) {
+function ChipRow({ label, chips, onPress }: { label: string; chips: Chip[]; onPress: (path: string) => void }) {
   return (
     <View style={styles.row}>
       <Text style={styles.label}>{label}</Text>
@@ -60,7 +58,7 @@ function ChipRow({ label, chips }: { label: string; chips: Chip[] }) {
           <Pressable
             key={c.key}
             style={({ pressed }) => [styles.chip, pressed && { opacity: 0.6 }]}
-            onPress={c.onPress}
+            onPress={() => onPress(c.path)}
             accessibilityRole="button"
           >
             <Text style={styles.chipText}>{c.text}</Text>
@@ -73,37 +71,44 @@ function ChipRow({ label, chips }: { label: string; chips: Chip[] }) {
 
 export function SongInfoSheet() {
   const song = useSongInfo((s) => s.song);
-  const closeNow = useSongInfo((s) => s.close);
+  const session = useSongInfo((s) => s.session);
+  return song ? <SongInfoContent key={session} song={song} session={session} /> : null;
+}
+
+function SongInfoContent({ song, session }: { song: Song; session: number }) {
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const closeNow = () => {
+    const current = useSongInfo.getState();
+    if (!mounted.current || current.session !== session || !current.song) return false;
+    current.close();
+    return true;
+  };
   const t = useT();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const [coverOpen, setCoverOpen] = useState(false);
-  // The list is scrolled to the top: only then does a downward drag belong to
-  // the sheet (see the `pan` below).
-  const [atTop, setAtTop] = useState(true);
   const cellular = useNetworkType((s) => s.cellular);
   const maxBitRate = useSettings((s) => (cellular ? s.maxBitRateCellular : s.maxBitRate));
   const streamFormat = useSettings((s) => (cellular ? s.streamFormatCellular : s.streamFormat));
   const losslessOnly = useSettings((s) => s.streamLosslessOnly);
   const dlUri = useDownloads((s) => (song ? s.files[song.id] : undefined));
   const dlBitRate = useDownloads((s) => (song ? s.dlBitRates[song.id] : undefined));
-  const { dismiss, pan, makePan, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
-    !!song,
+  const { dismiss, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
+    true,
     closeNow,
+    'card',
+    session,
   );
-  // Second drag, for the grabber and the header: with the list scrolled down it
-  // owns the gesture, and this is what still closes the sheet from up there.
-  const headerPan = makePan();
-
-  if (!song) return null;
 
   const close = () => dismiss(closeNow);
 
   /** Goes somewhere, closing the sheet on the way out. */
   const go = (path: string) =>
     dismiss(() => {
-      closeNow();
-      router.push(path);
+      if (closeNow()) router.push(path);
     });
 
   type InfoRow = { label: string; value: string } | { label: string; chips: Chip[] };
@@ -123,7 +128,7 @@ export function SongInfoSheet() {
         ? {
             label: t('Album'),
             chips: [
-              { key: 'album', text: song.album, onPress: () => go(`/album/${song.albumId}`) },
+              { key: 'album', text: song.album, path: `/album/${song.albumId}` },
             ],
           }
         : { label: t('Album'), value: song.album },
@@ -142,7 +147,7 @@ export function SongInfoSheet() {
       chips: artists.map((a) => ({
         key: a.id,
         text: a.name,
-        onPress: () => go(`/artist/${a.id}`),
+        path: `/artist/${a.id}`,
       })),
     });
   } else {
@@ -168,7 +173,7 @@ export function SongInfoSheet() {
       chips: genres.map((g) => ({
         key: g,
         text: g,
-        onPress: () => go(`/genre/${encodeURIComponent(g)}`),
+        path: `/genre/${encodeURIComponent(g)}`,
       })),
     });
   }
@@ -208,74 +213,27 @@ export function SongInfoSheet() {
 
   return (
     <Modal transparent animationType="none" visible onRequestClose={close}>
-      {/* Gestures inside an RN Modal need a root view of their own: the
-          Modal renders in a native hierarchy outside the app's. */}
-      <GestureHandlerRootView style={StyleSheet.absoluteFill}>
-        <Animated.View style={[styles.backdrop, backdropStyle]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={close} />
-        </Animated.View>
-        <Animated.View
-          style={[styles.sheet, { paddingBottom: insets.bottom + spacing.md }, sheetStyle]}
-          onLayout={onSheetLayout}
-        >
-          {/* The grabber and the header drag on their own, so the sheet can be
-              pulled shut from up here whatever the list below is doing. */}
-          <GestureDetector gesture={headerPan}>
-            <View>
-              <View style={styles.grabber} />
-              <View style={styles.headerRow}>
-                {/* The song's own art, which on an album of live takes or a
-                    compilation need not be the album's, and until now could
-                    only be seen by playing the track. */}
-                <Pressable
-                  onPress={() => setCoverOpen(true)}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('Cover art')}
-                >
-                  <Cover uri={songCoverUrl(song, COVER.thumb)} size={48} />
-                </Pressable>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.title} numberOfLines={2}>
-                    {song.title}
-                  </Text>
-                  {song.artist ? (
-                    <Text style={styles.subtitle} numberOfLines={1}>
-                      {song.artist}
-                    </Text>
-                  ) : null}
-                </View>
-              </View>
-              <View style={styles.divider} />
-            </View>
-          </GestureDetector>
-
-          {/* Scrolls because a comment can be a paragraph. The drag only takes
-              the gesture back at the top: pulling down mid-list scrolls it,
-              instead of closing the sheet on somebody trying to read. */}
-          <GestureDetector gesture={pan.enabled(atTop)}>
-            <View>
-              <ScrollView
-                style={styles.list}
-                bounces={false}
-                showsVerticalScrollIndicator={false}
-                scrollEventThrottle={16}
-                onScroll={(e) => setAtTop(e.nativeEvent.contentOffset.y <= 0)}
-              >
-                {rows.map((r) =>
-                  'chips' in r ? (
-                    <ChipRow key={r.label} label={r.label} chips={r.chips} />
-                  ) : (
-                    <Row key={r.label} label={r.label} value={r.value} />
-                  ),
-                )}
-                {rows.length === 0 ? (
-                  <Text style={styles.empty}>{t('This song carries no information.')}</Text>
-                ) : null}
-              </ScrollView>
-            </View>
-          </GestureDetector>
-        </Animated.View>
-      </GestureHandlerRootView>
+      {!coverOpen && <MenuGlassCardFrame onClose={close} backdropStyle={backdropStyle}
+        cardStyle={sheetStyle} onLayout={onSheetLayout} maxWidth={328}>
+        <MenuGlassCardHeader title={t('Song information')} onClose={close} />
+        <View style={styles.headerRow}>
+          <Pressable onPress={() => setCoverOpen(true)} accessibilityRole="button" accessibilityLabel={t('Cover art')}>
+            <Cover uri={songCoverUrl(song, COVER.thumb)} size={44} />
+          </Pressable>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.title} numberOfLines={2}>{song.title}</Text>
+            {song.artist ? <Text style={styles.subtitle} numberOfLines={1}>{song.artist}</Text> : null}
+          </View>
+        </View>
+        <View style={styles.divider} />
+        <ScrollView key={song.id} style={styles.list} contentContainerStyle={{ paddingBottom: 4 }}
+          showsVerticalScrollIndicator={false}>
+          {rows.map((r) => 'chips' in r
+            ? <ChipRow key={r.label} label={r.label} chips={r.chips} onPress={go} />
+            : <Row key={r.label} label={r.label} value={r.value} />)}
+          {rows.length === 0 ? <Text style={styles.empty}>{t('This song carries no information.')}</Text> : null}
+        </ScrollView>
+      </MenuGlassCardFrame>}
       <CoverViewer
         visible={coverOpen}
         uri={songCoverUrl(song, COVER.full)}
@@ -286,61 +244,36 @@ export function SongInfoSheet() {
 }
 
 const styles = themed((colors) => ({
-  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: colors.backdrop },
-  sheet: {
-    position: 'absolute',
-    bottom: 0,
-    // Centred and no wider than a sheet wants to be (#131).
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: SHEET_MAX_WIDTH,
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.xxl,
-    borderTopRightRadius: radius.xxl,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-  },
-  grabber: {
-    alignSelf: 'center',
-    width: 36,
-    height: 4,
-    borderRadius: radius.pill,
-    backgroundColor: colors.textMuted,
-    opacity: 0.5,
-    marginBottom: spacing.md,
-  },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  title: { color: colors.text, fontSize: fontSize.md, fontWeight: '500' },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 0 },
+  title: { color: colors.text, fontSize: 15, lineHeight: 21, fontWeight: '600' },
   subtitle: { color: colors.textSecondary, fontSize: fontSize.xs, marginTop: 2 },
   divider: {
-    height: 1,
+    height: 0.5,
     backgroundColor: colors.border,
     marginVertical: spacing.md,
   },
   // Capped so a long comment cannot grow the sheet past the screen; below the
   // cap it hugs its content and there is nothing to scroll.
-  list: { maxHeight: 420 },
+  list: { flexShrink: 1, minHeight: 0 },
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: spacing.md,
-    paddingVertical: spacing.sm,
+    gap: 12,
+    paddingVertical: 11,
   },
   // Fixed width so every value starts on the same column, which is what makes
   // this readable as a table rather than as a list of sentences.
-  label: { color: colors.textMuted, fontSize: fontSize.sm, width: 110 },
-  value: { color: colors.text, fontSize: fontSize.sm, flex: 1 },
+  label: { color: colors.textSecondary, fontSize: 13, lineHeight: 21, width: 64 },
+  value: { color: colors.text, fontSize: 14, lineHeight: 21, fontWeight: '500', flex: 1 },
   // The album header's chips, wrapping instead of scrolling sideways: this row
   // has a fixed column to live in and there is no play button below to protect
   // from a song tagged with six genres.
   chips: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   chip: {
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceHighlight,
+    minHeight: 28,
+    justifyContent: 'center',
   },
-  chipText: { color: colors.textSecondary, fontSize: fontSize.xs },
+  chipText: { color: colors.accent, fontSize: 14, lineHeight: 21, fontWeight: '500' },
   empty: {
     color: colors.textMuted,
     fontSize: fontSize.sm,

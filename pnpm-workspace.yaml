@@ -3,4 +3,6 @@ allowBuilds:
   unrs-resolver: true
 patchedDependencies:
   expo-audio: patches/expo-audio.patch
+  expo-file-system: patches/expo-file-system.patch
   expo-network: patches/expo-network.patch
+  react-native-reanimated@4.5.1: patches/react-native-reanimated@4.5.1.patch

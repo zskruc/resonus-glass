@@ -16,7 +16,8 @@
  */
 import Icon from '@/components/Icon';
 import { useRouter } from 'expo-router';
-import { Pressable, type StyleProp, type ViewStyle } from 'react-native';
+import { type StyleProp, type ViewStyle } from 'react-native';
+import { GlassPressable } from '@/components/glass';
 
 import { useT } from '@/i18n';
 import { haptic } from '@/lib/haptics';
@@ -37,7 +38,7 @@ export function BackChevron({ size = 26, color = colors.text, label, style, onPr
   const router = useRouter();
   const t = useT();
   return (
-    <Pressable
+    <GlassPressable
       hitSlop={12}
       style={style}
       accessibilityRole="button"
@@ -54,6 +55,6 @@ export function BackChevron({ size = 26, color = colors.text, label, style, onPr
       }}
     >
       <Icon name="chevron-back" size={size} color={color} />
-    </Pressable>
+    </GlassPressable>
   );
 }

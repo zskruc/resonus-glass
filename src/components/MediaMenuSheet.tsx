@@ -4,13 +4,15 @@
  * favorite, without entering the screen. Songs are fetched when the action
  * is chosen (same query the screen uses, so cache is shared).
  */
+import { MenuGlassBackdrop } from '@/components/MenuGlassBackdrop';
 import Icon from '@/components/Icon';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { scheduleOnRN } from 'react-native-worklets';
 
 import { COVER, coverArtUrl, getAlbum, getPlaylist, star, unstar, type Song } from '@/api/data';
 import { useAlbumDownloads } from '@/hooks/useAlbumDownloads';
@@ -22,6 +24,7 @@ import { artistTargets } from '@/lib/artistNav';
 import { exportManyToFolder, totalBytes } from '@/lib/exportSong';
 import { formatBytes } from '@/lib/format';
 import { pickFolder } from '@/lib/localLibrary';
+import { MenuRequestScope } from '@/lib/menuRequest';
 import { queryClient } from '@/lib/query';
 import { useArtistPicker } from '@/store/artistPicker';
 import { useAuthStore } from '@/store/auth';
@@ -33,7 +36,7 @@ import { usePlaylistPicker } from '@/store/playlistPicker';
 import { useSettings } from '@/store/settings';
 import { useSharePicker } from '@/store/sharePicker';
 import { useToast } from '@/store/toast';
-import { colors, fontSize, radius, SHEET_MAX_WIDTH, spacing, themed } from '@/theme';
+import { colors, fontSize, radius, SHEET_MAX_WIDTH, spacing, themed, useThemeMode } from '@/theme';
 import { Cover } from './Cover';
 import { Dialog } from './Dialog';
 
@@ -74,31 +77,87 @@ async function fetchSongs(item: MediaMenuItem): Promise<Song[]> {
 }
 
 export function MediaMenuSheet() {
+  const item = useMediaMenu((s) => s.item);
+  const session = useMediaMenu((s) => s.session);
+  return item ? <MediaMenuContent key={session} item={item} session={session} /> : null;
+}
+
+function MediaMenuContent({ item, session }: { item: MediaMenuItem; session: number }) {
+  const mounted = useRef(true);
+  const actionClosing = useRef(false);
+  const exiting = useRef(false);
+  const gestureTicket = useRef<number | null>(null);
+  const [requests] = useState(() => new MenuRequestScope(() => {
+    const current = useMediaMenu.getState();
+    return current.session === session && current.item !== null ||
+      current.session === session + 1 && current.item === null;
+  }));
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      const current = useMediaMenu.getState();
+      // Only the action that closed this exact window may finish after unmount.
+      if (!actionClosing.current || current.session !== session + 1 || current.item !== null) {
+        requests.invalidate();
+      }
+    };
+  }, [requests, session]);
+  const ownsOpenSession = () => mounted.current && useMediaMenu.getState().session === session &&
+    useMediaMenu.getState().item !== null;
+  const closeNow = () => {
+    if (!ownsOpenSession()) return false;
+    if (!actionClosing.current) requests.invalidate();
+    useMediaMenu.getState().close();
+    return true;
+  };
+  const closeAfterGesture = () => {
+    const ticket = gestureTicket.current;
+    if (ticket === null || !ownsOpenSession() || !requests.owns(ticket)) return;
+    actionClosing.current = false;
+    closeNow();
+  };
+  const dark = useThemeMode() === 'dark';
   const insets = useSafeAreaInsets();
   const t = useT();
   const lang = useSettings((s) => s.language);
   const toast = useToast((s) => s.show);
   const offline = useAuthStore((s) => s.offline);
-  const item = useMediaMenu((s) => s.item);
-  const closeNow = useMediaMenu((s) => s.close);
-  const { dismiss, pan, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
-    !!item,
-    closeNow,
+  const { dismiss: animateDismiss, dismissing, makePan, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
+    true,
+    closeAfterGesture,
+    'sheet',
+    session,
   );
+  const dismiss = (after: () => void) => {
+    exiting.current = true;
+    animateDismiss(after);
+  };
+  const isOpenSession = () => ownsOpenSession() && !exiting.current && !dismissing.value;
+  const startGesture = () => {
+    // UI onStart accepted this gesture before queuing it. A normal fast
+    // swipe may already be dismissing when the JS queue gets to this call.
+    if (!ownsOpenSession() || exiting.current) return;
+    actionClosing.current = false;
+    gestureTicket.current = requests.begin();
+  };
+  // Gesture.onStart registers this callback; refs are read only after activation.
+  // eslint-disable-next-line react-hooks/refs
+  const pan = makePan().onStart(() => { if (!dismissing.value) scheduleOnRN(startGesture); });
   const pins = usePins((s) => s.pins);
   const togglePin = usePins((s) => s.toggle);
   const playQueue = usePlayerStore((s) => s.playQueue);
   const queueMany = usePlayerStore((s) => s.queueMany);
   const router = useRouter();
   const openArtistPicker = useArtistPicker((s) => s.open);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   /** Songs gathered for the download dialog (its size needs them). */
-  const [pending, setPending] = useState<Song[] | null>(null);
+  const [pending, setPending] = useState<{ songs: Song[]; ticket: number } | null>(null);
   /** The downloaded songs and what they weigh, for the export question. */
-  const [pendingExport, setPendingExport] = useState<{ songs: Song[]; bytes: number } | null>(
+  const [pendingExport, setPendingExport] = useState<{ songs: Song[]; bytes: number; ticket: number } | null>(
     null,
   );
-  const downloadMsg = useDownloadMessage(pending ?? []);
+  const downloadMsg = useDownloadMessage(pending?.songs ?? []);
   const downloadAlbum = useDownloads((s) => s.downloadAlbum);
   const downloadPlaylist = useDownloads((s) => s.downloadPlaylist);
   const deleteSongs = useDownloads((s) => s.deleteSongs);
@@ -114,9 +173,36 @@ export function MediaMenuSheet() {
   const hasDownloads =
     item?.kind === 'album' ? albumHasDownloads : anyDownloads({ files });
 
-  if (!item) return null;
-
-  const close = () => dismiss(closeNow);
+  const close = () => {
+    if (!isOpenSession()) return;
+    const ticket = requests.begin();
+    actionClosing.current = false;
+    dismiss(() => {
+      if (requests.owns(ticket)) closeNow();
+    });
+  };
+  const beginRequest = () => {
+    actionClosing.current = false;
+    setPending(null);
+    setPendingExport(null);
+    setConfirmDelete(null);
+    return requests.begin();
+  };
+  const cancelConfirmation = () => {
+    if (!isOpenSession()) return;
+    requests.invalidate();
+    setPending(null);
+    setPendingExport(null);
+    setConfirmDelete(null);
+  };
+  const ownsConfirmation = (ticket: number) => isOpenSession() && requests.owns(ticket);
+  const dismissAction = (after: () => void) => {
+    if (!isOpenSession()) return;
+    const ticket = beginRequest();
+    dismiss(() => {
+      if (requests.owns(ticket) && closeNow()) after();
+    });
+  };
   const album = item.kind === 'album' ? item.album : null;
   const playlist = item.kind === 'playlist' ? item.playlist : null;
   const name = album ? album.name : playlist!.name;
@@ -130,11 +216,14 @@ export function MediaMenuSheet() {
   /** Fetches the songs WITHOUT closing, so the dialog has a size to show.
    *  They usually come from the cache: same query key the screens use. */
   async function askDownload() {
+    if (!isOpenSession()) return;
+    const ticket = beginRequest();
     try {
-      const songs = await fetchSongs(item!);
-      if (songs.length > 0) setPending(songs);
+      const songs = await fetchSongs(item);
+      if (!ownsConfirmation(ticket)) return;
+      if (songs.length > 0) setPending({ songs, ticket });
     } catch {
-      toast(t("Couldn't complete the action"));
+      if (ownsConfirmation(ticket)) toast(t("Couldn't complete the action"));
     }
   }
 
@@ -145,27 +234,34 @@ export function MediaMenuSheet() {
    * (#57).
    */
   async function askExport() {
+    if (!isOpenSession()) return;
+    const ticket = beginRequest();
     try {
-      const songs = (await fetchSongs(item!)).filter((s) => files[s.id]);
+      const songs = (await fetchSongs(item)).filter((s) => files[s.id]);
+      if (!ownsConfirmation(ticket)) return;
       if (songs.length === 0) {
         toast(t('Nothing here is downloaded'));
         close();
         return;
       }
-      setPendingExport({ songs, bytes: totalBytes(songs.map((s) => files[s.id])) });
+      setPendingExport({ songs, bytes: totalBytes(songs.map((s) => files[s.id])), ticket });
     } catch {
-      toast(t("Couldn't complete the action"));
+      if (ownsConfirmation(ticket)) toast(t("Couldn't complete the action"));
     }
   }
 
   /** Copies them into a folder of their own, and says how many made it. */
   async function runExport(songs: Song[]) {
+    if (!isOpenSession()) return;
+    const ticket = beginRequest();
+    actionClosing.current = true;
     closeNow();
     const folder = await pickFolder();
-    if (!folder) return;
+    if (!folder || !requests.owns(ticket)) return;
     toast(t('Exporting…'));
     const items = songs.map((s) => ({ song: s, uri: files[s.id] }));
     const { saved, failed } = await exportManyToFolder(items, folder, name);
+    if (!requests.owns(ticket)) return;
     toast(
       failed > 0
         ? t('{n} of {m} songs exported', { n: saved, m: songs.length })
@@ -175,51 +271,72 @@ export function MediaMenuSheet() {
 
   /** Closes, fetches the songs, and runs the action (with toast on failure). */
   async function withSongs(fn: (songs: Song[]) => void) {
-    close();
-    try {
-      const songs = await fetchSongs(item!);
-      if (songs.length > 0) fn(songs);
-    } catch {
-      toast(t("Couldn't complete the action"));
-    }
+    if (!isOpenSession()) return;
+    const ticket = beginRequest();
+    actionClosing.current = true;
+    const songsPromise = fetchSongs(item).catch(() => null);
+    // Start fetching during the exit, but open another sheet only after this
+    // window has closed. A newer menu/action invalidates either late callback.
+    dismiss(async () => {
+      if (!requests.owns(ticket) || !closeNow()) return;
+      const songs = await songsPromise;
+      if (!requests.owns(ticket)) return;
+      if (!songs) {
+        toast(t("Couldn't complete the action"));
+        return;
+      }
+      try {
+        if (songs.length > 0) fn(songs);
+      } catch {
+        toast(t("Couldn't complete the action"));
+      }
+    });
   }
 
   async function toggleFavorite() {
-    if (!album) return;
-    close();
+    if (!album || !isOpenSession()) return;
+    const ticket = beginRequest();
+    actionClosing.current = true;
+    dismiss(() => {
+      if (requests.owns(ticket)) closeNow();
+    });
     try {
       if (album.starred) {
         await unstar(album.id, 'album');
         // Without favorite the album no longer appears in the Library, so its
         // pin would be orphaned taking up a slot: we release it on unfavorite.
         if (pins[pinKey]) togglePin(pinKey);
-        toast(t('Removed from favorites'));
+        if (requests.owns(ticket)) toast(t('Removed from favorites'));
       } else {
         await star(album.id, 'album');
-        toast(t('Added to favorites'));
+        if (requests.owns(ticket)) toast(t('Added to favorites'));
       }
       void queryClient.invalidateQueries({ queryKey: ['starred'] });
       void queryClient.invalidateQueries({ queryKey: ['album', album.id] });
     } catch {
-      toast(t("Couldn't complete the action"));
+      if (requests.owns(ticket)) toast(t("Couldn't complete the action"));
     }
   }
 
   return (
-    <Modal transparent animationType="none" visible onRequestClose={close}>
+    <Modal transparent animationType="none" visible onRequestClose={() => {
+      if (pending || pendingExport || confirmDelete !== null) cancelConfirmation();
+      else close();
+    }}>
       {/* Gestures inside an RN Modal need a root view of their own: the
           Modal renders in a native hierarchy outside the app's. */}
-      <GestureHandlerRootView style={StyleSheet.absoluteFill}>
-        <Animated.View style={[styles.backdrop, backdropStyle]}>
+      {!(pending || pendingExport || confirmDelete) && <GestureHandlerRootView style={StyleSheet.absoluteFill}>
+        <Animated.View nativeID="resonus-menu-scrim" collapsable={false} style={[styles.backdrop, backdropStyle]}>
           <Pressable style={StyleSheet.absoluteFill} onPress={close} />
         </Animated.View>
         {/* One drag around the whole sheet: this list of actions never
             scrolls, so nothing else competes for the gesture. */}
         <GestureDetector gesture={pan}>
-          <Animated.View
+          <Animated.View collapsable={false}
             style={[styles.sheet, { paddingBottom: insets.bottom + spacing.md }, sheetStyle]}
             onLayout={onSheetLayout}
           >
+            <MenuGlassBackdrop radius={0} radiusTopLeft={radius.xxl} radiusTopRight={radius.xxl} highContrast />
             {/* Spotify-style grabber: the visual cue that the sheet can be
                 dragged down to dismiss. */}
             <View style={styles.grabber} />
@@ -230,7 +347,7 @@ export function MediaMenuSheet() {
                   {name}
                 </Text>
                 {subtitle ? (
-                  <Text style={styles.subtitle} numberOfLines={1}>
+                  <Text style={[styles.subtitle, { color: dark ? '#E4E4E8' : '#313137' }]} numberOfLines={1}>
                     {subtitle}
                   </Text>
                 ) : null}
@@ -259,12 +376,14 @@ export function MediaMenuSheet() {
                 key={action.label}
                 icon={action.icon}
                 label={action.label}
-                onPress={() => {
-                  close();
-                  void Promise.resolve(action.onPress()).catch(() => {
-                    toast(t("Couldn't complete the action"));
+                onPress={() => dismissAction(() => {
+                  void Promise.resolve().then(action.onPress).catch(() => {
+                    const current = useMediaMenu.getState();
+                    if (current.session === session + 1 && current.item === null) {
+                      toast(t("Couldn't complete the action"));
+                    }
                   });
-                }}
+                })}
               />
             ))}
             <Action
@@ -315,8 +434,7 @@ export function MediaMenuSheet() {
                 icon="share-social-outline"
                 label={t('Share')}
                 onPress={() => {
-                  dismiss(() => {
-                    closeNow();
+                  dismissAction(() => {
                     useSharePicker.getState().open({ id: album ? album.id : playlist!.id, name });
                   });
                 }}
@@ -335,14 +453,12 @@ export function MediaMenuSheet() {
                     // The sheet goes first and the picker opens after its exit
                     // animation: two Modals visible at once is the thing to
                     // avoid, same as in the song menu.
-                    dismiss(() => {
-                      closeNow();
+                    dismissAction(() => {
                       openArtistPicker(targets);
                     });
                     return;
                   }
-                  dismiss(() => {
-                    closeNow();
+                  dismissAction(() => {
                     router.push(`/artist/${targets[0].id}`);
                   });
                 }}
@@ -389,25 +505,31 @@ export function MediaMenuSheet() {
               <Action
                 icon="trash-outline"
                 label={t('Delete downloads')}
-                onPress={() => setConfirmDelete(true)}
+                onPress={() => {
+                  if (!isOpenSession()) return;
+                  setConfirmDelete(beginRequest());
+                }}
               />
             ) : null}
           </Animated.View>
         </GestureDetector>
-      </GestureHandlerRootView>
+      </GestureHandlerRootView>}
 
-      {/* Over the sheet, which stays open behind it: closing it would take the
-          dialog with it. How many of these songs are actually downloaded takes
-          fetching them, so the question is asked before, not after. */}
+      {/* Replace the menu inside this window, so its glass keeps sampling the
+          same background instead of opening a second native Modal. */}
       <Dialog
+        inlineMenu
         visible={!!pending}
         title={t('Download “{name}”?', { name })}
         message={downloadMsg.message}
         confirmLabel={t('Download')}
-        onCancel={() => setPending(null)}
+        onCancel={() => {
+          if (pending && ownsConfirmation(pending.ticket)) cancelConfirmation();
+        }}
         onConfirm={() => {
-          const songs = pending ?? [];
-          setPending(null);
+          if (!pending || !ownsConfirmation(pending.ticket)) return;
+          const songs = pending.songs;
+          cancelConfirmation();
           close();
           if (album) void downloadAlbum(album, songs);
           else void downloadPlaylist(playlist!, songs);
@@ -418,6 +540,7 @@ export function MediaMenuSheet() {
       {/* Asked before the folder picker, not after: the size is the part worth
           knowing while there is still nothing to undo. */}
       <Dialog
+        inlineMenu
         visible={!!pendingExport}
         title={t('Export “{name}”?', { name })}
         message={
@@ -429,23 +552,28 @@ export function MediaMenuSheet() {
             : undefined
         }
         confirmLabel={t('Export')}
-        onCancel={() => setPendingExport(null)}
+        onCancel={() => {
+          if (pendingExport && ownsConfirmation(pendingExport.ticket)) cancelConfirmation();
+        }}
         onConfirm={() => {
-          const songs = pendingExport?.songs ?? [];
-          setPendingExport(null);
+          if (!pendingExport || !ownsConfirmation(pendingExport.ticket)) return;
+          const songs = pendingExport.songs;
           void runExport(songs);
         }}
       />
 
       <Dialog
-        visible={confirmDelete}
+        inlineMenu
+        visible={confirmDelete !== null}
         title={t('Remove download?')}
         message={t('“{name}” will no longer be available offline.', { name })}
         confirmLabel={t('Remove')}
         destructive
-        onCancel={() => setConfirmDelete(false)}
+        onCancel={() => {
+          if (confirmDelete !== null && ownsConfirmation(confirmDelete)) cancelConfirmation();
+        }}
         onConfirm={() => {
-          setConfirmDelete(false);
+          if (confirmDelete === null || !ownsConfirmation(confirmDelete)) return;
           void withSongs((songs) => {
             const ids = songs.filter((s) => files[s.id]).map((s) => s.id);
             if (ids.length === 0) {
@@ -470,7 +598,7 @@ const styles = themed((colors) => ({
     alignSelf: 'center',
     width: '100%',
     maxWidth: SHEET_MAX_WIDTH,
-    backgroundColor: colors.surface,
+    backgroundColor: 'transparent',
     borderTopLeftRadius: radius.xxl,
     borderTopRightRadius: radius.xxl,
     paddingHorizontal: spacing.lg,
@@ -490,8 +618,8 @@ const styles = themed((colors) => ({
     marginBottom: spacing.md,
   },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  title: { color: colors.text, fontSize: fontSize.md, fontWeight: '500' },
-  subtitle: { color: colors.textSecondary, fontSize: fontSize.xs, marginTop: 2 },
+  title: { color: colors.text, fontSize: fontSize.md, fontWeight: '600' },
+  subtitle: { color: colors.textSecondary, fontSize: fontSize.sm, fontWeight: '500', marginTop: 2 },
   divider: {
     height: 1,
     backgroundColor: colors.border,
@@ -504,6 +632,6 @@ const styles = themed((colors) => ({
     gap: spacing.lg,
     paddingVertical: spacing.md,
   },
-  actionText: { color: colors.text, fontSize: fontSize.md },
+  actionText: { color: colors.text, fontSize: fontSize.md, fontWeight: '500' },
   // The MCI pin comes vertical; rotated 45° it looks like Spotify's.
 }));

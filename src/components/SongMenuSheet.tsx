@@ -1,8 +1,9 @@
-/** Bottom sheet with actions for a song (⋯ menu). */
+/** Shared floating card with actions for a song (⋯ menu). */
+import { GlassBackdrop } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -12,11 +13,14 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
+  type ScrollViewProps,
 } from 'react-native';
 
 import { GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { scheduleOnRN } from 'react-native-worklets';
 
 import { useBottomSheetAnim } from '@/hooks/useBottomSheetAnim';
 import { useScreenSize } from '@/hooks/useScreenSize';
@@ -41,6 +45,7 @@ import { artistTargets } from '@/lib/artistNav';
 import { exportToFolder, shareSongFile } from '@/lib/exportSong';
 import { useSharePicker } from '@/store/sharePicker';
 import { normKey, pickFolder } from '@/lib/localLibrary';
+import { MenuRequestScope } from '@/lib/menuRequest';
 import { useArtistPicker } from '@/store/artistPicker';
 import { useAuthStore } from '@/store/auth';
 import { useAutoDownloads } from '@/store/autoDownloads';
@@ -50,11 +55,34 @@ import { useSongInfo } from '@/store/songInfo';
 import { useSongMenu } from '@/store/songMenu';
 import { showUndoToast, useToast } from '@/store/toast';
 import { useT } from '@/i18n';
-import { colors, fontSize, radius, SHEET_MAX_WIDTH, spacing, themed } from '@/theme';
+import { colors, fontSize, radius, SHEET_MAX_WIDTH, spacing, themed, useThemeMode } from '@/theme';
 import { Cover } from './Cover';
 import { Dialog } from './Dialog';
 import { ExplicitBadge, useExplicitBadge } from './ExplicitBadge';
 import { StarRating } from './StarRating';
+import { MenuGlassBackdrop } from './MenuGlassBackdrop';
+
+const MenuCardContext = createContext(false);
+
+/** A card scrolls as one surface, including its header and every submenu. */
+function MenuContent({ card, maxHeight, contentKey, children }: {
+  card: boolean;
+  maxHeight: number;
+  contentKey: string;
+  children: ReactNode;
+}) {
+  return card ? (
+    <ScrollView key={contentKey} style={{ maxHeight }} contentContainerStyle={styles.cardContent}
+      keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      {children}
+    </ScrollView>
+  ) : <>{children}</>;
+}
+
+/** Keep the sheet's existing lists; the card's outer scroll owns their drag. */
+function MenuList({ card, ...props }: ScrollViewProps & { card: boolean }) {
+  return card ? <View>{props.children}</View> : <ScrollView {...props} />;
+}
 
 /** Maximum height of the playlist list: proportional to the screen so it
  *  doesn't look cramped on large phones (previously a fixed 360). Measured
@@ -106,39 +134,116 @@ function Action({
   label: string;
   onPress: () => void;
 }) {
+  const card = useContext(MenuCardContext);
   return (
     <Pressable
-      style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [styles.action, card && styles.cardAction, pressed && { opacity: 0.6 }]}
       onPress={onPress}
     >
-      <Icon name={icon} size={24} color={colors.text} />
-      <Text style={styles.actionText}>{label}</Text>
+      <Icon name={icon} size={card ? 20 : 24} color={colors.text} />
+      <Text style={[styles.actionText, card && styles.cardActionText]}>{label}</Text>
     </Pressable>
   );
 }
 
 export function SongMenuSheet() {
+  const song = useSongMenu((s) => s.song);
+  const session = useSongMenu((s) => s.session);
+  return song ? <SongMenuContent key={session} song={song} session={session} /> : null;
+}
+
+function SongMenuContent({ song, session }: { song: Song; session: number }) {
+  const mounted = useRef(true);
+  const actionClosing = useRef(false);
+  const exiting = useRef(false);
+  const gestureTicket = useRef<number | null>(null);
+  const [requests] = useState(() => new MenuRequestScope(() => {
+    const current = useSongMenu.getState();
+    return current.session === session && current.song !== null ||
+      current.session === session + 1 && current.song === null;
+  }));
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      const current = useSongMenu.getState();
+      // Only the action that closed this exact window may finish after unmount.
+      if (!actionClosing.current || current.session !== session + 1 || current.song !== null) {
+        requests.invalidate();
+      }
+    };
+  }, [requests, session]);
+  const ownsOpenSession = () => mounted.current && useSongMenu.getState().session === session &&
+    useSongMenu.getState().song !== null;
+  const closeNow = () => {
+    if (!ownsOpenSession()) return false;
+    if (!actionClosing.current) requests.invalidate();
+    useSongMenu.getState().close();
+    return true;
+  };
+  const closeAfterGesture = () => {
+    const ticket = gestureTicket.current;
+    if (ticket === null || !ownsOpenSession() || !requests.owns(ticket)) return;
+    actionClosing.current = false;
+    closeNow();
+  };
   const insets = useSafeAreaInsets();
-  const { height: screenH } = useScreenSize();
+  const { width: screenW, height: screenH } = useScreenSize();
+  const { fontScale } = useWindowDimensions();
+  const dark = useThemeMode() === 'dark';
   const router = useRouter();
   const auth = useAuthStore((s) => s.auth);
   const offline = useAuthStore((s) => s.offline);
   const queryClient = useQueryClient();
-  const song = useSongMenu((s) => s.song);
+  const presentation = useSongMenu((s) => s.presentation);
+  const isCard = presentation === 'card';
+  const cardRight = 16 + insets.right;
+  const cardTop = Math.min(insets.top + 72, Math.max(insets.top + 12, screenH - insets.bottom - 180));
+  const cardWidth = Math.min(fontScale > 1.2 ? 248 : 232, Math.max(0, screenW - insets.left - insets.right - 32));
+  const cardMaxHeight = Math.min(540, Math.max(0, screenH - cardTop - insets.bottom - 16));
+  const actionStyle = [styles.action, isCard && styles.cardAction];
+  const actionTextStyle = [styles.actionText, isCard && styles.cardActionText];
+  const rowIconSize = isCard ? 20 : 24;
   const context = useSongMenu((s) => s.context);
   const showLyrics = useSongMenu((s) => s.showLyrics);
   const startInSleep = useSongMenu((s) => s.sleep);
   const extras = useSongMenu((s) => s.extras);
-  const closeNow = useSongMenu((s) => s.close);
-  const { dismiss, pan, makePan, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
-    !!song,
-    closeNow,
+  const { dismiss: animateDismiss, dismissing, makePan, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
+    true,
+    closeAfterGesture,
+    presentation,
+    session,
   );
+  const dismiss = (after: () => void) => {
+    exiting.current = true;
+    animateDismiss(after);
+  };
+  const isOpenSession = () => ownsOpenSession() && !exiting.current && !dismissing.value;
+  const startGesture = () => {
+    // UI onStart accepted this gesture before queuing it. A normal fast
+    // swipe may already be dismissing when the JS queue gets to this call.
+    if (!ownsOpenSession() || exiting.current) return;
+    actionClosing.current = false;
+    gestureTicket.current = requests.begin();
+  };
+  // Gesture.onStart registers these callbacks; refs are read only after activation.
+  // eslint-disable-next-line react-hooks/refs
+  const pan = makePan().onStart(() => { if (!dismissing.value) scheduleOnRN(startGesture); });
   // Second drag, for the grabber and the header (see the JSX below).
-  const headerPan = makePan();
+  // eslint-disable-next-line react-hooks/refs
+  const headerPan = makePan().enabled(!isCard).onStart(() => { if (!dismissing.value) scheduleOnRN(startGesture); });
   // Animated dismiss: the sheet slides down and then the Modal is unmounted.
   // All actions close through here.
-  const close = () => dismiss(closeNow);
+  const close = () => {
+    if (!isOpenSession()) return;
+    const ticket = requests.begin();
+    actionClosing.current = false;
+    dismiss(() => {
+      if (requests.owns(ticket)) closeNow();
+    });
+  };
   const addToQueue = usePlayerStore((s) => s.addToQueue);
   const playNext = usePlayerStore((s) => s.playNext);
   const startRadio = usePlayerStore((s) => s.startRadio);
@@ -164,29 +269,45 @@ export function SongMenuSheet() {
   const favIds = useFavoriteIds(!!song);
   const favorited = song ? (favIds ? favIds.has(song.id) : !!song.starred) : false;
 
-  const [mode, setMode] = useState<'actions' | 'playlists' | 'sleep' | 'rating' | 'export'>(
-    'actions',
+  const [mode, updateMode] = useState<'actions' | 'playlists' | 'sleep' | 'rating' | 'export'>(
+    startInSleep ? 'sleep' : 'actions',
   );
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState<number | null>(null);
   // The action list is scrolled to the top: only then does a downward drag
   // belong to the sheet (see the `pan` below).
   const [atTop, setAtTop] = useState(true);
   // "Already in the playlist" prompt pending confirmation (Spotify style).
-  const [dupPrompt, setDupPrompt] = useState<{ playlistId: string; name: string } | null>(null);
+  const [dupPrompt, setDupPrompt] = useState<{ playlistId: string; name: string; ticket: number } | null>(null);
   // Removing a download asks first, like albums and playlists do.
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  // When opening the menu for a song, always go back to the actions view,
-  // unless it was opened for the sleep timer.
-  useEffect(() => {
-    if (song) setMode(startInSleep ? 'sleep' : 'actions');
-  }, [song, startInSleep]);
-
-  // Every new song or view starts the list scrolled to the top; the sheet
-  // stays mounted between openings, so the flag would otherwise survive.
-  useEffect(() => {
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
+  const beginRequest = () => {
+    actionClosing.current = false;
+    setCreating(null);
+    setDupPrompt(null);
+    setConfirmDelete(null);
+    return requests.begin();
+  };
+  const cancelConfirmation = () => {
+    if (!isOpenSession()) return;
+    requests.invalidate();
+    setCreating(null);
+    setDupPrompt(null);
+    setConfirmDelete(null);
     setAtTop(true);
-  }, [song, mode]);
+  };
+  const ownsConfirmation = (ticket: number) => isOpenSession() && requests.owns(ticket);
+  const dismissAction = (after: () => void) => {
+    if (!isOpenSession()) return;
+    const ticket = beginRequest();
+    dismiss(() => {
+      if (requests.owns(ticket) && closeNow()) after();
+    });
+  };
+  const setMode = (next: typeof mode) => {
+    if (!isOpenSession()) return;
+    cancelConfirmation();
+    updateMode(next);
+  };
 
   const { data: playlists, isLoading: loadingPlaylists } = useQuery({
     queryKey: ['playlists'],
@@ -194,15 +315,10 @@ export function SongMenuSheet() {
     enabled: (!!auth || offline) && mode === 'playlists',
   });
 
-  // Before the early return, the way every hook here has to be: the sheet
-  // stays mounted with no song between openings.
   const explicit = useExplicitBadge(song?.explicitStatus);
 
-  if (!song) return null;
-
   const go = (path: string) =>
-    dismiss(() => {
-      closeNow();
+    dismissAction(() => {
       router.push(path);
     });
 
@@ -215,22 +331,26 @@ export function SongMenuSheet() {
    * a large file over a document provider is not instant.
    */
   async function saveToFolder() {
-    if (!song || !dlUri) return;
+    if (!isOpenSession() || !dlUri) return;
+    const ticket = beginRequest();
+    actionClosing.current = true;
     closeNow();
     const folder = await pickFolder();
-    if (!folder) return;
+    if (!folder || !requests.owns(ticket)) return;
     toast(t('Exporting…'));
     try {
       const name = await exportToFolder(song, dlUri, folder);
-      toast(t('Saved as “{name}”', { name }));
+      if (requests.owns(ticket)) toast(t('Saved as “{name}”', { name }));
     } catch {
-      toast(t("Couldn't save the file"));
+      if (requests.owns(ticket)) toast(t("Couldn't save the file"));
     }
   }
 
   /** Hands the download to another app through the system share sheet (#57). */
   async function sendToApp() {
-    if (!song || !dlUri) return;
+    if (!isOpenSession() || !dlUri) return;
+    const ticket = beginRequest();
+    actionClosing.current = true;
     closeNow();
     try {
       // Both of these name the button that was pressed, not the mechanism
@@ -239,56 +359,70 @@ export function SongMenuSheet() {
       // They also say different things: this one is the system reporting it
       // has no share sheet, before anything has been attempted, and the one
       // below is an attempt that failed.
-      if (!(await shareSongFile(song, dlUri))) {
+      if (!(await shareSongFile(song, dlUri)) && requests.owns(ticket)) {
         toast(t("Sending to another app isn't available on this device"));
       }
     } catch {
-      toast(t("Couldn't send the file"));
+      if (requests.owns(ticket)) toast(t("Couldn't send the file"));
     }
   }
 
   /** Actually adds (without checking duplicates) and closes with a toast. */
-  async function doAdd(playlistId: string, playlistName: string) {
-    if (!song) return;
-    close();
+  async function doAdd(playlistId: string, playlistName: string, alreadyDismissed = false, ticket?: number) {
+    if (!isOpenSession() || ticket !== undefined && !requests.owns(ticket)) return;
+    const actionTicket = beginRequest();
+    actionClosing.current = true;
+    if (alreadyDismissed) closeNow();
+    else dismiss(() => {
+      if (requests.owns(actionTicket)) closeNow();
+    });
     try {
+      // A selected mutation finishes for this song, even if another menu opens.
       await addToPlaylist(playlistId, song.id);
       queryClient.invalidateQueries({ queryKey: ['playlist', playlistId] });
       // If the list has auto-download, fetch the newly added song now.
       void useAutoDownloads.getState().reconcile(playlistId, true);
-      toast(t('Added to “{name}”', { name: playlistName }));
+      if (requests.owns(actionTicket)) toast(t('Added to “{name}”', { name: playlistName }));
     } catch {
-      toast(t("Couldn't add to the playlist"));
+      if (requests.owns(actionTicket)) toast(t("Couldn't add to the playlist"));
     }
   }
 
   async function addTo(playlistId: string, playlistName: string) {
-    if ((!auth && !offline) || !song) return;
+    if ((!auth && !offline) || !isOpenSession()) return;
+    const ticket = beginRequest();
     // Spotify-style duplicate warning: if already present, ask first. If the
     // check fails (network), add without warning: better than blocking.
     try {
       const { songs } = await getPlaylist(playlistId);
+      if (!ownsConfirmation(ticket)) return;
       if (songs.some((s) => s.id === song.id)) {
-        setDupPrompt({ playlistId, name: playlistName });
+        setDupPrompt({ playlistId, name: playlistName, ticket });
         return;
       }
     } catch {
       // ignore
     }
-    await doAdd(playlistId, playlistName);
+    if (ownsConfirmation(ticket)) await doAdd(playlistId, playlistName, false, ticket);
   }
 
   async function createAndAdd(name: string) {
-    setCreating(false);
-    if ((!auth && !offline) || !song || !name.trim()) return;
-    close();
+    if (creating === null || !ownsConfirmation(creating) || (!auth && !offline) || !name.trim()) return;
+    const ticket = beginRequest();
+    actionClosing.current = true;
+    if (isCard) closeNow();
+    else dismiss(() => {
+      if (requests.owns(ticket)) closeNow();
+    });
     try {
       const id = await createPlaylist(name.trim());
+      // Creating and adding are one accepted transaction: never leave the
+      // user's new playlist empty just because they opened another menu.
       await addToPlaylist(id, song.id);
       queryClient.invalidateQueries({ queryKey: ['playlists'] });
-      toast(t('Added to “{name}”', { name: name.trim() }));
+      if (requests.owns(ticket)) toast(t('Added to “{name}”', { name: name.trim() }));
     } catch {
-      toast(t("Couldn't create the playlist"));
+      if (requests.owns(ticket)) toast(t("Couldn't create the playlist"));
     }
   }
 
@@ -340,17 +474,29 @@ export function SongMenuSheet() {
   }
 
   return (
-    <Modal transparent animationType="none" visible onRequestClose={close}>
+    <Modal transparent animationType="none" visible onRequestClose={() => {
+      if (creating !== null || confirmDelete !== null || dupPrompt) cancelConfirmation();
+      else close();
+    }}>
       {/* Gestures inside an RN Modal need a root view of their own: the
           Modal renders in a native hierarchy outside the app's. */}
-      <GestureHandlerRootView style={StyleSheet.absoluteFill}>
-        <Animated.View style={[styles.backdrop, backdropStyle]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={close} />
+      {!(creating || confirmDelete || dupPrompt) && <GestureHandlerRootView style={StyleSheet.absoluteFill}>
+        <Animated.View nativeID={isCard ? 'resonus-menu-scrim' : undefined} collapsable={false}
+          style={[styles.backdrop, isCard && { backgroundColor: dark ? 'rgba(0,0,0,0.10)' : 'rgba(0,0,0,0.06)' }, backdropStyle]}>
+          <Pressable accessibilityRole="button" accessibilityLabel={t('Close')}
+            style={StyleSheet.absoluteFill} onPress={close} />
         </Animated.View>
-        <Animated.View
-          style={[styles.sheet, { paddingBottom: insets.bottom + spacing.md }, sheetStyle]}
+        <Animated.View collapsable={false}
+          style={[isCard ? styles.card : styles.sheet,
+            isCard ? { top: cardTop, right: cardRight, width: cardWidth, maxHeight: cardMaxHeight }
+              : { paddingBottom: insets.bottom + spacing.md }, sheetStyle]}
           onLayout={onSheetLayout}
+          accessibilityViewIsModal
         >
+          {isCard ? <MenuGlassBackdrop radius={28} />
+            : <GlassBackdrop radius={0} radiusTopLeft={radius.xxl} radiusTopRight={radius.xxl} tint={colors.surface} variant="prominent" />}
+          <MenuCardContext.Provider value={isCard}>
+          <MenuContent card={isCard} maxHeight={cardMaxHeight} contentKey={`${song.id}:${mode}`}>
           {/* The header has its own drag, always enabled: it's the way out
               when the list below is scrolled and keeps the gesture for itself
               (and the only one in the playlist view, where the list owns it
@@ -360,18 +506,18 @@ export function SongMenuSheet() {
             <View>
               {/* Spotify-style grabber: the visual cue that the sheet can be
                   dragged down to dismiss. */}
-              <View style={styles.grabber} />
-              <View style={styles.headerRow}>
-                <Cover uri={songCoverUrl(song, COVER.thumb)} size={48} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.title} numberOfLines={1}>
+              {!isCard && <View style={styles.grabber} />}
+              <View style={[styles.headerRow, isCard && styles.cardHeaderRow]}>
+                <Cover uri={songCoverUrl(song, COVER.thumb)} size={isCard ? 36 : 48} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[styles.title, isCard && styles.cardTitle]} numberOfLines={1}>
                     {song.title}
                   </Text>
                   {explicit || song.artist ? (
                     <View style={styles.subRow}>
                       <ExplicitBadge status={song.explicitStatus} />
                       {song.artist ? (
-                        <Text style={styles.artist} numberOfLines={1}>
+                        <Text style={[styles.artist, isCard && styles.cardArtist]} numberOfLines={1}>
                           {song.artist}
                         </Text>
                       ) : null}
@@ -383,87 +529,91 @@ export function SongMenuSheet() {
             </View>
           </GestureDetector>
 
-          <GestureDetector gesture={pan.enabled(mode !== 'playlists' && atTop)}>
+          <GestureDetector gesture={pan.enabled(!isCard && mode !== 'playlists' && atTop)}>
             <View>
               {mode === 'playlists' ? (
-                <View style={{ maxHeight: playlistsMaxH(screenH) }}>
+                <View style={!isCard && { maxHeight: playlistsMaxH(screenH) }}>
                   <Pressable
-                    style={styles.action}
+                    style={actionStyle}
                     onPress={() => setMode('actions')}
                   >
-                    <Icon name="chevron-back" size={24} color={colors.text} />
-                    <Text style={styles.actionText}>{t('Add to a playlist')}</Text>
+                    <Icon name="chevron-back" size={rowIconSize} color={colors.text} />
+                    <Text style={actionTextStyle}>{t('Add to a playlist')}</Text>
                   </Pressable>
                   <Pressable
-                    style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
-                    onPress={() => setCreating(true)}
+                    style={({ pressed }) => [...actionStyle, pressed && { opacity: 0.6 }]}
+                    onPress={() => {
+                      if (isOpenSession()) setCreating(beginRequest());
+                    }}
                   >
-                    <View style={styles.newPlaylistIcon}>
-                      <Icon name="add" size={24} color={colors.text} />
+                    <View style={[styles.newPlaylistIcon, isCard && styles.cardNewPlaylistIcon]}>
+                      <Icon name="add" size={rowIconSize} color={colors.text} />
                     </View>
-                    <Text style={styles.actionText}>{t('New playlist')}</Text>
+                    <Text style={actionTextStyle}>{t('New playlist')}</Text>
                   </Pressable>
                   {loadingPlaylists ? (
                     <ActivityIndicator style={{ marginVertical: spacing.lg }} color={colors.accent} />
                   ) : (
-                    <ScrollView>
+                    <MenuList card={isCard}>
                       {(playlists ?? []).map((p) => (
                         <Pressable
                           key={p.id}
-                          style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
+                          accessibilityRole="button"
+                          accessibilityLabel={p.name}
+                          style={({ pressed }) => [...actionStyle, pressed && { opacity: 0.6 }]}
                           onPress={() => addTo(p.id, p.name)}
                         >
-                          <Cover uri={coverArtUrl( p.coverArt ?? p.id, COVER.thumb)} size={40} />
-                          <Text style={styles.actionText} numberOfLines={1}>
+                          <Cover uri={coverArtUrl( p.coverArt ?? p.id, COVER.thumb)} size={isCard ? 32 : 40} />
+                          <Text style={actionTextStyle} numberOfLines={1}>
                             {p.name}
                           </Text>
                         </Pressable>
                       ))}
-                    </ScrollView>
+                    </MenuList>
                   )}
                 </View>
               ) : mode === 'sleep' ? (
                 <View>
-                  <Pressable style={styles.action} onPress={() => setMode('actions')}>
-                    <Icon name="chevron-back" size={24} color={colors.text} />
-                    <Text style={styles.actionText}>{t('Sleep timer')}</Text>
+                  <Pressable style={actionStyle} onPress={() => setMode('actions')}>
+                    <Icon name="chevron-back" size={rowIconSize} color={colors.text} />
+                    <Text style={actionTextStyle}>{t('Sleep timer')}</Text>
                   </Pressable>
                   {[15, 30, 45, 60].map((m) => (
                     <Pressable
                       key={m}
-                      style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
+                      style={({ pressed }) => [...actionStyle, pressed && { opacity: 0.6 }]}
                       onPress={() => {
                         setSleepTimer(m);
                         toast(t('Will pause in {n} min', { n: m }));
                         close();
                       }}
                     >
-                      <Icon name="time-outline" size={24} color={colors.text} />
-                      <Text style={styles.actionText}>{t('{n} minutes', { n: m })}</Text>
+                      <Icon name="time-outline" size={rowIconSize} color={colors.text} />
+                      <Text style={actionTextStyle}>{t('{n} minutes', { n: m })}</Text>
                     </Pressable>
                   ))}
                   <Pressable
-                    style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
+                    style={({ pressed }) => [...actionStyle, pressed && { opacity: 0.6 }]}
                     onPress={() => {
                       setSleepAtSongEnd();
                       toast(t('Will pause when the song ends'));
                       close();
                     }}
                   >
-                    <Icon name="musical-note-outline" size={24} color={colors.text} />
-                    <Text style={styles.actionText}>{t('When the song ends')}</Text>
+                    <Icon name="musical-note-outline" size={rowIconSize} color={colors.text} />
+                    <Text style={actionTextStyle}>{t('When the song ends')}</Text>
                   </Pressable>
                   {sleepEndsAt || sleepAtSongEnd ? (
                     <Pressable
-                      style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
+                      style={({ pressed }) => [...actionStyle, pressed && { opacity: 0.6 }]}
                       onPress={() => {
                         cancelSleepTimer();
                         toast(t('Sleep timer off'));
                         close();
                       }}
                     >
-                      <Icon name="close-circle-outline" size={24} color={colors.danger} />
-                      <Text style={[styles.actionText, { color: colors.danger }]}>
+                      <Icon name="close-circle-outline" size={rowIconSize} color={colors.danger} />
+                      <Text style={[...actionTextStyle, { color: colors.danger }]}>
                         {t('Turn off')}
                       </Text>
                     </Pressable>
@@ -471,16 +621,16 @@ export function SongMenuSheet() {
                 </View>
               ) : mode === 'export' ? (
                 <View>
-                  <Pressable style={styles.action} onPress={() => setMode('actions')}>
-                    <Icon name="chevron-back" size={24} color={colors.text} />
-                    <Text style={styles.actionText}>{t('Export')}</Text>
+                  <Pressable style={actionStyle} onPress={() => setMode('actions')}>
+                    <Icon name="chevron-back" size={rowIconSize} color={colors.text} />
+                    <Text style={actionTextStyle}>{t('Export')}</Text>
                   </Pressable>
                   {/* Said before the file leaves, not after: a download made at
                       a lower bitrate is a worse copy than the server's, and the
                       only moment that matters is while deciding to hand it to
                       someone. */}
                   {dlBitRate ? (
-                    <Text style={styles.note}>
+                    <Text style={[styles.note, isCard && styles.cardNote]}>
                       {t('This download is a {n} kbps copy, not the original file.', {
                         n: dlBitRate,
                       })}
@@ -503,15 +653,15 @@ export function SongMenuSheet() {
                 </View>
               ) : mode === 'rating' ? (
                 <View>
-                  <Pressable style={styles.action} onPress={() => setMode('actions')}>
-                    <Icon name="chevron-back" size={24} color={colors.text} />
-                    <Text style={styles.actionText}>{t('Rate')}</Text>
+                  <Pressable style={actionStyle} onPress={() => setMode('actions')}>
+                    <Icon name="chevron-back" size={rowIconSize} color={colors.text} />
+                    <Text style={actionTextStyle}>{t('Rate')}</Text>
                   </Pressable>
                   <View style={styles.ratingRow}>
                     <StarRating
                       id={song.id}
                       rating={song.userRating}
-                      size={34}
+                      size={isCard ? 28 : 34}
                       onRated={(r) => rateSong(song.id, r)}
                     />
                   </View>
@@ -521,10 +671,10 @@ export function SongMenuSheet() {
                 // the room a sheet should take. `onScroll` hands the drag back
                 // to the sheet only at the top, so pulling down mid-list scrolls
                 // instead of dismissing.
-                <ScrollView
+                <MenuList card={isCard}
                   style={{ maxHeight: actionsMaxH(screenH) }}
                   scrollEventThrottle={16}
-                  onScroll={(e) => setAtTop(e.nativeEvent.contentOffset.y <= 0)}
+                  onScroll={(e) => { if (!isCard) setAtTop(e.nativeEvent.contentOffset.y <= 0); }}
                 >
                   <Action
                     icon="add-circle-outline"
@@ -589,8 +739,7 @@ export function SongMenuSheet() {
                         if (targets.length > 1) {
                           // We close the sheet and, after its exit animation, open the
                           // picker (avoids two visible Modals at once).
-                          dismiss(() => {
-                            closeNow();
+                          dismissAction(() => {
                             openArtistPicker(targets);
                           });
                           return;
@@ -606,7 +755,9 @@ export function SongMenuSheet() {
                       label={t('Remove download')}
                       // Asks first, like albums and playlists do: this one used
                       // to delete on the spot (#48).
-                      onPress={() => setConfirmDelete(true)}
+                      onPress={() => {
+                        if (isOpenSession()) setConfirmDelete(beginRequest());
+                      }}
                     />
                   ) : !offline && !song.url ? (
                     <Action
@@ -649,8 +800,7 @@ export function SongMenuSheet() {
                       label={t('Devices')}
                       onPress={() => {
                         const open = extras.devices!;
-                        dismiss(() => {
-                          closeNow();
+                        dismissAction(() => {
                           open();
                         });
                       }}
@@ -662,8 +812,7 @@ export function SongMenuSheet() {
                       label={t('Playback speed')}
                       onPress={() => {
                         const open = extras.speed!;
-                        dismiss(() => {
-                          closeNow();
+                        dismissAction(() => {
                           open();
                         });
                       }}
@@ -676,18 +825,25 @@ export function SongMenuSheet() {
                       icon="sparkles-outline"
                       label={t('Start mix')}
                       onPress={() => {
-                        close();
+                        if (!isOpenSession()) return;
+                        const ticket = beginRequest();
+                        actionClosing.current = true;
+                        dismiss(() => {
+                          if (requests.owns(ticket)) closeNow();
+                        });
                         // The queue changes underneath without the song restarting, so
                         // without this nothing on screen says the mix actually began.
                         // And it's only said once tracks have arrived: announcing a
                         // mix that came up empty is how the failure stayed invisible.
                         void startRadio(song, t('Mix of “{name}”', { name: song.title })).then(
-                          (started) =>
+                          (started) => {
+                            if (!requests.owns(ticket)) return;
                             toast(
                               started
                                 ? t('Mix started')
                                 : t("Couldn't find anything to mix with this song"),
-                            ),
+                            );
+                          },
                         );
                       }}
                     />
@@ -706,8 +862,7 @@ export function SongMenuSheet() {
                       icon="share-social-outline"
                       label={t('Share')}
                       onPress={() => {
-                        dismiss(() => {
-                          closeNow();
+                        dismissAction(() => {
                           useSharePicker.getState().open({ id: song.id, name: song.title });
                         });
                       }}
@@ -728,28 +883,33 @@ export function SongMenuSheet() {
                     icon="information-circle-outline"
                     label={t('Song information')}
                     onPress={() => {
-                      dismiss(() => {
+                      dismissAction(() => {
                         useSongInfo.getState().open(song);
-                        closeNow();
                       });
                     }}
                   />
-                </ScrollView>
+                </MenuList>
               )}
             </View>
           </GestureDetector>
+          </MenuContent>
+          </MenuCardContext.Provider>
         </Animated.View>
-      </GestureHandlerRootView>
+      </GestureHandlerRootView>}
 
       <Dialog
-        visible={confirmDelete}
+        inlineMenu
+        visible={confirmDelete !== null}
         title={t('Remove download?')}
         message={t('“{name}” will no longer be available offline.', { name: song.title })}
         confirmLabel={t('Remove')}
         destructive
-        onCancel={() => setConfirmDelete(false)}
+        onCancel={() => {
+          if (confirmDelete !== null && ownsConfirmation(confirmDelete)) cancelConfirmation();
+        }}
         onConfirm={() => {
-          setConfirmDelete(false);
+          if (confirmDelete === null || !ownsConfirmation(confirmDelete)) return;
+          cancelConfirmation();
           void deleteDownloads([song.id]);
           // «Undo» still there: confirming by mistake is a tap away from
           // getting it back (offline there'd be nowhere to download from).
@@ -757,29 +917,35 @@ export function SongMenuSheet() {
             t('Download removed'),
             offline ? undefined : { label: t('Undo'), run: () => void downloadSong(song) },
           );
-          close();
+          if (isCard) closeNow();
+          else close();
         }}
       />
 
       <Dialog
-        visible={creating}
+        inlineMenu
+        visible={creating !== null}
         title={t('New playlist')}
         input={{ placeholder: t('Playlist name') }}
         confirmLabel={t('Create')}
-        onCancel={() => setCreating(false)}
+        onCancel={() => {
+          if (creating !== null && ownsConfirmation(creating)) cancelConfirmation();
+        }}
         onConfirm={createAndAdd}
       />
 
       <Dialog
+        inlineMenu
         visible={!!dupPrompt}
         title={t('Already added')}
         message={dupPrompt ? t('This song is already in “{name}”.', { name: dupPrompt.name }) : undefined}
         confirmLabel={t('Add anyway')}
-        onCancel={() => setDupPrompt(null)}
+        onCancel={() => {
+          if (dupPrompt && ownsConfirmation(dupPrompt.ticket)) cancelConfirmation();
+        }}
         onConfirm={() => {
           const d = dupPrompt;
-          setDupPrompt(null);
-          if (d) void doAdd(d.playlistId, d.name);
+          if (d && ownsConfirmation(d.ticket)) void doAdd(d.playlistId, d.name, isCard, d.ticket);
         }}
       />
     </Modal>
@@ -788,6 +954,21 @@ export function SongMenuSheet() {
 
 const styles = themed((colors) => ({
   backdrop: { ...StyleSheet.absoluteFill, backgroundColor: colors.backdrop },
+  card: {
+    position: 'absolute',
+    backgroundColor: 'transparent',
+    borderRadius: 28,
+    overflow: 'hidden',
+    boxShadow: '0 12px 32px rgba(0, 0, 0, 0.22)',
+  },
+  cardContent: { padding: 12 },
+  cardHeaderRow: { gap: 10, paddingBottom: 12 },
+  cardTitle: { fontSize: 17, fontWeight: '600' },
+  cardArtist: { fontSize: 13 },
+  cardAction: { minHeight: 48, paddingVertical: 10, gap: 12 },
+  cardActionText: { fontSize: 17, flex: 1, flexShrink: 1 },
+  cardNote: { paddingLeft: 0 },
+  cardNewPlaylistIcon: { width: 32, height: 32 },
   sheet: {
     position: 'absolute',
     bottom: 0,
@@ -795,7 +976,7 @@ const styles = themed((colors) => ({
     alignSelf: 'center',
     width: '100%',
     maxWidth: SHEET_MAX_WIDTH,
-    backgroundColor: colors.surface,
+    backgroundColor: 'transparent',
     borderTopLeftRadius: radius.xxl,
     borderTopRightRadius: radius.xxl,
     paddingHorizontal: spacing.lg,

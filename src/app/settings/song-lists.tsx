@@ -6,8 +6,8 @@
  * Appearance, between the language and the navigation bar, so everything under
  * it was a scroll away for anyone who had not come looking for this.
  */
-import { ScrollView } from 'react-native';
 
+import { DockScrollView } from '@/components/DockScrollView';
 import { SettingsPage, settingsStyles, SwitchList } from '@/components/SettingsUI';
 import { useT } from '@/i18n';
 import { useSettings } from '@/store/settings';
@@ -37,7 +37,7 @@ export default function SongListsSettings() {
 
   return (
     <SettingsPage title={t('Song lists')}>
-      <ScrollView contentContainerStyle={settingsStyles.content}>
+      <DockScrollView contentContainerStyle={settingsStyles.content}>
         <SwitchList
           options={[
             {
@@ -82,7 +82,7 @@ export default function SongListsSettings() {
             },
           ]}
         />
-      </ScrollView>
+      </DockScrollView>
     </SettingsPage>
   );
 }

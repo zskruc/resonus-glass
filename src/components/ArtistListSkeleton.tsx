@@ -3,9 +3,10 @@
  * of text, softly pulsing, at the same size as real rows (`ArtistRow`: 56pt
  * round photo) so the transition doesn't jump.
  */
-import { useEffect } from 'react';
+import { useCallback } from 'react';
 import { View } from 'react-native';
 import Animated, {
+  cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -13,13 +14,16 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { radius, spacing, themed } from '@/theme';
+import { useForegroundEffect } from '@/hooks/useForegroundEffect';
 import { motion } from '@/theme/motion';
 
 export function ArtistListSkeleton({ count = 10 }: { count?: number }) {
   const pulse = useSharedValue(1);
-  useEffect(() => {
-    pulse.value = withRepeat(withTiming(0.45, { duration: motion.duration.pulse }), -1, true);
-  }, [pulse]);
+  useForegroundEffect(useCallback(() => {
+    pulse.set(1);
+    pulse.set(withRepeat(withTiming(0.45, { duration: motion.duration.pulse }), -1, true));
+    return () => cancelAnimation(pulse);
+  }, [pulse]));
   const pulseStyle = useAnimatedStyle(() => ({ opacity: pulse.value }));
 
   return (

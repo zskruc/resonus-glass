@@ -1,0 +1,32 @@
+name: Check upstream updates
+
+# Manual comparison only: never merges, pushes, publishes, or opens a PR.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Compare selected branch with upstream main
+        run: bash scripts/check-upstream.sh
+      - name: Show report
+        run: cat artifacts/upstream-check/report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: upstream-comparison-${{ github.sha }}
+          path: artifacts/upstream-check/
+          if-no-files-found: error
+          retention-days: 30

@@ -3,12 +3,12 @@
  *
  * A screen of its own and, `embedded`, the Radio section of the Explore tab.
  */
+import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
   Modal,
   Pressable,
   RefreshControl,
@@ -17,6 +17,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -42,6 +43,7 @@ import { useToast } from '@/store/toast';
 import { colors, fontSize, radius, SCREEN_BOTTOM_PADDING, SHEET_MAX_WIDTH, spacing, themed, useTheme, tracking } from '@/theme';
 import { BackChevron } from '@/components/BackChevron';
 import { BrowseFrame, useSearchBox, type BrowserProps } from '@/components/BrowseFrame';
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
 import { useListPadding } from '@/hooks/useScreenSize';
 import { listPerf } from '@/lib/listPerf';
@@ -56,6 +58,7 @@ export default function RadioScreen() {
 }
 
 export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) {
+  const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
@@ -171,13 +174,13 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
   });
 
   const addButton = canManage ? (
-    <Pressable
+    <GlassPressable variant="subtle"
       hitSlop={10}
       onPress={() => setEditForm({ station: null })}
       accessibilityLabel={t('Add station')}
     >
       <Icon name="add" size={28} color={colors.text} />
-    </Pressable>
+    </GlassPressable>
   ) : null;
 
   return (
@@ -191,7 +194,8 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
       )}
 
       {(embedded ? boxOpen : showSearch) ? (
-        <View style={styles.searchBar}>
+        <View collapsable={false} style={styles.searchBar}>
+          <GlassBackdrop radius={radius.pill} tint={colors.surfaceHighlight} variant="regular" />
           <Icon name="search" size={18} color={colors.textMuted} />
           <TextInput
             style={styles.searchInput}
@@ -204,9 +208,9 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
             autoFocus={embedded}
           />
           {query ? (
-            <Pressable hitSlop={8} onPress={() => setQuery('')} accessibilityLabel={t('Clear')}>
+            <GlassPressable variant="subtle" hitSlop={8} onPress={() => setQuery('')} accessibilityLabel={t('Clear')}>
               <Icon name="close-circle" size={18} color={colors.textMuted} />
-            </Pressable>
+            </GlassPressable>
           ) : null}
         </View>
       ) : null}
@@ -216,7 +220,9 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
       ) : isError ? (
         <Message text={t("Couldn't load radio stations.")} onRetry={() => refetch()} />
       ) : (
-        <FlatList
+        <Animated.FlatList
+      onScroll={dockScroll}
+      scrollEventThrottle={16}
           {...listPerf}
           // With the filter box open, a tap opens the row instead of only closing the keyboard.
           keyboardShouldPersistTaps="handled"
@@ -321,73 +327,79 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
 
       <Modal
         transparent
-        visible={!!menu}
+        visible={!!menu || !!deleting}
         animationType="fade"
-        onRequestClose={() => setMenu(null)}
+        onRequestClose={() => deleting ? setDeleting(null) : setMenu(null)}
       >
-        <Pressable style={styles.backdrop} onPress={() => setMenu(null)} />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.md }]}>
-          <Text style={styles.sheetTitle} numberOfLines={1}>{menu?.name}</Text>
-          <Pressable
-            style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
-            onPress={() => {
-              const station = menu;
-              setMenu(null);
-              if (!station) return;
-              if (!togglePin(`radio:${station.id}`)) {
-                toast(t('You can pin up to {n} items.', { n: MAX_PINS }));
-              }
-            }}
-          >
-            <Icon
-              name={menu && pins[`radio:${menu.id}`] ? 'pin' : 'pin-outline'}
-              size={24}
-              color={colors.text}
-            />
-            <Text style={styles.actionText}>
-              {menu && pins[`radio:${menu.id}`] ? t('Unpin') : t('Pin to top')}
-            </Text>
-          </Pressable>
-          {canManage ? (
-            <>
+        {!deleting ? (
+          <>
+            <Pressable style={styles.backdrop} onPress={() => setMenu(null)} />
+            <View collapsable={false} style={[styles.sheet, { paddingBottom: insets.bottom + spacing.md }]}>
+              <GlassBackdrop radius={0} radiusTopLeft={radius.xxl} radiusTopRight={radius.xxl} tint={colors.surface} variant="prominent" />
+              <Text style={styles.sheetTitle} numberOfLines={1}>{menu?.name}</Text>
               <Pressable
                 style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
                 onPress={() => {
                   const station = menu;
                   setMenu(null);
-                  setEditForm({ station });
+                  if (!station) return;
+                  if (!togglePin(`radio:${station.id}`)) {
+                    toast(t('You can pin up to {n} items.', { n: MAX_PINS }));
+                  }
                 }}
               >
-                <Icon name="create-outline" size={24} color={colors.text} />
-                <Text style={styles.actionText}>{t('Edit station')}</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
-                onPress={() => {
-                  const station = menu;
-                  setMenu(null);
-                  setDeleting(station);
-                }}
-              >
-                <Icon name="trash-outline" size={24} color={colors.danger} />
-                <Text style={[styles.actionText, { color: colors.danger }]}>
-                  {t('Delete station')}
+                <Icon
+                  name={menu && pins[`radio:${menu.id}`] ? 'pin' : 'pin-outline'}
+                  size={24}
+                  color={colors.text}
+                />
+                <Text style={styles.actionText}>
+                  {menu && pins[`radio:${menu.id}`] ? t('Unpin') : t('Pin to top')}
                 </Text>
               </Pressable>
-            </>
-          ) : null}
-        </View>
-      </Modal>
+              {canManage ? (
+                <>
+                  <Pressable
+                    style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
+                    onPress={() => {
+                      const station = menu;
+                      setMenu(null);
+                      setEditForm({ station });
+                    }}
+                  >
+                    <Icon name="create-outline" size={24} color={colors.text} />
+                    <Text style={styles.actionText}>{t('Edit station')}</Text>
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
+                    onPress={() => {
+                      const station = menu;
+                      setMenu(null);
+                      setDeleting(station);
+                    }}
+                  >
+                    <Icon name="trash-outline" size={24} color={colors.danger} />
+                    <Text style={[styles.actionText, { color: colors.danger }]}>
+                      {t('Delete station')}
+                    </Text>
+                  </Pressable>
+                </>
+              ) : null}
+            </View>
+          </>
+        ) : null}
 
-      <Dialog
-        visible={!!deleting}
-        title={t('Delete station')}
-        message={t('Remove “{name}” from your server?', { name: deleting?.name ?? '' })}
-        confirmLabel={t('Delete')}
-        destructive
-        onCancel={() => setDeleting(null)}
-        onConfirm={() => void confirmDelete()}
-      />
+        <Dialog
+          inline
+          visible={!!deleting}
+          title={t('Delete station')}
+          message={t('Remove “{name}” from your server?', { name: deleting?.name ?? '' })}
+          confirmLabel={t('Delete')}
+          destructive
+          onCancel={() => setDeleting(null)}
+          onConfirm={() => void confirmDelete()}
+        />
+      </Modal>
     </BrowseFrame>
   );
 }
@@ -419,7 +431,7 @@ const styles = themed((colors) => ({
     marginBottom: spacing.md,
     paddingHorizontal: spacing.lg,
     borderRadius: radius.pill,
-    backgroundColor: colors.surfaceHighlight,
+    backgroundColor: 'transparent',
   },
   searchInput: { flex: 1, color: colors.text, fontSize: fontSize.md, padding: 0 },
   backdrop: { ...StyleSheet.absoluteFill, backgroundColor: colors.backdrop },
@@ -430,7 +442,7 @@ const styles = themed((colors) => ({
     alignSelf: 'center',
     width: '100%',
     maxWidth: SHEET_MAX_WIDTH,
-    backgroundColor: colors.surface,
+    backgroundColor: 'transparent',
     borderTopLeftRadius: radius.xxl,
     borderTopRightRadius: radius.xxl,
     paddingHorizontal: spacing.lg,

@@ -4,6 +4,7 @@
  * favorites, and random from the library) + a search bar at the bottom. Each
  * row has a ⊕ to favorite the song instantly (and ✓ to undo).
  */
+import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
@@ -156,14 +157,14 @@ export default function FavoritesAddScreen() {
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.topBar}>
-        <Pressable
+        <GlassPressable variant="subtle"
           hitSlop={12}
           accessibilityRole="button"
           accessibilityLabel={t('Close')}
           onPress={() => router.back()}
         >
           <Icon name="chevron-back" size={28} color={colors.text} />
-        </Pressable>
+        </GlassPressable>
         <Text style={styles.title} numberOfLines={1}>
           {t('Add to favorites')}
         </Text>
@@ -171,7 +172,8 @@ export default function FavoritesAddScreen() {
       </View>
 
       <View style={styles.searchWrap}>
-        <View style={styles.searchBox}>
+        <View collapsable={false} style={styles.searchBox}>
+          <GlassBackdrop radius={radius.pill} tint={colors.surfaceHighlight} variant="regular" />
           <Icon name="search" size={18} color={colors.textSecondary} />
           <TextInput
             style={styles.searchInput}
@@ -183,14 +185,14 @@ export default function FavoritesAddScreen() {
             autoCorrect={false}
           />
           {query.length > 0 ? (
-            <Pressable
+            <GlassPressable variant="subtle"
               hitSlop={8}
               accessibilityRole="button"
               accessibilityLabel={t('Clear')}
               onPress={() => setQuery('')}
             >
               <Icon name="close-circle" size={18} color={colors.textSecondary} />
-            </Pressable>
+            </GlassPressable>
           ) : null}
         </View>
       </View>
@@ -203,14 +205,14 @@ export default function FavoritesAddScreen() {
           style={styles.tabsWrap}
         >
           {tabs.map(({ key, label }) => (
-            <Pressable
+            <GlassPressable tint={tab === key ? colors.accent : undefined} variant={tab === key ? 'prominent' : 'regular'}
               key={key}
               accessibilityRole="button"
               onPress={() => setTab(key)}
               style={[styles.tab, tab === key && { backgroundColor: colors.accent }]}
             >
               <Text style={[styles.tabLabel, tab === key && styles.tabLabelActive]}>{label}</Text>
-            </Pressable>
+            </GlassPressable>
           ))}
         </ScrollView>
       ) : null}
@@ -345,7 +347,7 @@ const styles = themed((colors) => ({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: colors.surfaceHighlight,
+    backgroundColor: 'transparent',
     borderRadius: radius.pill,
     paddingHorizontal: spacing.lg,
     height: 46,

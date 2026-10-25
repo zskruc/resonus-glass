@@ -5,6 +5,9 @@
  * can hold songs tagged otherwise, and a song of this genre can sit inside an
  * album that isn't. Albums alone would only ever show half the picture.
  */
+import Animated from 'react-native-reanimated';
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
+import { GlassPressable, GlassScreen as SafeAreaView } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
@@ -12,12 +15,11 @@ import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
-  FlatList,
   Pressable,
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 import { useShallow } from 'zustand/react/shallow';
 
 import {
@@ -87,6 +89,7 @@ const GATHER_PAGE = 200;
 const GATHER_CAP = 5000;
 
 export default function GenreScreen() {
+  const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
@@ -345,9 +348,9 @@ export default function GenreScreen() {
         {/* While selecting, the ✕ cancels the selection and nothing else: the
             long press out of here belongs to the chevron. */}
         {selecting ? (
-          <Pressable hitSlop={10} onPress={() => setSelectedIds(null)} accessibilityLabel={t('Close')}>
+          <GlassPressable variant="subtle" hitSlop={10} onPress={() => setSelectedIds(null)} accessibilityLabel={t('Close')}>
             <Icon name="close" size={26} color={colors.text} />
-          </Pressable>
+          </GlassPressable>
         ) : (
           <BackChevron />
         )}
@@ -355,7 +358,7 @@ export default function GenreScreen() {
           {selecting ? t('{n} selected', { n: selectedIds.size }) : genre}
         </Text>
         {selecting ? (
-          <Pressable
+          <GlassPressable variant="subtle"
             hitSlop={10}
             accessibilityRole="button"
             accessibilityLabel={t('Select all')}
@@ -375,9 +378,9 @@ export default function GenreScreen() {
               // subscribes.
               color={songs.length > 0 && selectedIds.size === songs.length ? accent : colors.text}
             />
-          </Pressable>
+          </GlassPressable>
         ) : tab === 'albums' ? (
-          <Pressable
+          <GlassPressable variant="subtle"
             hitSlop={10}
             accessibilityRole="button"
             accessibilityLabel={t('View')}
@@ -388,7 +391,7 @@ export default function GenreScreen() {
                 that flips between two states reads; it opens a menu now, and a
                 menu is opened from a thing that says where you are. */}
             <Icon name={grid ? 'grid-outline' : 'list'} size={22} color={colors.textSecondary} />
-          </Pressable>
+          </GlassPressable>
         ) : null}
       </View>
 
@@ -409,7 +412,7 @@ export default function GenreScreen() {
         <View style={styles.actions}>
           <View style={styles.actionsLeft}>
             {!offline ? (
-              <Pressable
+              <GlassPressable variant="subtle"
                 hitSlop={10}
                 accessibilityRole="button"
                 accessibilityLabel={t('Download')}
@@ -432,35 +435,35 @@ export default function GenreScreen() {
                     color={colors.textSecondary}
                   />
                 )}
-              </Pressable>
+              </GlassPressable>
             ) : null}
             {/* Sorts whichever list the tab is showing, which is why it sits
                 here and not next to the tabs: it is an action on this genre,
                 same as the two beside it. */}
             {openListSort ? (
-              <Pressable
+              <GlassPressable variant="subtle"
                 hitSlop={10}
                 accessibilityRole="button"
                 accessibilityLabel={t('Sort')}
                 onPress={openListSort}
               >
                 <Icon name="swap-vertical" size={24} color={colors.textSecondary} />
-              </Pressable>
+              </GlassPressable>
             ) : null}
-            <Pressable
+            <GlassPressable variant="subtle"
               hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel={t('More options')}
               onPress={() => menuRef.current()}
             >
               <Icon name="ellipsis-horizontal" size={26} color={colors.textSecondary} />
-            </Pressable>
+            </GlassPressable>
           </View>
           <View style={styles.playRow}>
-            <Pressable hitSlop={10} onPress={onShuffle} accessibilityLabel={t('Shuffle')}>
+            <GlassPressable variant="subtle" hitSlop={10} onPress={onShuffle} accessibilityLabel={t('Shuffle')}>
               <Icon name="shuffle" size={26} color={colors.textSecondary} />
-            </Pressable>
-            <Pressable
+            </GlassPressable>
+            <GlassPressable variant="prominent" tint={accent}
               style={[styles.playButton, { backgroundColor: accent }]}
               onPress={onPlay}
               accessibilityRole="button"
@@ -471,7 +474,7 @@ export default function GenreScreen() {
               ) : (
                 <Icon name="play" size={28} color={colors.onAccent} style={{ marginLeft: 3 }} />
               )}
-            </Pressable>
+            </GlassPressable>
           </View>
         </View>
       ) : null}
@@ -484,7 +487,7 @@ export default function GenreScreen() {
       <View style={styles.toolbar}>
         <View style={styles.tabs}>
           {(['albums', 'songs'] as const).map((key) => (
-            <Pressable
+            <GlassPressable tint={tab === key ? accent : undefined} variant={tab === key ? 'prominent' : 'regular'}
               key={key}
               style={[styles.chip, tab === key && { backgroundColor: accent }]}
               onPress={() => {
@@ -495,7 +498,7 @@ export default function GenreScreen() {
               <Text style={[styles.chipText, tab === key && styles.chipTextActive]}>
                 {key === 'albums' ? t('Albums') : t('Songs')}
               </Text>
-            </Pressable>
+            </GlassPressable>
           ))}
         </View>
       </View>
@@ -512,7 +515,9 @@ export default function GenreScreen() {
           onRetry={() => query.refetch()}
         />
       ) : tab === 'songs' ? (
-        <FlatList
+        <Animated.FlatList
+          onScroll={dockScroll}
+          scrollEventThrottle={16}
           {...listPerf}
           data={songs}
           keyExtractor={(item, i) => `${item.id}-${i}`}
@@ -562,7 +567,9 @@ export default function GenreScreen() {
           }
         />
       ) : (
-        <FlatList
+        <Animated.FlatList
+          onScroll={dockScroll}
+          scrollEventThrottle={16}
           {...listPerf}
           data={albums}
           // Remount on layout change: FlatList reuses rows and gets stuck with
@@ -646,8 +653,7 @@ export default function GenreScreen() {
             <Pressable
               style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
               onPress={() => {
-                close();
-                void addGenreToPlaylist();
+                close(() => { void addGenreToPlaylist(); });
               }}
             >
               <Icon name="add-circle-outline" size={22} color={colors.text} />
@@ -661,8 +667,7 @@ export default function GenreScreen() {
             <Pressable
               style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
               onPress={() => {
-                close();
-                void deleteGenreDownloads();
+                close(() => { void deleteGenreDownloads(); });
               }}
             >
               {/* Last, but not in red: a download comes back with one tap, and

@@ -1,7 +1,8 @@
 /** Offline mode: initial setup to choose the music source. */
+import { GlassPressable, GlassScreen as SafeAreaView } from '@/components/glass';
 import Icon from '@/components/Icon';
-import { Pressable, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Text, View } from 'react-native';
+
 
 import {
   ensureAudioPermission,
@@ -39,35 +40,35 @@ export default function OfflineScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.heading}>{t('Offline mode')}</Text>
-        <Pressable
+        <GlassPressable variant="subtle"
           hitSlop={12}
           accessibilityRole="button"
           accessibilityLabel={t('Exit')}
           onPress={() => logout()}
         >
           <Icon name="exit-outline" size={24} color={colors.textSecondary} />
-        </Pressable>
+        </GlassPressable>
       </View>
       <View style={styles.setup}>
         <Text style={styles.setupTitle}>{t('Where should we get your music?')}</Text>
 
-        <Pressable style={styles.option} onPress={chooseFolder}>
+        <GlassPressable variant="regular" style={styles.option} onPress={chooseFolder}>
           <Icon name="folder-outline" size={28} color={colors.accent} />
           <View style={{ flex: 1 }}>
             <Text style={styles.optionTitle}>{t('Choose a folder (recommended)')}</Text>
             <Text style={styles.optionSub}>{t('Only the music in the folder you choose.')}</Text>
           </View>
           <Icon name="chevron-forward" size={20} color={colors.textMuted} />
-        </Pressable>
+        </GlassPressable>
 
-        <Pressable style={styles.option} onPress={chooseDevice}>
+        <GlassPressable variant="regular" style={styles.option} onPress={chooseDevice}>
           <Icon name="phone-portrait-outline" size={28} color={colors.accent} />
           <View style={{ flex: 1 }}>
             <Text style={styles.optionTitle}>{t('Scan the whole phone')}</Text>
             <Text style={styles.optionSub}>{t('All the music on your device.')}</Text>
           </View>
           <Icon name="chevron-forward" size={20} color={colors.textMuted} />
-        </Pressable>
+        </GlassPressable>
       </View>
     </SafeAreaView>
   );

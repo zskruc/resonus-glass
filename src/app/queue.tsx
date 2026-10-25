@@ -15,6 +15,7 @@
  * jump — and it survives a reorder too, which is what keeps the headers where
  * they belong when a row is dragged.
  */
+import { GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useRouter } from 'expo-router';
 import { memo, useMemo, useRef, useState } from 'react';
@@ -272,9 +273,9 @@ export default function QueueScreen() {
   return (
     <View style={[styles.safe, { paddingTop: topPad, paddingBottom: insets.bottom }]}>
       <View style={styles.header}>
-        <Pressable hitSlop={12} onPress={() => router.back()}>
+        <GlassPressable variant="subtle" hitSlop={12} onPress={() => router.back()}>
           <Icon name="chevron-down" size={28} color={colors.text} />
-        </Pressable>
+        </GlassPressable>
         <View
           style={[styles.headerCenter, { left: titleInset, right: titleInset }]}
           pointerEvents="none"
@@ -299,7 +300,7 @@ export default function QueueScreen() {
               way. It's a button, not a toggle: one that disappears on turning off
               couldn't be turned back on. To resume, you start another mix. */}
           {radioMode ? (
-            <Pressable
+            <GlassPressable variant="subtle"
               style={styles.headerAction}
               hitSlop={10}
               accessibilityRole="button"
@@ -310,10 +311,10 @@ export default function QueueScreen() {
               }}
             >
               <Icon name="sparkles" size={22} color={accent} />
-            </Pressable>
+            </GlassPressable>
           ) : null}
           {upcoming.length > 0 ? (
-            <Pressable
+            <GlassPressable variant="subtle"
               style={styles.headerAction}
               hitSlop={10}
               accessibilityRole="button"
@@ -321,10 +322,10 @@ export default function QueueScreen() {
               onPress={() => setConfirmClear(true)}
             >
               <Icon name="trash-outline" size={22} color={colors.textSecondary} />
-            </Pressable>
+            </GlassPressable>
           ) : null}
           {queue.length > 0 ? (
-            <Pressable
+            <GlassPressable variant="subtle"
               style={styles.headerAction}
               hitSlop={10}
               accessibilityRole="button"
@@ -332,7 +333,7 @@ export default function QueueScreen() {
               onPress={() => menuRef.current()}
             >
               <Icon name="ellipsis-horizontal" size={22} color={colors.text} />
-            </Pressable>
+            </GlassPressable>
           ) : null}
         </View>
       </View>
@@ -409,9 +410,10 @@ export default function QueueScreen() {
             <Pressable
               style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
               onPress={() => {
-                close();
-                const q = usePlayerStore.getState().queue;
-                if (q.length > 0) usePlaylistPicker.getState().open(q);
+                close(() => {
+                  const q = usePlayerStore.getState().queue;
+                  if (q.length > 0) usePlaylistPicker.getState().open(q);
+                });
               }}
             >
               <Icon name="add" size={24} color={colors.text} />

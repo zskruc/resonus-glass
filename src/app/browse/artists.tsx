@@ -1,5 +1,6 @@
 /** Browse all artists on the server, with quick filter. */
 /* A screen of its own and, `embedded`, the Artists section of the Explore tab. */
+import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
@@ -7,12 +8,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dimensions,
   Keyboard,
-  Pressable,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import { FlatList as GHFlatList } from 'react-native-gesture-handler';
+import Animated from 'react-native-reanimated';
 
 import { getAlbumList, getArtists, type Album, type Artist } from '@/api/data';
 import { ArtistCard } from '@/components/ArtistCard';
@@ -42,6 +43,7 @@ import { BackChevron } from '@/components/BackChevron';
 import { BrowseFrame, useSearchBox, type BrowserProps } from '@/components/BrowseFrame';
 import { BrowseToolbar } from '@/components/BrowseToolbar';
 import { useGridColumns } from '@/hooks/useGridColumns';
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
 
 // Three across is what this screen starts as (`GRID_DEFAULT_COLUMNS`), like
@@ -82,11 +84,14 @@ const FREQUENT_POOL = 50;
 /** Bar height: the box (44) plus its gap to the row below. */
 const SEARCH_H = 44 + spacing.md;
 
+const AnimatedBrowserList = Animated.createAnimatedComponent(GHFlatList<Artist>);
+
 export default function BrowseArtistsScreen() {
   return <ArtistsBrowser />;
 }
 
 export function ArtistsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) {
+  const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
@@ -223,14 +228,14 @@ export function ArtistsBrowser({ embedded, actionRef, searchOpen }: BrowserProps
   });
 
   const viewButton = (
-    <Pressable
+    <GlassPressable variant="subtle"
       hitSlop={10}
       accessibilityRole="button"
       accessibilityLabel={t('View')}
       onPress={openGridMenu}
     >
       <Icon name={grid ? 'grid-outline' : 'list'} size={20} color={colors.textSecondary} />
-    </Pressable>
+    </GlassPressable>
   );
 
   return (
@@ -249,7 +254,8 @@ export function ArtistsBrowser({ embedded, actionRef, searchOpen }: BrowserProps
           In the tab the magnifier asks for it (see `useSearchBox`). */}
       {showSearch ? (
         <View style={styles.searchRow}>
-          <View style={styles.searchBar}>
+          <View collapsable={false} style={styles.searchBar}>
+            <GlassBackdrop radius={radius.pill} tint={colors.surfaceHighlight} variant="regular" />
             <Icon name="search" size={18} color={colors.textMuted} />
             <TextInput
               style={styles.input}
@@ -264,22 +270,22 @@ export function ArtistsBrowser({ embedded, actionRef, searchOpen }: BrowserProps
               autoFocus={embedded}
             />
             {query.length > 0 ? (
-              <Pressable
+              <GlassPressable variant="subtle"
                 hitSlop={10}
                 accessibilityRole="button"
                 accessibilityLabel={t('Clear')}
                 onPress={() => setQuery('')}
               >
                 <Icon name="close-circle" size={18} color={colors.textMuted} />
-              </Pressable>
+              </GlassPressable>
             ) : null}
           </View>
           {/* Only on its own screen: in the tab the X in the header is the way
               out of the bar. */}
           {searching && !embedded ? (
-            <Pressable hitSlop={8} accessibilityRole="button" onPress={clearSearch}>
+            <GlassPressable variant="subtle" hitSlop={8} accessibilityRole="button" onPress={clearSearch}>
               <Text style={styles.searchCancel}>{t('Cancel')}</Text>
-            </Pressable>
+            </GlassPressable>
           ) : null}
         </View>
       ) : null}
@@ -296,7 +302,9 @@ export function ArtistsBrowser({ embedded, actionRef, searchOpen }: BrowserProps
       ) : isError ? (
         <Message text={t("Couldn't load artists.")} onRetry={() => refetch()} />
       ) : (
-        <GHFlatList
+        <AnimatedBrowserList
+          onScroll={dockScroll}
+          scrollEventThrottle={16}
         {...listPerf}
           ref={listRef}
           data={artists}
@@ -359,7 +367,7 @@ const styles = themed((colors) => ({
     alignItems: 'center',
     gap: spacing.sm,
     height: 44,
-    backgroundColor: colors.surfaceHighlight,
+    backgroundColor: 'transparent',
     paddingHorizontal: spacing.lg,
     borderRadius: radius.pill,
   },

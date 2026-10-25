@@ -1,6 +1,7 @@
 /** Settings › Appearance: language, theme, song lists and interface. */
+import { DockScrollView } from '@/components/DockScrollView';
 import { useRouter } from 'expo-router';
-import { ScrollView, Text } from 'react-native';
+import { Text } from 'react-native';
 
 import {
   SelectList,
@@ -78,7 +79,7 @@ export default function AppearanceSettings() {
 
   return (
     <SettingsPage title={t('Appearance')}>
-      <ScrollView contentContainerStyle={settingsStyles.content}>
+      <DockScrollView contentContainerStyle={settingsStyles.content}>
         <SettingsGroup>
           <SettingRow
             label={t('Language')}
@@ -93,8 +94,13 @@ export default function AppearanceSettings() {
             onPress={() => router.push('/settings/theme')}
           />
           <SettingRow
+            label={t('Glass tuning')}
+            chevron
+            onPress={() => router.push('/settings/glass')}
+          />
+          <SettingRow
             label={t('Font')}
-            description={APP_FONT_LABELS[appFont]}
+            description={t(APP_FONT_LABELS[appFont])}
             chevron
             onPress={() => router.push('/settings/font')}
           />
@@ -291,7 +297,7 @@ export default function AppearanceSettings() {
             ]}
           />
         </SettingsGroup>
-      </ScrollView>
+      </DockScrollView>
     </SettingsPage>
   );
 }

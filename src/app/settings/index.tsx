@@ -4,9 +4,11 @@
  * rows. Restoring every setting is in About: sitting here it looked like
  * one more category and was a tap away from the button that goes offline.
  */
+import { DockScrollView } from '@/components/DockScrollView';
+import { GlassSurface, GlassSwitch } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useRouter } from 'expo-router';
-import { Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { ScreenHeader, SettingsSafeArea, settingsStyles } from '@/components/SettingsUI';
 import { useT } from '@/i18n';
@@ -112,8 +114,8 @@ export default function SettingsScreen({ asTab = false }: { asTab?: boolean }) {
       {/* The same centred pane every other settings screen gets from
           `SettingsPage`; this one draws its own header, so it says it here. */}
       <View style={settingsStyles.pane}>
-      <ScrollView contentContainerStyle={settingsStyles.content}>
-        <View style={[settingsStyles.cardBox, styles.accountCard]}>
+      <DockScrollView contentContainerStyle={settingsStyles.content}>
+        <GlassSurface radius={radius.lg} style={[settingsStyles.cardBox, styles.accountCard]}>
           <View style={[settingsStyles.row, styles.profileRow]}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>{initial}</Text>
@@ -132,7 +134,7 @@ export default function SettingsScreen({ asTab = false }: { asTab?: boolean }) {
             <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
               <Icon name="cloud-offline-outline" size={22} color={colors.textSecondary} />
               <Text style={[settingsStyles.rowLabel, styles.flex]}>{t('Offline mode')}</Text>
-              <Switch
+              <GlassSwitch
                 value={serverOffline}
                 onValueChange={(on) => {
                   if (on) {
@@ -166,7 +168,7 @@ export default function SettingsScreen({ asTab = false }: { asTab?: boolean }) {
               {offline && !auth ? t('Exit local mode') : t('Change profile')}
             </Text>
           </Pressable>
-        </View>
+        </GlassSurface>
 
         {sections.map((s) => (
           <Pressable
@@ -187,7 +189,7 @@ export default function SettingsScreen({ asTab = false }: { asTab?: boolean }) {
           </Pressable>
         ))}
 
-      </ScrollView>
+      </DockScrollView>
       </View>
     </SettingsSafeArea>
   );

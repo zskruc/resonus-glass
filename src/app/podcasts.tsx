@@ -2,12 +2,12 @@
  * The podcasts subscribed to on this phone: a screen, and `embedded`, the
  * Podcasts section of Explore. All local, so nothing is gated on a server.
  */
+import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
   Linking,
   Modal,
   Pressable,
@@ -17,6 +17,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -35,6 +36,7 @@ import { EmptyState } from '@/components/EmptyState';
 import Icon from '@/components/Icon';
 import { Message } from '@/components/Message';
 import { PodcastAddSheet } from '@/components/PodcastAddSheet';
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
 import { useListPadding } from '@/hooks/useScreenSize';
 import { episodesLabel, useT } from '@/i18n';
@@ -74,6 +76,7 @@ function channelSubtitle(
 }
 
 export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) {
+  const dockScroll = useLiquidDockScrollHandler();
   useTheme();
   const router = useRouter();
   const bottomPad = useScreenBottomPadding();
@@ -131,9 +134,9 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
   });
 
   const addButton = (
-    <Pressable hitSlop={10} onPress={() => setAdding(true)} accessibilityLabel={t('Add podcast')}>
+    <GlassPressable variant="subtle" hitSlop={10} onPress={() => setAdding(true)} accessibilityLabel={t('Add podcast')}>
       <Icon name="add" size={28} color={colors.text} />
-    </Pressable>
+    </GlassPressable>
   );
 
   async function confirmRemove() {
@@ -160,7 +163,8 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
       )}
 
       {(embedded ? boxOpen : showSearch) ? (
-        <View style={styles.searchBar}>
+        <View collapsable={false} style={styles.searchBar}>
+          <GlassBackdrop radius={radius.pill} tint={colors.surfaceHighlight} variant="regular" />
           <Icon name="search" size={18} color={colors.textMuted} />
           <TextInput
             style={styles.searchInput}
@@ -173,9 +177,9 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
             autoFocus={embedded}
           />
           {query ? (
-            <Pressable hitSlop={8} onPress={() => setQuery('')} accessibilityLabel={t('Clear')}>
+            <GlassPressable variant="subtle" hitSlop={8} onPress={() => setQuery('')} accessibilityLabel={t('Clear')}>
               <Icon name="close-circle" size={18} color={colors.textMuted} />
-            </Pressable>
+            </GlassPressable>
           ) : null}
         </View>
       ) : null}
@@ -185,7 +189,9 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
       ) : isError ? (
         <Message text={t("Couldn't load your podcasts.")} onRetry={() => refetch()} />
       ) : (
-        <FlatList
+        <Animated.FlatList
+      onScroll={dockScroll}
+      scrollEventThrottle={16}
           {...listPerf}
           keyboardShouldPersistTaps="handled"
           data={channels}
@@ -255,69 +261,75 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
 
       <Modal
         transparent
-        visible={!!menu}
+        visible={!!menu || !!removing}
         animationType="fade"
-        onRequestClose={() => setMenu(null)}
+        onRequestClose={() => removing ? setRemoving(null) : setMenu(null)}
       >
-        <Pressable style={styles.backdrop} onPress={() => setMenu(null)} />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.md }]}>
-          <Text style={styles.sheetTitle} numberOfLines={1}>
-            {menu?.title}
-          </Text>
-          <Pressable
-            style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
-            onPress={() => {
-              const channel = menu;
-              setMenu(null);
-              if (!channel?.feedUrl) return;
-              void refreshChannel(channel.feedUrl)
-                .then(() => reload())
-                .catch(() => toast(t("Couldn't read this feed")));
-            }}
-          >
-            <Icon name="refresh" size={24} color={colors.text} />
-            <Text style={styles.actionText}>{t('Refresh')}</Text>
-          </Pressable>
-          {menu?.siteUrl ? (
-            <Pressable
-              style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
-              onPress={() => {
-                const url = menu?.siteUrl;
-                setMenu(null);
-                if (url) void Linking.openURL(url).catch(() => {});
-              }}
-            >
-              <Icon name="link-outline" size={24} color={colors.text} />
-              <Text style={styles.actionText}>{t('Open website')}</Text>
-            </Pressable>
-          ) : null}
-          <Pressable
-            style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
-            onPress={() => {
-              const channel = menu;
-              setMenu(null);
-              setRemoving(channel);
-            }}
-          >
-            <Icon name="trash-outline" size={24} color={colors.danger} />
-            <Text style={[styles.actionText, { color: colors.danger }]}>
-              {t('Unsubscribe')}
-            </Text>
-          </Pressable>
-        </View>
-      </Modal>
+        {!removing ? (
+          <>
+            <Pressable style={styles.backdrop} onPress={() => setMenu(null)} />
+            <View collapsable={false} style={[styles.sheet, { paddingBottom: insets.bottom + spacing.md }]}>
+              <GlassBackdrop radius={0} radiusTopLeft={radius.xxl} radiusTopRight={radius.xxl} tint={colors.surface} variant="prominent" />
+              <Text style={styles.sheetTitle} numberOfLines={1}>
+                {menu?.title}
+              </Text>
+              <Pressable
+                style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
+                onPress={() => {
+                  const channel = menu;
+                  setMenu(null);
+                  if (!channel?.feedUrl) return;
+                  void refreshChannel(channel.feedUrl)
+                    .then(() => reload())
+                    .catch(() => toast(t("Couldn't read this feed")));
+                }}
+              >
+                <Icon name="refresh" size={24} color={colors.text} />
+                <Text style={styles.actionText}>{t('Refresh')}</Text>
+              </Pressable>
+              {menu?.siteUrl ? (
+                <Pressable
+                  style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
+                  onPress={() => {
+                    const url = menu?.siteUrl;
+                    setMenu(null);
+                    if (url) void Linking.openURL(url).catch(() => {});
+                  }}
+                >
+                  <Icon name="link-outline" size={24} color={colors.text} />
+                  <Text style={styles.actionText}>{t('Open website')}</Text>
+                </Pressable>
+              ) : null}
+              <Pressable
+                style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
+                onPress={() => {
+                  const channel = menu;
+                  setMenu(null);
+                  setRemoving(channel);
+                }}
+              >
+                <Icon name="trash-outline" size={24} color={colors.danger} />
+                <Text style={[styles.actionText, { color: colors.danger }]}>
+                  {t('Unsubscribe')}
+                </Text>
+              </Pressable>
+            </View>
+          </>
+        ) : null}
 
-      <Dialog
-        visible={!!removing}
-        title={t('Unsubscribe')}
-        message={t('Remove “{name}” and its episodes from this device?', {
-          name: removing?.title ?? '',
-        })}
-        confirmLabel={t('Unsubscribe')}
-        destructive
-        onCancel={() => setRemoving(null)}
-        onConfirm={() => void confirmRemove()}
-      />
+        <Dialog
+          inline
+          visible={!!removing}
+          title={t('Unsubscribe')}
+          message={t('Remove “{name}” and its episodes from this device?', {
+            name: removing?.title ?? '',
+          })}
+          confirmLabel={t('Unsubscribe')}
+          destructive
+          onCancel={() => setRemoving(null)}
+          onConfirm={() => void confirmRemove()}
+        />
+      </Modal>
     </BrowseFrame>
   );
 }
@@ -349,7 +361,7 @@ const styles = themed((colors) => ({
     marginBottom: spacing.md,
     paddingHorizontal: spacing.lg,
     borderRadius: radius.pill,
-    backgroundColor: colors.surfaceHighlight,
+    backgroundColor: 'transparent',
   },
   searchInput: { flex: 1, color: colors.text, fontSize: fontSize.md, padding: 0 },
   backdrop: { ...StyleSheet.absoluteFill, backgroundColor: colors.backdrop },
@@ -360,7 +372,7 @@ const styles = themed((colors) => ({
     alignSelf: 'center',
     width: '100%',
     maxWidth: SHEET_MAX_WIDTH,
-    backgroundColor: colors.surface,
+    backgroundColor: 'transparent',
     borderTopLeftRadius: radius.xxl,
     borderTopRightRadius: radius.xxl,
     paddingHorizontal: spacing.lg,

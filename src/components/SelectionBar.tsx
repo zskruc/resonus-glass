@@ -24,8 +24,9 @@
  */
 import Icon from '@/components/Icon';
 import { useRef } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, Text } from 'react-native';
 
+import { GlassPressable, GlassSurface } from '@/components/glass';
 import { useFloatingBottom } from '@/hooks/useScreenBottomPadding';
 import { useT } from '@/i18n';
 import { colors, fontSize, radius, spacing, themed } from '@/theme';
@@ -61,7 +62,7 @@ export function SelectionBar({
 
   return (
     <>
-      <View style={[styles.bar, { bottom }]}>
+      <GlassSurface radius={radius.lg} variant="prominent" tint={colors.snackbar} style={[styles.bar, { bottom }]}>
         {shown.map((a) => (
           <BarButton key={a.label} action={a} disabled={count === 0} onPress={a.onPress} />
         ))}
@@ -72,7 +73,7 @@ export function SelectionBar({
             onPress={() => openMenu.current()}
           />
         ) : null}
-      </View>
+      </GlassSurface>
       {hasMenu ? (
         <SheetModal
           openRef={openMenu}
@@ -116,7 +117,8 @@ function BarButton({
   onPress: () => void;
 }) {
   return (
-    <Pressable
+    <GlassPressable
+      variant="subtle"
       style={({ pressed }) => [styles.action, (pressed || disabled) && { opacity: 0.5 }]}
       accessibilityRole="button"
       accessibilityLabel={action.label}
@@ -127,7 +129,7 @@ function BarButton({
       <Text style={styles.label} numberOfLines={1}>
         {action.label}
       </Text>
-    </Pressable>
+    </GlassPressable>
   );
 }
 

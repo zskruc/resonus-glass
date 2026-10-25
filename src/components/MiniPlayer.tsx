@@ -3,71 +3,101 @@
  * play/pause button; tapping it opens the player.
  */
 import Icon from '@/components/Icon';
-import { useEffect } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { useLayoutEffect, useRef, useState } from 'react';
+import { ActivityIndicator, I18nManager, Pressable, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  cancelAnimation,
   Extrapolation,
   interpolate,
+  useAnimatedReaction,
   useAnimatedStyle,
+  useDerivedValue,
   useSharedValue,
   withSpring,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
-import { COVER, songCoverUrl, type Song } from '@/api/data';
-import { useDominantColor } from '@/hooks/useDominantColor';
+import { COVER, songCoverUrl } from '@/api/data';
 import { useFavoriteIds } from '@/hooks/useFavoriteIds';
+import { COMPACT_DOCK_GAP, COMPACT_DOCK_SIZE, useLiquidDock } from '@/hooks/useLiquidDock';
 import { useT } from '@/i18n';
 import { haptic } from '@/lib/haptics';
+import { getLiquidDockGeometry } from '@/lib/liquidDock';
+import { MINI_SWIPE_TRAVEL, miniSwipeDirection, miniSwipeOffset } from '@/lib/miniPlayerSwipe';
 import { router } from 'expo-router';
 import { revealOffset } from '@/lib/playerReveal';
 import { pushOnce } from '@/lib/pushOnce';
 import { currentSong, useLiveInfo, usePlayerStore } from '@/store/player';
-import { CONTENT_MAX_WIDTH, useScreenSize } from '@/hooks/useScreenSize';
+import { useScreenSize } from '@/hooks/useScreenSize';
 import { useSettings } from '@/store/settings';
 import { useToast } from '@/store/toast';
-import { colors, fontSize, radius, spacing, themed } from '@/theme';
+import { BOTTOM_BAR_HORIZONTAL_MARGIN, BOTTOM_BAR_MAX_WIDTH, MINI_PLAYER_HEIGHT, TAB_BAR_HEIGHT, fontSize, spacing, themed, useThemeMode } from '@/theme';
 import { motion } from '@/theme/motion';
-import { BarBlur, useBarBlur } from './BarBlur';
+import { useBarBlur } from './BarBlur';
+import { FloatingGlassBackdrop } from './glass';
 import { Cover } from './Cover';
 import { FavoriteButton } from './FavoriteButton';
 import { MarqueeText } from './MarqueeText';
 
-// Gesture thresholds: a share of the width to change track, a fixed distance
-// downwards to dismiss. Measured while rendering rather than when this file was
-// first imported, so turning the phone does not leave the thresholds — and the
-// distance the card is thrown to get off screen — describing the other one (#131).
-const SWIPE_SHARE = 0.25;
+// Vertical gestures retain their existing dismissal and player-reveal behavior.
 const DISMISS_Y = 80;
+const SWIPE_RETURN = { duration: 180, easing: motion.easing.move, reduceMotion: motion.reduceMotion.decorative };
 /** How far up the finger goes before the player starts coming up after it. */
 const REVEAL_START = 12;
 /** Past this share of the screen, letting go finishes opening it. */
 const REVEAL_COMMIT = 0.2;
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-/**
- * Isolated progress bar: the only thing that subscribes to `positionSec`
- * (updated every 500ms), so the whole MiniPlayer (cover, title, favorite,
- * play) doesn't re-render 2×/sec while something is playing — only this bar.
- */
-function MiniProgress({ song }: { song: Song }) {
-  const positionSec = usePlayerStore((s) => s.positionSec);
-  const durationSec = usePlayerStore((s) => s.durationSec);
-  const duration = durationSec || song.duration || 0;
-  const progress = duration > 0 ? Math.min(1, positionSec / duration) : 0;
-  return (
-    <View style={styles.progressTrack} pointerEvents="none">
-      <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
-    </View>
-  );
+interface MiniPlayerProps {
+  active?: boolean;
+  dockProgress?: SharedValue<number>;
+  compact?: boolean;
+  hasSearch?: boolean;
+  dockEnabled?: boolean;
 }
 
-export function MiniPlayer() {
-  const { width: screenW, height: screenH, wide } = useScreenSize();
+export function MiniPlayer(props: MiniPlayerProps = {}) {
+  const { width: screenW, height: screenH } = useScreenSize();
+  const dock = useLiquidDock();
+  const dockProgress = props.dockProgress ?? dock.progress;
+  const compact = props.compact ?? dock.compact;
+  const hasSearch = props.hasSearch ?? dock.hasSearch;
+  const dockEnabled = props.dockEnabled ?? dock.enabled;
+  const targetCompact = dockEnabled && compact;
+  const visualProgress = useDerivedValue(() => dockEnabled ? Math.max(0, Math.min(1, dockProgress.get())) : 0);
+  const [settledLayout, setSettledLayout] = useState<'expanded' | 'compact' | 'moving'>(targetCompact ? 'compact' : 'expanded');
+  // Restore hidden hit targets and marquee measurement only at the final width.
+  // During the morph the title uses a normal Text with no onLayout JS callback.
+  useAnimatedReaction(
+    () => {
+      const raw = dockEnabled ? dockProgress.get() : 0;
+      return targetCompact ? raw === 1 ? 'compact' : 'moving' : raw === 0 ? 'expanded' : 'moving';
+    },
+    (ready, previous) => { if (ready !== previous) scheduleOnRN(setSettledLayout, ready); },
+    [targetCompact, dockEnabled, dockProgress],
+  );
+  const expandedControls = !targetCompact && settledLayout === 'expanded';
+  const baseMargin = Math.max(BOTTOM_BAR_HORIZONTAL_MARGIN, (screenW - BOTTOM_BAR_MAX_WIDTH) / 2);
+  const fullWidth = Math.max(0, screenW - baseMargin * 2);
+  const geometry = getLiquidDockGeometry(fullWidth, TAB_BAR_HEIGHT, COMPACT_DOCK_SIZE, COMPACT_DOCK_GAP, hasSearch, I18nManager.isRTL);
+  // Minimized navigation sits physically left and Search sits right;
+  // foreground offsets still follow React Native's logical text direction.
+  const leadingSpace = geometry.miniLogicalLeadingSpace;
+  const compactWidth = geometry.miniWidth;
+  const targetStart = targetCompact ? leadingSpace : 0;
+  const targetWidth = targetCompact ? compactWidth : fullWidth;
+  const target = targetCompact ? 1 : 0;
+  const physicalDirection = I18nManager.isRTL ? -1 : 1;
+  const dark = useThemeMode() === 'dark';
+  // Keep glyphs crisp above the lens. Offset/blurred text shadows create a
+  // second edge, especially with Android's system bold-text adjustment.
+  const foreground = dark ? '#FFFFFF' : '#111113';
   const song = usePlayerStore(currentSong);
-  // A radio saying what it plays says it here too: down here there is only room
-  // for the track and whoever is playing it, so the station stays in the player.
+  const queueIndex = usePlayerStore((s) => s.index);
+  // Radio metadata follows the current track title here; full details stay in the player.
   const live = useLiveInfo(song);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const isBuffering = usePlayerStore((s) => s.isBuffering);
@@ -76,6 +106,44 @@ export function MiniPlayer() {
   const previous = usePlayerStore((s) => s.previous);
   const reset = usePlayerStore((s) => s.reset);
   const t = useT();
+  const buttons = useSettings((s) => s.miniPlayerButtons);
+  const hasSecondary = buttons !== 'none';
+  const hasPrevious = buttons === 'previousNext';
+  const expandedCoverStart = spacing.lg;
+  const compactCoverStart = leadingSpace + 10;
+  const coverDistance = compactCoverStart - expandedCoverStart;
+  const expandedInfoStart = expandedCoverStart + 30 + spacing.sm;
+  const compactInfoStart = compactCoverStart + 30 + spacing.sm;
+  const infoDistance = compactInfoStart - expandedInfoStart;
+  const expandedPlayStart = fullWidth - spacing.lg - 32 - (hasSecondary ? 32 + spacing.sm : 0);
+  const compactPlayStart = leadingSpace + compactWidth - 10 - 32;
+  const playDistance = compactPlayStart - expandedPlayStart;
+  const targetCoverStart = expandedCoverStart + coverDistance * target - targetStart;
+  const targetInfoStart = expandedInfoStart + infoDistance * target - targetStart;
+  const targetPlayStart = expandedPlayStart + playDistance * target - targetStart;
+  const expandedInfoWidth = Math.max(0, expandedPlayStart - (hasPrevious ? 32 + spacing.sm : 0) - spacing.sm - expandedInfoStart);
+  const compactInfoWidth = Math.max(0, compactPlayStart - spacing.sm - compactInfoStart);
+  // A narrow transition width prevents a restored long title from covering
+  // the moving play button. Restore each full endpoint width only on settling.
+  const targetInfoWidth = expandedControls ? expandedInfoWidth
+    : targetCompact && settledLayout === 'compact' ? compactInfoWidth
+      : Math.min(expandedInfoWidth, compactInfoWidth);
+  // Endpoint layout changes once per target. The inverse translation keeps
+  // the one live foreground at its interpolated position without remeasuring
+  // text, resizing controls, or stretching fonts on every animation frame.
+  const coverMotion = useAnimatedStyle(() => ({
+    transform: [{ translateX: physicalDirection * coverDistance * (visualProgress.get() - target) }],
+  }));
+  const titleMotion = useAnimatedStyle(() => ({
+    transform: [{ translateX: physicalDirection * infoDistance * (visualProgress.get() - target) }],
+  }));
+  const playMotion = useAnimatedStyle(() => ({
+    transform: [{ translateX: physicalDirection * playDistance * (visualProgress.get() - target) }],
+  }));
+  const secondaryMotion = useAnimatedStyle(() => ({
+    opacity: 1 - visualProgress.get(),
+    transform: [{ translateX: physicalDirection * playDistance * (visualProgress.get() - target) }],
+  }));
 
   // Mini-player gestures: swipe left → next, swipe right → previous (same as
   // the player carousel), swipe down → dismiss (stop and clear), swipe up →
@@ -83,6 +151,9 @@ export function MiniPlayer() {
   // diagonal movement.
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
+  const gestureAxis = useSharedValue(0);
+  const dragging = useSharedValue(false);
+  const contentOpacity = useSharedValue(1);
   // Pulled up, the player comes with the finger (see `playerReveal`): it is
   // opened with no animation and `revealOffset` places it.
   const revealing = useSharedValue(false);
@@ -95,14 +166,21 @@ export function MiniPlayer() {
   };
   const pan = Gesture.Pan()
     .minDistance(10)
+    .onStart((e) => {
+      // Lock once: a diagonal finger path cannot alternate between skip and reveal.
+      gestureAxis.value = Math.abs(e.translationX) >= Math.abs(e.translationY) ? 1 : 2;
+      dragging.value = true;
+      cancelAnimation(translateX);
+      cancelAnimation(translateY);
+    })
     .onUpdate((e) => {
       // Once the player is coming up, the pull is only ever vertical.
       if (revealing.value) {
         revealOffset.value = Math.min(screenH, Math.max(0, screenH + e.translationY + REVEAL_START));
         return;
       }
-      if (Math.abs(e.translationX) > Math.abs(e.translationY)) {
-        translateX.value = e.translationX;
+      if (gestureAxis.value === 1) {
+        translateX.value = miniSwipeOffset(e.translationX);
         translateY.value = 0;
       } else if (e.translationY >= 0) {
         translateY.value = e.translationY;
@@ -117,13 +195,17 @@ export function MiniPlayer() {
         }
       }
     })
-    .onEnd((e) => {
-      const horizontal = !revealing.value && Math.abs(e.translationX) > Math.abs(e.translationY);
+    .onEnd((e, success) => {
+      if (!success) return;
+      dragging.value = false;
+      const horizontal = !revealing.value && gestureAxis.value === 1;
       if (horizontal) {
-        const swipeX = screenW * SWIPE_SHARE;
-        if (e.translationX < -swipeX || e.velocityX < -800) scheduleOnRN(next);
-        else if (e.translationX > swipeX || e.velocityX > 800) scheduleOnRN(previous);
-        translateX.value = withSpring(0, { damping: 20, stiffness: 200 });
+        const width = fullWidth + (compactWidth - fullWidth) * visualProgress.get();
+        const direction = miniSwipeDirection(e.translationX, e.velocityX, width);
+        if (direction === -1) scheduleOnRN(next);
+        else if (direction === 1) scheduleOnRN(previous);
+        // Always settle, including the queue boundary or a previous-song restart.
+        translateX.value = withTiming(0, SWIPE_RETURN);
         translateY.value = 0;
       } else if (revealing.value) {
         revealing.value = false;
@@ -143,14 +225,22 @@ export function MiniPlayer() {
           if (finished) scheduleOnRN(reset);
         });
       } else {
-        translateX.value = withSpring(0, { damping: 20, stiffness: 200 });
+        translateX.value = withTiming(0, SWIPE_RETURN);
         translateY.value = withSpring(0, { damping: 20, stiffness: 200 });
       }
     })
     // A pull that was cut off (the system took the touch) still ends somewhere:
     // opened, since the player is already up on the screen.
-    .onFinalize(() => {
-      if (!revealing.value) return;
+    .onFinalize((_e, success) => {
+      dragging.value = false;
+      gestureAxis.value = 0;
+      if (!revealing.value) {
+        if (!success) {
+          translateX.value = withTiming(0, SWIPE_RETURN);
+          translateY.value = withSpring(0, { damping: 20, stiffness: 200 });
+        }
+        return;
+      }
       revealing.value = false;
       revealOffset.value = withTiming(0, { duration: motion.duration.move }, () => {
         revealOffset.value = -1;
@@ -161,36 +251,36 @@ export function MiniPlayer() {
     transform: [{ translateY: translateY.value }],
     opacity: interpolate(translateY.value, [0, screenW * 0.6], [1, 0], Extrapolation.CLAMP),
   }));
-  // On horizontal swipe the bar stays fixed: only the song details slide/fade,
-  // to read as "changing track", not as dismissing.
+  // Each moving detail clips inside its own frame; the dock's geometry stays fixed.
   const detailsStyle = useAnimatedStyle(() => ({
+    opacity: contentOpacity.value * interpolate(Math.abs(translateX.value), [0, MINI_SWIPE_TRAVEL], [1, 0.65], Extrapolation.CLAMP),
+  }));
+  const coverSwipeStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
-    opacity: interpolate(Math.abs(translateX.value), [0, screenW * 0.5], [1, 0.15], Extrapolation.CLAMP),
+  }));
+  const titleSwipeStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
   }));
 
-  // When the song changes (or playback resumes) we return the card to its place
-  // in case it was offset from a previous gesture.
-  useEffect(() => {
-    translateX.value = 0;
-    translateY.value = 0;
-  }, [song?.id, translateX, translateY]);
+  const trackKey = `${queueIndex}:${song?.id ?? ''}`;
+  const lastTrack = useRef(trackKey);
+  // Store commits can be delayed or keep the same song. Never await a skip or
+  // hide the UI waiting for playback; animate only an actual current-item change.
+  useLayoutEffect(() => {
+    if (lastTrack.current === trackKey) return;
+    lastTrack.current = trackKey;
+    contentOpacity.value = 0.65;
+    contentOpacity.value = withTiming(1, { ...SWIPE_RETURN, duration: 160 });
+    if (!dragging.value) {
+      translateX.value = withTiming(0, SWIPE_RETURN);
+      translateY.value = withSpring(0, { damping: 20, stiffness: 200 });
+    }
+  }, [trackKey, contentOpacity, dragging, translateX, translateY]);
 
   // A radio has no album, but the station may carry its own image.
   const cover = song ? songCoverUrl(song, COVER.thumb) : undefined;
-  // Dominant color from the cover art, if the setting is active; otherwise neutral surface.
-  const miniColor = useSettings((s) => s.miniPlayerColorBackground);
   const marqueeTitles = useSettings((s) => s.marqueeTitles);
-  // The palette is extracted from the SAME image the player uses (600px):
-  // with different sizes the quantization picks different colors and the mini
-  // ended up one color and the player screen another for the same song.
-  const colorSource = song
-    ? songCoverUrl(song, COVER.card)
-    : undefined;
-  const dominant = useDominantColor(miniColor ? colorSource : undefined);
-  const bg = miniColor ? dominant : colors.surfaceHighlight;
   const blur = useBarBlur('miniPlayer');
-  const buttons = useSettings((s) => s.miniPlayerButtons);
-  const showProgress = useSettings((s) => s.miniPlayerProgress);
   // Not "unless the file is on the phone": see the player screen, which had the
   // same test in the same two places and the same hole under it.
   const favIds = useFavoriteIds(!!song && buttons === 'favorite');
@@ -202,146 +292,120 @@ export function MiniPlayer() {
   const favorited = favIds ? favIds.has(song.id) : !!song.starred;
 
   return (
-    <GestureDetector gesture={pan}>
-      <Animated.View style={cardStyle}>
-        {/* It stops growing on a wide screen. Across a tablet the title ends
-            up alone on the left with the buttons a forearm away on the right,
-            and nothing about a bar with three things in it needs 1280 points
-            (#131). */}
-        {/* The shadow sits outside the card, which clips its own contents. */}
-        <View style={[styles.card, wide && styles.narrow]}>
-        <Pressable
-          style={[styles.container, { backgroundColor: blur ? 'transparent' : bg }]}
-          onPress={() => pushOnce('/player')}
-        >
-          {blur ? <BarBlur tint={bg} alpha={0.55} /> : null}
-      <Animated.View style={[styles.details, detailsStyle]}>
-        <Cover uri={cover} size={44} placeholderIcon={song.url ? 'radio' : 'musical-notes'} />
-        <View style={styles.info}>
-          <MarqueeText
-            text={live?.title ?? song.title}
-            style={styles.title}
-            enabled={marqueeTitles}
-          />
-          {live?.artist ?? song.artist ? (
-            <Text style={styles.artist} numberOfLines={1}>
-              {live?.artist ?? song.artist}
-            </Text>
-          ) : null}
-        </View>
-      </Animated.View>
-      {buttons === 'favorite' ? <FavoriteButton id={song.id} starred={favorited} size={24} /> : null}
-      {buttons === 'previousNext' ? (
-        <Pressable
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel={t('Previous')}
-          onPress={(e) => {
-            e.stopPropagation();
-            previous();
-          }}
-        >
-          <Icon name="play-skip-back" size={24} color={colors.text} />
-        </Pressable>
-      ) : null}
-      <Pressable
-        hitSlop={12}
-        accessibilityRole="button"
-        accessibilityLabel={isPlaying ? t('Pause') : t('Play')}
-        onPress={(e) => {
-          e.stopPropagation();
-          toggle();
-        }}
-        // Real stop: stops and clears queue, mini player, and notification.
-        onLongPress={() => {
-          haptic('medium');
-          void usePlayerStore
-            .getState()
-            .stopAndClear()
-            .then((undo) => {
-              if (undo) {
-                useToast.getState().show(t('Playback stopped'), { label: t('Undo'), run: undo });
-              }
-            });
-        }}
-      >
-        {isBuffering ? (
-          <ActivityIndicator size="small" color={colors.text} style={styles.spinner} />
-        ) : (
-          <Icon
-            name={isPlaying ? 'pause' : 'play'}
-            size={28}
-            color={colors.text}
-          />
-        )}
-      </Pressable>
-      {buttons === 'next' || buttons === 'previousNext' ? (
-        <Pressable
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel={t('Next')}
-          onPress={(e) => {
-            e.stopPropagation();
-            next();
-          }}
-        >
-          <Icon name="play-skip-forward" size={24} color={colors.text} />
-        </Pressable>
-      ) : null}
-
-          {showProgress ? <MiniProgress song={song} /> : null}
-        </Pressable>
-        </View>
-      </Animated.View>
-    </GestureDetector>
+    <View pointerEvents="box-none" style={[styles.frame, { marginStart: baseMargin, marginEnd: baseMargin }]}>
+      <GestureDetector gesture={pan}>
+        <Animated.View pointerEvents="box-none" collapsable={false} style={[styles.card, cardStyle]}>
+          {/* Native material morphs inside fixed bounds. It must not inherit
+              the one-time hit rectangle's compact width a second time. */}
+          <FloatingGlassBackdrop target="miniPlayer" radius={MINI_PLAYER_HEIGHT / 2} blurred={blur}
+            dockProgress={visualProgress} dockExpandedWidth={fullWidth}
+            dockCompactWidth={dockEnabled ? compactWidth : fullWidth} dockCompactHeight={MINI_PLAYER_HEIGHT}
+            dockCompactOffsetX={dockEnabled ? geometry.miniPhysicalOffsetX : 0} />
+          <Pressable
+            collapsable={false}
+            style={[styles.hitArea, { start: targetStart, width: targetWidth }]}
+            onPress={() => pushOnce('/player')}
+          >
+            <Animated.View pointerEvents="none" style={[styles.details, detailsStyle]}>
+              <Animated.View style={[styles.artwork, { start: targetCoverStart }, coverMotion]}>
+                <Animated.View style={coverSwipeStyle}>
+                  <Cover uri={cover} size={30} transition={0} autoplay={props.active ?? true}
+                    style={styles.cover} placeholderIcon={song.url ? 'radio' : 'musical-notes'} />
+                </Animated.View>
+              </Animated.View>
+              <Animated.View style={[styles.titleFrame, { start: targetInfoStart, width: targetInfoWidth }, titleMotion]}>
+                <Animated.View style={[styles.titleContent, titleSwipeStyle]}>
+                  {marqueeTitles && expandedControls && (props.active ?? true) ? <MarqueeText
+                    text={live?.title ?? song.title}
+                    style={[styles.title, { color: foreground }]}
+                    enabled
+                  /> : <Text style={[styles.title, { color: foreground }]} numberOfLines={1}>
+                    {live?.title ?? song.title}
+                  </Text>}
+                </Animated.View>
+              </Animated.View>
+            </Animated.View>
+            {buttons === 'previousNext' ? (
+              <Animated.View style={[styles.secondary, { start: targetPlayStart - 32 - spacing.sm }, secondaryMotion]}
+                pointerEvents={expandedControls ? 'auto' : 'none'} accessibilityElementsHidden={!expandedControls}
+                importantForAccessibility={expandedControls ? 'auto' : 'no-hide-descendants'}>
+                <Pressable style={styles.control} hitSlop={4} accessibilityRole="button" accessibilityLabel={t('Previous')}
+                  onPress={(event) => { event.stopPropagation(); previous(); }}>
+                  <Icon name="play-back" size={28} color={foreground} />
+                </Pressable>
+              </Animated.View>
+            ) : null}
+            <AnimatedPressable
+              style={[styles.control, styles.playControl, { start: targetPlayStart }, playMotion]}
+              hitSlop={4}
+              accessibilityRole="button"
+              accessibilityLabel={isPlaying ? t('Pause') : t('Play')}
+              onPress={(event) => { event.stopPropagation(); toggle(); }}
+              // Real stop: stops and clears queue, mini player, and notification.
+              onLongPress={() => {
+                haptic('medium');
+                void usePlayerStore
+                  .getState()
+                  .stopAndClear()
+                  .then((undo) => {
+                    if (undo) {
+                      useToast.getState().show(t('Playback stopped'), { label: t('Undo'), run: undo });
+                    }
+                  });
+              }}
+            >
+              {isBuffering ? (
+                <ActivityIndicator size="small" color={foreground} style={styles.spinner} />
+              ) : (
+                <Icon name={isPlaying ? 'pause' : 'play'} size={24} color={foreground} />
+              )}
+            </AnimatedPressable>
+            {buttons === 'favorite' ? (
+              <Animated.View style={[styles.secondary, { start: targetPlayStart + 32 + spacing.sm }, secondaryMotion]}
+                pointerEvents={expandedControls ? 'auto' : 'none'} accessibilityElementsHidden={!expandedControls}
+                importantForAccessibility={expandedControls ? 'auto' : 'no-hide-descendants'}>
+                <View style={styles.control}>
+                  <FavoriteButton id={song.id} starred={favorited} size={24} unselectedColor={foreground} />
+                </View>
+              </Animated.View>
+            ) : null}
+            {buttons === 'next' || buttons === 'previousNext' ? (
+              <Animated.View style={[styles.secondary, { start: targetPlayStart + 32 + spacing.sm }, secondaryMotion]}
+                pointerEvents={expandedControls ? 'auto' : 'none'} accessibilityElementsHidden={!expandedControls}
+                importantForAccessibility={expandedControls ? 'auto' : 'no-hide-descendants'}>
+                <Pressable style={styles.control} hitSlop={4} accessibilityRole="button" accessibilityLabel={t('Next')}
+                  onPress={(event) => { event.stopPropagation(); next(); }}>
+                  <Icon name="play-forward" size={28} color={foreground} />
+                </Pressable>
+              </Animated.View>
+            ) : null}
+          </Pressable>
+        </Animated.View>
+      </GestureDetector>
+    </View>
   );
 }
 
 const styles = themed((colors) => ({
-  card: {
-    marginHorizontal: spacing.sm,
-    borderRadius: radius.lg,
-    boxShadow: '0px 6px 16px rgba(0, 0, 0, 0.3)',
-  },
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    backgroundColor: colors.surfaceHighlight,
-    padding: spacing.sm,
-    borderRadius: radius.lg,
-    overflow: 'hidden',
-  },
-  /** Centred and no wider than a wide screen wants it. */
-  narrow: { maxWidth: CONTENT_MAX_WIDTH, width: '100%', alignSelf: 'center' },
-  progressTrack: {
-    position: 'absolute',
-    left: 14,
-    right: 14,
-    bottom: 0,
-    height: 3,
-    borderRadius: radius.pill,
-    backgroundColor: colors.highlight,
-    overflow: 'hidden',
-  },
-  progressFill: { height: 3, borderRadius: radius.pill, backgroundColor: colors.text },
-  spinner: { width: 28, height: 28 },
-  details: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  info: {
-    flex: 1,
-  },
+  frame: { height: MINI_PLAYER_HEIGHT },
+  card: { width: '100%', height: MINI_PLAYER_HEIGHT },
+  // This rectangle changes only when the target changes. The wide decorative
+  // host is box-none, so compact navigation/search retain their own hit areas.
+  hitArea: { position: 'absolute', top: 0, height: MINI_PLAYER_HEIGHT, borderRadius: MINI_PLAYER_HEIGHT / 2 },
+  details: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 },
+  artwork: { position: 'absolute', top: 9, width: 30, height: 30, borderRadius: 4, overflow: 'hidden' },
+  cover: { borderRadius: 4 },
+  titleFrame: { position: 'absolute', top: (MINI_PLAYER_HEIGHT - 20) / 2, height: 20, overflow: 'hidden' },
+  titleContent: { width: '100%', height: 20 },
+  secondary: { position: 'absolute', top: 8, width: 32, height: 32, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  playControl: { position: 'absolute', top: 8 },
+  control: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  spinner: { width: 24, height: 24 },
   title: {
     color: colors.text,
     fontSize: fontSize.sm,
-    fontWeight: '500',
-  },
-  artist: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
+    lineHeight: 20,
+    includeFontPadding: false,
+    fontWeight: '400',
   },
 }));

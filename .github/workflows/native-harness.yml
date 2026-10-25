@@ -11,7 +11,7 @@ on:
       - pnpm-lock.yaml
       - .github/workflows/native-harness.yml
   push:
-    branches: [main]
+    branches: [glass, main]
     paths:
       - patches/expo-audio.patch
       - scripts/native-harness/**
@@ -31,6 +31,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v6
         with:
           version: 11

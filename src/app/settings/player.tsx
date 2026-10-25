@@ -1,9 +1,18 @@
 /** Settings › Player: looks and extras for the playback screen. */
+import { DockScrollView } from '@/components/DockScrollView';
 import { useRouter } from 'expo-router';
-import { ScrollView, Text } from 'react-native';
+import { Platform, Text } from 'react-native';
 
 import { canBlurBars } from '@/components/BarBlur';
-import { SelectList, SettingRow, SettingsGroup, SettingsPage, settingsStyles, SwitchList } from '@/components/SettingsUI';
+import {
+  SelectList,
+  SettingRow,
+  SettingsGroup,
+  SettingsPage,
+  settingsStyles,
+  SliderRow,
+  SwitchList,
+} from '@/components/SettingsUI';
 import { useLocalProfile } from '@/hooks/useLocalProfile';
 import { useT } from '@/i18n';
 import { useAuthStore } from '@/store/auth';
@@ -13,7 +22,9 @@ import {
   type CoverDoubleTapAction,
   type CoverTapAction,
   type LyricsAlign,
-  type LyricsSize,
+  LYRICS_SIZE_MAX,
+  LYRICS_SIZE_MIN,
+  type LyricsWeight,
   type MiniPlayerButtons,
   type LyricsSource,
   type ScreenBackground,
@@ -67,18 +78,18 @@ export default function PlayerSettings() {
   const setFitCoverArt = useSettings((s) => s.setFitCoverArt);
   const animatedCoverBackground = useSettings((s) => s.animatedCoverBackground);
   const setAnimatedCoverBackground = useSettings((s) => s.setAnimatedCoverBackground);
-  const miniPlayerColorBackground = useSettings((s) => s.miniPlayerColorBackground);
   const blurMiniPlayer = useSettings((s) => s.blurMiniPlayer);
-  const miniPlayerProgress = useSettings((s) => s.miniPlayerProgress);
-  const setMiniPlayerProgress = useSettings((s) => s.setMiniPlayerProgress);
   const miniPlayerButtons = useSettings((s) => s.miniPlayerButtons);
   const setMiniPlayerButtons = useSettings((s) => s.setMiniPlayerButtons);
   const lyricsSize = useSettings((s) => s.lyricsSize);
   const setLyricsSize = useSettings((s) => s.setLyricsSize);
+  const lyricsWeight = useSettings((s) => s.lyricsWeight);
+  const setLyricsWeight = useSettings((s) => s.setLyricsWeight);
   const lyricsAlign = useSettings((s) => s.lyricsAlign);
   const setLyricsAlign = useSettings((s) => s.setLyricsAlign);
+  const blurInactiveLyrics = useSettings((s) => s.blurInactiveLyrics);
+  const setBlurInactiveLyrics = useSettings((s) => s.setBlurInactiveLyrics);
   const setBlurMiniPlayer = useSettings((s) => s.setBlurMiniPlayer);
-  const setMiniPlayerColorBackground = useSettings((s) => s.setMiniPlayerColorBackground);
   const lyricsBackground = useSettings((s) => s.lyricsBackground);
   const setLyricsBackground = useSettings((s) => s.setLyricsBackground);
   const lyricsCardBackground = useSettings((s) => s.lyricsCardBackground);
@@ -104,7 +115,7 @@ export default function PlayerSettings() {
 
   return (
     <SettingsPage title={t('Player')}>
-      <ScrollView contentContainerStyle={settingsStyles.content}>
+      <DockScrollView contentContainerStyle={settingsStyles.content}>
         {/* The first title sticks to the header (no section margin). */}
         <Text style={[settingsStyles.sectionTitle, { marginTop: 0 }]}>{t('Background')}</Text>
         <SelectList<ScreenBackground>
@@ -122,11 +133,6 @@ export default function PlayerSettings() {
         <SettingsGroup>
           <SwitchList
             options={[
-              {
-                label: t('Colored mini player'),
-                value: miniPlayerColorBackground,
-                onChange: setMiniPlayerColorBackground,
-              },
               // Android draws the blur from Android 12 on (see `BarBlur`).
               ...(canBlurBars
                 ? [
@@ -137,11 +143,6 @@ export default function PlayerSettings() {
                     },
                   ]
                 : []),
-              {
-                label: t('Show progress bar'),
-                value: miniPlayerProgress,
-                onChange: setMiniPlayerProgress,
-              },
             ]}
           />
           <SelectList<MiniPlayerButtons>
@@ -304,15 +305,26 @@ export default function PlayerSettings() {
             value={lyricsSource}
             onChange={setLyricsSource}
           />
-          <SelectList<LyricsSize>
+          <SliderRow
             label={t('Lyrics size')}
-            options={[
-              { value: 'small', label: t('Small') },
-              { value: 'normal', label: t('Normal') },
-              { value: 'large', label: t('Large') },
-            ]}
             value={lyricsSize}
+            min={LYRICS_SIZE_MIN}
+            max={LYRICS_SIZE_MAX}
+            step={1}
+            formatValue={(value) => `${Math.round(value)}`}
             onChange={setLyricsSize}
+          />
+          <SelectList<LyricsWeight>
+            label={t('Lyrics weight')}
+            options={[
+              { value: '300', label: t('Light font weight') },
+              { value: '400', label: t('Regular font weight') },
+              { value: '500', label: t('Medium font weight') },
+              { value: '600', label: t('Semi-bold font weight') },
+              { value: '700', label: t('Bold font weight') },
+            ]}
+            value={lyricsWeight}
+            onChange={setLyricsWeight}
           />
           <SelectList<LyricsAlign>
             label={t('Lyrics alignment')}
@@ -325,6 +337,18 @@ export default function PlayerSettings() {
           />
           <SwitchList
             options={[
+              ...(Platform.OS === 'android'
+                ? [
+                    {
+                      label: t('Blur inactive lyrics'),
+                      description: t(
+                        'Slightly blur synchronized lyrics other than the current line to emphasize what is playing.',
+                      ),
+                      value: blurInactiveLyrics,
+                      onChange: setBlurInactiveLyrics,
+                    },
+                  ]
+                : []),
               {
                 label: t('Show lyrics card'),
                 value: showLyricsCard,
@@ -352,7 +376,7 @@ export default function PlayerSettings() {
             onChange={setLyricsCardBackground}
           />
         </SettingsGroup>
-      </ScrollView>
+      </DockScrollView>
     </SettingsPage>
   );
 }

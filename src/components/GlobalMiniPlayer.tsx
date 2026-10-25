@@ -5,13 +5,14 @@
  * instead of disappearing instantly, to avoid flickering while the modal slides up.
  */
 import { useSegments } from 'expo-router';
-import { useEffect, useRef } from 'react';
-import { Animated } from 'react-native';
+import { useEffect, useLayoutEffect, useState } from 'react';
+import Animated, { useAnimatedReaction, useAnimatedStyle, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { NO_MINI_PLAYER, useTabBarShown } from '@/hooks/useTabBar';
+import { COMPACT_DOCK_SIZE, useLiquidDock } from '@/hooks/useLiquidDock';
 import { motion } from '@/theme/motion';
-import { MINI_PLAYER_GAP, spacing, TAB_BAR_HEIGHT } from '@/theme';
+import { MINI_PLAYER_GAP, MINI_PLAYER_HEIGHT, spacing, TAB_BAR_BOTTOM_GAP, TAB_BAR_HEIGHT } from '@/theme';
 import { MiniPlayer } from './MiniPlayer';
 
 export function GlobalMiniPlayer() {
@@ -21,33 +22,56 @@ export function GlobalMiniPlayer() {
   // Above the navigation bar wherever there is one, which with the setting on
   // is nearly everywhere and not only inside the tabs (see `useTabBarShown`).
   const withBar = useTabBarShown();
+  const dock = useLiquidDock();
+  const { progress, uiEnabled } = dock;
 
   // favorites-add too: its search bar lives at the bottom and the mini would
   // cover it. The list is shared because whatever floats at the bottom (the
   // toast, the multi-select bar) has to know where the mini is not.
   const visible = !NO_MINI_PLAYER.includes(root as string);
-  const bottom = withBar ? TAB_BAR_HEIGHT + MINI_PLAYER_GAP + insets.bottom : insets.bottom + spacing.sm;
+  const bottom = withBar ? TAB_BAR_BOTTOM_GAP + TAB_BAR_HEIGHT + MINI_PLAYER_GAP + insets.bottom : insets.bottom + spacing.sm;
 
   // Keep the last visible position so it doesn't jump while fading out
   // when opening a full-screen modal.
-  const lastBottom = useRef(bottom);
-  if (visible) lastBottom.current = bottom;
-
-  const opacity = useRef(new Animated.Value(1)).current;
+  // Freeze both geometry and target while a full-screen player covers the dock.
+  // The provider resets on the new route; the outgoing mini must stay in place.
+  const [lastDock, setLastDock] = useState({ bottom, compact: dock.compact, hasSearch: dock.hasSearch, enabled: dock.enabled });
+  if (visible && (lastDock.bottom !== bottom || lastDock.compact !== dock.compact
+    || lastDock.hasSearch !== dock.hasSearch || lastDock.enabled !== dock.enabled)) {
+    setLastDock({ bottom, compact: dock.compact, hasSearch: dock.hasSearch, enabled: dock.enabled });
+  }
+  const uiVisible = useSharedValue(visible);
+  // Child layout effects run before the provider resets the new route. Mark the
+  // outgoing mini frozen first, even before animated worklet effects refresh.
+  useLayoutEffect(() => { uiVisible.set(visible); }, [visible, uiVisible]);
+  const frozenProgress = useSharedValue(0);
+  useAnimatedReaction(
+    () => uiVisible.get() ? (uiEnabled.get() ? progress.get() : 0) : null,
+    (value) => { if (value !== null) frozenProgress.set(value); },
+  );
+  const visualProgress = useDerivedValue(() => uiVisible.get()
+    ? (uiEnabled.get() ? progress.get() : 0) : frozenProgress.get());
+  const opacity = useSharedValue(1);
   useEffect(() => {
-    Animated.timing(opacity, {
-      toValue: visible ? 1 : 0,
+    opacity.set(withTiming(visible ? 1 : 0, {
       duration: motion.duration.fade,
-      useNativeDriver: true,
-    }).start();
+      reduceMotion: motion.reduceMotion.decorative,
+    }));
   }, [visible, opacity]);
+  const expandedBottom = visible ? bottom : lastDock.bottom;
+  const compactBottom = insets.bottom + TAB_BAR_BOTTOM_GAP + (COMPACT_DOCK_SIZE - MINI_PLAYER_HEIGHT) / 2;
+  const style = useAnimatedStyle(() => ({
+    transform: [{ translateY: (expandedBottom - compactBottom) * Math.max(0, Math.min(1, visualProgress.get())) }],
+    opacity: opacity.get(),
+  }), [expandedBottom, compactBottom]);
 
   return (
     <Animated.View
-      style={{ position: 'absolute', left: 0, right: 0, bottom: lastBottom.current, opacity }}
+      style={[{ position: 'absolute', left: 0, right: 0, bottom: expandedBottom }, style]}
       pointerEvents={visible ? 'box-none' : 'none'}
     >
-      <MiniPlayer />
+      <MiniPlayer active={visible} dockProgress={visualProgress} compact={visible ? dock.compact : lastDock.compact}
+        hasSearch={visible ? dock.hasSearch : lastDock.hasSearch} dockEnabled={visible ? dock.enabled : lastDock.enabled} />
     </Animated.View>
   );
 }

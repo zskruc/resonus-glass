@@ -1,6 +1,6 @@
 name: Checks
 
-# Types, lint and the unit tests, on every pull request and every push to main.
+# Types, lint and the unit tests, on pull requests and pushes to glass or main.
 # Nothing else in CI compiled the app's TypeScript: a pull request could break
 # the build and nobody would know until the next release tried to make an APK.
 #
@@ -13,7 +13,8 @@ name: Checks
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [glass, main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -27,6 +28,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v6
         with:
           version: 11

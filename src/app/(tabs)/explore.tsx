@@ -29,10 +29,11 @@
  * for something you do now and then. It is the one "Your library" has, in the
  * same place and with the same two ways out of it, Back included.
  */
+import { GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { BackHandler, Pressable, ScrollView, Text, View } from 'react-native';
+import { BackHandler, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AlbumsBrowser } from '@/app/browse/albums';
@@ -192,7 +193,7 @@ export default function ExploreScreen() {
           {/* The magnifier of "Your library", to the letter: it becomes the X
               that closes the bar, so the bar itself needs no Cancel beside it. */}
           {searchable ? (
-            <Pressable
+            <GlassPressable variant="subtle"
               hitSlop={12}
               accessibilityRole="button"
               accessibilityLabel={searchOpen ? t('Close') : t('Search')}
@@ -203,10 +204,10 @@ export default function ExploreScreen() {
                 size={24}
                 color={searchOpen ? accent : colors.text}
               />
-            </Pressable>
+            </GlassPressable>
           ) : null}
           {headerButton ? (
-            <Pressable
+            <GlassPressable variant="subtle"
               hitSlop={12}
               accessibilityRole="button"
               accessibilityLabel={headerButton.label}
@@ -217,7 +218,7 @@ export default function ExploreScreen() {
                 size={headerButton.size}
                 color={headerButton.color}
               />
-            </Pressable>
+            </GlassPressable>
           ) : null}
         </View>
       </View>
@@ -231,7 +232,7 @@ export default function ExploreScreen() {
         {sections.map((key) => {
           const active = key === current;
           return (
-            <Pressable
+            <GlassPressable tint={active ? accent : undefined} variant={active ? 'prominent' : 'regular'}
               key={key}
               style={[styles.segment, active && { backgroundColor: accent }]}
               accessibilityRole="button"
@@ -247,7 +248,7 @@ export default function ExploreScreen() {
               <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
                 {t(LABEL[key])}
               </Text>
-            </Pressable>
+            </GlassPressable>
           );
         })}
       </ScrollView>

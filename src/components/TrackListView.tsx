@@ -3,6 +3,7 @@
  * and a collapsing fixed bar) and the song list. Shared by album and playlist
  * screens.
  */
+import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Link, useRouter } from 'expo-router';
@@ -17,9 +18,19 @@ import {
   Text,
   TextInput,
   View,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
 } from 'react-native';
+import Reanimated, {
+  Extrapolation,
+  interpolate,
+  useAnimatedReaction,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useComposedEventHandler,
+  useDerivedValue,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 // The list must use gesture-handler so the row swipe-to-queue doesn't fight
 // the vertical scroll (with RN's FlatList the gesture is flaky).
 import {
@@ -33,6 +44,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type Song, type StarType } from '@/api/subsonic';
 import { useCoverTint } from '@/hooks/useDominantColor';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { centredPadding, useScreenSize } from '@/hooks/useScreenSize';
 import { useSelectionMenu } from '@/hooks/useSelectionMenu';
 import { useT } from '@/i18n';
@@ -85,7 +97,7 @@ const DESCRIPTION_LINES = 2;
  * own rather than added to the scroll (mixing the two in one expression is what
  * would break both).
  */
-const AnimatedList = Animated.createAnimatedComponent(GHFlatList) as typeof GHFlatList;
+const AnimatedList = Reanimated.createAnimatedComponent(GHFlatList<Song>);
 
 /** Normalizes for searching: lowercase and without accents. */
 function normQ(s: string): string {
@@ -239,10 +251,10 @@ export function TrackListView({
   // A cover read for the first time fades its tint in over the page, instead
   // of the header being painted the plain grey and jumping to the colour a
   // moment later. One already read is there from the first frame.
-  const tintIn = useRef(new Animated.Value(tint.known ? 1 : 0)).current;
+  const tintIn = useSharedValue(tint.known ? 1 : 0);
   useEffect(() => {
     if (!tint.known) return;
-    Animated.timing(tintIn, { toValue: 1, duration: motion.duration.fade, useNativeDriver: true }).start();
+    tintIn.set(withTiming(1, { duration: motion.duration.fade, reduceMotion: motion.reduceMotion.decorative }));
   }, [tint.known, tintIn]);
   const headerColor = accentColor ?? dominant;
   const shuffle = usePlayerStore((s) => s.shuffle);
@@ -273,7 +285,12 @@ export function TrackListView({
         ? () => router.push(`/artist/${subtitleTargets[0].id}`)
         : undefined;
 
-  const scrollY = useRef(new Animated.Value(0)).current;
+  const scrollY = useSharedValue(0);
+  const headerScroll = useAnimatedScrollHandler({
+    onScroll: (event) => { scrollY.set(event.contentOffset.y); },
+  });
+  const dockScroll = useLiquidDockScrollHandler();
+  const onScroll = useComposedEventHandler([headerScroll, dockScroll]);
 
   // ── In-list search ──────────────────────────────────────────────────────
   // The bar is rendered collapsed (height 0) above the header; a pull-down
@@ -285,8 +302,6 @@ export function TrackListView({
   const [revealed, setRevealed] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [descriptionHasMore, setDescriptionHasMore] = useState(false);
-  /** Last real scroll offset (the gesture only reveals at the top). */
-  const lastOffsetY = useRef(0);
   const searchH = useRef(new Animated.Value(0)).current;
   const searchBar = !!searchable && songs.length > 0;
 
@@ -309,21 +324,36 @@ export function TrackListView({
     Animated.timing(searchH, { toValue: 0, duration: motion.duration.fade, useNativeDriver: false }).start();
   }
 
+  // Only the search state transition reaches JS; header and dock scrolling
+  // share one UI-thread event instead of forwarding every scroll sample.
+  useAnimatedReaction(
+    () => revealed && !searching && scrollY.get() > 30,
+    (shouldCollapse, previous) => {
+      if (shouldCollapse && !previous) scheduleOnRN(collapseSearchBar);
+    },
+  );
+
   // Simultaneous pan with the list scroll: doesn't steal the gesture, just
   // observes. Android doesn't fire overscroll events (the list clamps offset
   // at 0), so the "pull down at the top" must be detected separately. The
   // simultaneity is declared on the list (simultaneousHandlers prop with the
   // gesture ref): without it, native scroll cancels this Pan before it starts.
   const revealPanRef = useRef<GestureType | undefined>(undefined);
+  const revealSent = useSharedValue(false);
   const revealPan = Gesture.Pan()
     .withRef(revealPanRef)
-    .runOnJS(true)
+    .enabled(searchBar && !searching && !revealed)
     // Only downward drags: upward ones (normal scroll) cancel it.
     .activeOffsetY(10)
     .failOffsetY(-10)
+    .onBegin(() => { revealSent.set(false); })
     .onChange((e) => {
-      if (!searchBar || searching || revealed) return;
-      if (lastOffsetY.current <= 1 && e.translationY > 60) revealSearchBar();
+      // Ordinary scrolling stays on the UI thread. Only one actual reveal
+      // crosses to JS, without synchronously reading a shared value there.
+      if (!revealSent.get() && scrollY.get() <= 1 && e.translationY > 60) {
+        revealSent.set(true);
+        scheduleOnRN(revealSearchBar);
+      }
     });
 
   // ── Multi-select ────────────────────────────────────────────────────────
@@ -424,21 +454,17 @@ export function TrackListView({
   // and not only the space around the cover.
   const gradientH = insets.top + TOPBAR_H + cover + 280;
   const band = searchable ? SEARCH_H * 4 : 0;
-  const coverOpacity = scrollY.interpolate({
-    inputRange: [0, collapse * 0.7],
-    outputRange: [1, 0],
-    extrapolate: 'clamp',
-  });
-  const barContentOpacity = scrollY.interpolate({
-    inputRange: [collapse * 0.5, collapse * 0.85],
-    outputRange: [0, 1],
-    extrapolate: 'clamp',
-  });
-  const barBgOpacity = scrollY.interpolate({
-    inputRange: [0, collapse * 0.85],
-    outputRange: [0, 1],
-    extrapolate: 'clamp',
-  });
+  const coverStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.get(), [0, collapse * 0.7], [1, 0], Extrapolation.CLAMP),
+  }));
+  const barContentStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.get(), [collapse * 0.5, collapse * 0.85], [0, 1], Extrapolation.CLAMP),
+  }));
+  const barBgOpacity = useDerivedValue(() =>
+    interpolate(scrollY.get(), [0, collapse * 0.85], [0, 1], Extrapolation.CLAMP));
+  const gradientStyle = useAnimatedStyle(() => ({
+    opacity: tintIn.get(), transform: [{ translateY: -Math.max(scrollY.get(), 0) }],
+  }));
 
   // Live filtering; preserves each song's original index so play/enqueue/remove
   // still point to the correct position.
@@ -495,11 +521,11 @@ export function TrackListView({
             },
           ]}
         >
-          <Animated.View
+          <Reanimated.View
             style={[
               StyleSheet.absoluteFill,
               // And follows the scroll 1:1, natively.
-              { opacity: tintIn, transform: [{ translateY: Animated.multiply(scrollY, -1) }] },
+              gradientStyle,
             ]}
           >
             {/* Color band above the gradient: when the search bar is revealed,
@@ -513,7 +539,7 @@ export function TrackListView({
               {...easedFade(headerColor, colors.background)}
               style={[StyleSheet.absoluteFill, { top: band }]}
             />
-          </Animated.View>
+          </Reanimated.View>
         </Animated.View>
       )}
 
@@ -522,6 +548,10 @@ export function TrackListView({
         ref={listRef}
         simultaneousHandlers={revealPanRef}
         {...listPerf}
+        // Keep three screens of overscan on either side. These swipeable rows
+        // also belong to the glass capture tree, so retaining five screens in
+        // each direction adds native traversal work on every captured frame.
+        windowSize={7}
         // Each row mounts a ReanimatedSwipeable (gestures + reanimated); with
         // `removeClippedSubviews` (known Android bug) those heavy rows render
         // blank and take a while to appear when scrolling large lists.
@@ -545,17 +575,7 @@ export function TrackListView({
           },
         ]}
         scrollEventThrottle={16}
-        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
-          // The listener still runs on this side: a native event is delivered to
-          // JS as well, it just no longer has to be for the animation to move.
-          useNativeDriver: true,
-          listener: (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-            const y = e.nativeEvent.contentOffset.y;
-            lastOffsetY.current = y;
-            // Scrolling down with the bar open collapses it.
-            if (revealed && !searching && y > 30) collapseSearchBar();
-          },
-        })}
+        onScroll={onScroll}
         ListHeaderComponent={
           <View>
             {searchBar ? (
@@ -564,7 +584,8 @@ export function TrackListView({
                  minimum height and show a sliver. */
               <Animated.View style={[styles.searchClip, { height: searchH }]}>
               <View style={styles.searchRow}>
-                <View style={styles.searchBox}>
+                <View collapsable={false} style={styles.searchBox}>
+                  <GlassBackdrop radius={radius.pill} tint={colors.highlight} variant="regular" />
                   <Icon name="search" size={18} color={colors.textSecondary} />
                   <TextInput
                     style={styles.searchInput}
@@ -577,20 +598,20 @@ export function TrackListView({
                     autoCorrect={false}
                   />
                   {query.length > 0 ? (
-                    <Pressable
+                    <GlassPressable variant="subtle"
                       hitSlop={8}
                       accessibilityRole="button"
                       accessibilityLabel={t('Clear')}
                       onPress={() => setQuery('')}
                     >
                       <Icon name="close-circle" size={18} color={colors.textSecondary} />
-                    </Pressable>
+                    </GlassPressable>
                   ) : null}
                 </View>
                 {searching ? (
-                  <Pressable hitSlop={8} accessibilityRole="button" onPress={cancelSearch}>
+                  <GlassPressable variant="subtle" hitSlop={8} accessibilityRole="button" onPress={cancelSearch}>
                     <Text style={styles.searchCancel}>{t('Cancel')}</Text>
-                  </Pressable>
+                  </GlassPressable>
                 ) : null}
               </View>
               </Animated.View>
@@ -600,7 +621,7 @@ export function TrackListView({
             {searching ? null : (
           <View style={styles.header}>
             {hideCover ? null : (
-              <Animated.View style={[styles.coverCenter, { opacity: coverOpacity }]}>
+              <Reanimated.View style={[styles.coverCenter, coverStyle]}>
                 {onCoverPress ? (
                   <Pressable
                     onPress={onCoverPress}
@@ -614,21 +635,21 @@ export function TrackListView({
                 ) : (
                   <Cover uri={coverUri} size={art} />
                 )}
-              </Animated.View>
+              </Reanimated.View>
             )}
             <Text style={styles.title} numberOfLines={2}>
               {title}
             </Text>
             {subtitle ? (
               onSubtitlePress ? (
-                <Pressable hitSlop={6} style={styles.subtitleRow} onPress={onSubtitlePress}>
+                <GlassPressable variant="subtle" hitSlop={6} style={styles.subtitleRow} onPress={onSubtitlePress}>
                   {artistImageUri ? (
                     <View style={styles.artistPhoto}>
                       <Cover uri={artistImageUri} size={24} />
                     </View>
                   ) : null}
                   <Text style={[styles.subtitle, styles.subtitleLink]}>{subtitle}</Text>
-                </Pressable>
+                </GlassPressable>
               ) : (
                 <Text style={styles.subtitle}>{subtitle}</Text>
               )
@@ -653,7 +674,7 @@ export function TrackListView({
                   {description.trim()}
                 </Text>
                 {descriptionHasMore ? (
-                  <Pressable
+                  <GlassPressable variant="subtle"
                     accessibilityRole="button"
                     onPress={() => setDescriptionExpanded((v) => !v)}
                     style={styles.descriptionMore}
@@ -662,7 +683,7 @@ export function TrackListView({
                     <Text style={styles.descriptionMoreText}>
                       {descriptionExpanded ? t('Show less') : t('Show more')}
                     </Text>
-                  </Pressable>
+                  </GlassPressable>
                 ) : null}
               </View>
             ) : null}
@@ -685,9 +706,9 @@ export function TrackListView({
               >
                 {genres.map((g) => (
                   <Link key={g} href={`/genre/${encodeURIComponent(g)}`} asChild>
-                    <Pressable style={styles.genreChip}>
+                    <GlassPressable variant="subtle" style={styles.genreChip}>
                       <Text style={styles.genreText}>{g}</Text>
-                    </Pressable>
+                    </GlassPressable>
                   </Link>
                 ))}
               </ScrollView>
@@ -704,7 +725,7 @@ export function TrackListView({
                   />
                 ) : null}
                 {download ? (
-                  <Pressable
+                  <GlassPressable variant="subtle"
                     hitSlop={10}
                     accessibilityRole="button"
                     accessibilityLabel={
@@ -731,32 +752,32 @@ export function TrackListView({
                         color={download.status === 'done' ? colors.accent : colors.textSecondary}
                       />
                     )}
-                  </Pressable>
+                  </GlassPressable>
                 ) : null}
                 {onSort ? (
-                  <Pressable
+                  <GlassPressable variant="subtle"
                     hitSlop={10}
                     accessibilityRole="button"
                     accessibilityLabel={t('Sort')}
                     onPress={onSort}
                   >
                     <Icon name="swap-vertical" size={24} color={colors.textSecondary} />
-                  </Pressable>
+                  </GlassPressable>
                 ) : null}
                 {onMenu ? (
-                  <Pressable
+                  <GlassPressable variant="subtle"
                     hitSlop={10}
                     accessibilityRole="button"
                     accessibilityLabel={t('More options')}
                     onPress={onMenu}
                   >
                     <Icon name="ellipsis-horizontal" size={26} color={colors.textSecondary} />
-                  </Pressable>
+                  </GlassPressable>
                 ) : null}
               </View>
 
               <View style={styles.actionsRight}>
-                <Pressable
+                <GlassPressable variant="subtle"
                   hitSlop={10}
                   accessibilityRole="button"
                   accessibilityLabel={t('Shuffle')}
@@ -767,8 +788,8 @@ export function TrackListView({
                     size={26}
                     color={shuffleActive ? colors.accent : colors.textSecondary}
                   />
-                </Pressable>
-                <Pressable
+                </GlassPressable>
+                <GlassPressable variant="prominent" tint={colors.accent}
                   style={[styles.playButton, { backgroundColor: colors.accent }]}
                   accessibilityRole="button"
                   accessibilityLabel={t('Play')}
@@ -779,12 +800,12 @@ export function TrackListView({
                     size={28}
                     color={colors.onAccent}
                   />
-                </Pressable>
+                </GlassPressable>
               </View>
             </View>
 
             {addAction ? (
-              <Pressable
+              <GlassPressable variant="regular"
                 accessibilityRole="button"
                 onPress={addAction.onPress}
                 style={({ pressed }) => [styles.addRow, pressed && { opacity: 0.6 }]}
@@ -797,7 +818,7 @@ export function TrackListView({
                   />
                 </View>
                 <Text style={styles.addLabel}>{addAction.label}</Text>
-              </Pressable>
+              </GlassPressable>
             ) : null}
           </View>
             )}
@@ -873,18 +894,18 @@ export function TrackListView({
         {selecting ? (
           <>
             <View style={[StyleSheet.absoluteFill, { backgroundColor: headerColor }]} />
-            <Pressable
+            <GlassPressable variant="subtle"
               hitSlop={12}
               accessibilityRole="button"
               accessibilityLabel={t('Close')}
               onPress={() => setSelectedIds(null)}
             >
               <Icon name="close" size={26} color={colors.text} />
-            </Pressable>
+            </GlassPressable>
             <Text style={styles.barTitle} numberOfLines={1}>
               {t('{n} selected', { n: selectedIds.size })}
             </Text>
-            <Pressable
+            <GlassPressable variant="subtle"
               hitSlop={12}
               accessibilityRole="button"
               accessibilityLabel={t('Select all')}
@@ -897,18 +918,18 @@ export function TrackListView({
                 size={24}
                 color={allSelected ? colors.accent : colors.text}
               />
-            </Pressable>
+            </GlassPressable>
           </>
         ) : (
           <>
             <TopBarBackground color={headerColor} opacity={barBgOpacity} />
             <BackChevron size={28} label={t('Close')} />
-            <Animated.Text
-              style={[styles.barTitleCentered, { top: insets.top + 10, opacity: barContentOpacity }]}
+            <Reanimated.Text
+              style={[styles.barTitleCentered, { top: insets.top + 10 }, barContentStyle]}
               numberOfLines={1}
             >
               {title}
-            </Animated.Text>
+            </Reanimated.Text>
           </>
         )}
       </View>
@@ -977,7 +998,7 @@ const styles = themed((colors) => ({
     alignItems: 'center',
     gap: spacing.sm,
     // Translucent to let the header's dominant color through (Spotify).
-    backgroundColor: colors.highlight,
+    backgroundColor: 'transparent',
     borderRadius: radius.pill,
     paddingHorizontal: spacing.lg,
     height: 44,

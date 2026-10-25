@@ -1,4 +1,5 @@
 /** Sign in: server type selection + credentials. */
+import { GlassBackdrop, GlassPressable, GlassSwitch, GlassScreen as SafeAreaView } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { Image } from 'expo-image';
 import { useState } from 'react';
@@ -9,12 +10,10 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Switch,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   type OfflineProfile,
@@ -86,9 +85,9 @@ function ProfileRow({ profile, onTap, onRemove }: {
             </Text>
           </View>
         </Pressable>
-        <Pressable hitSlop={10} onPress={onRemove}>
+        <GlassPressable variant="subtle" hitSlop={10} onPress={onRemove}>
           <Icon name="close" size={20} color={colors.textMuted} />
-        </Pressable>
+        </GlassPressable>
       </View>
     );
   }
@@ -109,9 +108,9 @@ function ProfileRow({ profile, onTap, onRemove }: {
           </Text>
         </View>
       </Pressable>
-      <Pressable hitSlop={10} onPress={onRemove}>
+      <GlassPressable variant="subtle" hitSlop={10} onPress={onRemove}>
         <Icon name="close" size={20} color={colors.textMuted} />
-      </Pressable>
+      </GlassPressable>
     </View>
   );
 }
@@ -239,7 +238,7 @@ export default function LoginScreen() {
                   language of it. In its own native name, so it is legible to
                   whoever is looking for it. */}
               <View style={styles.topBar}>
-                <Pressable
+                <GlassPressable
                   style={styles.langBtn}
                   accessibilityRole="button"
                   accessibilityLabel={t('Language')}
@@ -247,7 +246,7 @@ export default function LoginScreen() {
                 >
                   <Icon name="globe-outline" size={16} color={colors.textSecondary} />
                   <Text style={styles.langBtnText}>{LANGUAGE_NAME[language]}</Text>
-                </Pressable>
+                </GlassPressable>
               </View>
               <View style={styles.hero}>
                 <Image source={APP_ICON} style={styles.appIcon} contentFit="cover" />
@@ -266,39 +265,39 @@ export default function LoginScreen() {
                     />
                   ))}
                   {overflow ? (
-                    <Pressable style={styles.showMore} onPress={() => setShowAll(true)}>
+                    <GlassPressable style={styles.showMore} onPress={() => setShowAll(true)}>
                       <Text style={styles.showMoreText}>{t('Show all')}</Text>
                       {/* The brand green, not the accent: on login the accent
                           may still be a previous session's. */}
                       <Icon name="chevron-down" size={18} color={colors.brand} />
-                    </Pressable>
+                    </GlassPressable>
                   ) : null}
                 </View>
               ) : null}
 
-              <Pressable style={styles.addAccount} onPress={() => setStep('server')}>
+              <GlassPressable variant="prominent" tint={colors.brand} style={styles.addAccount} onPress={() => setStep('server')}>
                 <Icon name="add" size={22} color={colors.background} />
                 <Text style={styles.addAccountText}>{t('Add profile')}</Text>
-              </Pressable>
+              </GlassPressable>
             </>
           ) : step === 'server' ? (
             <>
               <View style={styles.topBar}>
-                <Pressable
+                <GlassPressable
                   style={styles.backBtn}
                   onPress={goBack}
                   hitSlop={12}
                   accessibilityLabel={t('Back')}
                 >
                   <Icon name="chevron-back" size={26} color={colors.text} />
-                </Pressable>
+                </GlassPressable>
               </View>
               <Text style={styles.stepTitle}>{t('Add profile')}</Text>
               <Text style={styles.stepHint}>{t('Choose the server type')}</Text>
 
               <View style={styles.srvList}>
                 {SERVERS.map((s) => (
-                  <Pressable
+                  <GlassPressable
                     key={s.key}
                     style={[styles.srvRow, s.soon && styles.srvRowDisabled]}
                     onPress={() =>
@@ -315,9 +314,9 @@ export default function LoginScreen() {
                     {s.soon ? null : (
                       <Icon name="chevron-forward" size={20} color={colors.textMuted} />
                     )}
-                  </Pressable>
+                  </GlassPressable>
                 ))}
-                <Pressable style={styles.srvRow} onPress={() => pickServer('local')}>
+                <GlassPressable style={styles.srvRow} onPress={() => pickServer('local')}>
                   <View style={styles.srvLocalIcon}>
                     <Icon name="phone-portrait-outline" size={26} color={colors.accent} />
                   </View>
@@ -329,20 +328,20 @@ export default function LoginScreen() {
                     <Text style={styles.srvSub}>{t('Music on your device')}</Text>
                   </View>
                   <Icon name="chevron-forward" size={20} color={colors.textMuted} />
-                </Pressable>
+                </GlassPressable>
               </View>
             </>
           ) : (
             <>
               <View style={styles.topBar}>
-                <Pressable
+                <GlassPressable
                   style={styles.backBtn}
                   onPress={goBack}
                   hitSlop={12}
                   accessibilityLabel={t('Back')}
                 >
                   <Icon name="chevron-back" size={26} color={colors.text} />
-                </Pressable>
+                </GlassPressable>
               </View>
               <View style={styles.serverHero}>
                 {isLocal ? (
@@ -362,27 +361,28 @@ export default function LoginScreen() {
                     {t('Listen to music stored on your device, without a server. Choose where from:')}
                   </Text>
 
-                  <Pressable style={styles.localOption} onPress={startLocalFolder}>
+                  <GlassPressable style={styles.localOption} onPress={startLocalFolder}>
                     <Icon name="folder-outline" size={26} color={colors.accent} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.localOptTitle}>{t('Choose a folder (recommended)')}</Text>
                       <Text style={styles.localOptSub}>{t('Only the music in the folder you choose.')}</Text>
                     </View>
                     <Icon name="chevron-forward" size={20} color={colors.textMuted} />
-                  </Pressable>
+                  </GlassPressable>
 
-                  <Pressable style={styles.localOption} onPress={startLocalDevice}>
+                  <GlassPressable style={styles.localOption} onPress={startLocalDevice}>
                     <Icon name="phone-portrait-outline" size={26} color={colors.accent} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.localOptTitle}>{t('Scan the whole phone')}</Text>
                       <Text style={styles.localOptSub}>{t('All the music on your device.')}</Text>
                     </View>
                     <Icon name="chevron-forward" size={20} color={colors.textMuted} />
-                  </Pressable>
+                  </GlassPressable>
                 </View>
               ) : (
                 <View style={styles.form}>
-                  <View style={styles.inputRow}>
+                  <View collapsable={false} style={[styles.inputRow, { backgroundColor: 'transparent' }]}>
+                    <GlassBackdrop radius={radius.md} tint={colors.surfaceHighlight} />
                     <Icon name="globe-outline" size={20} color={colors.textMuted} />
                     <TextInput
                       style={styles.inputFlex}
@@ -395,7 +395,8 @@ export default function LoginScreen() {
                       onChangeText={setServerUrl}
                     />
                   </View>
-                  <View style={styles.inputRow}>
+                  <View collapsable={false} style={[styles.inputRow, { backgroundColor: 'transparent' }]}>
+                    <GlassBackdrop radius={radius.md} tint={colors.surfaceHighlight} />
                     <Icon name="person-outline" size={20} color={colors.textMuted} />
                     <TextInput
                       style={styles.inputFlex}
@@ -407,7 +408,8 @@ export default function LoginScreen() {
                       onChangeText={setUsername}
                     />
                   </View>
-                  <View style={styles.inputRow}>
+                  <View collapsable={false} style={[styles.inputRow, { backgroundColor: 'transparent' }]}>
+                    <GlassBackdrop radius={radius.md} tint={colors.surfaceHighlight} />
                     <Icon name="lock-closed-outline" size={20} color={colors.textMuted} />
                     <TextInput
                       style={styles.inputFlex}
@@ -423,7 +425,7 @@ export default function LoginScreen() {
 
                   {supportsPlainAuth ? (
                     <View>
-                      <Pressable
+                      <GlassPressable
                         style={styles.advancedToggle}
                         onPress={() => setShowAdvanced((v) => !v)}
                       >
@@ -433,7 +435,7 @@ export default function LoginScreen() {
                           size={16}
                           color={colors.textSecondary}
                         />
-                      </Pressable>
+                      </GlassPressable>
                       {showAdvanced ? (
                         <View style={styles.switchRow}>
                           <View style={{ flex: 1 }}>
@@ -444,7 +446,7 @@ export default function LoginScreen() {
                               {t('Sends the password directly instead of a salted token. Only enable it if your server sits behind a reverse proxy or SSO that requires it.')}
                             </Text>
                           </View>
-                          <Switch
+                          <GlassSwitch
                             value={plainAuth}
                             onValueChange={setPlainAuth}
                             trackColor={{ false: colors.control, true: colors.accent }}
@@ -457,7 +459,7 @@ export default function LoginScreen() {
 
                   {error ? <Text style={styles.error}>{error}</Text> : null}
 
-                  <Pressable
+                  <GlassPressable variant="prominent" tint={colors.accent}
                     style={[
                       styles.button,
                       { backgroundColor: colors.accent },
@@ -471,7 +473,7 @@ export default function LoginScreen() {
                     ) : (
                       <Text style={styles.buttonText}>{t('Sign in')}</Text>
                     )}
-                  </Pressable>
+                  </GlassPressable>
                 </View>
               )}
             </>
@@ -488,9 +490,9 @@ export default function LoginScreen() {
         <SafeAreaView style={styles.modalSafe} edges={['top']}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>{t('Saved profiles')}</Text>
-            <Pressable hitSlop={12} onPress={() => setShowAll(false)}>
+            <GlassPressable variant="subtle" hitSlop={12} onPress={() => setShowAll(false)}>
               <Text style={styles.modalDone}>{t('Close')}</Text>
-            </Pressable>
+            </GlassPressable>
           </View>
           <ScrollView contentContainerStyle={styles.modalList}>
             {profiles.map((p, i) => (
@@ -517,9 +519,9 @@ export default function LoginScreen() {
         <SafeAreaView style={styles.modalSafe} edges={['top']}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>{t('Language')}</Text>
-            <Pressable hitSlop={12} onPress={() => setShowLanguages(false)}>
+            <GlassPressable variant="subtle" hitSlop={12} onPress={() => setShowLanguages(false)}>
               <Text style={styles.modalDone}>{t('Close')}</Text>
-            </Pressable>
+            </GlassPressable>
           </View>
           <ScrollView contentContainerStyle={styles.modalList}>
             {SORTED_LANGUAGES.map((l) => (

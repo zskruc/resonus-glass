@@ -47,6 +47,7 @@ import {
 // Not the global `fetch`: it never resolves in the background. See the note
 // in `src/api/subsonic.ts`.
 import { fetch } from 'expo/fetch';
+import { untilAborted } from './deadline';
 import { assertCanRequest } from './netGate';
 import { netTally } from '@/lib/perfLog';
 
@@ -206,6 +207,27 @@ async function request<T>(
       signal: controller.signal,
     });
   } catch {
+    clearTimeout(timer);
+    if (controller.signal.aborted) {
+      throw new SubsonicRequestError(tg('Server took too long to respond'), true);
+    }
+    throw new SubsonicRequestError(tg('Could not connect to the server'), true);
+  }
+
+  if (res.status === 401) {
+    clearTimeout(timer);
+    throw new SubsonicRequestError(tg('Session expired: sign in again'), false);
+  }
+  if (!res.ok) {
+    clearTimeout(timer);
+    throw new SubsonicRequestError(`Network error (${res.status})`, false, res.status);
+  }
+  // The deadline covers reading the body too: `expo/fetch` resolves on the
+  // headers, and nothing under it would ever give up on a stalled answer.
+  let text: string;
+  try {
+    text = await Promise.race([res.text(), untilAborted(controller.signal)]);
+  } catch {
     if (controller.signal.aborted) {
       throw new SubsonicRequestError(tg('Server took too long to respond'), true);
     }
@@ -213,12 +235,6 @@ async function request<T>(
   } finally {
     clearTimeout(timer);
   }
-
-  if (res.status === 401) {
-    throw new SubsonicRequestError(tg('Session expired: sign in again'), false);
-  }
-  if (!res.ok) throw new SubsonicRequestError(`Network error (${res.status})`, false, res.status);
-  const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
@@ -251,17 +267,27 @@ export async function makeAuth(
       signal: controller.signal,
     });
   } catch {
+    clearTimeout(timer);
     if (controller.signal.aborted) {
       throw new Error(tg('Server took too long to respond'));
     }
     throw new Error(tg('Could not connect to the server'));
+  }
+
+  if (res.status === 401 || !res.ok) clearTimeout(timer);
+  if (res.status === 401) throw new Error(tg('Wrong username or password'));
+  if (!res.ok) throw new Error(`Network error (${res.status})`);
+  // Read under the same deadline (see `request`).
+  let data: { AccessToken?: string; User?: { Id?: string } };
+  try {
+    data = (await Promise.race([res.json(), untilAborted(controller.signal)])) as typeof data;
+  } catch {
+    throw new Error(
+      tg(controller.signal.aborted ? 'Server took too long to respond' : 'Unexpected server response'),
+    );
   } finally {
     clearTimeout(timer);
   }
-
-  if (res.status === 401) throw new Error(tg('Wrong username or password'));
-  if (!res.ok) throw new Error(`Network error (${res.status})`);
-  const data = (await res.json()) as { AccessToken?: string; User?: { Id?: string } };
   if (!data.AccessToken || !data.User?.Id) {
     throw new Error(tg('Unexpected server response'));
   }

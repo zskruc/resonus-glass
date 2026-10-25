@@ -1,4 +1,5 @@
 /** Spotify-style Home: quick access tiles + album carousels. */
+import { GlassBackdrop, GlassPressable, GlassScreen as SafeAreaView } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, router } from 'expo-router';
@@ -13,7 +14,8 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import Animated from 'react-native-reanimated';
+
 
 import {
   COVER,
@@ -40,6 +42,7 @@ import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { PlaylistCard } from '@/components/PlaylistCard';
 import { PodcastEpisodeCard } from '@/components/PodcastEpisodeCard';
 import { TrackRow } from '@/components/TrackRow';
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
 import { columnsFor, useScreenSize } from '@/hooks/useScreenSize';
 import { songsLabel, useT } from '@/i18n';
@@ -105,7 +108,7 @@ function QuickTile({
     <Link href={href} asChild>
       {/* Flattened, not an array: expo-router hands the style straight to the
           child it clones and refuses a list. */}
-      <Pressable style={StyleSheet.flatten([styles.tile, { width }])}>
+      <GlassPressable variant="subtle" style={StyleSheet.flatten([styles.tile, { width }])}>
         {favorites ? (
           <FavoritesArt size={52} square />
         ) : (
@@ -114,7 +117,7 @@ function QuickTile({
         <Text style={styles.tileText} numberOfLines={2}>
           {name}
         </Text>
-      </Pressable>
+      </GlassPressable>
     </Link>
   );
 }
@@ -296,12 +299,16 @@ const MOST_PLAYED_SONGS = 30;
 /** How many songs each "page" in the song list carousel shows. */
 const SONG_PAGE_SIZE = 3;
 
+/** Wide screens show several pages instead of stretching a song row. */
+const SONG_PAGE_MAX = 420;
+
 /**
  * A horizontal carousel of small vertical song lists.
  *
  * Each page is a slightly narrower-than-screen card holding up to
  * SONG_PAGE_SIZE TrackRow items. Swiping reveals the next page peeking from
- * the right, inviting the user to scroll.
+ * the right, inviting the user to scroll. Only the pages near the screen
+ * are mounted.
  */
 function SongListCarousel({
   songs,
@@ -318,25 +325,35 @@ function SongListCarousel({
   const playQueue = usePlayerStore((s) => s.playQueue);
   const showArtwork = useSettings((s) => s.showListArtwork);
 
-  const pageWidth = Math.round(screenWidth * 0.85);
+  const pageWidth = Math.min(Math.round(screenWidth * 0.85), SONG_PAGE_MAX);
   const gap = spacing.md;
   const pages: Song[][] = [];
   for (let i = 0; i < songs.length; i += SONG_PAGE_SIZE) {
     pages.push(songs.slice(i, i + SONG_PAGE_SIZE));
   }
+  const onScreen = Math.ceil(screenWidth / (pageWidth + gap)) + 1;
 
   return (
-    <ScrollView
+    <FlatList
       horizontal
-      pagingEnabled
+      data={pages}
+      keyExtractor={(_, pi) => String(pi)}
+      extraData={currentId}
+      initialNumToRender={onScreen}
+      maxToRenderPerBatch={onScreen}
+      windowSize={3}
+      getItemLayout={(_, pi) => ({
+        length: pageWidth + gap,
+        offset: spacing.lg + (pageWidth + gap) * pi,
+        index: pi,
+      })}
       decelerationRate="fast"
       snapToInterval={pageWidth + gap}
       snapToAlignment="start"
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ paddingHorizontal: spacing.lg, gap }}
-    >
-      {pages.map((page, pi) => (
-        <View key={pi} style={[songListStyles.page, { width: pageWidth }]}>
+      contentContainerStyle={{ paddingHorizontal: spacing.lg }}
+      renderItem={({ item: page, index: pi }) => (
+        <View style={[songListStyles.page, { width: pageWidth, marginRight: gap }]}>
           {page.map((song, ri) => {
             const globalIndex = pi * SONG_PAGE_SIZE + ri;
             return (
@@ -356,8 +373,8 @@ function SongListCarousel({
             );
           })}
         </View>
-      ))}
-    </ScrollView>
+      )}
+    />
   );
 }
 
@@ -695,7 +712,7 @@ function HomeChips({ offline }: { offline: boolean }) {
         // you asked for.
         if (!cfg.href) {
           return (
-            <Pressable
+            <GlassPressable
               key={key}
               style={styles.chip}
               accessibilityRole="button"
@@ -710,15 +727,15 @@ function HomeChips({ offline }: { offline: boolean }) {
                 <Icon name={cfg.icon} size={16} color={colors.text} />
               ) : null}
               <Text style={styles.chipText}>{t(cfg.label)}</Text>
-            </Pressable>
+            </GlassPressable>
           );
         }
         return (
           <Link key={key} href={cfg.href} asChild>
-            <Pressable style={styles.chip}>
+            <GlassPressable style={styles.chip}>
               {icons ? <Icon name={cfg.icon} size={16} color={colors.text} /> : null}
               <Text style={styles.chipText}>{t(cfg.label)}</Text>
-            </Pressable>
+            </GlassPressable>
           </Link>
         );
       })}
@@ -749,7 +766,8 @@ function ScanningPanel() {
         ? t('Loading covers…')
         : t('Scanning your music…');
   return (
-    <View style={styles.scanPanel}>
+    <View collapsable={false} style={styles.scanPanel}>
+      <GlassBackdrop radius={radius.md} tint={colors.surface} variant="subtle" />
       <Text style={styles.scanTitle}>{title}</Text>
       {total > 0 ? (
         <View style={styles.scanBarTrack}>
@@ -806,7 +824,7 @@ function HomeHeaderButton({ which }: { which: HomeButtonKey }) {
     // also the way in for whoever has turned the Search tab off, which keeps
     // its route.
     return (
-      <Pressable
+      <GlassPressable variant="subtle"
         hitSlop={10}
         accessibilityLabel={t('Search')}
         onPress={() => {
@@ -818,7 +836,7 @@ function HomeHeaderButton({ which }: { which: HomeButtonKey }) {
         }}
       >
         <Icon name="search-outline" size={24} color={colors.text} />
-      </Pressable>
+      </GlassPressable>
     );
   }
   const [href, icon, label] =
@@ -829,14 +847,15 @@ function HomeHeaderButton({ which }: { which: HomeButtonKey }) {
         : (['/settings', 'settings-outline', 'Settings'] as const);
   return (
     <Link href={href} asChild>
-      <Pressable hitSlop={10} accessibilityLabel={t(label)}>
+      <GlassPressable variant="subtle" hitSlop={10} accessibilityLabel={t(label)}>
         <Icon name={icon} size={24} color={colors.text} />
-      </Pressable>
+      </GlassPressable>
     </Link>
   );
 }
 
 export default function HomeScreen() {
+  const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
@@ -929,7 +948,9 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView
+      <Animated.ScrollView
+        onScroll={dockScroll}
+        scrollEventThrottle={16}
         contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
         refreshControl={
           <RefreshControl
@@ -1027,7 +1048,7 @@ export default function HomeScreen() {
             })}
           </>
         )}
-      </ScrollView>
+      </Animated.ScrollView>
     </SafeAreaView>
   );
 }
@@ -1114,7 +1135,7 @@ const styles = themed((colors) => ({
     paddingHorizontal: spacing.lg,
     marginHorizontal: spacing.lg,
     marginBottom: spacing.lg,
-    backgroundColor: colors.surface,
+    backgroundColor: 'transparent',
     borderRadius: radius.md,
   },
   scanBarTrack: {

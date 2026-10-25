@@ -2,13 +2,16 @@
  * History screen in Spotify's "Recently played" style: simple top bar
  * (no hero header) and songs grouped by day.
  */
+import Animated from 'react-native-reanimated';
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
+import { GlassPressable, GlassScreen as SafeAreaView } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useState } from 'react';
-import { Pressable, SectionList, Text, View } from 'react-native';
+import { SectionList, Text, View } from 'react-native';
 // gesture-handler doesn't export SectionList; its ScrollView as inner scroll
 // makes the row swipe-to-queue coexist with scrolling (see TrackRow).
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 
 import { Dialog } from '@/components/Dialog';
 import { EmptyState } from '@/components/EmptyState';
@@ -48,7 +51,10 @@ function dayLabel(playedAt: number, t: (k: string) => string, lang: string): str
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
+const AnimatedHistoryList = Animated.createAnimatedComponent(SectionList<HistoryEntry, DaySection>);
+
 export default function HistoryScreen() {
+  const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
@@ -87,14 +93,14 @@ export default function HistoryScreen() {
         <BackChevron size={28} label={t('Close')} />
         <Text style={styles.barTitle}>{t('History')}</Text>
         {songs.length > 0 ? (
-          <Pressable
+          <GlassPressable variant="subtle"
             hitSlop={10}
             accessibilityRole="button"
             accessibilityLabel={t('Clear history')}
             onPress={() => setConfirmClear(true)}
           >
             <Icon name="trash-outline" size={22} color={colors.textSecondary} />
-          </Pressable>
+          </GlassPressable>
         ) : null}
       </View>
 
@@ -107,7 +113,9 @@ export default function HistoryScreen() {
           />
         </View>
       ) : (
-        <SectionList
+        <AnimatedHistoryList
+          onScroll={dockScroll}
+          scrollEventThrottle={16}
           {...listPerf}
           renderScrollComponent={(props) => <GHScrollView {...props} />}
           sections={sections}

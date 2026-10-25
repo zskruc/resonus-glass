@@ -7,7 +7,8 @@
  * before they count. Either can be off, and the earlier one is what fires. What
  * they add up to lives in `scrobbleThresholdSec` (#126).
  */
-import { ScrollView, Text } from 'react-native';
+import { DockScrollView } from '@/components/DockScrollView';
+import { Text } from 'react-native';
 
 import { SettingRow, SettingsPage, settingsStyles, SliderRow } from '@/components/SettingsUI';
 import { useT } from '@/i18n';
@@ -28,7 +29,7 @@ export default function ScrobblingSettings() {
 
   return (
     <SettingsPage title={t('Scrobbling')}>
-      <ScrollView contentContainerStyle={settingsStyles.content}>
+      <DockScrollView contentContainerStyle={settingsStyles.content}>
         <Text style={settingsStyles.sectionDescription}>
           {t('How far into a song it counts as played. Whichever of the two comes first.')}
         </Text>
@@ -70,7 +71,7 @@ export default function ScrobblingSettings() {
           label={t('Restore defaults')}
           onPress={resetScrobbleRules}
         />
-      </ScrollView>
+      </DockScrollView>
     </SettingsPage>
   );
 }

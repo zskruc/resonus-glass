@@ -45,6 +45,9 @@ class JsProxyPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
   @Volatile private var positionUpdatedAt: Long = System.currentTimeMillis()
   @Volatile private var shuffle: Boolean = false
   @Volatile private var repeatMode: Int = Player.REPEAT_MODE_OFF
+  // Where the slice of the queue the car was last handed starts in the whole
+  // queue (see `getState`), so a tap on its row N is row N + this in JS.
+  @Volatile private var windowStart: Int = 0
 
   /** Whether the song is a favourite, for the heart; null hides it. Not player
    *  state, so it is the service that draws it (see `onFavoriteChanged`). */
@@ -133,12 +136,25 @@ class JsProxyPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
     // The queue pushed from JS wins. It falls back to the optimistic
     // single-item playlist while the queue has not been mirrored yet, which is
     // the moment right after a tap.
+    // Only a slice of the queue around the current track. The whole timeline
+    // travels in one binder transaction, and the artwork budget below bounded
+    // the covers but not the rest: a queue of a few thousand songs (a big
+    // favourites list played shuffled) carried thousands of titles, artists
+    // and ids and went over the transaction limit, which takes the app down.
+    // Nobody scrolls the car's queue that far, and the slice moves with the
+    // track.
+    val full = q.isNotEmpty()
+    val qIndex = if (full) currentIndex.coerceIn(0, q.size - 1) else 0
+    val start = if (full) (qIndex - QUEUE_BEFORE).coerceAtLeast(0) else 0
+    val end = if (full) (qIndex + QUEUE_AFTER + 1).coerceAtMost(q.size) else 0
+    windowStart = start
     val source: List<NowPlaying> = when {
-      q.isNotEmpty() -> q
+      full -> q.subList(start, end)
       np != null -> listOf(np)
       else -> emptyList()
     }
-    val activeIndex = if (q.isNotEmpty()) currentIndex.coerceIn(0, q.size - 1) else 0
+    val activeIndex = qIndex - start
+    CarArtwork.retainQueueArtwork(source.asSequence().mapNotNull { it.artworkUrl })
 
     // Local covers go as bytes so AA's "Now Playing", its queue and its home
     // card can draw file:// covers its own process cannot read. The whole queue
@@ -227,6 +243,11 @@ class JsProxyPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
     // under the binder transaction limit (~1MB) for the rest of the timeline:
     // the titles, the ids and the durations.
     const val ART_BUDGET_BYTES = 768 * 1024
+
+    // The slice of the queue the car is shown: a few behind the current track
+    // and enough ahead for anyone scrolling it at a red light.
+    const val QUEUE_BEFORE = 20
+    const val QUEUE_AFTER = 100
   }
 
   override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
@@ -263,7 +284,7 @@ class JsProxyPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
       Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM ->
         CarAutoModule.instance?.emitTransport("previous", null)
       Player.COMMAND_SEEK_TO_MEDIA_ITEM ->
-        CarAutoModule.instance?.emitTransport("seekToIndex", mediaItemIndex.toDouble())
+        CarAutoModule.instance?.emitTransport("seekToIndex", (windowStart + mediaItemIndex).toDouble())
       else -> {
         // Everything left is a position inside the song, and the one value that
         // is not a position at all has to come off here. media3 passes

@@ -5,9 +5,11 @@
  * ones first (at home the local one wins; outside it falls through to the
  * remote). Only applies to server profiles.
  */
+import { DockScrollView } from '@/components/DockScrollView';
+import { GlassPressable, GlassSurface } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 import { Dialog } from '@/components/Dialog';
 import { SettingsPage, settingsStyles, SwitchList } from '@/components/SettingsUI';
@@ -86,11 +88,11 @@ export default function NetworkSettings() {
 
   return (
     <SettingsPage title={t('Network')}>
-      <ScrollView contentContainerStyle={settingsStyles.content}>
+      <DockScrollView contentContainerStyle={settingsStyles.content}>
         <Text style={[settingsStyles.sectionTitle, { marginTop: 0 }]}>
           {t('Current server address')}
         </Text>
-        <View style={[settingsStyles.cardBox, styles.activeRow]}>
+        <GlassSurface radius={radius.lg} style={[settingsStyles.cardBox, styles.activeRow]}>
           {health === 'checking' ? (
             <ActivityIndicator size="small" color={colors.textMuted} />
           ) : (
@@ -103,7 +105,7 @@ export default function NetworkSettings() {
           <Text style={styles.activeUrl} numberOfLines={1}>
             {shown(activeUrl)}
           </Text>
-        </View>
+        </GlassSurface>
 
         <SwitchList
           options={[
@@ -124,7 +126,7 @@ export default function NetworkSettings() {
             'Add the address you use from outside next to the one you use at home, so the server works wherever you are.',
           )}
         </Text>
-        <View style={settingsStyles.cardBox}>
+        <GlassSurface radius={radius.lg} style={settingsStyles.cardBox}>
           {urls.map((url, i) => {
             const isActive = url === activeUrl;
             return (
@@ -157,29 +159,31 @@ export default function NetworkSettings() {
                 {/* Side by side, so their reach is spread out rather than
                     piled on top of each other: one of them deletes. */}
                 <View style={styles.rowActions}>
-                  <Pressable
+                  <GlassPressable
                     hitSlop={ACTION_SLOP}
                     onPress={() => setEditing(url)}
                     style={({ pressed }) => pressed && { opacity: 0.6 }}
                   >
                     <Icon name="create-outline" size={20} color={colors.textMuted} />
-                  </Pressable>
+                  </GlassPressable>
                   {/* An account with a single address would be left with none. */}
                   {urls.length > 1 ? (
-                    <Pressable
+                    <GlassPressable
                       hitSlop={ACTION_SLOP}
                       onPress={() => void removeServerUrl(url)}
                       style={({ pressed }) => pressed && { opacity: 0.6 }}
                     >
                       <Icon name="trash-outline" size={20} color={colors.danger} />
-                    </Pressable>
+                    </GlassPressable>
                   ) : null}
                 </View>
               </Pressable>
             );
           })}
-        </View>
-        <Pressable
+        </GlassSurface>
+        <GlassPressable
+          radius={radius.md}
+          variant="regular"
           style={({ pressed }) => [
             settingsStyles.cardBox,
             settingsStyles.row,
@@ -192,8 +196,8 @@ export default function NetworkSettings() {
           <Text style={[settingsStyles.rowLabel, { color: accent }]}>
             {t('Add address')}
           </Text>
-        </Pressable>
-      </ScrollView>
+        </GlassPressable>
+      </DockScrollView>
 
       <Dialog
         visible={adding}

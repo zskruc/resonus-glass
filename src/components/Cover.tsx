@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { AppState, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { CACHED_COVER, COVER } from '@/api/data';
+import { useImageAnimation } from '@/hooks/useImageAnimation';
 import { bump } from '@/lib/perfLog';
 import { useSettings, type CoverCorners } from '@/store/settings';
 import { colors, radius } from '@/theme';
@@ -44,9 +45,8 @@ interface Props {
    */
   contentFit?: ImageContentFit;
   /**
-   * Whether animated images (GIF, animated WebP) should auto-play. Disabling
-   * this on off-screen or blurred copies avoids running multiple decoders for
-   * the same animation, which would cause frame drops.
+   * Whether animated images (GIF, animated WebP) should play while the app is
+   * active. Defaults to a still image; only visible playback artwork opts in.
    */
   autoplay?: boolean;
   style?: StyleProp<ViewStyle | ImageStyle>;
@@ -319,7 +319,7 @@ export function Cover({
   transition = 200,
   placeholderIcon = 'musical-notes',
   contentFit = 'cover',
-  autoplay = true,
+  autoplay = false,
   style,
   onAnimatedDetected,
 }: Props) {
@@ -362,6 +362,7 @@ export function Cover({
   const shown = cacheOnly ? (cached && cached.uri === uri ? cached.path : undefined) : uri;
   const imageRef = useRef<Image>(null);
   const redraw = useRedrawOnReturn(imageRef, shown);
+  const animation = useImageAnimation(imageRef, autoplay && !failed, shown, redraw.nonce);
   const corner = useCoverRadius(size);
   const borderRadius = rounded ? radius.pill : corner;
   if (!shown || failed) {
@@ -396,8 +397,11 @@ export function Cover({
       contentFit={contentFit}
       transition={transition}
       recyclingKey={shown}
-      autoplay={autoplay}
-      onDisplay={redraw.onDisplay}
+      autoplay={animation.autoplay}
+      onDisplay={() => {
+        redraw.onDisplay();
+        animation.onDisplay();
+      }}
       onLoad={(e) => {
         if (onAnimatedDetected && uri) onAnimatedDetected(uri, !!e.source?.isAnimated);
       }}

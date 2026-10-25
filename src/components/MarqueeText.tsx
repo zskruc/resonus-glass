@@ -9,7 +9,7 @@
  * Text inside a View measures at most the available width, so overflow would
  * never be detected.)
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View, type StyleProp, type TextStyle } from 'react-native';
 import Animated, {
   cancelAnimation,
@@ -21,6 +21,8 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
+
+import { useForegroundEffect } from '@/hooks/useForegroundEffect';
 
 /** Gap between the end of the text and the copy chasing it. */
 const GAP = 48;
@@ -47,14 +49,14 @@ export function MarqueeText({
 
   const overflows = enabled && containerW > 0 && textW > containerW + 1;
 
-  useEffect(() => {
+  useForegroundEffect(useCallback(() => {
     cancelAnimation(offset);
-    offset.value = 0;
-    if (!overflows) return;
+    offset.set(0);
+    if (!overflows || !text) return;
     const distance = textW + GAP;
     // reduceMotion Never: without marquee the long title gets cut off with no
     // way to read it, so it animates even with "reduce motion".
-    offset.value = withRepeat(
+    offset.set(withRepeat(
       withDelay(
         PAUSE_MS,
         withTiming(-distance, {
@@ -68,9 +70,9 @@ export function MarqueeText({
       false,
       undefined,
       ReduceMotion.Never,
-    );
+    ));
     return () => cancelAnimation(offset);
-  }, [overflows, textW, text, offset]);
+  }, [overflows, textW, text, offset]));
 
   const anim = useAnimatedStyle(() => ({ transform: [{ translateX: offset.value }] }));
 

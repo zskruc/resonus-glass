@@ -86,4 +86,64 @@ describe('matches', () => {
   it('is false when no field holds it', () => {
     assert.equal(matches('xyz', 'Café', undefined), false);
   });
+
+  it('matches words in any order', () => {
+    assert.equal(matches('rojo nino', 'Niño Rojo'), true);
+    assert.equal(matches('nino rojo', 'Niño Rojo'), true);
+  });
+
+  it('matches a missing letter', () => {
+    assert.equal(matches('madona', 'Madonna'), true);
+    assert.equal(matches('madnna', 'Madonna'), true);
+  });
+
+  it('matches a swapped pair', () => {
+    assert.equal(matches('teh', 'The Who'), true);
+    assert.equal(matches('madnoa', 'Madonna'), true);
+  });
+
+  it('matches a partial word', () => {
+    assert.equal(matches('madon', 'Madonna'), true);
+  });
+
+  it('does not match short words an edit away', () => {
+    assert.equal(matches('u3', 'U2'), false);
+    assert.equal(matches('ab', 'ac dc'), false);
+  });
+
+  it('is false when a query word lands nowhere', () => {
+    assert.equal(matches('madonna xyz', 'Madonna'), false);
+  });
+
+  it('skips stopwords instead of failing on them', () => {
+    assert.equal(matches('metal of', 'Heavy Metal'), true);
+  });
+
+  it('forgives three edits in a long word', () => {
+    assert.equal(matches('abXdeYghiZ', 'Abcdefghij'), true);
+  });
+
+  it('takes one slip in a short word, not two', () => {
+    assert.equal(matches('qeen', 'Queen'), true);
+    assert.equal(matches('drake', 'Brave'), false);
+    assert.equal(matches('queen', 'Green'), false);
+  });
+
+  it('matches query words across title and artist fields', () => {
+    assert.equal(matches('madona music', 'Music', undefined, 'Madonna'), true);
+    assert.equal(matches('music unrelated', 'Music', 'Madonna'), false);
+  });
+
+  it('normalizes whitespace and case in the query itself', () => {
+    assert.equal(matches('  NIÑO   rojo  ', 'Niño Rojo'), true);
+    assert.equal(matches('   ', undefined), true);
+  });
+
+  it('retains exact Chinese and short substring searches', () => {
+    assert.equal(matches('陈奕迅', '陈奕迅'), true);
+    assert.equal(matches('富士山', '富士山下'), true);
+    assert.equal(matches('红玫', '红玫瑰'), true);
+    assert.equal(matches('周杰伦', '陈奕迅'), false);
+    assert.equal(matches('u2', 'U2'), true);
+  });
 });

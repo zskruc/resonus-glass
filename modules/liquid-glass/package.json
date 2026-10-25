@@ -1,0 +1,8 @@
+{
+  "name": "resonus-liquid-glass",
+  "version": "0.1.0",
+  "description": "Native AndroidLiquidGlass backdrop rendering and coordinated dock for Resonus Glass",
+  "main": "index.tsx",
+  "private": true,
+  "license": "GPL-3.0-or-later"
+}

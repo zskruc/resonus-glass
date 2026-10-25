@@ -16,8 +16,9 @@
  * is sorted by is still readable without opening anything.
  */
 import Icon from '@/components/Icon';
+import { GlassPressable } from '@/components/glass';
 import { useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 
 import { getSongList, type Song } from '@/api/data';
 import { type SongListSort } from '@/api/subsonic';
@@ -102,7 +103,7 @@ export function BrowseToolbar<T extends string>({
       {options.length < 2 || !current ? (
         <View />
       ) : (
-        <Pressable
+        <GlassPressable
           style={styles.sort}
           hitSlop={8}
           accessibilityRole="button"
@@ -113,20 +114,21 @@ export function BrowseToolbar<T extends string>({
           <Text style={styles.sortText} numberOfLines={1}>
             {t(current.label)}
           </Text>
-        </Pressable>
+        </GlassPressable>
       )}
 
       {play ? (
         <View style={styles.playRow}>
-          <Pressable
+          <GlassPressable
             hitSlop={10}
             accessibilityRole="button"
             accessibilityLabel={t('Shuffle')}
             onPress={() => void onShuffle()}
           >
             <Icon name="shuffle" size={26} color={colors.textSecondary} />
-          </Pressable>
-          <Pressable
+          </GlassPressable>
+          <GlassPressable
+            variant="prominent" tint={accent}
             style={[styles.playButton, { backgroundColor: accent }]}
             accessibilityRole="button"
             accessibilityLabel={t('Play')}
@@ -137,7 +139,7 @@ export function BrowseToolbar<T extends string>({
             ) : (
               <Icon name="play" size={28} color={colors.onAccent} style={{ marginLeft: 3 }} />
             )}
-          </Pressable>
+          </GlassPressable>
         </View>
       ) : null}
 

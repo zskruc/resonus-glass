@@ -1,5 +1,9 @@
 name: Build unsigned iOS IPA
 
+# Retained for upstream history; this Android Glass branch does not publish iOS.
+permissions:
+  contents: read
+
 # Runs on demand, and alongside the APK when a v* tag is pushed. The IPA is
 # unsigned (there is no Apple account behind it), so it is not App Store
 # material: it goes into the same draft Release as the APK, for sideloading.
@@ -12,6 +16,7 @@ on:
 
 jobs:
   build:
+    if: github.repository == 'juananzzz/resonus'
     runs-on: macos-latest
     permissions:
       contents: write

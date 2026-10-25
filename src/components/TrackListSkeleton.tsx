@@ -3,9 +3,10 @@
  * with a header and row silhouettes, softly pulsing, instead of a spinner
  * over an empty screen.
  */
-import { useEffect } from 'react';
+import { useCallback } from 'react';
 import { View } from 'react-native';
 import Animated, {
+  cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -15,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { radius, spacing, themed } from '@/theme';
 import { motion } from '@/theme/motion';
+import { useForegroundEffect } from '@/hooks/useForegroundEffect';
 import { useScreenSize } from '@/hooks/useScreenSize';
 import { BackButton } from './BackButton';
 
@@ -29,9 +31,11 @@ export function TrackListSkeleton() {
   const { width, height } = useScreenSize();
   const cover = Math.round(Math.min(width * 0.58, height * 0.4, 250));
   const pulse = useSharedValue(1);
-  useEffect(() => {
-    pulse.value = withRepeat(withTiming(0.45, { duration: motion.duration.pulse }), -1, true);
-  }, [pulse]);
+  useForegroundEffect(useCallback(() => {
+    pulse.set(1);
+    pulse.set(withRepeat(withTiming(0.45, { duration: motion.duration.pulse }), -1, true));
+    return () => cancelAnimation(pulse);
+  }, [pulse]));
   const pulseStyle = useAnimatedStyle(() => ({ opacity: pulse.value }));
 
   return (

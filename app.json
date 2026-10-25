@@ -19,7 +19,7 @@
     },
     "android": {
       "package": "com.juananzzz.resonus",
-      "versionCode": 58,
+      "versionCode": 66,
       "adaptiveIcon": {
         "backgroundColor": "#1CD667",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -37,6 +37,8 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "./plugins/withNetworkRecovery",
+      "./plugins/withLiquidGlass",
       "./plugins/withReleaseSigning",
       "./plugins/withoutFontWeightAdjustment",
       "./plugins/withTrimmedPermissions",

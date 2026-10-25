@@ -1,0 +1,2 @@
+# Patch context contains literal spaces which must survive unchanged.
+patches/*.patch -whitespace

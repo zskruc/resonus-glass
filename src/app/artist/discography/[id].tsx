@@ -3,6 +3,9 @@
  * `?section=appears-on` it lists the albums the artist only appears on
  * instead — same screen, same layout preference, only the other row's albums.
  */
+import Animated from 'react-native-reanimated';
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
+import { GlassPressable, GlassScreen as SafeAreaView } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocalSearchParams } from 'expo-router';
@@ -10,12 +13,11 @@ import { useMemo } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
-  FlatList,
   Pressable,
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 
 import { COVER, coverArtUrl, getAppearsOn, getArtist, type Album } from '@/api/data';
 import { AlbumCard } from '@/components/AlbumCard';
@@ -49,6 +51,7 @@ function cardWidth(columns: number): number {
 }
 
 export default function DiscographyScreen() {
+  const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
@@ -140,23 +143,23 @@ export default function DiscographyScreen() {
         {/* Beside the one that changes the view, since both are about how this
             same list is laid out. Nothing to order with a single album. */}
         {albums.length > 1 ? (
-          <Pressable
+          <GlassPressable variant="subtle"
             hitSlop={10}
             accessibilityRole="button"
             accessibilityLabel={t('Sort')}
             onPress={openSort}
           >
             <Icon name="swap-vertical" size={20} color={colors.textSecondary} />
-          </Pressable>
+          </GlassPressable>
         ) : null}
-        <Pressable
+        <GlassPressable variant="subtle"
           hitSlop={10}
           accessibilityRole="button"
           accessibilityLabel={t('View')}
           onPress={openGridMenu}
         >
           <Icon name={grid ? 'grid-outline' : 'list'} size={20} color={colors.textSecondary} />
-        </Pressable>
+        </GlassPressable>
       </View>
 
       {loading ? (
@@ -170,7 +173,9 @@ export default function DiscographyScreen() {
           }}
         />
       ) : (
-        <FlatList
+        <Animated.FlatList
+          onScroll={dockScroll}
+          scrollEventThrottle={16}
           {...listPerf}
           data={albums}
           // Remount on layout change: FlatList reuses rows and gets stuck with

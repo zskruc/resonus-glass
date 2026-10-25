@@ -4,8 +4,9 @@
  * here you only choose gains, which are saved and applied to the app audio
  * immediately.
  */
+import { DockScrollView } from '@/components/DockScrollView';
 import { useState } from 'react';
-import { ScrollView, Text } from 'react-native';
+import { Text } from 'react-native';
 
 import {
   SelectList,
@@ -19,6 +20,21 @@ import {
 import { useT } from '@/i18n';
 import { useEqualizer } from '@/store/equalizer';
 import { useTheme } from '@/theme';
+
+// Device-provided preset names need not follow the app language. Translate
+// known names while retaining any vendor-specific ones.
+const PRESET_LABELS: Record<string, string> = {
+  normal: 'Normal::equalizer',
+  classical: 'Classical',
+  dance: 'Dance',
+  flat: 'Flat::equalizer',
+  folk: 'Folk',
+  'heavy metal': 'Heavy metal',
+  'hip hop': 'Hip hop',
+  jazz: 'Jazz',
+  pop: 'Pop',
+  rock: 'Rock',
+};
 
 /** 62 → «62 Hz»; 16000 → «16 kHz». */
 function formatFreq(hz: number): string {
@@ -55,18 +71,18 @@ export default function EqualizerSettings() {
   if (!supported) {
     return (
       <SettingsPage title={t('Equalizer')}>
-        <ScrollView contentContainerStyle={settingsStyles.content}>
+        <DockScrollView contentContainerStyle={settingsStyles.content}>
           <Text style={settingsStyles.sectionDescription}>
             {t('This device does not offer an equalizer.')}
           </Text>
-        </ScrollView>
+        </DockScrollView>
       </SettingsPage>
     );
   }
 
   return (
     <SettingsPage title={t('Equalizer')}>
-      <ScrollView contentContainerStyle={settingsStyles.content}>
+      <DockScrollView contentContainerStyle={settingsStyles.content}>
         <SettingsGroup>
           <SwitchList
             options={[
@@ -83,7 +99,10 @@ export default function EqualizerSettings() {
               label={t('Preset')}
               options={[
                 { value: -1, label: t('Custom') },
-                ...presets.map((name, i) => ({ value: i, label: name })),
+                ...presets.map((name, i) => {
+                  const label = PRESET_LABELS[name.trim().toLowerCase()];
+                  return { value: i, label: label ? t(label) : name };
+                }),
               ]}
               value={preset}
               onChange={(v) => {
@@ -122,7 +141,7 @@ export default function EqualizerSettings() {
             reset();
           }}
         />
-      </ScrollView>
+      </DockScrollView>
     </SettingsPage>
   );
 }

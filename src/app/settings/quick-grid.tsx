@@ -3,7 +3,8 @@
  * Home and how many tiles to show. The grid is dynamic (sorts by last play),
  * so here you don't reorder: you just pick sources and size.
  */
-import { ScrollView, Text } from 'react-native';
+import { DockScrollView } from '@/components/DockScrollView';
+import { Text } from 'react-native';
 
 import { SelectList, SettingsPage, settingsStyles, SwitchList } from '@/components/SettingsUI';
 import { useT } from '@/i18n';
@@ -53,7 +54,7 @@ export default function QuickGridSettings() {
 
   return (
     <SettingsPage title={t('Quick grid')}>
-      <ScrollView contentContainerStyle={settingsStyles.content}>
+      <DockScrollView contentContainerStyle={settingsStyles.content}>
         <SwitchList
           options={[
             {
@@ -78,7 +79,7 @@ export default function QuickGridSettings() {
             />
           </>
         ) : null}
-      </ScrollView>
+      </DockScrollView>
     </SettingsPage>
   );
 }

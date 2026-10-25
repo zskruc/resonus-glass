@@ -1,7 +1,7 @@
-/** Song context menu state (the bottom sheet with actions). */
+/** Song context menu state, shared by player controls and song rows. */
 import { create } from 'zustand';
 
-import { type Song } from '@/api/subsonic';
+import type { Song } from '@/api/subsonic';
 
 /** Optional context: if the song is opened from an editable playlist. */
 export interface SongMenuContext {
@@ -12,6 +12,8 @@ export interface SongMenuContext {
 
 /** Extra options when opening the menu (e.g. from the player). */
 export interface SongMenuOptions {
+  /** Every song entry opens the same floating card unless explicitly overridden. */
+  presentation?: 'sheet' | 'card';
   /** Shows the «Lyrics» action. Only from the player: /lyrics opens the
    *  current song, not an arbitrary row's song. */
   showLyrics?: boolean;
@@ -37,6 +39,8 @@ const NO_EXTRAS: PlayerExtras = { queue: false };
 
 interface SongMenuState {
   song: Song | null;
+  session: number;
+  presentation: 'sheet' | 'card';
   context: SongMenuContext | null;
   showLyrics: boolean;
   sleep: boolean;
@@ -47,17 +51,21 @@ interface SongMenuState {
 
 export const useSongMenu = create<SongMenuState>((set) => ({
   song: null,
+  session: 0,
+  presentation: 'card',
   context: null,
   showLyrics: false,
   sleep: false,
   extras: NO_EXTRAS,
   open: (song, context, opts) =>
-    set({
+    set((state) => ({
       song,
+      session: state.session + 1,
+      presentation: opts?.presentation ?? 'card',
       context: context ?? null,
       showLyrics: !!opts?.showLyrics,
       sleep: !!opts?.sleep,
       extras: { queue: !!opts?.queue, devices: opts?.devices, speed: opts?.speed },
-    }),
-  close: () => set({ song: null, context: null, showLyrics: false, sleep: false, extras: NO_EXTRAS }),
+    })),
+  close: () => set((state) => ({ song: null, session: state.session + 1, presentation: 'card', context: null, showLyrics: false, sleep: false, extras: NO_EXTRAS })),
 }));

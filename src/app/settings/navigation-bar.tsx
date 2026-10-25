@@ -10,8 +10,10 @@
  * opens it, and the back arrow still knows where it came from. What goes is
  * the way in from the bar.
  */
+import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
+import { GlassSurface, GlassSwitch } from '@/components/glass';
 import Icon from '@/components/Icon';
-import { Pressable, Switch, Text, View } from 'react-native';
+import { Pressable, Text } from 'react-native';
 import ReorderableList, {
   useReorderableDrag,
   type ReorderableListReorderEvent,
@@ -45,7 +47,7 @@ function TabRow({ tab }: { tab: BottomTab }) {
   // preference like any other; whether it is there at all is not.
   const fixed = tab.key === 'index';
   return (
-    <View style={styles.row}>
+    <GlassSurface radius={radius.md} style={styles.row}>
       <Pressable
         hitSlop={8}
         onPressIn={() => {
@@ -61,18 +63,19 @@ function TabRow({ tab }: { tab: BottomTab }) {
       {fixed ? (
         <Text style={styles.fixed}>{t('Always shown')}</Text>
       ) : (
-        <Switch
+        <GlassSwitch
           value={tab.enabled}
           onValueChange={(v) => setBottomTab(tab.key, v)}
           trackColor={{ false: colors.control, true: accent }}
           thumbColor={colors.knob}
         />
       )}
-    </View>
+    </GlassSurface>
   );
 }
 
 export default function NavigationBarSettings() {
+  const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
@@ -86,6 +89,7 @@ export default function NavigationBarSettings() {
       <ScreenHeader title={t('Navigation bar')} />
       <Text style={styles.hint}>{t('Drag to reorder, toggle to show or hide.')}</Text>
       <ReorderableList
+        onScroll={dockScroll}
         data={bottomTabs}
         keyExtractor={(item) => item.key}
         renderItem={({ item }) => <TabRow tab={item} />}

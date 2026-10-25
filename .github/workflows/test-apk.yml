@@ -1,5 +1,9 @@
 name: Test APK
 
+# Retained for upstream history. Use "Glass ARM64 test APK" in this derivative.
+permissions:
+  contents: read
+
 # The same signed APK as a release, from any branch, without a tag and without
 # a release. It is left as a workflow artifact, which anybody can download from
 # the run's page.
@@ -21,6 +25,7 @@ run-name: Test APK · ${{ github.ref_name }} ${{ inputs.note }}
 
 jobs:
   build:
+    if: github.repository == 'juananzzz/resonus'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

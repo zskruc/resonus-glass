@@ -1,98 +1,73 @@
 <p align="center">
-  <img src="./assets/images/icon-transparent.png" width="120" alt="Resonus icon" />
+  <img src="./assets/images/icon-transparent.png" width="100" alt="Resonus Glass icon" />
 </p>
 
-<h1 align="center">Resonus</h1>
+<h1 align="center">Resonus Glass</h1>
 
-<p align="center">
-  A clean music player for your self-hosted server, and your local files.
-  <br />
-  Android, with an experimental iOS build.
-</p>
+<p align="center">为 Android 定制的 Resonus 玻璃界面衍生版</p>
 
----
+Resonus Glass 基于 [juananzzz/resonus](https://github.com/juananzzz/resonus)，保留其自托管音乐播放器功能，并为 Android 加入透明折射材质、联动的 mini player 与底部导航、浮动玻璃菜单及可保存的材质调节。
 
-<p align="center">
-  <a href="https://github.com/juananzzz/resonus/releases/latest"><img src="./assets/images/badges/download.svg" height="28" alt="Download APK" /></a>
-  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/juananzzz/resonus"><img src="./assets/images/obtainium.svg" height="28" alt="Get via Obtainium" /></a>
-  <a href="#ios-experimental"><img src="./assets/images/badges/ios.svg" height="28" alt="iOS (experimental)" /></a>
-  <a href="https://altdirect.app/?url=https://raw.githubusercontent.com/juananzzz/resonus/main/Source.json"><img src="./assets/images/badges/altsource.svg" height="28" alt="Add as an AltSource" /></a>
-  <br />
-  <a href="https://discord.gg/pecE8MTPVr"><img src="./assets/images/badges/discord.svg" height="28" alt="Discord" /></a>
-  <a href="https://ko-fi.com/juananzzz"><img src="./assets/images/badges/kofi.svg" height="28" alt="Support on Ko-fi" /></a>
-</p>
+这是独立维护的非官方衍生项目，与原作者、Apple 及其音乐服务没有隶属或认可关系。玻璃效果使用 Android 原生绘制，不是 Apple 私有实现，也不会逐项复现 iOS 的内部参数。开发重点为 Android；上游实验性的 iOS 支持不属于本分支的玻璃效果验证范围。
 
-## Screenshots
+*An unofficial Android-focused derivative of Resonus, with native Liquid Glass surfaces, a coordinated mini-player/navigation dock, and adjustable material profiles. This project is independently maintained and is not affiliated with Apple or the upstream author.*
 
-| Home | Player | Album | Library |
-| :---: | :---: | :---: | :---: |
-| <img src="./assets/screenshots/dark-home.jpg" width="200" alt="Home, dark" /> | <img src="./assets/screenshots/dark-player.jpg" width="200" alt="Player, dark" /> | <img src="./assets/screenshots/dark-album.jpg" width="200" alt="Album, dark" /> | <img src="./assets/screenshots/dark-library.jpg" width="200" alt="Library, dark" /> |
-| <img src="./assets/screenshots/light-home.jpg" width="200" alt="Home, light" /> | <img src="./assets/screenshots/light-player.jpg" width="200" alt="Player, light" /> | <img src="./assets/screenshots/light-album.jpg" width="200" alt="Album, light" /> | <img src="./assets/screenshots/light-library.jpg" width="200" alt="Library, light" /> |
+## 安装
 
-| Artist | Lyrics | Queue | Servers |
-| :---: | :---: | :---: | :---: |
-| <img src="./assets/screenshots/artist.jpg" width="200" alt="Artist" /> | <img src="./assets/screenshots/lyrics.jpg" width="200" alt="Synced lyrics" /> | <img src="./assets/screenshots/queue.jpg" width="200" alt="Queue" /> | <img src="./assets/screenshots/servers.jpg" width="200" alt="Supported servers" /> |
+本仓库目前先公开源码，**尚无正式 APK Release**。后续可安装版本将在 [本仓库 Releases](https://github.com/zskruc/resonus-glass/releases) 发布。原项目 Releases 中的 APK 是原版 Resonus，不包含本分支的改动。
 
-## Download
+构建时启用 `RESONUS_GLASS_PREVIEW=1`，应用名为 **Resonus Glass**，Android 包名为 `com.zskruc.resonus.glasspreview`，可与原版并存。两者的登录和离线资料互相独立。覆盖更新已有 Glass 安装时，包名和签名必须一致；请勿通过卸载来解决签名不一致，否则会丢失应用内资料。
 
-### Android
+需要自行验证时，可进入 **Actions → Glass ARM64 test APK → Run workflow** 手动构建测试 APK。每次任务使用随机生成的一次性测试签名，不能覆盖当前手机上已有的 Glass 安装，也不能保证与前一次 CI 构建互相覆盖；请使用独立测试设备或模拟器。正式下载以未来 Releases 中明确标注的安装包为准。
 
-Get the latest APK from the [Releases](https://github.com/juananzzz/resonus/releases/latest) page and install it on your Android device.
+## 本分支的主要改动
 
-Also available on [Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/juananzzz/resonus) for automatic updates.
+- 使用 [AndroidLiquidGlass / Backdrop](https://github.com/Kyant0/AndroidLiquidGlass) 实现屏幕背景采样、折射、模糊和边缘高光，多个控件共享采样。
+- mini player 与底部导航随页面拖动联动折叠、展开；搜索独立置于右侧，详情页滚动也可驱动底栏。
+- mini player 只显示歌曲名称，支持有边界的横滑切歌；玻璃本身不添加固定底色或根据当前歌曲封面染色。
+- 浮动歌曲菜单、播放速度、歌曲信息和相关对话框采用统一圆角玻璃样式。
+- 提供 mini player、导航和其他控件的独立材质配置，以及可保存的调节界面。
+- 优化列表、导航和菜单的背景采样、过渡及动画生命周期；适配系统字体粗细并补充简体中文设置文本。
+- 合入选定的上游后台恢复、播放进度、歌词排序、搜索、网络请求超时及封面地址隐私修复。
 
-### iOS (experimental)
+更详细的实现和限制见 [Glass 说明](./docs/LIQUID-GLASS-PREVIEW.md) 与 [原生模块说明](./modules/liquid-glass/README.md)。原项目功能和说明保存在 [上游 README](./docs/UPSTREAM-README.md)。
 
-Download the `.ipa` from the [Releases](https://github.com/juananzzz/resonus/releases/latest)
-page and sideload it with AltStore, Sideloadly or similar, or
-[add Resonus as an AltSource](https://altdirect.app/?url=https://raw.githubusercontent.com/juananzzz/resonus/main/Source.json)
-to get updates. The build is unsigned, so it is not on the App Store or TestFlight.
+## 版本与上游同步
 
-Not available on iOS yet: CarPlay, casting, the equalizer and gapless playback.
+当前公开基线的 Android 更新编号为 **66**。应用版本字符串仍沿用 `0.8.1`；这是从已有 Glass 分支选择性移植上游修复的版本，**不等同于完整的上游 0.8.4**，也未包含后者的全部新功能。
 
-## Features
+本仓库的 `glass` 分支用于保留定制。上游源码仍以 [juananzzz/resonus](https://github.com/juananzzz/resonus) 为准；更新时先比较和验证，再合并适合的修复。自动拉取上游提交并不保证冲突能自动解决，也不能保证自定义玻璃交互始终兼容。同步和检查流程见 [上游更新说明](./docs/UPSTREAM.md)。
 
-- **Navidrome / OpenSubsonic / Jellyfin / Ampache**: multi-profile login, multi-library support, plus several server addresses with automatic switching
-- **Local mode**: play music straight from your device or a folder, no server needed
-- **Offline mode**: your favorites, playlists and albums stay browsable with no connection; downloaded songs play, the rest show grayed out, and it switches automatically when the server is unreachable
-- **Downloads**: albums, playlists, an artist's whole discography or single songs, in original quality or transcoded
-- **Synced lyrics**: karaoke view with tap-to-seek, word-by-word highlighting (TTML and enhanced LRC), full-screen mode, optional LRCLIB lookup
-- **Internet radio**: browse and manage your stations
-- **Cast to speakers**: UPnP/DLNA renderers and Sonos, with room grouping; local music streams to them too
-- **Playback**: gapless, crossfade, built-in equalizer, ReplayGain normalization, playback speed, sleep timer, queue with undo, shuffle, repeat, background & lock-screen controls
-- **Autoplay & mixes**: keep the music going with similar songs, or start a mix from any track
-- **Organize**: multi-select (queue, playlist or download in batch), star ratings, pinned items, play history
-- **Themes**: dark, light, the phone's own or on a schedule, with a palette of accent colors or one of your own
-- **Make it yours**: reorder and show/hide Home sections, chips and tabs, app fonts, lyrics size, mini player buttons, swipe actions and more
-- **Android Auto** (experimental)
-- **Landscape and tablet layouts**
-- **Queue sync across devices**
-- **In 11 languages**: English, Spanish, German, Catalan, Russian, Italian, Simplified Chinese, Ukrainian, Polish, Swedish, Brazilian Portuguese
+## 从源码构建 Android
 
-## FAQ
+需要 **Node.js 24、pnpm 11、Java 17、Android SDK Platform 36** 及 Android 构建工具。项目使用 **Expo SDK 57**；版本和依赖以 `package.json`、`pnpm-lock.yaml` 为准。Expo Go 无法加载本项目的本地原生模块。
 
-The questions that come up most often are answered in
-[docs/FAQ.md](./docs/FAQ.md), starting with how to get Resonus to show up in
-Android Auto. The app links to it too, from Settings › About.
+```bash
+git clone https://github.com/zskruc/resonus-glass.git
+cd resonus-glass
+git switch glass
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm test
+pnpm i18n:check
+```
 
-## Translations
+将 `ANDROID_HOME` 指向自己的 Android SDK，`JAVA_HOME` 指向 Java 17，然后构建 ARM64 APK：
 
-More languages are welcome via pull request. See
-[TRANSLATING.md](./TRANSLATING.md) for how to add one, plus context for the
-trickier strings.
+```bash
+export RESONUS_GLASS_PREVIEW=1
+bash scripts/build-glass-preview.sh
+```
 
-## Community
+脚本会重新生成 Android 工程，并输出 `artifacts/Resonus-Glass-preview.apk`。本地构建的签名取决于自己的 Android 构建配置；发布签名密钥不随源码公开。Expo 生成目录、依赖、缓存、安装包和私有配置不应提交。
 
-Join the [Discord server](https://discord.gg/pecE8MTPVr) to share feedback,
-report bugs, ask questions, or just follow along with development.
+需要复用本机签名时，可在 `.local-signing/env.sh` 中配置 `RESONUS_KEYSTORE_FILE`、`RESONUS_KEYSTORE_PASSWORD`、`RESONUS_KEY_ALIAS` 和 `RESONUS_KEY_PASSWORD`。构建脚本会读取这个本机文件；整个 `.local-signing/` 目录已排除在 Git 之外。
 
-## Contributing
+## 许可证与致谢
 
-Contributions are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) for how to
-set up the project, run it on an emulator, and open a pull request.
+- [Resonus](https://github.com/juananzzz/resonus)：原作者 **juananzzz** 及原项目贡献者；本衍生项目继续采用 **GPL-3.0-or-later**，见 [LICENSE](./LICENSE)。支持原作者可前往其 [Ko-fi](https://ko-fi.com/juananzzz)。
+- [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)：**Apache-2.0**。原生材质依赖 Backdrop 1.0.0，并适配其 Bottom Tabs 示例；[许可证](./modules/liquid-glass/ANDROID_LIQUID_GLASS_LICENSE)。
+- [sdegenaar/liquid_glass_widgets](https://github.com/sdegenaar/liquid_glass_widgets)：**MIT**，Copyright © 2024–2026 Sebastian Degenaar。参考并适配其联动布局和最小化控制器；未引入 Flutter 引擎；[许可证](./modules/liquid-glass/LIQUID_GLASS_WIDGETS_LICENSE)。
+- Primuse：歌词动效的部分实现遵循 **MIT**，详见 [第三方声明](./THIRD_PARTY_NOTICES.md)。
 
-## Support
-
-Resonus is free and open source, built in my spare time. If you enjoy it and
-want to help me keep working on it, you can buy me a coffee on
-[Ko-fi](https://ko-fi.com/juananzzz).
+原项目图标、其他依赖和原有第三方声明继续保留各自权利与许可。提交本分支问题请使用 [本仓库 Issues](https://github.com/zskruc/resonus-glass/issues)，请勿向上游报告仅由本分支定制造成的问题。

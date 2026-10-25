@@ -28,13 +28,13 @@
  * The download has its own window rather than living in the dialog: 57 MB needs
  * a progress bar and a way out, and `Dialog` is built for a question.
  */
+import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import { useEffect } from 'react';
 import {
   ActivityIndicator,
   AppState,
   Linking,
   Modal,
-  Pressable,
   Text,
   View,
 } from 'react-native';
@@ -176,7 +176,8 @@ export function UpdatePrompt() {
         onRequestClose={close}
       >
         <View style={styles.backdrop}>
-          <View style={styles.card}>
+          <View collapsable={false} style={[styles.card, { backgroundColor: 'transparent' }]}>
+            <GlassBackdrop radius={radius.lg} tint={colors.surface} variant="prominent" />
             <Text style={styles.title}>
               {t('Downloading Resonus {version}', { version: version ?? '' })}
             </Text>
@@ -197,13 +198,13 @@ export function UpdatePrompt() {
                 <ActivityIndicator size="small" color={colors.textSecondary} />
               )}
             </View>
-            <Pressable
+            <GlassPressable variant="subtle"
               accessibilityRole="button"
               onPress={close}
               style={({ pressed }) => [styles.cancel, pressed && { opacity: 0.6 }]}
             >
               <Text style={styles.cancelLabel}>{t('Cancel')}</Text>
-            </Pressable>
+            </GlassPressable>
           </View>
         </View>
       </Modal>

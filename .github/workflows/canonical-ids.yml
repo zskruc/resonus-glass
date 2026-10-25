@@ -26,7 +26,7 @@ on:
       - 'scripts/ts-re*.mjs'
       - '.github/workflows/canonical-ids.yml'
   push:
-    branches: [main]
+    branches: [glass, main]
     paths:
       - 'src/lib/navidromeIds.ts'
       - 'src/lib/navidromeRemap.ts'
@@ -47,6 +47,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v7
         with:
           node-version: 24
