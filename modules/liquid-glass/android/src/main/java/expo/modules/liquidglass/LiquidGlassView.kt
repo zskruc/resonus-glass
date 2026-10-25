@@ -444,6 +444,9 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
     val glassHighlightOpacity = highlightOpacity ?: if (officialMaterial) 1f else if (isDark) 0.28f else 0.20f
     val glassDepthEffect = depthEffect
     val glassChromaticAberration = chromaticAberration
+    val uniformButtonOptics = canFoldUniformButtonOptics(staticBackground, preset,
+      glassDepthEffect, glassChromaticAberration, Build.VERSION.SDK_INT, glassBlur,
+      glassRefractionHeight, glassRefraction)
     val backdrop = rememberCanvasBackdrop {
       // Read in drawing, so a capture only invalidates drawing, not RN layout.
       @Suppress("UNUSED_VARIABLE") val version = frameVersion
@@ -542,15 +545,17 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
                 } else {
                   vibrancy()
                 }
-                blur(glassBlur.dp.toPx())
-                val edge = if (amPlusMaterial && glassRefraction > 0f && glassRefractionHeight > 0f)
-                  AmPlusDockGeometry.edgeLens(size.height, size.width, 24f.dp.toPx()) else 0f
-                lens(
-                  if (amPlusMaterial) edge else glassRefractionHeight.dp.toPx(),
-                  if (amPlusMaterial) edge else glassRefraction.dp.toPx(),
-                  depthEffect = !amPlusMaterial && glassDepthEffect,
-                  chromaticAberration = !amPlusMaterial && glassChromaticAberration
-                )
+                if (!uniformButtonOptics) {
+                  blur(glassBlur.dp.toPx())
+                  val edge = if (amPlusMaterial && glassRefraction > 0f && glassRefractionHeight > 0f)
+                    AmPlusDockGeometry.edgeLens(size.height, size.width, 24f.dp.toPx()) else 0f
+                  lens(
+                    if (amPlusMaterial) edge else glassRefractionHeight.dp.toPx(),
+                    if (amPlusMaterial) edge else glassRefraction.dp.toPx(),
+                    depthEffect = !amPlusMaterial && glassDepthEffect,
+                    chromaticAberration = !amPlusMaterial && glassChromaticAberration
+                  )
+                }
               }
             },
             highlight = {
