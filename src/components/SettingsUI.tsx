@@ -18,6 +18,7 @@ import {
 import { useSafeAreaFrame, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAccent } from '@/hooks/useAccent';
+import { useGlassTuning } from '@/store/glassTuning';
 import { CONTENT_MAX_WIDTH } from '@/hooks/useScreenSize';
 import { colors, fontSize, radius, spacing, SCREEN_BOTTOM_PADDING, themed, tracking, useTheme } from '@/theme';
 import { BackChevron } from './BackChevron';
@@ -80,7 +81,10 @@ const GroupContext = createContext(false);
 /** Only these plain-page cards opt into a uniform source; previews stay live. */
 function SettingsCard(props: ComponentProps<typeof GlassSurface>) {
   const staticBackdropColor = useStaticGlassBackdropColor(props.variant ?? 'regular');
-  return <GlassSurface {...props} staticBackdropColor={staticBackdropColor} />;
+  const plainGroup = useGlassTuning((state) => state.mode === 'amPlus');
+  // Group containers are not LiquidButtons. Keep the Apple-style settings
+  // surface flat; the original switches, sliders and action buttons stay glass.
+  return <GlassSurface {...props} enabled={plainGroup ? false : props.enabled} staticBackdropColor={staticBackdropColor} />;
 }
 
 /** The box a row draws around itself, unless a group already draws one. */
@@ -139,6 +143,7 @@ export function SettingRow({
   onPress?: () => void;
 }) {
   const box = useCardBox();
+  const plainGroup = useGlassTuning((state) => state.mode === 'amPlus');
   const staticBackdropColor = useStaticGlassBackdropColor('regular');
   const body = (
     <>
@@ -157,8 +162,8 @@ export function SettingRow({
   );
   if (!onPress) {
     return (
-      <View style={[box, settingsStyles.row, box && { backgroundColor: 'transparent' }]}>
-        {box ? <GlassBackdrop radius={radius.lg} tint={colors.surface} staticBackdropColor={staticBackdropColor} /> : null}
+      <View style={[box, settingsStyles.row, box && !plainGroup && { backgroundColor: 'transparent' }]}>
+        {box && !plainGroup ? <GlassBackdrop radius={radius.lg} tint={colors.surface} staticBackdropColor={staticBackdropColor} /> : null}
         {body}
       </View>
     );

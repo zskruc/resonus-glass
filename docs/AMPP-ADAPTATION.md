@@ -48,7 +48,7 @@ AM++'s main project is GPL-3.0; Kyant's Backdrop and catalog components are Apac
 
 ## 本轮预览 / This preview
 
-`0.8.4.1-ampp.3` / Android versionCode `76`，源码分支 `preview/ampp-dock`。
+`0.8.4.1-ampp.4` / Android versionCode `77`，源码分支 `preview/ampp-dock`。
 
 - 新增可切换的「AM++ 参考」外观；它只替换本轮 dock 的布局、材质与动画，其他控件保留 Kyant 默认材料。旧的 Kyant 默认、参考及自定义外观仍可选，原有参数不覆盖。
 - 手机 nav56dp、mini43dp、边距16dp、间隔8dp、底部额外16dp；展开时搜索并入导航，折叠时在右侧独立出现，左侧保留当前页面图标。
@@ -71,3 +71,9 @@ During a dock morph, a navigation tap expands first; navigation resumes at the e
 在静态、不透明、无景深及无色散的普通设置卡片上，Backdrop的Clamp blur和仅移动坐标的lens对平色源不改变色值；安全条件满足时省略这些无视觉贡献的运算，保留饱和度、形状、高光、阴影和填色。透明或动态来源、特殊padding、自定义和其他材质仍使用原链。
 
 For eligible opaque uniform settings sources, Clamp blur and coordinate-only lens sampling leave the color unchanged. The native path omits those redundant operations while retaining vibrancy, shape, highlight, shadow and surface fill. Nonuniform, translucent, custom and special-padding cases keep the full path.
+
+### AM++ 设置分组容器 / AM++ settings grouping
+
+AM++ 参考模式下，设置分组背景采用纯色系统卡片，不再把非交互的大容器当作LiquidButton。开关、滑条、操作按钮、真实浮动菜单和底栏继续各自的玻璃材料。Kyant及其他比较模式保留原卡片材质和上述静态源优化。这个范围区别避免为整组几十行内容反复建立大型玻璃图层，布局、分隔线、描述和触摸行为不变。
+
+In AM++ reference mode, noninteractive settings groups use plain system-style cards rather than stretching a LiquidButton material across a large container. Toggles, sliders, action buttons, floating menus and the dock retain their respective glass materials. Comparison modes retain their existing card materials with the static-source optimization.
