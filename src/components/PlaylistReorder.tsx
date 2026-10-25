@@ -4,6 +4,7 @@
  * confirming hands back the new sequence of ids to rewrite on the server.
  */
 import Icon from '@/components/Icon';
+import { GlassPressable } from '@/components/glass';
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import ReorderableList, {
@@ -76,19 +77,19 @@ export function PlaylistReorder({
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <Pressable hitSlop={10} accessibilityRole="button" onPress={onCancel}>
+        <GlassPressable hitSlop={10} accessibilityRole="button" onPress={onCancel}>
           <Text style={[styles.action, { color: colors.accent }]}>{t('Cancel')}</Text>
-        </Pressable>
+        </GlassPressable>
         <Text style={styles.headerTitle} numberOfLines={1}>
           {title}
         </Text>
-        <Pressable
+        <GlassPressable
           hitSlop={10}
           accessibilityRole="button"
           onPress={() => onSave(list.map((s) => s.id))}
         >
           <Text style={[styles.action, styles.done, { color: colors.accent }]}>{t('Done')}</Text>
-        </Pressable>
+        </GlassPressable>
       </View>
 
       <ReorderableList

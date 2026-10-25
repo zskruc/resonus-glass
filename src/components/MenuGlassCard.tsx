@@ -5,6 +5,7 @@ import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import Icon from '@/components/Icon';
+import { GlassPressable } from '@/components/glass';
 import { MenuGlassBackdrop } from '@/components/MenuGlassBackdrop';
 import { useT } from '@/i18n';
 import { themed, useTheme, useThemeMode } from '@/theme';
@@ -60,10 +61,10 @@ export function MenuGlassCardHeader({ title, subtitle, onClose }: { title: strin
         <Text style={styles.title} numberOfLines={2}>{title}</Text>
         {subtitle ? <Text style={styles.subtitle} numberOfLines={3}>{subtitle}</Text> : null}
       </View>
-      <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel={t('Close')}
+      <GlassPressable onPress={onClose} accessibilityRole="button" accessibilityLabel={t('Close')}
         hitSlop={4} style={({ pressed }) => [styles.close, pressed && { opacity: 0.55 }]}>
         <Icon name="close" size={20} color={colors.textSecondary} />
-      </Pressable>
+      </GlassPressable>
     </View>
   );
 }

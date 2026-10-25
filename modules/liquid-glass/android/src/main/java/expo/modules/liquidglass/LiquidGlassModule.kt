@@ -65,5 +65,33 @@ class LiquidGlassModule : Module() {
       Prop("tabSelectionOpacity") { view: LiquidGlassView, value: Double -> view.tabSelectionOpacity = value.toFloat().coerceIn(0f, 1f) }
       Prop("enabled") { view: LiquidGlassView, value: Boolean -> view.setGlassEnabled(value) }
     }
+    View(LiquidGlassToggleView::class) {
+      Name("LiquidGlassToggle")
+      Events("onValueChange")
+      Prop("value") { view: LiquidGlassToggleView, value: Boolean -> view.value = value }
+      Prop("disabled") { view: LiquidGlassToggleView, value: Boolean -> view.controlDisabled = value }
+      Prop("dark") { view: LiquidGlassToggleView, value: Boolean -> view.dark = value }
+    }
+
+    View(LiquidGlassSliderView::class) {
+      Name("LiquidGlassSlider")
+      Events("onValueChange", "onSlidingStart", "onSlidingComplete", "onSlidingCancel")
+      Prop("value") { view: LiquidGlassSliderView, value: Double ->
+        view.value = value.toFloat().takeIf { it.isFinite() } ?: view.minimumValue
+      }
+      Prop("minimumValue") { view: LiquidGlassSliderView, value: Double ->
+        view.minimumValue = value.toFloat().takeIf { it.isFinite() } ?: 0f
+      }
+      Prop("maximumValue") { view: LiquidGlassSliderView, value: Double ->
+        view.maximumValue = value.toFloat().takeIf { it.isFinite() } ?: 1f
+      }
+      Prop("step") { view: LiquidGlassSliderView, value: Double ->
+        view.step = value.toFloat().takeIf { it.isFinite() && it >= 0f } ?: 0f
+      }
+      OnViewDidUpdateProps { view: LiquidGlassSliderView -> view.normalizeControlledValue() }
+      Prop("disabled") { view: LiquidGlassSliderView, value: Boolean -> view.controlDisabled = value }
+      Prop("dark") { view: LiquidGlassSliderView, value: Boolean -> view.dark = value }
+    }
+
   }
 }

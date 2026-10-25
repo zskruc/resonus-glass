@@ -167,7 +167,7 @@ export function PlaylistEditSheet({
             />
 
             {hidePublic ? null : (
-              <GlassPressable variant="regular" style={styles.switchRow} onPress={() => setIsPublic((v) => !v)}>
+        <GlassPressable buttonMaterial={false} variant="regular" style={styles.switchRow} onPress={() => setIsPublic((v) => !v)}>
                 <View style={styles.switchInfo}>
                   <Text style={styles.switchTitle}>{t('Public playlist')}</Text>
                   <Text style={styles.switchSub}>{t('Visible to other users on the server')}</Text>

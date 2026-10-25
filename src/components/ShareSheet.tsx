@@ -10,6 +10,7 @@
  * `useSharePicker.getState().open(...)`.
  */
 import Icon from '@/components/Icon';
+import { GlassSwitch as Switch } from '@/components/glass';
 import { MenuGlassCardFrame, MenuGlassCardHeader } from '@/components/MenuGlassCard';
 import DateTimePicker, {
   DateTimePickerAndroid,
@@ -22,7 +23,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Switch,
   Text,
   View,
 } from 'react-native';

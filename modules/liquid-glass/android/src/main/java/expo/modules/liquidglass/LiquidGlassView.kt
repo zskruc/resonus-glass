@@ -21,6 +21,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
@@ -35,6 +36,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
@@ -54,11 +56,11 @@ import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
 
 /** Background-only host: all taps and accessibility remain with the RN control. */
-class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(context, appContext), ReactPointerEventsView {
+open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(context, appContext), ReactPointerEventsView {
   override val shouldUseAndroidLayout = true
   // RN and RNGH choose targets before dispatchTouchEvent. This decorative
   // native host must be skipped even where its fixed bounds exceed the glass.
-  override val pointerEvents: PointerEvents = PointerEvents.NONE
+  override open val pointerEvents: PointerEvents = PointerEvents.NONE
 
   internal var radius by mutableFloatStateOf(0f)
   internal var radiusTopLeft: Float? by mutableStateOf(null)
@@ -245,7 +247,7 @@ class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(conte
     } finally { canvas.restoreToCount(checkpoint) }
   }
 
-  private val composeView = ComposeView(context).apply {
+  protected val composeView = ComposeView(context).apply {
     id = View.generateViewId()
     layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
     isClickable = false
@@ -350,7 +352,7 @@ class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(conte
     composeView.layout(0, 0, width, height)
   }
 
-  override fun dispatchTouchEvent(event: MotionEvent): Boolean = false
+  override open fun dispatchTouchEvent(event: MotionEvent): Boolean = false
 
   override fun dispatchDraw(canvas: Canvas) {
     // Also prevents nested capture if a wrapper was flattened by React Native.
@@ -434,6 +436,7 @@ class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(conte
         }
       }
     }
+    if (RenderInteractiveControl(backdrop)) return
     DockMaterialLayout {
       if (isProgressiveBlur) {
         // The producer's edge region is fully blurred; only this final alpha
@@ -535,14 +538,25 @@ class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(conte
               // A page boundary briefly has no image. Official materials keep
               // their own surface alpha rather than flashing the old .82 fill.
               val materialOpacity = if (enabled && (officialMaterial || hasFrame)) opacity else maxOf(opacity, 0.82f)
-              // Keep the source fill's own RGBA alpha; no extra white wash.
-              drawRect(tint.copy(alpha = materialOpacity * tint.alpha))
+              if (preset == "button" && opacity > 0f) {
+                // LiquidButton's optional tint: hue blend followed by its
+                // exact catalog .75 surface alpha. Untinted remains clear.
+                drawRect(tint, blendMode = BlendMode.Hue)
+                drawRect(tint.copy(alpha = 0.75f))
+              } else {
+                // Other materials preserve their surface's own RGBA alpha.
+                drawRect(tint.copy(alpha = materialOpacity * tint.alpha))
+              }
             }
           )
         )
       }
     }
   }
+
+  /** Interactive catalog controls reuse this host's shared capture and lifecycle. */
+  @Composable
+  protected open fun RenderInteractiveControl(backdrop: Backdrop): Boolean = false
 
   @Composable
   private fun DockMaterialLayout(content: @Composable () -> Unit) {

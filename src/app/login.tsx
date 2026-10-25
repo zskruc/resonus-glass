@@ -297,7 +297,7 @@ export default function LoginScreen() {
 
               <View style={styles.srvList}>
                 {SERVERS.map((s) => (
-                  <GlassPressable
+                  <GlassPressable buttonMaterial={false}
                     key={s.key}
                     style={[styles.srvRow, s.soon && styles.srvRowDisabled]}
                     onPress={() =>
@@ -316,7 +316,7 @@ export default function LoginScreen() {
                     )}
                   </GlassPressable>
                 ))}
-                <GlassPressable style={styles.srvRow} onPress={() => pickServer('local')}>
+                <GlassPressable buttonMaterial={false} style={styles.srvRow} onPress={() => pickServer('local')}>
                   <View style={styles.srvLocalIcon}>
                     <Icon name="phone-portrait-outline" size={26} color={colors.accent} />
                   </View>
@@ -361,7 +361,7 @@ export default function LoginScreen() {
                     {t('Listen to music stored on your device, without a server. Choose where from:')}
                   </Text>
 
-                  <GlassPressable style={styles.localOption} onPress={startLocalFolder}>
+                  <GlassPressable buttonMaterial={false} style={styles.localOption} onPress={startLocalFolder}>
                     <Icon name="folder-outline" size={26} color={colors.accent} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.localOptTitle}>{t('Choose a folder (recommended)')}</Text>
@@ -370,7 +370,7 @@ export default function LoginScreen() {
                     <Icon name="chevron-forward" size={20} color={colors.textMuted} />
                   </GlassPressable>
 
-                  <GlassPressable style={styles.localOption} onPress={startLocalDevice}>
+                  <GlassPressable buttonMaterial={false} style={styles.localOption} onPress={startLocalDevice}>
                     <Icon name="phone-portrait-outline" size={26} color={colors.accent} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.localOptTitle}>{t('Scan the whole phone')}</Text>

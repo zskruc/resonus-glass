@@ -1,7 +1,7 @@
 /** Material only: original controls own layout, colors and interactions. */
 import Slider, { type SliderProps } from '@react-native-community/slider';
-import { forwardRef } from 'react';
-import Animated, { useAnimatedReaction, useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
+import { forwardRef, useEffect, useRef } from 'react';
+import Animated, { ReduceMotion, useAnimatedReaction, useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
 import {
   Pressable, StyleSheet, Switch, TextInput, View,
   type PressableProps, type StyleProp, type SwitchProps, type TextInputProps,
@@ -9,12 +9,13 @@ import {
 } from 'react-native';
 import { SafeAreaView, type SafeAreaViewProps } from 'react-native-safe-area-context';
 
-import { LiquidGlassView, isLiquidGlassAvailable, updateNativeDockProgress } from '../../../modules/liquid-glass';
+import { LiquidGlassView, LiquidGlassToggle, LiquidGlassSlider, isLiquidGlassAvailable, updateNativeDockProgress } from '../../../modules/liquid-glass';
 import { resolveGlassProfile, useGlassTuning, type GlassTarget } from '@/store/glassTuning';
 import { useTheme, useThemeMode } from '@/theme';
 import { getKyantGlassProfile } from '@/theme/glassDefaults';
+import { getGlassButtonMotion } from '@/lib/glassButtonMotion';
 
-export type GlassVariant = 'regular' | 'prominent' | 'subtle';
+export type GlassVariant = 'regular' | 'prominent' | 'subtle' | 'button';
 export interface GlassMaterial {
   radius?: number;
   radiusTopLeft?: number;
@@ -58,6 +59,7 @@ export function GlassBackdrop({
   const profile = kyantDefaults
     ? getKyantGlassProfile(variant === 'prominent' ? 'dialog' : 'button', dark)
     : resolveGlassProfile('controls', dark, overrides, mode);
+  const buttonTint = kyantDefaults && variant === 'button' ? tint : undefined;
   const shape = { borderRadius: radius, borderTopLeftRadius: radiusTopLeft, borderTopRightRadius: radiusTopRight,
     borderBottomLeftRadius: radiusBottomLeft, borderBottomRightRadius: radiusBottomRight };
   return isLiquidGlassAvailable ? (
@@ -69,8 +71,8 @@ export function GlassBackdrop({
       refraction={profile.refraction} refractionHeight={profile.refractionHeight}
       highlightWidth={profile.highlightWidth} highlightOpacity={profile.highlightOpacity}
       depthEffect={profile.depthEffect} chromaticAberration={profile.chromaticAberration}
-      tintColor={kyantDefaults ? profile.tintColor ?? 'transparent' : profile.tintColor ?? tint ?? colors.surface}
-      tintOpacity={profile.tintOpacity} dark={dark} enabled />
+      tintColor={buttonTint ?? (kyantDefaults ? profile.tintColor ?? 'transparent' : profile.tintColor ?? tint ?? colors.surface)}
+      tintOpacity={buttonTint ? 0.75 : profile.tintOpacity} dark={dark} enabled />
   ) : (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, shape, { backgroundColor: tint ?? colors.surface }]} />
   );
@@ -166,10 +168,111 @@ const MATERIAL_PROPS: (keyof GlassMaterial)[] = [
   'variant', 'tint', 'enabled', 'blurred',
 ];
 
-/** Preserve caller compatibility while rendering buttons with their original native styles. */
-export const GlassPressable = forwardRef<View, PressableProps & GlassMaterial>(function GlassPressable(props, ref) {
+type GlassPressableProps = PressableProps & GlassMaterial & {
+  /** Data cards, source rows, color samples, and text links retain their own presentation. */
+  buttonMaterial?: boolean;
+};
+
+/**
+ * Keep the caller's Pressable style callback separate from Reanimated's style
+ * array. Passing a callback directly to createAnimatedComponent(Pressable)
+ * would wrap the function in an array before Pressable can evaluate it.
+ * This adapter adds no native container and forwards the actual Pressable ref.
+ */
+const AnimatedButtonPressable = Animated.createAnimatedComponent(forwardRef<View,
+  PressableProps & { callerStyle?: PressableProps['style'] }
+>(function ButtonPressable({ callerStyle, style, ...props }, ref) {
+  return <Pressable {...props} ref={ref} style={(state) => [
+    typeof callerStyle === 'function' ? callerStyle(state) : callerStyle,
+    { backgroundColor: 'transparent', borderRadius: 9999, borderWidth: 0, elevation: 0, shadowOpacity: 0 },
+    style as StyleProp<ViewStyle>,
+  ]} />;
+}));
+
+const BUTTON_SPRING = { stiffness: 300, damping: Math.sqrt(300), mass: 1, reduceMotion: ReduceMotion.System };
+
+const KyantGlassButton = forwardRef<View, PressableProps & Pick<GlassMaterial, 'tint' | 'blurred'>>(
+  function KyantGlassButton({
+    style, children, disabled, tint, blurred, onLayout, onPressIn, onPressOut,
+    onTouchMove, onTouchEnd, onTouchCancel, ...props
+  }, ref) {
+    const size = useSharedValue({ width: 0, height: 0 });
+    const progress = useSharedValue(0);
+    const offset = useSharedValue({ x: 0, y: 0 });
+    const touch = useRef<{ x: number; y: number } | null>(null);
+    const restingStyle = StyleSheet.flatten(typeof style === 'function' ? style({ pressed: false }) : style);
+    const restingTransform = Array.isArray(restingStyle?.transform) ? restingStyle.transform : [];
+    const release = () => {
+      touch.current = null;
+      progress.set(withSpring(0, BUTTON_SPRING));
+      offset.set(withSpring({ x: 0, y: 0 }, BUTTON_SPRING));
+    };
+    useEffect(() => {
+      if (disabled) release();
+      // Changes of disabled state must also end a press whose release was lost.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [disabled]);
+    const motionStyle = useAnimatedStyle(() => {
+      const { width, height } = size.get();
+      const { x, y } = offset.get();
+      const motion = getGlassButtonMotion(width, height, progress.get(), x, y);
+      return { transform: [
+        ...restingTransform,
+        { translateX: motion.x }, { translateY: motion.y },
+        { scaleX: motion.scaleX }, { scaleY: motion.scaleY },
+      ] };
+    }, [restingTransform]);
+    const highlightStyle = useAnimatedStyle(() => ({ opacity: Math.max(0, progress.get()) * 0.08 }));
+    return (
+      <AnimatedButtonPressable {...props} ref={ref} disabled={disabled} collapsable={false}
+        accessibilityRole={props.accessibilityRole ?? 'button'} callerStyle={style} style={motionStyle}
+        onLayout={(event) => {
+          size.set({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height });
+          onLayout?.(event);
+        }}
+        onPressIn={(event) => {
+          touch.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY };
+          offset.set({ x: 0, y: 0 });
+          progress.set(withSpring(1, BUTTON_SPRING));
+          onPressIn?.(event);
+        }}
+        onPressOut={(event) => { release(); onPressOut?.(event); }}
+        onTouchMove={(event) => {
+          if (touch.current) offset.set({
+            x: event.nativeEvent.pageX - touch.current.x,
+            y: event.nativeEvent.pageY - touch.current.y,
+          });
+          onTouchMove?.(event);
+        }}
+        onTouchEnd={(event) => { release(); onTouchEnd?.(event); }}
+        onTouchCancel={(event) => { release(); onTouchCancel?.(event); }}>
+        {(state) => {
+          const callerStyle = typeof style === 'function' ? style(state) : style;
+          // The catalog's tinted variant preserves the contrast of an existing
+          // colored action button, including one supplied by a style callback.
+          const buttonTint = tint ?? materialFromStyle(callerStyle).tint;
+          return <>
+            <GlassBackdrop radius={9999} variant="button" tint={buttonTint} blurred={blurred} />
+            <Animated.View pointerEvents="none" style={[
+              StyleSheet.absoluteFill, { borderRadius: 9999, backgroundColor: '#FFFFFF' }, highlightStyle,
+            ]} />
+            {typeof children === 'function' ? children(state) : children}
+          </>;
+        }}
+      </AnimatedButtonPressable>
+    );
+  }
+);
+
+/** Buttons opt into the catalog material; explicitly excluded data rows remain native. */
+export const GlassPressable = forwardRef<View, GlassPressableProps>(function GlassPressable(props, ref) {
+  const mode = useGlassTuning((s) => s.mode);
   const nativeProps = { ...props };
   for (const key of MATERIAL_PROPS) delete nativeProps[key];
+  delete nativeProps.buttonMaterial;
+  if (isLiquidGlassAvailable && mode === 'kyantDefault' && props.enabled !== false && props.buttonMaterial !== false) {
+    return <KyantGlassButton {...nativeProps} ref={ref} tint={props.tint} blurred={props.blurred} />;
+  }
   return <Pressable {...nativeProps} ref={ref} />;
 });
 
@@ -190,12 +293,63 @@ export const GlassTextInput = forwardRef<TextInput, TextInputProps>(function Gla
   );
 });
 
-export function GlassSwitch(props: SwitchProps) {
-  return <Switch {...props} />;
+export function GlassSwitch({
+  value = false, disabled, onValueChange, onChange, style,
+  trackColor, thumbColor, ios_backgroundColor, ...viewProps
+}: SwitchProps) {
+  const dark = useThemeMode() === 'dark';
+  if (!isLiquidGlassAvailable) {
+    return <Switch {...viewProps} style={style} value={value} disabled={disabled}
+      onValueChange={onValueChange} onChange={onChange}
+      trackColor={trackColor} thumbColor={thumbColor} ios_backgroundColor={ios_backgroundColor} />;
+  }
+  return (
+    <View {...viewProps} collapsable={false} style={[{ width: 64, height: 48, flexShrink: 0 }, style]}>
+      <LiquidGlassToggle style={StyleSheet.absoluteFill} value={value} disabled={disabled} dark={dark}
+        onStartShouldSetResponder={() => true}
+        onResponderTerminationRequest={() => false}
+        accessible={viewProps.accessible}
+        accessibilityLabel={viewProps.accessibilityLabel}
+        accessibilityElementsHidden={viewProps.accessibilityElementsHidden}
+        importantForAccessibility={viewProps.importantForAccessibility}
+        onValueChange={(event) => {
+          onChange?.(event);
+          onValueChange?.(event.nativeEvent.value);
+        }} />
+    </View>
+  );
 }
 
-export function GlassSlider(props: SliderProps) {
-  return <Slider {...props} />;
+export function GlassSlider({
+  style, value, minimumValue, maximumValue, step, disabled,
+  onValueChange, onSlidingStart, onSlidingComplete, onSlidingCancel,
+  accessibilityLabel, accessibilityHint, accessibilityElementsHidden,
+  importantForAccessibility, testID, ...fallbackProps
+}: SliderProps & { onSlidingCancel?: () => void }) {
+  const dark = useThemeMode() === 'dark';
+  if (!isLiquidGlassAvailable) {
+    return <Slider {...fallbackProps} style={style} value={value} minimumValue={minimumValue}
+      maximumValue={maximumValue} step={step} disabled={disabled} testID={testID}
+      accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint}
+      accessibilityElementsHidden={accessibilityElementsHidden}
+      importantForAccessibility={importantForAccessibility}
+      onValueChange={onValueChange} onSlidingStart={onSlidingStart} onSlidingComplete={onSlidingComplete} />;
+  }
+  return (
+    <View collapsable={false} style={[{ height: 48, minHeight: 48, alignSelf: 'stretch' }, style]} testID={testID}>
+      <LiquidGlassSlider style={StyleSheet.absoluteFill} value={value} minimumValue={minimumValue}
+        maximumValue={maximumValue} step={step} disabled={disabled} dark={dark}
+        onStartShouldSetResponder={() => true}
+        onResponderTerminationRequest={() => true}
+        accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint}
+        accessibilityElementsHidden={accessibilityElementsHidden}
+        importantForAccessibility={importantForAccessibility}
+        onValueChange={(event) => onValueChange?.(event.nativeEvent.value)}
+        onSlidingStart={(event) => onSlidingStart?.(event.nativeEvent.value)}
+        onSlidingComplete={(event) => onSlidingComplete?.(event.nativeEvent.value)}
+        onSlidingCancel={onSlidingCancel} />
+    </View>
+  );
 }
 
 /** Original safe-area layout without an added scene or background. */

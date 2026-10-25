@@ -228,7 +228,7 @@ export default function LibrarySettings() {
         <GlassSurface radius={0} radiusTopLeft={radius.xxl} radiusTopRight={radius.xxl} variant="prominent" style={[sheetStyles.sheet, { paddingBottom: insets.bottom + spacing.md }]}>
           <Text style={sheetStyles.title}>{t('Where should we get your music?')}</Text>
 
-          <GlassPressable radius={radius.md} variant="regular" style={sheetStyles.option} onPress={chooseFolder}>
+          <GlassPressable buttonMaterial={false} radius={radius.md} variant="regular" style={sheetStyles.option} onPress={chooseFolder}>
             <Icon name="folder-outline" size={26} color={colors.accent} />
             <View style={{ flex: 1 }}>
               <Text style={sheetStyles.optionTitle}>{t('Choose a folder (recommended)')}</Text>
@@ -236,7 +236,7 @@ export default function LibrarySettings() {
             </View>
           </GlassPressable>
 
-          <GlassPressable radius={radius.md} variant="regular" style={sheetStyles.option} onPress={chooseDevice}>
+          <GlassPressable buttonMaterial={false} radius={radius.md} variant="regular" style={sheetStyles.option} onPress={chooseDevice}>
             <Icon name="phone-portrait-outline" size={26} color={colors.accent} />
             <View style={{ flex: 1 }}>
               <Text style={sheetStyles.optionTitle}>{t('Scan the whole phone')}</Text>

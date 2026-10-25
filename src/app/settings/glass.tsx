@@ -1,6 +1,7 @@
 import { DockScrollView } from '@/components/DockScrollView';
 import { ColorPickerDialog } from '@/components/ColorPickerDialog';
 import { GlassTuningPreview } from '@/components/GlassTuningPreview';
+import { GlassPressable as Pressable, GlassSlider as Slider, GlassSwitch as Switch } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { SettingsPage } from '@/components/SettingsUI';
 import { useT, type TFunction } from '@/i18n';
@@ -11,9 +12,8 @@ import {
 import { useSettings } from '@/store/settings';
 import { useToast } from '@/store/toast';
 import { SCREEN_BOTTOM_PADDING, themed, useTheme, useThemeMode } from '@/theme';
-import Slider from '@react-native-community/slider';
 import { useState } from 'react';
-import { Pressable, Share, Switch, Text, View } from 'react-native';
+import { Share, Text, View } from 'react-native';
 import { isLiquidGlassAvailable } from '../../../modules/liquid-glass';
 
 const TARGETS: { value: GlassTarget; label: string }[] = [
@@ -200,7 +200,7 @@ export default function GlassTuningSettings() {
             ><Text style={styles.linkLabel}>{t('Enable glass')}</Text></Pressable>
           </View>
         ) : null}
-        {target === 'controls' ? <Text style={styles.description}>{t('These parameters apply to panels, dialogs, and fields. Buttons use their original styles.')}</Text> : null}
+        {target === 'controls' && mode !== 'kyantDefault' ? <Text style={styles.description}>{t('These parameters apply to panels, dialogs, and fields. Buttons use their original styles.')}</Text> : null}
         <Text style={styles.sectionTitle}>{t('Starting styles')}</Text>
         <View style={styles.presets}>
           {([{ kind: 'clear', label: 'Clear glass' }, { kind: 'strong', label: 'Strong lens' }, { kind: 'soft', label: 'Soft glass' }] as const).map((item) => (
@@ -224,6 +224,7 @@ export default function GlassTuningSettings() {
                 const selected = profile.tintColor?.toUpperCase() === swatch.color || (!profile.tintColor && swatch.color === null);
                 return (
                   <Pressable
+                    buttonMaterial={false}
                     key={swatch.label}
                     onPress={() => update(target, { tintColor: swatch.color })}
                     disabled={editingDisabled}
@@ -237,7 +238,7 @@ export default function GlassTuningSettings() {
                   </Pressable>
                 );
               })}
-              <Pressable disabled={editingDisabled} onPress={() => setPickerOpen(true)} accessibilityRole="button" accessibilityLabel={t('Custom color')} style={[styles.swatch, styles.customSwatch, profile.tintColor && !TINTS.some((tint) => tint.color === profile.tintColor?.toUpperCase()) ? { backgroundColor: profile.tintColor } : null, editingDisabled && styles.disabled]}>
+              <Pressable buttonMaterial={false} disabled={editingDisabled} onPress={() => setPickerOpen(true)} accessibilityRole="button" accessibilityLabel={t('Custom color')} style={[styles.swatch, styles.customSwatch, profile.tintColor && !TINTS.some((tint) => tint.color === profile.tintColor?.toUpperCase()) ? { backgroundColor: profile.tintColor } : null, editingDisabled && styles.disabled]}>
                 <Icon name="color-palette-outline" size={22} color={profile.tintColor && !TINTS.some((tint) => tint.color === profile.tintColor?.toUpperCase()) ? contrastingInk(profile.tintColor) : colors.text} />
               </Pressable>
             </View>

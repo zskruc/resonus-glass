@@ -180,3 +180,41 @@ export function LiquidGlassView({
     />
   );
 }
+
+
+export type LiquidGlassToggleProps = ViewProps & {
+  value: boolean;
+  disabled?: boolean;
+  dark?: boolean;
+  onValueChange?: (event: NativeSyntheticEvent<{ value: boolean; target: number }>) => void;
+};
+
+export type LiquidGlassSliderProps = ViewProps & {
+  value?: number;
+  minimumValue?: number;
+  maximumValue?: number;
+  step?: number;
+  disabled?: boolean;
+  dark?: boolean;
+  onValueChange?: (event: NativeSyntheticEvent<{ value: number }>) => void;
+  onSlidingStart?: (event: NativeSyntheticEvent<{ value: number }>) => void;
+  onSlidingComplete?: (event: NativeSyntheticEvent<{ value: number }>) => void;
+  onSlidingCancel?: (event: NativeSyntheticEvent<{ value: number }>) => void;
+};
+
+const NativeToggle = nativeModule
+  ? requireNativeView<LiquidGlassToggleProps>('ResonusLiquidGlass', 'LiquidGlassToggle')
+  : null;
+const NativeSlider = nativeModule
+  ? requireNativeView<LiquidGlassSliderProps>('ResonusLiquidGlass', 'LiquidGlassSlider')
+  : null;
+
+/** Interactive catalog control. Use a dedicated noncollapsible RN parent. */
+export function LiquidGlassToggle(props: LiquidGlassToggleProps) {
+  return NativeToggle && isLiquidGlassAvailable ? <NativeToggle {...props} /> : <View {...props} />;
+}
+
+/** All drag animation stays on the native UI thread; JS receives only values. */
+export function LiquidGlassSlider(props: LiquidGlassSliderProps) {
+  return NativeSlider && isLiquidGlassAvailable ? <NativeSlider {...props} /> : <View {...props} />;
+}

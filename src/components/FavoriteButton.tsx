@@ -1,7 +1,8 @@
 /** Heart to mark/unmark favorites (Subsonic star/unstar). */
 import Icon from '@/components/Icon';
 import { useEffect, useState } from 'react';
-import { Pressable, type GestureResponderEvent } from 'react-native';
+import { type GestureResponderEvent } from 'react-native';
+import { GlassPressable } from '@/components/glass';
 
 import { star, unstar, type StarType } from '@/api/data';
 import { applyStarChange, resyncFavorites, unstarWithUndo } from '@/lib/favoritesCache';
@@ -73,7 +74,7 @@ export function FavoriteButton({ id, type = 'song', starred, size = 22, undo, un
   }
 
   return (
-    <Pressable
+    <GlassPressable
       hitSlop={10}
       onPress={toggle}
       accessibilityRole="button"
@@ -84,6 +85,6 @@ export function FavoriteButton({ id, type = 'song', starred, size = 22, undo, un
         size={size}
         color={fav ? colors.accent : unselectedColor ?? colors.textSecondary}
       />
-    </Pressable>
+    </GlassPressable>
   );
 }

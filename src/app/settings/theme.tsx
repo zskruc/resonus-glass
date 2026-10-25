@@ -61,7 +61,7 @@ function TintSwatches({
       {TINTS.map(({ key, name }) => {
         const active = key === value;
         return (
-          <GlassPressable
+          <GlassPressable buttonMaterial={false}
             radius={radius.pill}
             key={key}
             onPress={() => onPick(key)}
@@ -92,7 +92,7 @@ function Swatches({ value, onPick }: { value: string; onPick: (hex: string) => v
       {ACCENT_OPTIONS.map((opt) => {
         const active = opt.color.toLowerCase() === value.toLowerCase();
         return (
-          <GlassPressable
+          <GlassPressable buttonMaterial={false}
             radius={radius.pill}
             key={opt.color}
             onPress={() => onPick(opt.color)}
@@ -138,7 +138,7 @@ function CustomSwatch({
   return (
     <View style={styles.swatches}>
       {color ? (
-        <GlassPressable
+        <GlassPressable buttonMaterial={false}
           radius={radius.pill}
           onPress={onPick}
           accessibilityRole="button"
@@ -149,7 +149,7 @@ function CustomSwatch({
           {active ? <Icon name="checkmark" size={24} color={tickOn(color)} /> : null}
         </GlassPressable>
       ) : null}
-      <GlassPressable
+      <GlassPressable buttonMaterial={false}
         radius={radius.pill}
         onPress={onEdit}
         accessibilityRole="button"

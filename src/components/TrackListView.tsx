@@ -642,7 +642,7 @@ export function TrackListView({
             </Text>
             {subtitle ? (
               onSubtitlePress ? (
-                <GlassPressable variant="subtle" hitSlop={6} style={styles.subtitleRow} onPress={onSubtitlePress}>
+                <GlassPressable buttonMaterial={false} variant="subtle" hitSlop={6} style={styles.subtitleRow} onPress={onSubtitlePress}>
                   {artistImageUri ? (
                     <View style={styles.artistPhoto}>
                       <Cover uri={artistImageUri} size={24} />

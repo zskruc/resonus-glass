@@ -58,6 +58,7 @@ export function SeekBar({
         // Held down without moving yet: the thumb is already the finger's, so
         // the position stops being sent to it from here on.
         onSlidingStart={() => setHeld(positionSec)}
+        onSlidingCancel={() => setHeld(null)}
         onValueChange={setHeld}
         onSlidingComplete={(value) => {
           // Let go before the store is told, since `seekTo` writes the new

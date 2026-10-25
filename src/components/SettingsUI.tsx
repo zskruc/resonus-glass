@@ -479,6 +479,7 @@ export function SliderRow({
         step={step}
         value={value}
         onValueChange={setLive}
+        onSlidingCancel={() => setLive(null)}
         onSlidingComplete={(v) => {
           setLive(null);
           onChange(v);

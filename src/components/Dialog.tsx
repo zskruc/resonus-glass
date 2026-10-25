@@ -210,20 +210,20 @@ function MenuDialog({ title, message, messageColor, input, inputRef, value, onCh
         {input ? <TextInput ref={inputRef} style={styles.input} placeholder={input.placeholder}
           placeholderTextColor={colors.textMuted} value={value} onChangeText={onChangeText}
           secureTextEntry={input.secure} accessibilityLabel={input.placeholder ?? title} /> : null}
-        {neutral ? <Pressable onPress={() => close(neutral.onPress)} accessibilityRole="button"
+        {neutral ? <GlassPressable onPress={() => close(neutral.onPress)} accessibilityRole="button"
           style={[styles.neutral, neutral.align === 'end' && { alignSelf: 'flex-end' }]}>
           <Text style={styles.cancel}>{neutral.label}</Text>
           {neutral.icon ? <Icon name={neutral.icon} size={15} color={colors.textSecondary} /> : null}
-        </Pressable> : null}
+        </GlassPressable> : null}
       </ScrollView>
       <View style={styles.menuActions}>
-        <Pressable onPress={() => close(onCancel)} accessibilityRole="button" style={styles.menuButton}>
+        <GlassPressable onPress={() => close(onCancel)} accessibilityRole="button" style={styles.menuButton}>
           <Text style={styles.cancel}>{t('Cancel')}</Text>
-        </Pressable>
-        <Pressable onPress={() => close(onConfirm)} disabled={!canConfirm} accessibilityRole="button"
+        </GlassPressable>
+        <GlassPressable tint={destructive ? colors.danger : colors.accent} onPress={() => close(onConfirm)} disabled={!canConfirm} accessibilityRole="button"
           style={[styles.menuButton, { backgroundColor: destructive ? colors.danger : colors.accent }, !canConfirm && { opacity: 0.4 }]}>
           <Text style={[styles.confirm, { color: colors.onAccent }]}>{confirmLabel}</Text>
-        </Pressable>
+        </GlassPressable>
       </View>
     </MenuGlassCardFrame>
   );

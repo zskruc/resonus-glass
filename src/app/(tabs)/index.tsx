@@ -108,7 +108,7 @@ function QuickTile({
     <Link href={href} asChild>
       {/* Flattened, not an array: expo-router hands the style straight to the
           child it clones and refuses a list. */}
-      <GlassPressable variant="subtle" style={StyleSheet.flatten([styles.tile, { width }])}>
+      <GlassPressable buttonMaterial={false} variant="subtle" style={StyleSheet.flatten([styles.tile, { width }])}>
         {favorites ? (
           <FavoritesArt size={52} square />
         ) : (

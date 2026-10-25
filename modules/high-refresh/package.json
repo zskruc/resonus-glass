@@ -1,0 +1,7 @@
+{
+  "name": "high-refresh",
+  "version": "0.1.0",
+  "description": "Foreground high refresh policy for every app window",
+  "main": "index.ts",
+  "private": true
+}

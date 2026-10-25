@@ -52,7 +52,7 @@ export default function OfflineScreen() {
       <View style={styles.setup}>
         <Text style={styles.setupTitle}>{t('Where should we get your music?')}</Text>
 
-        <GlassPressable variant="regular" style={styles.option} onPress={chooseFolder}>
+        <GlassPressable buttonMaterial={false} variant="regular" style={styles.option} onPress={chooseFolder}>
           <Icon name="folder-outline" size={28} color={colors.accent} />
           <View style={{ flex: 1 }}>
             <Text style={styles.optionTitle}>{t('Choose a folder (recommended)')}</Text>
@@ -61,7 +61,7 @@ export default function OfflineScreen() {
           <Icon name="chevron-forward" size={20} color={colors.textMuted} />
         </GlassPressable>
 
-        <GlassPressable variant="regular" style={styles.option} onPress={chooseDevice}>
+        <GlassPressable buttonMaterial={false} variant="regular" style={styles.option} onPress={chooseDevice}>
           <Icon name="phone-portrait-outline" size={28} color={colors.accent} />
           <View style={{ flex: 1 }}>
             <Text style={styles.optionTitle}>{t('Scan the whole phone')}</Text>
