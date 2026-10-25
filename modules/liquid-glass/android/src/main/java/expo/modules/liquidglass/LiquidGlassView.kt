@@ -394,10 +394,8 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
     // current screen origin instead of waiting for asynchronous capture delivery.
     // WindowBackdrop applies all changed materials' drawing observers once,
     // before this pre-draw finishes, so they cannot lag the parent transform.
-    // Geometry and image versions are read by the same draw-state observer.
-    // Compose invalidates that layer itself; only an unobserved first draw or
-    // a display list suppressed during capture needs the Android host restored.
-    restoreDisplayListAfterCapture()
+    composeView.invalidate()
+    invalidate()
   }
 
   @Composable

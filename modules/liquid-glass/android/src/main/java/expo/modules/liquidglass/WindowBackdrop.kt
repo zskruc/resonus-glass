@@ -1016,19 +1016,16 @@ internal class WindowBackdrop(
     // results that the worker has prepared but the UI has not published yet.
     while (frames.size > 2) frames.removeFirst().image.close()
     closeUnusedReaders()
-    notifyBackdropDrawingChanged(targets.filter { isMaterialVisible(it, screenRect) }, forceAndroidRedraw = false)
+    notifyBackdropDrawingChanged(targets.filter { isMaterialVisible(it, screenRect) })
   }
 
-  private fun notifyBackdropDrawingChanged(targets: Iterable<LiquidGlassView>, forceAndroidRedraw: Boolean = true) {
+  private fun notifyBackdropDrawingChanged(targets: Iterable<LiquidGlassView>) {
     targets.forEach { if (it.onBackdropFrame()) hostRestoreCount++ }
     // Image delivery and page invalidation can occur after Compose's frame
     // callback. Apply their draw-state observers together before this window
     // draws, rather than leaving old display lists for another display frame.
     Snapshot.sendApplyNotifications()
-    // Normal image changes invalidate their observed Compose drawing layers.
-    // Preserve an explicit whole-host redraw for page clearing and failures;
-    // first/suppressed display lists are restored by onBackdropFrame above.
-    if (forceAndroidRedraw) targets.forEach { it.invalidateBackdropDrawing() }
+    targets.forEach { it.invalidateBackdropDrawing() }
   }
 
   private fun failCapture(exception: Exception) {
