@@ -4,9 +4,20 @@
 
 - 参考仓库：[Kifranei/AM-plus-plus](https://github.com/Kifranei/AM-plus-plus)，本轮核对提交 [`97fa2e4efc9ec7476daca383221f55b5d10f847c`](https://github.com/Kifranei/AM-plus-plus/tree/97fa2e4efc9ec7476daca383221f55b5d10f847c)。
 - 玻璃部分继续以 [AndroidLiquidGlass / Backdrop 2.0.1](https://github.com/Kyant0/AndroidLiquidGlass/tree/65ab177e90e5c1d8c62e70cf7755841982da65f6) 为来源；AM++ 的参数和宿主适配是另一层，不等于 Apple 的内部实现。
-- 用户提供的[小红书短链](https://xhslink.cn/o/39iP9z7oZFo)指向笔记 `6ad2c6f00000000018011ee6`。公开访问最终进入登录页，本轮未取得帖子正文或视频；下面的判断依据仓库可读源码与说明，不能声称已核对视频中的全部细节。
+- 用户提供的[小红书笔记](https://xhslink.cn/o/39iP9z7oZFo)为 Kifranei 的《让Android版AppleMusic更iOS化》，笔记 ID `6ad2c6f00000000018011ee6`。普通网页请求曾进入登录页，随后通过浏览器读到公开正文，并核对了图1与图5：图1包含浮动音质卡片和右侧玻璃更多菜单，图5列出媒体增强插件的功能；其他图片尚未逐一核对。
+- 帖子明确将图1–4介绍为[媒体增强插件](https://github.com/Kifranei/AM-plus-plus-media-plugin)预览，并另列[莫奈封面取色插件](https://github.com/Kifranei/AM-plus-plus-monet-plugin)。本轮源码核对分别固定于 [`b9e043c10ee8bdba62f155acba296be566b9b71d`](https://github.com/Kifranei/AM-plus-plus-media-plugin/tree/b9e043c10ee8bdba62f155acba296be566b9b71d) 与 [`0408c9f9dc7d6f4f893e22f847f60dc443cf9f70`](https://github.com/Kifranei/AM-plus-plus-monet-plugin/tree/0408c9f9dc7d6f4f893e22f847f60dc443cf9f70)。作者评论提及的版本与本次读取的主分支快照分开记录，不视为同一份产物。
 
-The reviewed AM++ snapshot is pinned above. Its glass layer builds on the same Kyant reference, with additional host integration and layout rules. The supplied Xiaohongshu link redirects to a login page; its post/video was not available through public access. The findings here therefore describe the repository, not an inspection of that video.
+The reviewed AM++ and two companion-plugin snapshots are pinned above. The public Xiaohongshu post was read in the browser after an initial HTTP login redirect. Images1 and5 were inspected; the remaining images were not individually verified. The post identifies images1–4 as media-plugin previews and links a separate Monet color plugin. A version named in a post/comment is not assumed to match the current repository snapshot.
+
+## 帖子中的三个项目 / The three projects in the post
+
+| 项目 | 对应范围 | 本轮关系 |
+| --- | --- | --- |
+| AM++ 主项目 | mini player、底部导航、收缩联动，以及歌词和宿主接入等 | 本轮 dock 参考来源 |
+| 媒体增强插件 | 播放页玻璃弹窗/更多菜单、系统音频输出入口、设备名、音量条、系统圆角、把手、图片分享和内容导出 | 本轮仅审查候选，未随 dock 预览移植 |
+| 莫奈取色插件 | 从专辑封面提取主题色，选择只影响播放页或整个 App | 独立的颜色方案；不是底栏折射实现 |
+
+The main AM++ project supplies the dock reference. The media plugin adds player dialogs, output controls and sharing/export features. Monet supplies cover-derived color roles. Adapting one of these does not implicitly include the other two.
 
 ## 接入边界 / Integration boundary
 
@@ -38,17 +49,39 @@ English overview:
 - **Renderer-specific work:** CJK terminal highlighting must be adapted to Resonus's own word renderer rather than copying Apple Music hooks.
 - **Lower priority:** selective navigation prewarming may improve first entry, but adds startup work and does not guarantee sustained frame rates.
 
+## 媒体增强与取色插件候选 / Companion-plugin candidates
+
+以下依据图1、图5、两个插件 README 和相应源码，均未包含在本轮 dock 与设置滚动修复内。
+
+| 候选 | 适配到 Resonus 的方式 | 优先级 |
+| --- | --- | --- |
+| 三种播放弹窗玻璃外观 | Resonus 已有浮动菜单、睡眠定时、删除确认与歌曲信息等基础，可按媒体插件的对应材质增加可选预设，统一圆角、按钮和文字层级。要继续复用共享采样，不能另加逐弹窗全屏捕获。 | 高：与现有界面最贴近 |
+| 输出设备图标与名称 | 保留现有本机/服务器/投放功能，另用 Android 的真实媒体路由信息识别当前有线耳机、蓝牙耳机或音响，显示名称并尝试系统音频输出面板；具体厂商可用性需实机验证。 | 高：界面与功能都实用 |
+| 播放页系统音量条 | 可另做与硬件音量键同步的系统媒体音量条；必须区分本机系统音量、App 内音量和远程投放音量，避免互相覆盖。 | 中高 |
+| 统一把手与系统顶部圆角 | 按全屏播放器展开进度显示把手，按 Android 圆角能力裁切；需要和 Resonus 现有上拉/下拉过渡一起适配。 | 中 |
+| 歌曲/歌词图片卡片 | 使用 Resonus 自己的数据、封面和标识生成图片，通过系统面板分享或保存。Apple Music 的原生卡片生成器和标志不能直接接入。 | 中，独立功能 |
+| 莫奈封面主题 | 已有封面主色背景，可增加可选的 Oklab 取色与亮/暗主题角色，后台缩图、缓存、去重，换歌稳定后更新。默认不把它强加到 mini player 或已有玻璃参数上。 | 可选：先保证文字对比度与滚动性能 |
+| 词幕集成与内容导出 | 词幕需要接入其提供者接口；静态封面、歌词与介绍可从已有数据导出，动态 MP4/原始 TTML 只有数据源实际提供才可保存，不能由自托管来源凭空补齐。 | 后续独立功能 |
+
+媒体插件的三种预设并非单一“无模糊”开关。读取的源码中，同底栏为4dp模糊、随尺寸限制的24dp边缘透镜与深灰40%填色；同更多菜单为20dp模糊、10/16透镜与中性灰填色；名为“无磨砂（早期效果）”的预设仍使用20dp模糊和20/32透镜，只是不加着色面。菜单的明暗配色和边缘实现还需分别对应，不能仅按选项名称推断参数。
+
+For Resonus, the closest next steps are optional player-dialog recipes and a real output-device label/system picker. A hardware-synchronized volume bar and shareable song/lyric image cards require separate integration. Monet's background24×24 sampling, caching, Oklab palette roles and contrast checks are useful references, but its Apple Music resource hooks are not needed in Resonus. The preset named “No frost” still applies20dp blur in the reviewed source; it means an untinted surface, not zero blur. None of these companion-plugin features is implemented by this dock preview.
+
 ## 许可证与资源 / Licenses and assets
 
 AM++ 主项目采用 GPL-3.0；Kyant 的 Backdrop/示例采用 Apache-2.0。移植的具体文件须保留来源、许可证及修改记录，不能只依据主项目许可证判断所有子目录。AM++ 的第三方声明还列有 MIT 歌词模糊、GPL 的歌词修正、AGPL 的部分平板参考以及不属于 GPL 的 Apple 图像。未采用的代码与图像不应整包复制；若采用额外来源，应按对应条款单独核对和声明。
 
 AM++'s main project is GPL-3.0; Kyant's Backdrop and catalog components are Apache-2.0. Preserve provenance and notices for the actual files adapted. AM++ also documents MIT lyric-blur code, GPL lyric fixes, AGPL tablet references and Apple images outside the GPL grant. Do not copy whole resource trees under the assumption that one project license covers every asset.
 
+媒体增强与莫奈插件主代码均声明 GPL-3.0。媒体插件另列 Apache-2.0 的 Kyant/LyricProvider/DexKit，以及来源单独记录的图标和 Apple 扬声器/AirPods 图片；本轮未复制这些资源。莫奈插件将 Oklab 转换归于 Björn Ottosson 的公有领域参考，不包含 Apple Music 代码或素材。后续实际选取代码时，应保留对应提交和第三方声明，而不是将插件 ZIP 直接嵌入 App。
+
+Both companion plugins declare GPL-3.0 for their main code. The media plugin separately records Apache dependencies and icon/image sources; its Apple output-device images were not copied. Monet credits the public-domain Oklab reference and states that it includes no Apple Music code or assets. Any later adaptation must preserve the notices for the files actually used.
+
 参考：[AM++ 第三方声明](https://github.com/Kifranei/AM-plus-plus/blob/97fa2e4efc9ec7476daca383221f55b5d10f847c/THIRD_PARTY_NOTICES.md)、[功能范围与验收矩阵](https://github.com/Kifranei/AM-plus-plus/blob/97fa2e4efc9ec7476daca383221f55b5d10f847c/docs/feature-preservation.md)。
 
 ## 本轮预览 / This preview
 
-`0.8.4.1-ampp.4` / Android versionCode `77`，源码分支 `preview/ampp-dock`。
+`0.8.4.1-ampp.5` / Android versionCode `78`，源码分支 `preview/ampp-dock`。
 
 - 新增可切换的「AM++ 参考」外观；它只替换本轮 dock 的布局、材质与动画，其他控件保留 Kyant 默认材料。旧的 Kyant 默认、参考及自定义外观仍可选，原有参数不覆盖。
 - 手机 nav56dp、mini43dp、边距16dp、间隔8dp、底部额外16dp；展开时搜索并入导航，折叠时在右侧独立出现，左侧保留当前页面图标。

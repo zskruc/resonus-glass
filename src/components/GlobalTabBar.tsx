@@ -362,7 +362,9 @@ export function GlobalTabBar() {
   }, [shown, fade]);
   const fadeStyle = useAnimatedStyle(() => ({ opacity: fade.value }));
   const searchDockStyle = useAnimatedStyle(() => ({
-    opacity: amPlus ? amppSearchAlpha(dockProgress.value) : 1,
+    // One opacity owner: Reanimated applies animated styles by update order,
+    // so a resumed fade must never reveal Search inside the expanded capsule.
+    opacity: fade.value * (amPlus ? amppSearchAlpha(dockProgress.value) : 1),
     transform: [{ translateX: amPlus ? 0 : geometry.searchTranslationX * amppProgress(dockProgress.value) }],
   }), [geometry.searchTranslationX, amPlus]);
   const expandedContentStyle = useAnimatedStyle(() => ({
@@ -609,7 +611,7 @@ export function GlobalTabBar() {
         accessibilityElementsHidden={!shown || !searchInteractive} importantForAccessibility={shown && searchInteractive ? 'auto' : 'no-hide-descendants'}
         style={[styles.searchFrame, { bottom: insets.bottom + bottomGap,
           start: rtl ? screenWidth - baseMargin - geometry.searchOffsetX - searchExpandedWidth
-            : baseMargin + geometry.searchOffsetX, width: searchExpandedWidth, height: navHeight }, fadeStyle, searchDockStyle]}>
+            : baseMargin + geometry.searchOffsetX, width: searchExpandedWidth, height: navHeight }, searchDockStyle]}>
         <View pointerEvents="box-none" collapsable={false} style={styles.searchCircle}>
           <FloatingGlassBackdrop radius={navHeight / 2} tint={colors.surface} blurred={blur}
             dockProgress={dockProgress} dockExpandedWidth={searchExpandedWidth}

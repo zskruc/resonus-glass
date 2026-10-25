@@ -41,7 +41,7 @@ These features describe the released Glass baseline. Development previews may ch
 | Channel | Version | Android version code | Availability |
 | --- | --- | --- | --- |
 | Stable | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest), in-app update checks |
-| Development preview | `0.8.4.1-ampp.4` | `77` | Local test APK; not published as a stable release |
+| Development preview | `0.8.4.1-ampp.5` | `78` | Local test APK; not published as a stable release |
 
 Development previews on `preview/ampp-dock` adapt AM++ phone mini-player/navigation materials and collapse motion. Preview changes are not necessarily included in the stable release. They do not guarantee sustained 120 fps across every page; consult the corresponding source, APK version, and validation records for their actual scope.
 

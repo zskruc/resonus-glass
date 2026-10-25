@@ -41,7 +41,7 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 | 渠道 | 版本 | Android 更新编号 | 获取方式 |
 | --- | --- | --- | --- |
 | 正式发布 | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest)，App 内检查更新 |
-| 开发预览 | `0.8.4.1-ampp.4` | `77` | 本地测试 APK，尚未发布为正式 Release |
+| 开发预览 | `0.8.4.1-ampp.5` | `78` | 本地测试 APK，尚未发布为正式 Release |
 
 当前开发预览在 `preview/ampp-dock` 分支上适配 AM++ 的 mini player、底部导航材质和折叠动画；「设置 → 玻璃调节」可在 AM++ 参考、开源默认参数和旧参数之间切换。对应范围及其他候选功能见 [AM++ 适配说明](./docs/AMPP-ADAPTATION.md)。之前的 Kyant 默认材质预览保留在 `preview/kyant-defaults` 分支。预览版不代表正式版已经具备相同改动，也不构成所有页面持续达到 120 fps 的保证；具体内容以对应源码、APK 版本和验证记录为准。
 
