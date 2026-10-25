@@ -41,7 +41,7 @@ These features describe the released Glass baseline. Development previews may ch
 | Channel | Version | Android version code | Availability |
 | --- | --- | --- | --- |
 | Stable | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest), in-app update checks |
-| Development preview | `0.8.4.1-preview.5` | `72` | Local test APK; not published as a stable release |
+| Development preview | `0.8.4.1-preview.6` | `73` | Local test APK; not published as a stable release |
 
 Development previews on `preview/kyant-defaults` compare AndroidLiquidGlass example defaults and page-switching behavior. Preview changes are not necessarily included in the stable release. They do not guarantee sustained 120 fps across every page; consult the corresponding source, APK version, and validation records for their actual scope.
 
