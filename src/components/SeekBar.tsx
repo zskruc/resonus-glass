@@ -66,6 +66,7 @@ export function SeekBar({
           setHeld(null);
           seekTo(value);
         }}
+        activeTrackTintColor={tint}
         minimumTrackTintColor={tint ?? colors.text}
         maximumTrackTintColor={colors.mediaTrack}
         thumbTintColor={tint ?? colors.text}

@@ -9,10 +9,12 @@ import MaskedView from '@react-native-masked-view/masked-view';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { useMemo } from 'react';
+import { buildPlayerPalette } from '@/lib/playerPalette';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { COVER, songCoverUrl } from '@/api/data';
+import { CACHED_COVER, COVER, songCoverUrl } from '@/api/data';
 import { SyncedLyricsView, useLyricsLineStyle } from '@/components/LyricsCard';
 import { SeekBar } from '@/components/SeekBar';
 import { useDominantColor } from '@/hooks/useDominantColor';
@@ -20,7 +22,7 @@ import { useLyrics } from '@/hooks/useLyrics';
 import { useT } from '@/i18n';
 import { currentSong, usePlayerStore } from '@/store/player';
 import { useSettings } from '@/store/settings';
-import { colors, fontSize, radius, spacing, themed, useTheme } from '@/theme';
+import { colors, fontSize, radius, spacing, themed, useTheme, useThemeMode } from '@/theme';
 import { centredPadding, useScreenSize } from '@/hooks/useScreenSize';
 
 export default function LyricsScreen() {
@@ -40,8 +42,15 @@ export default function LyricsScreen() {
   const plainLineStyle = useLyricsLineStyle(true);
   const background = useSettings((s) => s.lyricsBackground);
   const cover = song ? songCoverUrl(song, COVER.card) : undefined;
-  // Only extract the palette when it's actually going to be used.
-  const dominant = useDominantColor(background === 'color' ? cover : undefined);
+  // The existing extraction also supplies the playback track in every
+  // background mode; the full player and lyrics use the same tonal role.
+  const dominant = useDominantColor(cover);
+  const lightMode = useThemeMode() === 'light';
+  const trackTint = useMemo(() => {
+    const readable = cover && !cover.startsWith(CACHED_COVER) && dominant !== colors.surfaceHighlight;
+    return (readable ? buildPlayerPalette(dominant, !lightMode)?.accent : null)
+      ?? (lightMode ? '#424242' : '#E5E5E5');
+  }, [cover, dominant, lightMode]);
   const bg = background === 'color' ? dominant : colors.background;
   // A solid-colour overlay cannot fade into artwork without painting a visible
   // band over it. Cover mode instead masks the lyrics themselves below, so the
@@ -131,7 +140,7 @@ export default function LyricsScreen() {
       )}
 
       <View style={styles.controls}>
-        <SeekBar duration={duration} />
+        <SeekBar duration={duration} tint={trackTint} />
         <View style={styles.buttons}>
           <GlassPressable
             hitSlop={10}

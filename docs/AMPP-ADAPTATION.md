@@ -131,3 +131,26 @@ The optional full-player palette reuses existing extraction and never mutates
 the mini player, tabs or global theme. No sharing/export/Cimu/TTML/tablet features
 are included. Build and on-device validation are recorded for the actual APK;
 these features do not establish constant120FPS across all workloads.
+
+## 按钮外观回滚 / Button appearance rollback
+
+`0.8.4.1-ampp.7` / Android versionCode `80` 将普通操作按钮恢复为 catalog
+按钮接入前的原始 Pressable 外观：保留调用方的形状、填色、图标、按压样式与
+点击语义，取消附加的玻璃胶囊、高光及拉伸位移。GlassPressable API 保持兼容。
+LiquidToggle、LiquidSlider 及慢拖修复、静态卡片优化、120Hz 窗口策略、绘制通知
+合批、AM++ mini player/tab、媒体增强和浮动弹窗材料均保留。
+
+This revision restores the pre-catalog action-button presentation without
+rolling back the switches, sliders, dock, popup recipes, media controls or
+refresh/rendering fixes. The mini player's separate AM++ material and motion
+remain intact; shared button-motion math is still used there.
+
+同一修订还将播放页和歌词页的进度条、播放页音量条的已填充轨道改为封面
+Oklab强调色，独立于可选的全屏背景配色。中性色/缺失封面使用可读的中性色
+回退，不强制蓝色；原生轨道以380ms过渡。白色玻璃滑块、轨道几何、慢拖
+逻辑和设置页默认蓝色保持原样。播放器与歌词并发取色共享已有提取请求。
+
+Playback progress and volume fills follow the artwork accent even when the
+optional background palette is Off. Neutral/missing artwork uses a neutral
+fallback. Native fill transitions take380ms, while glass thumbs, gesture
+behavior and catalog-blue settings sliders retain their existing implementation.

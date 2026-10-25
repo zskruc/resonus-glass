@@ -10,6 +10,8 @@ import android.content.Context
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -192,6 +195,7 @@ class LiquidGlassToggleView(context: Context, appContext: AppContext) : LiquidGl
 }
 
 class LiquidGlassSliderView(context: Context, appContext: AppContext) : LiquidGlassInteractiveControl(context, appContext) {
+  internal var activeTrackTintColor by mutableStateOf<Int?>(null)
   internal var value by mutableFloatStateOf(0f)
   internal var minimumValue by mutableFloatStateOf(0f)
   internal var maximumValue by mutableFloatStateOf(1f)
@@ -228,6 +232,7 @@ class LiquidGlassSliderView(context: Context, appContext: AppContext) : LiquidGl
       valueRange = range.animationRange,
       visibilityThreshold = range.visibilityThreshold,
       backdrop = controlBackdrop(backdrop),
+      activeTrackTintColor = activeTrackTintColor?.let { Color(it) },
       dark = dark,
       enabled = interactive,
       steps = range.accessibilitySteps,
@@ -350,6 +355,7 @@ private fun CatalogLiquidSlider(
   valueRange: ClosedFloatingPointRange<Float>,
   visibilityThreshold: Float,
   backdrop: Backdrop,
+  activeTrackTintColor: Color?,
   dark: Boolean,
   enabled: Boolean,
   steps: Int,
@@ -357,7 +363,16 @@ private fun CatalogLiquidSlider(
   onCancel: () -> Unit,
   modifier: Modifier = Modifier
 ) {
-  val accentColor = if (!dark) Color(0xFF0088FF) else Color(0xFF0091FF)
+  // Only the explicitly opted-in player track follows its local palette.
+  // Theme changes start at the new color immediately; ordinary artwork color
+  // changes animate without restarting the slider's drag/value state below.
+  val accentColor by key(dark) {
+    animateColorAsState(
+      targetValue = activeTrackTintColor ?: if (!dark) Color(0xFF0088FF) else Color(0xFF0091FF),
+      animationSpec = tween(durationMillis = 380),
+      label = "player-slider-track"
+    )
+  }
   val trackColor = if (!dark) Color(0xFF787878).copy(0.2f) else Color(0xFF787880).copy(0.36f)
   val trackBackdrop = rememberLayerBackdrop()
   BoxWithConstraints(modifier.fillMaxWidth().semantics {

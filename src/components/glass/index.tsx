@@ -1,7 +1,7 @@
 /** Material only: original controls own layout, colors and interactions. */
 import Slider, { type SliderProps } from '@react-native-community/slider';
-import { forwardRef, useEffect, useRef } from 'react';
-import Animated, { ReduceMotion, useAnimatedReaction, useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
+import { forwardRef } from 'react';
+import Animated, { useAnimatedReaction, useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
 import {
   Pressable, StyleSheet, Switch, TextInput, View,
   type ColorValue, type PressableProps, type StyleProp, type SwitchProps, type TextInputProps,
@@ -13,7 +13,6 @@ import { LiquidGlassView, LiquidGlassToggle, LiquidGlassSlider, isLiquidGlassAva
 import { resolveGlassProfile, useGlassTuning, type GlassTarget } from '@/store/glassTuning';
 import { useTheme, useThemeMode } from '@/theme';
 import { getKyantGlassProfile } from '@/theme/glassDefaults';
-import { getGlassButtonMotion } from '@/lib/glassButtonMotion';
 import { DynamicGlassBackdrop } from './StaticGlassBackdropContext';
 
 export type GlassVariant = 'regular' | 'prominent' | 'subtle' | 'button';
@@ -193,110 +192,15 @@ const MATERIAL_PROPS: (keyof GlassMaterial)[] = [
 ];
 
 type GlassPressableProps = PressableProps & GlassMaterial & {
-  /** Data cards, source rows, color samples, and text links retain their own presentation. */
+  /** Retained for caller compatibility; all buttons now keep their original presentation. */
   buttonMaterial?: boolean;
 };
 
-/**
- * Keep the caller's Pressable style callback separate from Reanimated's style
- * array. Passing a callback directly to createAnimatedComponent(Pressable)
- * would wrap the function in an array before Pressable can evaluate it.
- * This adapter adds no native container and forwards the actual Pressable ref.
- */
-const AnimatedButtonPressable = Animated.createAnimatedComponent(forwardRef<View,
-  PressableProps & { callerStyle?: PressableProps['style'] }
->(function ButtonPressable({ callerStyle, style, ...props }, ref) {
-  return <Pressable {...props} ref={ref} style={(state) => [
-    typeof callerStyle === 'function' ? callerStyle(state) : callerStyle,
-    { backgroundColor: 'transparent', borderRadius: 9999, borderWidth: 0, elevation: 0, shadowOpacity: 0 },
-    style as StyleProp<ViewStyle>,
-  ]} />;
-}));
-
-const BUTTON_SPRING = { stiffness: 300, damping: Math.sqrt(300), mass: 1, reduceMotion: ReduceMotion.System };
-
-const KyantGlassButton = forwardRef<View, PressableProps & Pick<GlassMaterial, 'tint' | 'blurred'>>(
-  function KyantGlassButton({
-    style, children, disabled, tint, blurred, onLayout, onPressIn, onPressOut,
-    onTouchMove, onTouchEnd, onTouchCancel, ...props
-  }, ref) {
-    const size = useSharedValue({ width: 0, height: 0 });
-    const progress = useSharedValue(0);
-    const offset = useSharedValue({ x: 0, y: 0 });
-    const touch = useRef<{ x: number; y: number } | null>(null);
-    const restingStyle = StyleSheet.flatten(typeof style === 'function' ? style({ pressed: false }) : style);
-    const restingTransform = Array.isArray(restingStyle?.transform) ? restingStyle.transform : [];
-    const release = () => {
-      touch.current = null;
-      progress.set(withSpring(0, BUTTON_SPRING));
-      offset.set(withSpring({ x: 0, y: 0 }, BUTTON_SPRING));
-    };
-    useEffect(() => {
-      if (disabled) release();
-      // Changes of disabled state must also end a press whose release was lost.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [disabled]);
-    const motionStyle = useAnimatedStyle(() => {
-      const { width, height } = size.get();
-      const { x, y } = offset.get();
-      const motion = getGlassButtonMotion(width, height, progress.get(), x, y);
-      return { transform: [
-        ...restingTransform,
-        { translateX: motion.x }, { translateY: motion.y },
-        { scaleX: motion.scaleX }, { scaleY: motion.scaleY },
-      ] };
-    }, [restingTransform]);
-    const highlightStyle = useAnimatedStyle(() => ({ opacity: Math.max(0, progress.get()) * 0.08 }));
-    return (
-      <AnimatedButtonPressable {...props} ref={ref} disabled={disabled} collapsable={false}
-        accessibilityRole={props.accessibilityRole ?? 'button'} callerStyle={style} style={motionStyle}
-        onLayout={(event) => {
-          size.set({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height });
-          onLayout?.(event);
-        }}
-        onPressIn={(event) => {
-          touch.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY };
-          offset.set({ x: 0, y: 0 });
-          progress.set(withSpring(1, BUTTON_SPRING));
-          onPressIn?.(event);
-        }}
-        onPressOut={(event) => { release(); onPressOut?.(event); }}
-        onTouchMove={(event) => {
-          if (touch.current) offset.set({
-            x: event.nativeEvent.pageX - touch.current.x,
-            y: event.nativeEvent.pageY - touch.current.y,
-          });
-          onTouchMove?.(event);
-        }}
-        onTouchEnd={(event) => { release(); onTouchEnd?.(event); }}
-        onTouchCancel={(event) => { release(); onTouchCancel?.(event); }}>
-        {(state) => {
-          const callerStyle = typeof style === 'function' ? style(state) : style;
-          // The catalog's tinted variant preserves the contrast of an existing
-          // colored action button, including one supplied by a style callback.
-          const buttonTint = tint ?? materialFromStyle(callerStyle).tint;
-          return <>
-            <GlassBackdrop radius={9999} variant="button" tint={buttonTint} blurred={blurred} />
-            <Animated.View pointerEvents="none" style={[
-              StyleSheet.absoluteFill, { borderRadius: 9999, backgroundColor: '#FFFFFF' }, highlightStyle,
-            ]} />
-            {typeof children === 'function' ? children(state) : children}
-          </>;
-        }}
-      </AnimatedButtonPressable>
-    );
-  }
-);
-
-/** Buttons opt into the catalog material; explicitly excluded data rows remain native. */
+/** Restore the original button styles; switches, sliders and surfaces stay glass. */
 export const GlassPressable = forwardRef<View, GlassPressableProps>(function GlassPressable(props, ref) {
-  const mode = useGlassTuning((s) => s.mode);
   const nativeProps = { ...props };
   for (const key of MATERIAL_PROPS) delete nativeProps[key];
   delete nativeProps.buttonMaterial;
-  if (isLiquidGlassAvailable && (mode === 'kyantDefault' || mode === 'amPlus') && props.enabled !== false && props.buttonMaterial !== false) {
-    return <KyantGlassButton {...nativeProps} ref={ref} tint={props.tint} blurred={props.blurred} />;
-  }
   return <Pressable {...nativeProps} ref={ref} />;
 });
 
@@ -345,14 +249,14 @@ export function GlassSwitch({
 }
 
 export function GlassSlider({
-  style, value, minimumValue, maximumValue, step, disabled,
+  style, value, minimumValue, maximumValue, step, disabled, activeTrackTintColor,
   onValueChange, onSlidingStart, onSlidingComplete, onSlidingCancel,
   accessibilityLabel, accessibilityHint, accessibilityElementsHidden,
   importantForAccessibility, testID, ...fallbackProps
-}: SliderProps & { onSlidingCancel?: () => void }) {
+}: SliderProps & { onSlidingCancel?: () => void; activeTrackTintColor?: ColorValue | null }) {
   const dark = useThemeMode() === 'dark';
   if (!isLiquidGlassAvailable) {
-    return <Slider {...fallbackProps} style={style} value={value} minimumValue={minimumValue}
+    return <Slider {...fallbackProps} minimumTrackTintColor={typeof activeTrackTintColor === 'string' ? activeTrackTintColor : fallbackProps.minimumTrackTintColor} style={style} value={value} minimumValue={minimumValue}
       maximumValue={maximumValue} step={step} disabled={disabled} testID={testID}
       accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint}
       accessibilityElementsHidden={accessibilityElementsHidden}
@@ -363,6 +267,7 @@ export function GlassSlider({
     <View collapsable={false} style={[{ height: 48, minHeight: 48, alignSelf: 'stretch' }, style]} testID={testID}>
       <LiquidGlassSlider style={StyleSheet.absoluteFill} value={value} minimumValue={minimumValue}
         maximumValue={maximumValue} step={step} disabled={disabled} dark={dark}
+        activeTrackTintColor={activeTrackTintColor}
         onStartShouldSetResponder={() => true}
         onResponderTerminationRequest={() => true}
         accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint}

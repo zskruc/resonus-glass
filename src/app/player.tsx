@@ -36,6 +36,7 @@ import { PlayerAudioQualitySheet } from '@/components/PlayerAudioQualitySheet';
 import { PlayerOutputDevice } from '@/components/PlayerOutputDevice';
 import { PlayerSystemVolume } from '@/components/PlayerSystemVolume';
 import { usePlayerPalette } from '@/hooks/usePlayerPalette';
+import { buildPlayerPalette } from '@/lib/playerPalette';
 import { SeekBar } from '@/components/SeekBar';
 import { Cover, useRedrawOnReturn, useSettledSource } from '@/components/Cover';
 import { ExplicitBadge } from '@/components/ExplicitBadge';
@@ -396,13 +397,20 @@ export default function PlayerScreen() {
   );
   // The full-screen animated cover needs the colour too, whatever the
   // background setting says: the gradient under it fades into that colour.
-  const coverTint = useCoverTint(colorBackground || isAnimatedCover ? cover : undefined);
+  // One shared extraction also supplies both playback tracks, independently
+  // of the optional full-player background palette.
+  const coverTint = useCoverTint(cover);
   // Preserve the previous tint while decoding, while the palette gate also
   // receives `known` so it cannot associate an old seed with the next artwork.
   const [lastDominant, setLastDominant] = useState(coverTint.color);
   if (coverTint.known && coverTint.color !== lastDominant) setLastDominant(coverTint.color);
   const dominant = coverTint.known ? coverTint.color : lastDominant;
   const lightMode = useThemeMode() === 'light';
+  const trackTint = useMemo(() => {
+    const readable = cover && !cover.startsWith(CACHED_COVER) && dominant !== colors.surfaceHighlight;
+    return (readable ? buildPlayerPalette(dominant, !lightMode)?.accent : null)
+      ?? (lightMode ? '#424242' : '#E5E5E5');
+  }, [cover, dominant, lightMode]);
   const { palette, transitionDuration } = usePlayerPalette({
     artworkKey: cover && !cover.startsWith(CACHED_COVER) ? cover : undefined,
     seed: coverTint.color, ready: coverTint.known, enabled: paletteEnabled, dark: !lightMode,
@@ -1363,7 +1371,7 @@ export default function PlayerScreen() {
               which is large: cover, gradient, quality badge, controls, queue
               sheet (#50). The seek buttons read the position when they are
               pressed instead of subscribing to it. */}
-          <SeekBar duration={duration} style={styles.progress} tint={playFill} />
+          <SeekBar duration={duration} style={styles.progress} tint={trackTint} />
 
           <View style={styles.controls}>
             <GlassPressable
@@ -1481,7 +1489,7 @@ export default function PlayerScreen() {
           {/* Grouped in the middle, each one where it always is: one that
               cannot do anything for this song is dimmed rather than taken out,
               so the others do not move from song to song. */}
-          {showSystemVolume ? <PlayerSystemVolume tint={ink} active={isFocused} style={{ marginTop: 8 }} /> : null}
+          {showSystemVolume ? <PlayerSystemVolume tint={ink} trackTint={trackTint} active={isFocused} style={{ marginTop: 8 }} /> : null}
 
           <View
             style={[

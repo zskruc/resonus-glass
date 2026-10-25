@@ -101,6 +101,7 @@ class LiquidGlassModule : Module() {
       OnViewDidUpdateProps { view: LiquidGlassSliderView -> view.normalizeControlledValue() }
       Prop("disabled") { view: LiquidGlassSliderView, value: Boolean -> view.controlDisabled = value }
       Prop("dark") { view: LiquidGlassSliderView, value: Boolean -> view.dark = value }
+      Prop("activeTrackTintColor") { view: LiquidGlassSliderView, value: Int? -> view.activeTrackTintColor = value }
     }
 
   }

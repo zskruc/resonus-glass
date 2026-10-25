@@ -211,6 +211,7 @@ async function readCoverColor(src: string, mode: ThemeMode, vivid: boolean): Pro
  * cache cannot prevent: it answers asynchronously even when it has the answer).
  */
 const resolved = new Map<string, string>();
+const pending = new Map<string, Promise<string | null>>();
 
 function resolvedKey(src: string, mode: ThemeMode, vivid: boolean): string {
   return `${mode}|${vivid ? 'v' : 'c'}|${src}`;
@@ -247,7 +248,13 @@ export function useCoverTint(uri?: string, vivid = false): { color: string; know
     // it decides how much of the image is looked at before averaging, and the
     // URL above already brought the cover down to `PALETTE_SIZE`, so there is
     // nothing to save by looking at less than all of it.
-    readCoverColor(src, mode, vivid).then((color) => {
+    let request = pending.get(key);
+    if (!request) {
+      request = readCoverColor(src, mode, vivid);
+      pending.set(key, request);
+      void request.finally(() => { if (pending.get(key) === request) pending.delete(key); });
+    }
+    request.then((color) => {
       // Failure only answers this screen: another visit can try the cover
       // again, and a missing image never leaves the tint waiting indefinitely.
       if (color) resolved.set(key, color);

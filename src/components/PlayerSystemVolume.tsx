@@ -24,10 +24,13 @@ function currentOutputKey(): string {
  */
 export function PlayerSystemVolume({
   tint,
+  trackTint = tint,
   style,
   active = true,
 }: {
   tint: string;
+  /** Only the filled track follows artwork; device icons and labels stay neutral. */
+  trackTint?: string;
   style?: StyleProp<ViewStyle>;
   /** False for a retained but hidden player screen: stop native observation. */
   active?: boolean;
@@ -153,7 +156,8 @@ export function PlayerSystemVolume({
             cancelPending();
             setHeld(null);
           }}
-          minimumTrackTintColor={tint}
+          activeTrackTintColor={trackTint}
+          minimumTrackTintColor={trackTint}
           maximumTrackTintColor={tint.startsWith('#') && tint.length === 7 ? `${tint}35` : 'rgba(128,128,128,0.22)'}
           thumbTintColor={tint}
         />

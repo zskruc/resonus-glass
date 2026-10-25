@@ -206,6 +206,8 @@ export type LiquidGlassToggleProps = ViewProps & {
 };
 
 export type LiquidGlassSliderProps = ViewProps & {
+  /** Explicit player-only override. Null retains the catalog's blue active track. */
+  activeTrackTintColor?: ColorValue | null;
   value?: number;
   minimumValue?: number;
   maximumValue?: number;
@@ -221,8 +223,11 @@ export type LiquidGlassSliderProps = ViewProps & {
 const NativeToggle = nativeModule
   ? requireNativeView<LiquidGlassToggleProps>('ResonusLiquidGlass', 'LiquidGlassToggle')
   : null;
+type NativeSliderProps = Omit<LiquidGlassSliderProps, 'activeTrackTintColor'> & {
+  activeTrackTintColor?: number | null;
+};
 const NativeSlider = nativeModule
-  ? requireNativeView<LiquidGlassSliderProps>('ResonusLiquidGlass', 'LiquidGlassSlider')
+  ? requireNativeView<NativeSliderProps>('ResonusLiquidGlass', 'LiquidGlassSlider')
   : null;
 
 /** Interactive catalog control. Use a dedicated noncollapsible RN parent. */
@@ -231,6 +236,9 @@ export function LiquidGlassToggle(props: LiquidGlassToggleProps) {
 }
 
 /** All drag animation stays on the native UI thread; JS receives only values. */
-export function LiquidGlassSlider(props: LiquidGlassSliderProps) {
-  return NativeSlider && isLiquidGlassAvailable ? <NativeSlider {...props} /> : <View {...props} />;
+export function LiquidGlassSlider({ activeTrackTintColor = null, ...props }: LiquidGlassSliderProps) {
+  const activeColor = activeTrackTintColor == null ? null : processColor(activeTrackTintColor);
+  return NativeSlider && isLiquidGlassAvailable
+    ? <NativeSlider {...props} activeTrackTintColor={typeof activeColor === 'number' ? activeColor : null} />
+    : <View {...props} />;
 }

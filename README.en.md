@@ -41,9 +41,11 @@ These features describe the released Glass baseline. Development previews may ch
 | Channel | Version | Android version code | Availability |
 | --- | --- | --- | --- |
 | Stable | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest), in-app update checks |
-| Development preview | `0.8.4.1-ampp.6` | `79` | Local test APK; not published as a stable release |
+| Development preview | `0.8.4.1-ampp.7` | `80` | Local test APK; not published as a stable release |
 
 Development previews on `preview/ampp-player-features` adapt AM++ phone mini-player/navigation materials and collapse motion. Preview changes are not necessarily included in the stable release. They do not guarantee sustained 120 fps across every page; consult the corresponding source, APK version, and validation records for their actual scope.
+
+The current revision restores the original action-button appearance and colors playback progress/volume tracks from artwork, while retaining LiquidToggle, LiquidSlider gestures, the AM++ dock, popup materials and refresh/rendering optimizations.
 
 This preview also adds floating-popup glass recipes, a tappable quality card, real system output controls, hardware-synchronized media volume, and an optional full-player artwork palette. Find the options under Settings → Player → AM++ player features. Artwork colors default to Off and never recolor the mini player or tabs. An unavailable system output switcher explicitly falls back to the system volume panel.
 
