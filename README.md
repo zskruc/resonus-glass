@@ -41,7 +41,7 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 | 渠道 | 版本 | Android 更新编号 | 获取方式 |
 | --- | --- | --- | --- |
 | 正式发布 | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest)，App 内检查更新 |
-| 开发预览 | `0.8.4.1-preview.3` | `70` | 本地测试 APK，尚未发布为正式 Release |
+| 开发预览 | `0.8.4.1-preview.4` | `71` | 本地测试 APK，尚未发布为正式 Release |
 
 开发预览在 `preview/kyant-defaults` 分支上用于比对 AndroidLiquidGlass 的示例默认材质及页面切换表现。预览版不代表正式版已经具备相同改动，也不构成所有页面持续达到 120 fps 的保证；具体内容以对应源码、APK 版本和验证记录为准。
 
