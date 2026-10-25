@@ -69,7 +69,9 @@ class DampedDragAnimation(
     val scaleY: Float get() = scaleYAnimation.value
     val velocity: Float get() = velocityAnimation.value
 
-    val modifier: Modifier = Modifier.pointerInput(Unit) {
+    // Expo can replace a slider's range when the current song changes. Keep
+    // the pointer coroutine tied to this animation, rather than an old range.
+    val modifier: Modifier = Modifier.pointerInput(this@DampedDragAnimation) {
         inspectDragGestures(
             onDragStart = { down ->
                 onDragStarted(down.position)

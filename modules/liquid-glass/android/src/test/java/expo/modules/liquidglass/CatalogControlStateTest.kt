@@ -117,4 +117,72 @@ class CatalogControlStateTest {
     assertNull(gesture.cancel())
   }
 
+
+  @Test fun oneHundredSubHalfStepDeltasAccumulateAcrossControlledStepFeedback() {
+    val range = CatalogSliderRange.of(0f, 10f, 1f)
+    val drag = CatalogSliderDragAccumulator(range.animationRange)
+    var controlledValue = 0f
+    drag.begin(controlledValue)
+    repeat(100) {
+      controlledValue = range.normalize(drag.move(0.02f)!!)
+    }
+    assertEquals(2f, controlledValue, 0f)
+    assertEquals(2f, range.normalize(drag.finish()!!), 0f)
+    assertNull(drag.finish())
+  }
+
+  @Test fun slowReverseMovementKeepsItsFractionalRemainder() {
+    val range = CatalogSliderRange.of(0f, 10f, 1f)
+    val drag = CatalogSliderDragAccumulator(range.animationRange)
+    drag.begin(5f)
+    repeat(100) { range.normalize(drag.move(-0.02f)!!) }
+    assertEquals(3f, range.normalize(drag.finish()!!), 0f)
+    drag.begin(3f)
+    repeat(100) { drag.move(0.02f) }
+    repeat(50) { drag.move(-0.02f) }
+    assertEquals(4f, range.normalize(drag.finish()!!), 0f)
+  }
+
+  @Test fun draggingAgainstAnEndpointDoesNotCreateAnInvisibleOvershootDebt() {
+    val range = CatalogSliderRange.of(2f, 12f, 3f)
+    val drag = CatalogSliderDragAccumulator(range.animationRange)
+    drag.begin(11f)
+    assertEquals(12f, drag.move(100f)!!, 0f)
+    assertEquals(11.5f, drag.move(-0.5f)!!, 0f)
+    assertEquals(2f, drag.move(-100f)!!, 0f)
+    assertEquals(2.5f, drag.move(0.5f)!!, 0f)
+    assertEquals(2f, range.normalize(drag.finish()!!), 0f)
+  }
+
+  @Test fun continuousSliderKeepsFineMovementWithoutDependingOnAnimationProgress() {
+    val range = CatalogSliderRange.of(-1f, 1f, 0f)
+    val drag = CatalogSliderDragAccumulator(range.animationRange)
+    drag.begin(-0.5f)
+    repeat(100) { drag.move(0.001f) }
+    assertEquals(-0.4f, range.normalize(drag.finish()!!), 0.000001f)
+  }
+
+  @Test fun cancelledDragCannotCommitAndNextPressUsesLatestControlledValue() {
+    val range = CatalogSliderRange.of(0f, 100f, 1f)
+    val drag = CatalogSliderDragAccumulator(range.animationRange)
+    drag.begin(25f)
+    repeat(100) { drag.move(0.02f) }
+    drag.cancel()
+    assertNull(drag.finish())
+    assertNull(drag.move(1f))
+    // The caller subsequently changed the controlled prop to a different song.
+    drag.begin(70f)
+    repeat(100) { drag.move(0.02f) }
+    assertEquals(72f, range.normalize(drag.finish()!!), 0f)
+  }
+
+  @Test fun invalidMovementDoesNotPoisonTheNextFiniteDelta() {
+    val drag = CatalogSliderDragAccumulator(0f..10f)
+    drag.begin(4f)
+    assertNull(drag.move(Float.NaN))
+    assertNull(drag.move(Float.POSITIVE_INFINITY))
+    assertEquals(4.25f, drag.move(0.25f)!!, 0f)
+    assertEquals(4.25f, drag.finish()!!, 0f)
+  }
+
 }

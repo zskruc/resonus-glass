@@ -84,3 +84,32 @@ internal class CatalogSliderGesture {
     return originalValue
   }
 }
+
+/**
+ * Finger movement stays continuous even when emitted controlled values are
+ * snapped to steps. Animated/JS feedback must never become the next origin.
+ */
+internal class CatalogSliderDragAccumulator(private val range: ClosedFloatingPointRange<Float>) {
+  private var active = false
+  private var target = range.start.toDouble()
+
+  fun begin(value: Float) {
+    target = (value.takeIf { it.isFinite() } ?: range.start).toDouble()
+      .coerceIn(range.start.toDouble(), range.endInclusive.toDouble())
+    active = range.endInclusive > range.start
+  }
+
+  fun move(delta: Float): Float? {
+    if (!active || !delta.isFinite()) return null
+    target = (target + delta.toDouble()).coerceIn(range.start.toDouble(), range.endInclusive.toDouble())
+    return target.toFloat()
+  }
+
+  fun finish(): Float? {
+    if (!active) return null
+    active = false
+    return target.toFloat()
+  }
+
+  fun cancel() { active = false }
+}

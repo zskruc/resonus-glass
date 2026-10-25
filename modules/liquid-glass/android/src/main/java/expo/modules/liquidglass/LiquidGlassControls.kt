@@ -208,6 +208,7 @@ class LiquidGlassSliderView(context: Context, appContext: AppContext) : LiquidGl
     CatalogLiquidSlider(
       value = { range.animationValue(value) },
       onValueChange = ::change,
+      normalizeValue = { currentRange().animationValue(it) },
       valueRange = range.animationRange,
       visibilityThreshold = range.visibilityThreshold,
       backdrop = controlBackdrop(backdrop),
@@ -326,6 +327,7 @@ private fun CatalogLiquidToggle(
 private fun CatalogLiquidSlider(
   value: () -> Float,
   onValueChange: (Float) -> Unit,
+  normalizeValue: (Float) -> Float,
   valueRange: ClosedFloatingPointRange<Float>,
   visibilityThreshold: Float,
   backdrop: Backdrop,
@@ -345,7 +347,7 @@ private fun CatalogLiquidSlider(
     setProgress {
       if (enabled) {
         onInteraction(true)
-        onValueChange(it.coerceIn(valueRange))
+        onValueChange(normalizeValue(it.coerceIn(valueRange)))
         onInteraction(false)
         true
       } else false
@@ -354,25 +356,33 @@ private fun CatalogLiquidSlider(
     val trackWidth = constraints.maxWidth.coerceAtLeast(1)
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
     val scope = rememberCoroutineScope()
-    var didDrag by remember { mutableStateOf(false) }
+    val dragTarget = remember(valueRange, enabled) { CatalogSliderDragAccumulator(valueRange) }
     val drag = remember(scope, valueRange, enabled) {
       DampedDragAnimation(scope, value(), valueRange, visibilityThreshold, 1f, 1.5f,
-        onDragStarted = { didDrag = false; onInteraction(true) },
-        onDragStopped = { if (didDrag) onValueChange(targetValue); didDrag = false; onInteraction(false) },
-        onDrag = { _, amount ->
-          if (!didDrag) didDrag = amount.x != 0f
-          val delta = (valueRange.endInclusive - valueRange.start) * amount.x / trackWidth
-          onValueChange((targetValue + if (isLtr) delta else -delta).coerceIn(valueRange))
+        onDragStarted = { dragTarget.begin(value()); onInteraction(true) },
+        onDragStopped = {
+          dragTarget.finish()?.let { rawTarget ->
+            val target = normalizeValue(rawTarget)
+            onValueChange(target)
+            updateValue(target)
+          }
+          onInteraction(false)
         },
-        onDragCancelled = { didDrag = false; onCancel() })
+        onDrag = { _, amount ->
+          val delta = (valueRange.endInclusive - valueRange.start) * amount.x / trackWidth
+          dragTarget.move(if (isLtr) delta else -delta)?.let(onValueChange)
+        },
+        onDragCancelled = { dragTarget.cancel(); onCancel() })
     }
     LaunchedEffect(drag) { snapshotFlow { value() }.collectLatest { if (drag.targetValue != it) drag.updateValue(it) } }
     Box(Modifier.layerBackdrop(trackBackdrop)) {
       Box(Modifier.clip(RoundedCornerShape(percent = 50)).background(trackColor).then(if (enabled) Modifier.pointerInput(scope, valueRange) {
         detectTapGestures { position ->
           val delta = (valueRange.endInclusive - valueRange.start) * position.x / trackWidth
-          val target = (if (isLtr) valueRange.start + delta else valueRange.endInclusive - delta).coerceIn(valueRange)
+          val target = normalizeValue((if (isLtr) valueRange.start + delta else valueRange.endInclusive - delta).coerceIn(valueRange))
           onInteraction(true)
+          // Animate the normalized value even if JS/native value was already
+          // equal to this step and therefore emits no further state change.
           drag.animateToValue(target)
           onValueChange(target)
           onInteraction(false)
