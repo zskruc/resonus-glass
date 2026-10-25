@@ -21,6 +21,7 @@ import { BatteryWarning } from '@/components/BatteryWarning';
 import { CarAutoSync } from '@/components/CarAutoSync';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { FrameMeter } from '@/components/FrameMeter';
+import { PlaybackColorWarmup } from '@/components/PlaybackColorWarmup';
 import { GlobalMiniPlayer } from '@/components/GlobalMiniPlayer';
 import { BottomScrollEdge } from '@/components/BottomScrollEdge';
 import { GlobalTabBar } from '@/components/GlobalTabBar';
@@ -444,6 +445,7 @@ export default function RootLayout() {
             {/* Background playback, car sync and lifecycle counters keep running
                 independently of the visible screens. */}
             <FrameMeter />
+            {auth || offline ? <PlaybackColorWarmup /> : null}
             {auth || offline ? <CarAutoSync /> : null}
             {auth || offline ? <BatteryWarning /> : null}
             {/* Not behind the profile guard on a whim: the check reaches

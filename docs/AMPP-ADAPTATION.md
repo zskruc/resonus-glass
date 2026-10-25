@@ -154,3 +154,17 @@ Playback progress and volume fills follow the artwork accent even when the
 optional background palette is Off. Neutral/missing artwork uses a neutral
 fallback. Native fill transitions take380ms, while glass thumbs, gesture
 behavior and catalog-blue settings sliders retain their existing implementation.
+
+## 即时轨道颜色 / Immediate track color
+
+`0.8.4.1-ampp.8` / Android versionCode `81` 取消播放轨道380ms颜色渐变。
+当前歌曲缓存命中时，进度条和音量条随歌曲属性直接更新。前台以串行且可替换
+的待办列表预取当前、实际下一首、上一首的小封面颜色，最多三张，重复封面
+去重；队列、账户、离线及前后台变化会停止后续旧任务，没有轮询或整队列下载。
+图片解码由原生库后台执行，继续使用原有取色结果和可读强调色。
+
+The track tint now applies without interpolation. A bounded foreground-only
+warmup shares the exact synchronous palette cache for the current/next/previous
+artwork. Uncached artwork still depends on image availability: the tracks use a
+neutral fallback immediately, then apply the actual color once available. The
+optional full-player background palette timing and slider gestures are unchanged.

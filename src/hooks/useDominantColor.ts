@@ -217,6 +217,28 @@ function resolvedKey(src: string, mode: ThemeMode, vivid: boolean): string {
   return `${mode}|${vivid ? 'v' : 'c'}|${src}`;
 }
 
+/** A shared request fills the synchronous cache for UI reads and bounded warmup. */
+function requestCoverTint(src: string, key: string, mode: ThemeMode, vivid: boolean): Promise<string | null> {
+  const cached = resolved.get(key);
+  if (cached) return Promise.resolve(cached);
+  const existing = pending.get(key);
+  if (existing) return existing;
+  const request = readCoverColor(src, mode, vivid).then((color) => {
+    if (color) resolved.set(key, color);
+    return color;
+  });
+  pending.set(key, request);
+  void request.finally(() => { if (pending.get(key) === request) pending.delete(key); });
+  return request;
+}
+
+/** Prepares the exact small-image cache used by useCoverTint, without a UI update. */
+export async function prefetchCoverTint(uri: string | undefined, mode: ThemeMode, vivid = false): Promise<void> {
+  if (!uri || uri.startsWith(CACHED_COVER)) return;
+  const src = paletteUri(uri);
+  await requestCoverTint(src, resolvedKey(src, mode, vivid), mode, vivid);
+}
+
 /**
  * The cover's colour, and whether it is known yet. `known` is false only
  * while a cover nobody has read before is being read: a screen can keep its
@@ -239,34 +261,29 @@ export function useCoverTint(uri?: string, vivid = false): { color: string; know
   const src = readable ? paletteUri(uri) : undefined;
   const key = src ? resolvedKey(src, mode, vivid) : undefined;
   const [read, setRead] = useState<{ key: string; color: string } | undefined>(undefined);
+  const cachedAtRender = key ? resolved.get(key) : undefined;
 
   useEffect(() => {
-    if (!src || !key || resolved.has(key)) return;
+    // A warmup may resolve between render and effect. Only skip a cache value
+    // this render already consumed; otherwise join even an already-ready read.
+    if (!src || !key || cachedAtRender) return;
     let active = true;
     // Keyed by the small URL: two screens showing the same cover at different
     // sizes now share one cached palette. `quality` is read on iOS only, where
     // it decides how much of the image is looked at before averaging, and the
     // URL above already brought the cover down to `PALETTE_SIZE`, so there is
     // nothing to save by looking at less than all of it.
-    let request = pending.get(key);
-    if (!request) {
-      request = readCoverColor(src, mode, vivid);
-      pending.set(key, request);
-      void request.finally(() => { if (pending.get(key) === request) pending.delete(key); });
-    }
-    request.then((color) => {
-      // Failure only answers this screen: another visit can try the cover
-      // again, and a missing image never leaves the tint waiting indefinitely.
-      if (color) resolved.set(key, color);
+    requestCoverTint(src, key, mode, vivid).then((color) => {
+      // Failure only answers this screen; the shared cache remains retryable.
       if (active) setRead({ key, color: color ?? theme.surfaceHighlight });
     });
     return () => {
       active = false;
     };
-  }, [src, key, mode, vivid]);
+  }, [src, key, mode, vivid, cachedAtRender]);
 
   if (!key) return { color: theme.surfaceHighlight, known: true };
-  const color = resolved.get(key) ?? (read?.key === key ? read.color : undefined);
+  const color = cachedAtRender ?? (read?.key === key ? read.color : undefined);
   return color ? { color, known: true } : { color: theme.surfaceHighlight, known: false };
 }
 

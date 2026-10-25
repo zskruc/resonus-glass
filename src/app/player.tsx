@@ -407,10 +407,11 @@ export default function PlayerScreen() {
   const dominant = coverTint.known ? coverTint.color : lastDominant;
   const lightMode = useThemeMode() === 'light';
   const trackTint = useMemo(() => {
-    const readable = cover && !cover.startsWith(CACHED_COVER) && dominant !== colors.surfaceHighlight;
-    return (readable ? buildPlayerPalette(dominant, !lightMode)?.accent : null)
+    const readable = cover && !cover.startsWith(CACHED_COVER) && coverTint.known
+      && coverTint.color !== colors.surfaceHighlight;
+    return (readable ? buildPlayerPalette(coverTint.color, !lightMode)?.accent : null)
       ?? (lightMode ? '#424242' : '#E5E5E5');
-  }, [cover, dominant, lightMode]);
+  }, [cover, coverTint.known, coverTint.color, lightMode]);
   const { palette, transitionDuration } = usePlayerPalette({
     artworkKey: cover && !cover.startsWith(CACHED_COVER) ? cover : undefined,
     seed: coverTint.color, ready: coverTint.known, enabled: paletteEnabled, dark: !lightMode,
