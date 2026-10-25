@@ -25,7 +25,7 @@ function alpha(hex: string, opacity: number): string {
 export function BottomScrollEdge() {
   const colors = useTheme();
   const dark = useThemeMode() === 'dark';
-  const kyantDefaults = useGlassTuning((state) => state.mode === 'kyantDefault');
+  const kyantDefaults = useGlassTuning((state) => state.mode === 'kyantDefault' || state.mode === 'amPlus');
   const insets = useSafeAreaInsets();
   const { width } = useScreenSize();
   const bar = useTabBarShown();

@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
+import * as amppDock from '../src/lib/amppDock';
+import * as dockMath from '../src/lib/liquidDock';
 
 type Cleanup = () => void;
 type Effect = () => void | Cleanup;
@@ -279,6 +281,9 @@ describe('background dock lifecycle', () => {
     let hasSong = true;
     let withBar = true;
     let springs = 0;
+    const springSpecs: { target: number; stiffness: number; damping: number }[] = [];
+    const glass = { mode: 'kyantDefault' };
+    let scrollHandlers: Record<string, (event: unknown, context: unknown) => void>;
     const mutable = <T,>(value: T) => ({
       writes: [] as T[],
       get: () => value,
@@ -293,13 +298,17 @@ describe('background dock lifecycle', () => {
         makeMutable: mutable, ReduceMotion: { System: 0 },
         useSharedValue: <T,>(initial: T) => hooks.react.useRef(mutable(initial)).current,
         useAnimatedScrollHandler: (handlers: unknown) => handlers,
-        withSpring: (target: number) => { springs++; return target; },
+        withSpring: (target: number, config: { stiffness: number; damping: number }) => {
+          springs++; springSpecs.push({ target, ...config }); return target;
+        },
       },
       'react-native-worklets': {
         scheduleOnUI: (worklet: () => void) => worklet(),
         scheduleOnRN: (callback: (...args: unknown[]) => void, ...args: unknown[]) => callback(...args),
       },
-      '@/lib/liquidDock': {},
+      '@/lib/liquidDock': dockMath,
+      '@/lib/amppDock': amppDock,
+      '@/store/glassTuning': { useGlassTuning: (select: (state: typeof glass) => unknown) => select(glass) },
       '@/store/player': { currentSong: () => hasSong ? {} : null,
         usePlayerStore: (select: (state: unknown) => unknown) => select({}) },
       '@/store/settings': { useSettings: (select: (state: typeof settings) => unknown) => select(settings) },
@@ -312,13 +321,14 @@ describe('background dock lifecycle', () => {
       uiCompact: ReturnType<typeof mutable<boolean>>;
       generation: ReturnType<typeof mutable<number>>;
       enabled: boolean;
+      amPlus: boolean;
       notifyCompact: (compact: boolean, generation: number) => void;
       expand: () => void;
     }
     const read = () => hooks.renderScoped('consumer', 'useLiquidDock') as Dock;
     const render = () => {
       hooks.renderScoped('provider', 'LiquidDockProvider', { children: null });
-      hooks.renderScoped('scroll', 'useLiquidDockScrollHandler');
+      scrollHandlers = hooks.renderScoped('scroll', 'useLiquidDockScrollHandler') as typeof scrollHandlers;
       hooks.commit();
       return read();
     };
@@ -329,7 +339,11 @@ describe('background dock lifecycle', () => {
       dock.notifyCompact(true, dock.generation.get());
       return render();
     };
-    return { hooks, render, fold, read, springs: () => springs,
+    return { hooks, render, fold, read, springs: () => springs, springSpecs,
+      mode(value: string) { glass.mode = value; },
+      scroll: (name: string, y: number, context: unknown) => scrollHandlers[name]({
+        contentOffset: { y }, layoutMeasurement: { height: 500 }, contentSize: { height: 2000 },
+      }, context),
       focus(value: boolean) { focused = value; },
       navigate(path: string, pattern: string[]) { pathname = path; segments = pattern; },
       song(value: boolean) { hasSong = value; },
@@ -412,5 +426,65 @@ describe('background dock lifecycle', () => {
     assert.equal(dock.uiCompact.get(), false);
     assert.equal(dock.progress.get(), 0);
     assert.equal(h.springs(), 1);
+  });
+
+  it('resets once when appearance changes and rejects a previous mode scroll generation', () => {
+    const h = dockHarness();
+    h.render();
+    const previous = h.fold();
+    const previousGeneration = previous.generation.get();
+    h.mode('amPlus');
+    let dock = h.render();
+    assert.equal(dock.amPlus, true);
+    assert.equal(dock.compact, false);
+    assert.equal(dock.progress.get(), 0);
+    assert.deepEqual(dock.generation.writes, [1, 2]);
+    dock.notifyCompact(true, previousGeneration);
+    dock = h.render();
+    assert.equal(dock.compact, false);
+    assert.equal(h.springs(), 0);
+    h.render();
+    assert.deepEqual(dock.generation.writes, [1, 2], 'stable appearances do not reset repeatedly');
+
+    dock = h.fold();
+    dock.expand();
+    h.render();
+    assert.equal(h.springSpecs.at(-1)?.stiffness, 250);
+    assert.equal(h.springSpecs.at(-1)?.damping, amppDock.amppSpringDamping(false));
+    h.mode('kyantDefault');
+    dock = h.render();
+    assert.equal(dock.amPlus, false);
+    dock = h.fold();
+    dock.expand();
+    h.render();
+    assert.equal(h.springSpecs.at(-1)?.stiffness, 350);
+    assert.equal(h.springSpecs.at(-1)?.damping, 30);
+    assert.equal(h.springs(), 2, 'appearance changes add no zero-distance spring');
+  });
+
+  it('keeps strict drag intent while choosing AM++ springs in both directions', () => {
+    const h = dockHarness();
+    h.mode('amPlus');
+    h.render();
+    const context = {};
+    h.scroll('onBeginDrag', 100, context);
+    h.scroll('onScroll', 150, context);
+    h.scroll('onEndDrag', 170, context);
+    h.scroll('onMomentumBegin', 170, context);
+    h.scroll('onScroll', 600, context);
+    assert.equal(h.springs(), 0, 'short drag and following inertia cannot fold the dock');
+    h.scroll('onBeginDrag', 600, context);
+    h.scroll('onScroll', 696, context);
+    let dock = h.render();
+    assert.equal(dock.compact, true);
+    assert.equal(h.springSpecs.at(-1)?.target, 1);
+    assert.equal(h.springSpecs.at(-1)?.stiffness, 250);
+    assert.equal(h.springSpecs.at(-1)?.damping, amppDock.amppSpringDamping(true));
+    h.scroll('onBeginDrag', 696, context);
+    h.scroll('onScroll', 616, context);
+    dock = h.render();
+    assert.equal(dock.compact, false);
+    assert.equal(h.springSpecs.at(-1)?.target, 0);
+    assert.equal(h.springSpecs.at(-1)?.damping, amppDock.amppSpringDamping(false));
   });
 });

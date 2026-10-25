@@ -26,6 +26,8 @@ import { COMPACT_DOCK_GAP, COMPACT_DOCK_SIZE, useLiquidDock } from '@/hooks/useL
 import { useT } from '@/i18n';
 import { haptic } from '@/lib/haptics';
 import { getLiquidDockGeometry } from '@/lib/liquidDock';
+import { AMPP_DOCK, amppExpandedAlpha, amppProgress, amppSprungProgress, getAmppDockGeometry } from '@/lib/amppDock';
+import { getGlassButtonMotion } from '@/lib/glassButtonMotion';
 import { MINI_SWIPE_TRAVEL, miniSwipeDirection, miniSwipeOffset } from '@/lib/miniPlayerSwipe';
 import { router } from 'expo-router';
 import { revealOffset } from '@/lib/playerReveal';
@@ -50,6 +52,7 @@ const REVEAL_START = 12;
 /** Past this share of the screen, letting go finishes opening it. */
 const REVEAL_COMMIT = 0.2;
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const MINI_PRESS_SPRING = { mass: 1, stiffness: 300, damping: Math.sqrt(300), reduceMotion: motion.reduceMotion.decorative };
 
 interface MiniPlayerProps {
   active?: boolean;
@@ -62,12 +65,19 @@ interface MiniPlayerProps {
 export function MiniPlayer(props: MiniPlayerProps = {}) {
   const { width: screenW, height: screenH } = useScreenSize();
   const dock = useLiquidDock();
+  const amPlus = dock.amPlus;
+  const miniHeight = amPlus ? AMPP_DOCK.miniHeight : MINI_PLAYER_HEIGHT;
+  const navHeight = amPlus ? AMPP_DOCK.navigationHeight : TAB_BAR_HEIGHT;
+  const compactSize = amPlus ? AMPP_DOCK.compactSize : COMPACT_DOCK_SIZE;
+  const margin = amPlus ? AMPP_DOCK.margin : BOTTOM_BAR_HORIZONTAL_MARGIN;
+  const controlTop = (miniHeight - 32) / 2;
   const dockProgress = props.dockProgress ?? dock.progress;
   const compact = props.compact ?? dock.compact;
   const hasSearch = props.hasSearch ?? dock.hasSearch;
   const dockEnabled = props.dockEnabled ?? dock.enabled;
   const targetCompact = dockEnabled && compact;
-  const visualProgress = useDerivedValue(() => dockEnabled ? Math.max(0, Math.min(1, dockProgress.get())) : 0);
+  const visualProgress = useDerivedValue(() => dockEnabled
+    ? amPlus ? amppSprungProgress(dockProgress.get()) : amppProgress(dockProgress.get()) : 0);
   const [settledLayout, setSettledLayout] = useState<'expanded' | 'compact' | 'moving'>(targetCompact ? 'compact' : 'expanded');
   // Restore hidden hit targets and marquee measurement only at the final width.
   // During the morph the title uses a normal Text with no onLayout JS callback.
@@ -80,9 +90,10 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
     [targetCompact, dockEnabled, dockProgress],
   );
   const expandedControls = !targetCompact && settledLayout === 'expanded';
-  const baseMargin = Math.max(BOTTOM_BAR_HORIZONTAL_MARGIN, (screenW - BOTTOM_BAR_MAX_WIDTH) / 2);
+  const baseMargin = Math.max(margin, (screenW - BOTTOM_BAR_MAX_WIDTH) / 2);
   const fullWidth = Math.max(0, screenW - baseMargin * 2);
-  const geometry = getLiquidDockGeometry(fullWidth, TAB_BAR_HEIGHT, COMPACT_DOCK_SIZE, COMPACT_DOCK_GAP, hasSearch, I18nManager.isRTL);
+  const geometry = amPlus ? getAmppDockGeometry(fullWidth, 1, hasSearch, I18nManager.isRTL)
+    : getLiquidDockGeometry(fullWidth, navHeight, compactSize, COMPACT_DOCK_GAP, hasSearch, I18nManager.isRTL);
   // Minimized navigation sits physically left and Search sits right;
   // foreground offsets still follow React Native's logical text direction.
   const leadingSpace = geometry.miniLogicalLeadingSpace;
@@ -141,7 +152,7 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
     transform: [{ translateX: physicalDirection * playDistance * (visualProgress.get() - target) }],
   }));
   const secondaryMotion = useAnimatedStyle(() => ({
-    opacity: 1 - visualProgress.get(),
+    opacity: amPlus ? amppExpandedAlpha(visualProgress.get()) : 1 - visualProgress.get(),
     transform: [{ translateX: physicalDirection * playDistance * (visualProgress.get() - target) }],
   }));
 
@@ -149,6 +160,11 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
   // the player carousel), swipe down → dismiss (stop and clear), swipe up →
   // open the player. The pan is locked to the dominant axis to prevent
   // diagonal movement.
+  const buttonPressProgress = useSharedValue(0);
+  const buttonPressX = useSharedValue(0);
+  const buttonPressY = useSharedValue(0);
+  const buttonOffsetX = useSharedValue(0);
+  const buttonOffsetY = useSharedValue(0);
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const gestureAxis = useSharedValue(0);
@@ -166,6 +182,14 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
   };
   const pan = Gesture.Pan()
     .minDistance(10)
+    .onBegin((event) => {
+      if (!amPlus) return;
+      buttonPressX.set(event.x);
+      buttonPressY.set(event.y);
+      buttonOffsetX.set(0);
+      buttonOffsetY.set(0);
+      buttonPressProgress.set(withSpring(1, MINI_PRESS_SPRING));
+    })
     .onStart((e) => {
       // Lock once: a diagonal finger path cannot alternate between skip and reveal.
       gestureAxis.value = Math.abs(e.translationX) >= Math.abs(e.translationY) ? 1 : 2;
@@ -174,6 +198,12 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
       cancelAnimation(translateY);
     })
     .onUpdate((e) => {
+      if (amPlus) {
+        buttonPressX.set(e.x);
+        buttonPressY.set(e.y);
+        buttonOffsetX.set(e.translationX);
+        buttonOffsetY.set(e.translationY);
+      }
       // Once the player is coming up, the pull is only ever vertical.
       if (revealing.value) {
         revealOffset.value = Math.min(screenH, Math.max(0, screenH + e.translationY + REVEAL_START));
@@ -232,6 +262,11 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
     // A pull that was cut off (the system took the touch) still ends somewhere:
     // opened, since the player is already up on the screen.
     .onFinalize((_e, success) => {
+      if (amPlus) {
+        buttonPressProgress.set(withSpring(0, MINI_PRESS_SPRING));
+        buttonOffsetX.set(withSpring(0, MINI_PRESS_SPRING));
+        buttonOffsetY.set(withSpring(0, MINI_PRESS_SPRING));
+      }
       dragging.value = false;
       gestureAxis.value = 0;
       if (!revealing.value) {
@@ -246,11 +281,21 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
         revealOffset.value = -1;
       });
     });
-  // The entire card only moves (and fades) when dismissed downward.
-  const cardStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }],
-    opacity: interpolate(translateY.value, [0, screenW * 0.6], [1, 0], Extrapolation.CLAMP),
-  }));
+  // Dismissal moves the card down; AM++ adds its small elastic press transform.
+  const cardStyle = useAnimatedStyle(() => {
+    if (!amPlus) return {
+      transform: [{ translateY: translateY.value }],
+      opacity: interpolate(translateY.value, [0, screenW * 0.6], [1, 0], Extrapolation.CLAMP),
+    };
+    const width = fullWidth + (compactWidth - fullWidth) * visualProgress.get();
+    const pressed = getGlassButtonMotion(width, miniHeight, buttonPressProgress.get(), buttonOffsetX.get(), buttonOffsetY.get());
+    return {
+      transform: [{ translateY: translateY.value }, { translateX: amPlus ? pressed.x : 0 },
+        { translateY: amPlus ? pressed.y : 0 }, { scaleX: amPlus ? pressed.scaleX : 1 },
+        { scaleY: amPlus ? pressed.scaleY : 1 }],
+      opacity: interpolate(translateY.value, [0, screenW * 0.6], [1, 0], Extrapolation.CLAMP),
+    };
+  });
   // Each moving detail clips inside its own frame; the dock's geometry stays fixed.
   const detailsStyle = useAnimatedStyle(() => ({
     opacity: contentOpacity.value * interpolate(Math.abs(translateX.value), [0, MINI_SWIPE_TRAVEL], [1, 0.65], Extrapolation.CLAMP),
@@ -292,28 +337,31 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
   const favorited = favIds ? favIds.has(song.id) : !!song.starred;
 
   return (
-    <View pointerEvents="box-none" style={[styles.frame, { marginStart: baseMargin, marginEnd: baseMargin }]}>
+    <View pointerEvents="box-none" style={[styles.frame, { height: miniHeight, marginStart: baseMargin, marginEnd: baseMargin }]}>
       <GestureDetector gesture={pan}>
-        <Animated.View pointerEvents="box-none" collapsable={false} style={[styles.card, cardStyle]}>
+        <Animated.View pointerEvents="box-none" collapsable={false} style={[styles.card, { height: miniHeight }, cardStyle]}>
           {/* Native material morphs inside fixed bounds. It must not inherit
               the one-time hit rectangle's compact width a second time. */}
-          <FloatingGlassBackdrop target="miniPlayer" radius={MINI_PLAYER_HEIGHT / 2} blurred={blur}
+          <FloatingGlassBackdrop target="miniPlayer" radius={miniHeight / 2} blurred={blur}
             dockProgress={visualProgress} dockExpandedWidth={fullWidth}
-            dockCompactWidth={dockEnabled ? compactWidth : fullWidth} dockCompactHeight={MINI_PLAYER_HEIGHT}
+            dockCompactWidth={dockEnabled ? compactWidth : fullWidth} dockCompactHeight={miniHeight}
+            dockRole={amPlus ? 'mini' : undefined} dockRowWidth={amPlus ? fullWidth : undefined}
+            buttonPressProgress={amPlus ? buttonPressProgress : undefined}
+            buttonPressX={amPlus ? buttonPressX : undefined} buttonPressY={amPlus ? buttonPressY : undefined}
             dockCompactOffsetX={dockEnabled ? geometry.miniPhysicalOffsetX : 0} />
           <Pressable
             collapsable={false}
-            style={[styles.hitArea, { start: targetStart, width: targetWidth }]}
+            style={[styles.hitArea, { start: targetStart, width: targetWidth, height: miniHeight, borderRadius: miniHeight / 2 }]}
             onPress={() => pushOnce('/player')}
           >
             <Animated.View pointerEvents="none" style={[styles.details, detailsStyle]}>
-              <Animated.View style={[styles.artwork, { start: targetCoverStart }, coverMotion]}>
+              <Animated.View style={[styles.artwork, { start: targetCoverStart, top: (miniHeight - 30) / 2 }, coverMotion]}>
                 <Animated.View style={coverSwipeStyle}>
                   <Cover uri={cover} size={30} transition={0} autoplay={props.active ?? true}
                     style={styles.cover} placeholderIcon={song.url ? 'radio' : 'musical-notes'} />
                 </Animated.View>
               </Animated.View>
-              <Animated.View style={[styles.titleFrame, { start: targetInfoStart, width: targetInfoWidth }, titleMotion]}>
+              <Animated.View style={[styles.titleFrame, { start: targetInfoStart, width: targetInfoWidth, top: (miniHeight - 20) / 2 }, titleMotion]}>
                 <Animated.View style={[styles.titleContent, titleSwipeStyle]}>
                   {marqueeTitles && expandedControls && (props.active ?? true) ? <MarqueeText
                     text={live?.title ?? song.title}
@@ -326,7 +374,7 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
               </Animated.View>
             </Animated.View>
             {buttons === 'previousNext' ? (
-              <Animated.View style={[styles.secondary, { start: targetPlayStart - 32 - spacing.sm }, secondaryMotion]}
+              <Animated.View style={[styles.secondary, { start: targetPlayStart - 32 - spacing.sm, top: controlTop }, secondaryMotion]}
                 pointerEvents={expandedControls ? 'auto' : 'none'} accessibilityElementsHidden={!expandedControls}
                 importantForAccessibility={expandedControls ? 'auto' : 'no-hide-descendants'}>
                 <Pressable style={styles.control} hitSlop={4} accessibilityRole="button" accessibilityLabel={t('Previous')}
@@ -336,7 +384,7 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
               </Animated.View>
             ) : null}
             <AnimatedPressable
-              style={[styles.control, styles.playControl, { start: targetPlayStart }, playMotion]}
+              style={[styles.control, styles.playControl, { start: targetPlayStart, top: controlTop }, playMotion]}
               hitSlop={4}
               accessibilityRole="button"
               accessibilityLabel={isPlaying ? t('Pause') : t('Play')}
@@ -361,7 +409,7 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
               )}
             </AnimatedPressable>
             {buttons === 'favorite' ? (
-              <Animated.View style={[styles.secondary, { start: targetPlayStart + 32 + spacing.sm }, secondaryMotion]}
+              <Animated.View style={[styles.secondary, { start: targetPlayStart + 32 + spacing.sm, top: controlTop }, secondaryMotion]}
                 pointerEvents={expandedControls ? 'auto' : 'none'} accessibilityElementsHidden={!expandedControls}
                 importantForAccessibility={expandedControls ? 'auto' : 'no-hide-descendants'}>
                 <View style={styles.control}>
@@ -370,7 +418,7 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
               </Animated.View>
             ) : null}
             {buttons === 'next' || buttons === 'previousNext' ? (
-              <Animated.View style={[styles.secondary, { start: targetPlayStart + 32 + spacing.sm }, secondaryMotion]}
+              <Animated.View style={[styles.secondary, { start: targetPlayStart + 32 + spacing.sm, top: controlTop }, secondaryMotion]}
                 pointerEvents={expandedControls ? 'auto' : 'none'} accessibilityElementsHidden={!expandedControls}
                 importantForAccessibility={expandedControls ? 'auto' : 'no-hide-descendants'}>
                 <Pressable style={styles.control} hitSlop={4} accessibilityRole="button" accessibilityLabel={t('Next')}

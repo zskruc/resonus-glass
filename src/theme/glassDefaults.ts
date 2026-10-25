@@ -29,6 +29,19 @@ export function getKyantGlassProfile(kind: 'button' | 'navigation' | 'dialog', d
   return profile;
 }
 
+/** AM++ phone dock recipe, commit 97fa2e4; the mini and tabs share one material. */
+export function getAmPlusGlassProfile(target: GlassTarget, dark: boolean): GlassProfile {
+  if (target === 'controls') return getKyantGlassProfile('button', dark);
+  // The native material bounds cap both lens dimensions at min(24dp, h * .375).
+  const edge = target === 'miniPlayer' ? 43 * 0.375 : 24;
+  return {
+    ...getKyantGlassProfile('navigation', dark),
+    blur: 4,
+    refraction: edge,
+    refractionHeight: edge,
+  };
+}
+
 /** Chosen in the Samsung tuning room; the mini is untinted, other surfaces retain automatic tint. */
 export const DEFAULT_GLASS_PROFILES: Record<GlassTarget, GlassProfile> = {
   miniPlayer: {

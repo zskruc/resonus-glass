@@ -22,12 +22,15 @@ class LiquidGlassModule : Module() {
     Function("updateDockProgress") { token: Int, progress: Double ->
       TabsMotionHosts.updateDock(token, progress)
     }
+    Function("updateButtonMotion") { token: Int, progress: Double, x: Double, y: Double ->
+      TabsMotionHosts.updateButton(token, progress, x, y)
+    }
 
     View(LiquidGlassView::class) {
       Events("onMotionHostReady")
       Prop("materialPreset") { view: LiquidGlassView, value: String ->
         view.materialPreset = when (value) {
-          "custom", "button", "tabs", "dialog" -> value
+          "custom", "button", "tabs", "dialog", "amPlus" -> value
           else -> "button"
         }
       }
@@ -49,6 +52,13 @@ class LiquidGlassModule : Module() {
       Prop("tintColor") { view: LiquidGlassView, value: Int -> view.updateTintColor(value) }
       Prop("tintOpacity") { view: LiquidGlassView, value: Double -> view.updateTintOpacity(value.toFloat().coerceIn(0f, 1f)) }
       Prop("dark") { view: LiquidGlassView, value: Boolean -> view.dark = value }
+      Prop("staticBackdropColor") { view: LiquidGlassView, value: Int? -> view.updateStaticBackdropColor(value) }
+      Prop("dockRole") { view: LiquidGlassView, value: String? ->
+        view.dockRole = when (value) { "navigation", "search" -> value; else -> "mini" }
+      }
+      Prop("dockRowWidth") { view: LiquidGlassView, value: Double? ->
+        view.dockRowWidth = value?.toFloat()?.takeIf { it.isFinite() }?.coerceIn(0f, 2000f) ?: 0f
+      }
       Prop("dockCompactWidth") { view: LiquidGlassView, value: Double? -> view.setDockCompactWidth(value?.toFloat() ?: 0f) }
       Prop("dockExpandedHeight") { view: LiquidGlassView, value: Double? -> view.dockExpandedHeight = value?.toFloat()?.takeIf { it.isFinite() }?.coerceIn(0f, 2000f) ?: 0f }
       Prop("dockCompactHeight") { view: LiquidGlassView, value: Double? -> view.dockCompactHeight = value?.toFloat()?.takeIf { it.isFinite() }?.coerceIn(0f, 2000f) ?: 0f }

@@ -22,6 +22,7 @@ const TARGETS: { value: GlassTarget; label: string }[] = [
   { value: 'controls', label: 'Other surfaces' },
 ];
 const MODES: { value: GlassAppearanceMode; label: string }[] = [
+  { value: 'amPlus', label: 'AM++ reference' },
   { value: 'kyantDefault', label: 'Kyant defaults' },
   { value: 'iphoneReference', label: 'iPhone reference' },
   { value: 'custom', label: 'Custom parameters' },
@@ -188,6 +189,7 @@ export default function GlassTuningSettings() {
       <DockScrollView style={styles.scroll} contentContainerStyle={styles.content}>
         <Text style={styles.introduction}>{t('Changes apply live. Save to keep them after restarting. Export your finished settings and send them to me.')}</Text>
         {mode === 'kyantDefault' ? <Text style={styles.notice}>{t('Uses AndroidLiquidGlass’s original button, bottom tabs, and dialog materials. Your saved custom parameters are kept.')}</Text> : null}
+        {mode === 'amPlus' ? <Text style={styles.notice}>{t('AM++ reference uses matching mini player and navigation glass, with a shared spring collapse. Search joins the expanded bar and separates on the right when collapsed. Other controls keep Kyant defaults.')}</Text> : null}
         {mode === 'iphoneReference' ? <Text style={styles.notice}>{t('iPhone reference approximates the observed appearance; it does not copy Apple’s private parameters. Switch to Custom parameters to restore and edit your saved styles.')}</Text> : null}
         {!isLiquidGlassAvailable ? <Text style={styles.notice}>{t('Native liquid glass is unavailable on this device. This preview uses a solid fallback.')}</Text> : null}
         {!enabled ? (
@@ -200,7 +202,7 @@ export default function GlassTuningSettings() {
             ><Text style={styles.linkLabel}>{t('Enable glass')}</Text></Pressable>
           </View>
         ) : null}
-        {target === 'controls' && mode !== 'kyantDefault' ? <Text style={styles.description}>{t('These parameters apply to panels, dialogs, and fields. Buttons use their original styles.')}</Text> : null}
+        {target === 'controls' && mode !== 'kyantDefault' && mode !== 'amPlus' ? <Text style={styles.description}>{t('These parameters apply to panels, dialogs, and fields. Buttons use their original styles.')}</Text> : null}
         <Text style={styles.sectionTitle}>{t('Starting styles')}</Text>
         <View style={styles.presets}>
           {([{ kind: 'clear', label: 'Clear glass' }, { kind: 'strong', label: 'Strong lens' }, { kind: 'soft', label: 'Soft glass' }] as const).map((item) => (
@@ -270,7 +272,7 @@ export default function GlassTuningSettings() {
         <Text style={styles.sectionTitle}>{t('Current parameters')}</Text>
         <Text style={styles.description}>{t('You can copy or screenshot these values. Export includes all three control styles.')}</Text>
         {mode === 'iphoneReference' ? <Text style={styles.description}>{t('Export keeps your three custom styles; the reference style does not overwrite them.')}</Text> : null}
-        {mode === 'kyantDefault' ? <Text style={styles.description}>{t('Export keeps your three custom styles; the default materials do not overwrite them.')}</Text> : null}
+        {mode === 'kyantDefault' || mode === 'amPlus' ? <Text style={styles.description}>{t('Export keeps your three custom styles; the default materials do not overwrite them.')}</Text> : null}
         <Text selectable style={styles.summary}>{[
           `${t(MODES.find((item) => item.value === mode)!.label)} · ${t(TARGETS.find((item) => item.value === target)!.label)}`,
           ...parameters.map((parameter) => `${t(parameter.label)}: ${parameter.percent

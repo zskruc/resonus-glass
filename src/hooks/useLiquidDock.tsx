@@ -4,6 +4,8 @@ import { Keyboard } from 'react-native';
 import { makeMutable, ReduceMotion, useAnimatedScrollHandler, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
 import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 
+import { AMPP_DOCK, amppSpringDamping } from '@/lib/amppDock';
+import { useGlassTuning } from '@/store/glassTuning';
 import { createLiquidDockScrollState, updateLiquidDockScroll, type LiquidDockScrollState } from '@/lib/liquidDock';
 import { currentSong, usePlayerStore } from '@/store/player';
 import { useSettings } from '@/store/settings';
@@ -12,6 +14,11 @@ import { useTabBarShown } from './useTabBar';
 export const COMPACT_DOCK_SIZE = 50;
 export const COMPACT_DOCK_GAP = 8;
 const DOCK_SPRING = { mass: 1, stiffness: 350, damping: 30, reduceMotion: ReduceMotion.System };
+function dockSpring(compact: boolean, amPlus: boolean) {
+  'worklet';
+  return amPlus ? { mass: 1, stiffness: AMPP_DOCK.stiffness, damping: amppSpringDamping(compact),
+    reduceMotion: ReduceMotion.System } : DOCK_SPRING;
+}
 
 interface LiquidDock {
   /** One shared layout animation: zero expanded, one inline. */
@@ -20,6 +27,7 @@ interface LiquidDock {
   expand: () => void;
   enabled: boolean;
   hasSearch: boolean;
+  amPlus: boolean;
   uiEnabled: SharedValue<boolean>;
   uiCompact: SharedValue<boolean>;
   generation: SharedValue<number>;
@@ -29,11 +37,11 @@ interface LiquidDock {
 const noop = () => {};
 // Browsers are also used outside tabs; an absent provider leaves their scrolling alone.
 const defaultDock: LiquidDock = {
-  progress: makeMutable(0), compact: false, expand: noop, enabled: false, hasSearch: false,
+  progress: makeMutable(0), compact: false, expand: noop, enabled: false, hasSearch: false, amPlus: false,
   uiEnabled: makeMutable(false), uiCompact: makeMutable(false), generation: makeMutable(0), notifyCompact: noop,
 };
 const LiquidDockContext = createContext(defaultDock);
-type LiquidDockScroll = Pick<LiquidDock, 'progress' | 'expand' | 'enabled' | 'uiEnabled' | 'uiCompact' | 'generation' | 'notifyCompact'>;
+type LiquidDockScroll = Pick<LiquidDock, 'progress' | 'expand' | 'enabled' | 'uiEnabled' | 'uiCompact' | 'generation' | 'notifyCompact' | 'amPlus'>;
 // A target change redraws dock controls, but does not change a list's handler.
 const LiquidDockScrollContext = createContext<LiquidDockScroll>(defaultDock);
 
@@ -46,6 +54,7 @@ export function LiquidDockProvider({ children }: PropsWithChildren) {
   const withBar = useTabBarShown();
   const hasSong = usePlayerStore((state) => currentSong(state) !== null);
   const entries = useSettings((state) => state.bottomTabs);
+  const amPlus = useGlassTuning((state) => state.mode === 'amPlus');
   const [keyboardVisible, setKeyboardVisible] = useState(Keyboard.isVisible());
   const progress = useSharedValue(0);
   const uiEnabled = useSharedValue(false);
@@ -55,10 +64,10 @@ export function LiquidDockProvider({ children }: PropsWithChildren) {
   // visible there. Its interaction follows that visibility, not a tab route.
   const enabled = withBar && hasSong && !keyboardVisible
     && entries.some((entry) => entry.key !== 'search' && entry.enabled);
-  // Search is always a separate right-hand control, including without a song
-  // and on Search itself. Its visibility is independent of minimizing the dock.
+  // AM++ keeps Search in the expanded capsule and detaches it while minimizing;
+  // the previous appearance modes retain their independent Search control.
   const hasSearch = entries.some((entry) => entry.key === 'search' && entry.enabled);
-  const scope = `${route}:${enabled}:${hasSearch}`;
+  const scope = `${route}:${enabled}:${hasSearch}:${amPlus}`;
   const [targetState, setTargetState] = useState({ scope, compact: false });
   if (targetState.scope !== scope) setTargetState({ scope, compact: false });
   const compact = targetState.scope === scope && targetState.compact;
@@ -80,7 +89,7 @@ export function LiquidDockProvider({ children }: PropsWithChildren) {
       uiCompact.set(false);
       progress.set(0);
     });
-  }, [route, enabled, hasSearch, generation, progress, uiCompact, uiEnabled]);
+  }, [route, enabled, hasSearch, amPlus, generation, progress, uiCompact, uiEnabled]);
 
   const notifyCompact = useCallback((target: boolean, eventGeneration: number) => {
     if (!enabledRef.current || eventGeneration !== generationRef.current) return;
@@ -93,14 +102,14 @@ export function LiquidDockProvider({ children }: PropsWithChildren) {
       generation.set(nextGeneration);
       const wasCompact = uiCompact.get();
       uiCompact.set(false);
-      if (wasCompact || progress.get() !== 0) progress.set(withSpring(0, DOCK_SPRING));
+      if (wasCompact || progress.get() !== 0) progress.set(withSpring(0, dockSpring(false, amPlus)));
     });
     setTargetState((previous) => previous.compact ? { ...previous, compact: false } : previous);
-  }, [generation, progress, uiCompact]);
-  const value = useMemo(() => ({ progress, compact, expand, enabled, hasSearch, uiEnabled, uiCompact, generation, notifyCompact }),
-    [progress, compact, expand, enabled, hasSearch, uiEnabled, uiCompact, generation, notifyCompact]);
-  const scrollValue = useMemo(() => ({ progress, expand, enabled, uiEnabled, uiCompact, generation, notifyCompact }),
-    [progress, expand, enabled, uiEnabled, uiCompact, generation, notifyCompact]);
+  }, [generation, progress, uiCompact, amPlus]);
+  const value = useMemo(() => ({ progress, compact, expand, enabled, hasSearch, uiEnabled, uiCompact, generation, notifyCompact, amPlus }),
+    [progress, compact, expand, enabled, hasSearch, uiEnabled, uiCompact, generation, notifyCompact, amPlus]);
+  const scrollValue = useMemo(() => ({ progress, expand, enabled, uiEnabled, uiCompact, generation, notifyCompact, amPlus }),
+    [progress, expand, enabled, uiEnabled, uiCompact, generation, notifyCompact, amPlus]);
   return (
     <LiquidDockContext.Provider value={value}>
       <LiquidDockScrollContext.Provider value={scrollValue}>{children}</LiquidDockScrollContext.Provider>
@@ -120,7 +129,7 @@ interface ScrollContext extends Record<string, unknown> {
 
 /** Attach only to a screen's primary vertical animated list/scroll view. */
 export function useLiquidDockScrollHandler() {
-  const { progress, uiEnabled, uiCompact, generation, notifyCompact } = useContext(LiquidDockScrollContext);
+  const { progress, uiEnabled, uiCompact, generation, notifyCompact, amPlus } = useContext(LiquidDockScrollContext);
   const focused = useIsFocused();
   // The provider resets the dock for every real route/availability change.
   // Replaying an incoming screen's layout effects must not expand it again.
@@ -133,7 +142,7 @@ export function useLiquidDockScrollHandler() {
         event.layoutMeasurement.height, event.contentSize.height, false);
       if (!focused || !uiEnabled.get() || target === undefined || target === uiCompact.get()) return;
       uiCompact.set(target);
-      progress.set(withSpring(target ? 1 : 0, DOCK_SPRING));
+      progress.set(withSpring(target ? 1 : 0, dockSpring(target, amPlus)));
       scheduleOnRN(notifyCompact, target, generation.get());
     },
     onEndDrag: (event, context) => {
@@ -146,7 +155,7 @@ export function useLiquidDockScrollHandler() {
           event.layoutMeasurement.height, event.contentSize.height, true);
         if (target !== undefined && target !== uiCompact.get()) {
           uiCompact.set(target);
-          progress.set(withSpring(target ? 1 : 0, DOCK_SPRING));
+          progress.set(withSpring(target ? 1 : 0, dockSpring(target, amPlus)));
           scheduleOnRN(notifyCompact, target, generation.get());
         }
       }
@@ -172,8 +181,8 @@ export function useLiquidDockScrollHandler() {
         event.layoutMeasurement.height, event.contentSize.height, !!context.userDragging);
       if (target === undefined || target === uiCompact.get()) return;
       uiCompact.set(target);
-      progress.set(withSpring(target ? 1 : 0, DOCK_SPRING));
+      progress.set(withSpring(target ? 1 : 0, dockSpring(target, amPlus)));
       scheduleOnRN(notifyCompact, target, generation.get());
     },
-  }, [focused, progress, uiEnabled, uiCompact, generation, notifyCompact]);
+  }, [focused, progress, uiEnabled, uiCompact, generation, notifyCompact, amPlus]);
 }

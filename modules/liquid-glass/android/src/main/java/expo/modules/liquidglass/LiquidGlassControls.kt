@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +62,7 @@ import androidx.compose.ui.util.lerp
 import com.facebook.react.uimanager.PointerEvents
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.emptyBackdrop
 import com.kyant.backdrop.backdrops.rememberBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -77,9 +79,23 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+/** The catalog's opaque resting surface hides every optical effect underneath it. */
+private fun restingCatalogThumb(): Modifier = Modifier.drawBackdrop(
+  backdrop = emptyBackdrop(),
+  shape = { RoundedCornerShape(percent = 50) },
+  effects = {},
+  highlight = null,
+  // Preserve the exact catalog shadow, not Android elevation or a different blur.
+  shadow = { Shadow(radius = 4f.dp, color = Color.Black.copy(alpha = 0.05f)) },
+  onDrawSurface = { drawRect(Color.White) }
+)
+
 /** Uses the existing consumer rather than allocating another screen capturer. */
 abstract class LiquidGlassInteractiveControl(context: Context, appContext: AppContext) : LiquidGlassView(context, appContext) {
   override val pointerEvents: PointerEvents = PointerEvents.AUTO
+  // Resting white thumbs have no sampled source. Clearing their display list
+  // during somebody else's capture would only force a redundant restore.
+  override val suppressDuringBackdropCapture: Boolean get() = glassEnabled && super.suppressDuringBackdropCapture
   internal var controlDisabled by mutableStateOf(false)
   private var downX = 0f
   private var downY = 0f
@@ -281,6 +297,9 @@ private fun CatalogLiquidToggle(
       if (target != fraction) { fraction = target; drag.animateToValue(target) }
     }
   }
+  val resting by remember(drag) { derivedStateOf {
+    isCatalogThumbResting(drag.pressProgress, drag.scaleX, drag.scaleY, drag.velocity, drag.value, drag.targetValue)
+  } }
   val trackBackdrop = rememberLayerBackdrop()
   Box(modifier.semantics(mergeDescendants = true) {
     role = Role.Switch
@@ -288,13 +307,13 @@ private fun CatalogLiquidToggle(
     if (!enabled) disabled()
     onClick { if (enabled) { onSelect(!selected()); true } else false }
   }.then(if (enabled) drag.modifier else Modifier), contentAlignment = Alignment.CenterStart) {
-    Box(Modifier.layerBackdrop(trackBackdrop).clip(RoundedCornerShape(percent = 50)).drawBehind {
+    Box(Modifier.then(if (resting) Modifier else Modifier.layerBackdrop(trackBackdrop)).clip(RoundedCornerShape(percent = 50)).drawBehind {
       drawRect(lerp(trackColor, accentColor, drag.value))
     }.size(64f.dp, 28f.dp))
     Box(Modifier.graphicsLayer {
       val padding = 2f.dp.toPx()
       translationX = lerp(padding, padding + dragWidth, drag.value) * if (isLtr) 1f else -1f
-    }.drawBackdrop(
+    }.then(if (resting) restingCatalogThumb() else Modifier.drawBackdrop(
       backdrop = rememberCombinedBackdrop(backdrop, rememberBackdrop(trackBackdrop) { drawBackdrop ->
         val progress = drag.pressProgress
         scale(lerp(2f / 3f, 0.75f, progress), lerp(0f, 0.75f, progress)) { drawBackdrop() }
@@ -319,7 +338,7 @@ private fun CatalogLiquidToggle(
         scaleY *= 1f - (velocity * 0.25f).coerceIn(-0.2f, 0.2f)
       },
       onDrawSurface = { drawRect(Color.White.copy(alpha = 1f - drag.pressProgress)) }
-    ).size(40f.dp, 24f.dp))
+    )).size(40f.dp, 24f.dp))
   }
 }
 
@@ -375,7 +394,10 @@ private fun CatalogLiquidSlider(
         onDragCancelled = { dragTarget.cancel(); onCancel() })
     }
     LaunchedEffect(drag) { snapshotFlow { value() }.collectLatest { if (drag.targetValue != it) drag.updateValue(it) } }
-    Box(Modifier.layerBackdrop(trackBackdrop)) {
+    val resting by remember(drag) { derivedStateOf {
+      isCatalogThumbResting(drag.pressProgress, drag.scaleX, drag.scaleY, drag.velocity, drag.value, drag.targetValue)
+    } }
+    Box(Modifier.then(if (resting) Modifier else Modifier.layerBackdrop(trackBackdrop))) {
       Box(Modifier.clip(RoundedCornerShape(percent = 50)).background(trackColor).then(if (enabled) Modifier.pointerInput(scope, valueRange) {
         detectTapGestures { position ->
           val delta = (valueRange.endInclusive - valueRange.start) * position.x / trackWidth
@@ -399,7 +421,7 @@ private fun CatalogLiquidSlider(
       val upper = (trackWidth - size.width * 3f / 4f).coerceAtLeast(lower)
       translationX = (-size.width / 2f + trackWidth * drag.progress)
         .coerceIn(lower, upper) * if (isLtr) 1f else -1f
-    }.then(if (enabled) drag.modifier else Modifier).drawBackdrop(
+    }.then(if (enabled) drag.modifier else Modifier).then(if (resting) restingCatalogThumb() else Modifier.drawBackdrop(
       backdrop = rememberCombinedBackdrop(backdrop, rememberBackdrop(trackBackdrop) { drawBackdrop ->
         val progress = drag.pressProgress
         scale(lerp(2f / 3f, 1f, progress), lerp(0f, 1f, progress)) { drawBackdrop() }
@@ -424,6 +446,6 @@ private fun CatalogLiquidSlider(
         scaleY *= 1f - (velocity * 0.25f).coerceIn(-0.2f, 0.2f)
       },
       onDrawSurface = { drawRect(Color.White.copy(alpha = 1f - drag.pressProgress)) }
-    ).size(40f.dp, 24f.dp))
+    )).size(40f.dp, 24f.dp))
   }
 }

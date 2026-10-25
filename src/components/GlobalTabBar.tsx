@@ -17,7 +17,7 @@
  */
 import Icon from '@/components/Icon';
 import { useNavigationContainerRef, useRouter, useSegments } from 'expo-router';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { I18nManager, Pressable, StyleSheet, Text, View, type PressableProps } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -29,6 +29,7 @@ import Animated, {
   withDelay,
   withSpring,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
@@ -45,6 +46,7 @@ import { useT } from '@/i18n';
 import { rememberTab, requestSearchFocus, reselectTab, tabOrigin, TABS, type TabSegment } from '@/lib/tabOrigin';
 import { getActiveTabJumpAction } from '@/lib/tabNavigation';
 import { getLiquidDockGeometry } from '@/lib/liquidDock';
+import { AMPP_DOCK, amppCompactAlpha, amppExpandedAlpha, amppProgress, amppSearchAlpha, amppSprungProgress, getAmppControls, getAmppDockGeometry, getAmppSlotTranslation } from '@/lib/amppDock';
 import { useSettings } from '@/store/settings';
 import { resolveGlassProfile, useGlassTuning } from '@/store/glassTuning';
 import { BOTTOM_BAR_HORIZONTAL_MARGIN, BOTTOM_BAR_MAX_WIDTH, TAB_BAR_BOTTOM_GAP, TAB_BAR_HEIGHT, useTheme, useThemeMode } from '@/theme';
@@ -68,16 +70,17 @@ const HORIZONTAL_INSET = 12;
 const PRESSED_SCALE = 78 / 56;
 
 function NavigationItem({
-  showLabels, glassPressed, onPressedChange, onPressIn, onPressOut, ...props
+  showLabels, glassPressed, amPlus, onPressedChange, onPressIn, onPressOut, ...props
 }: Omit<PressableProps, 'style'> & {
   showLabels: boolean;
   glassPressed: boolean;
+  amPlus: boolean;
   onPressedChange?: (pressed: boolean) => void;
 }) {
   return (
     <Pressable
       {...props}
-      style={[styles.item, !showLabels && styles.itemIconOnly, glassPressed && styles.pressedItem]}
+      style={[styles.item, amPlus && { borderRadius: AMPP_DOCK.navigationHeight / 2 - INNER_GAP }, !showLabels && styles.itemIconOnly, glassPressed && styles.pressedItem]}
       onPressIn={(event) => {
         onPressedChange?.(true);
         onPressIn?.(event);
@@ -88,6 +91,18 @@ function NavigationItem({
       }}
     />
   );
+}
+
+/** Keep each glyph/text layer sharp while its slot follows the narrowing native panel. */
+function NavigationSlot({ amPlus, index, count, rowWidth, rtl, progress, children }: {
+  amPlus: boolean; index: number; count: number; rowWidth: number; rtl: boolean;
+  progress: SharedValue<number>; children: ReactNode;
+}) {
+  const style = useAnimatedStyle(() => {
+    if (!amPlus) return {};
+    return { transform: [{ translateX: getAmppSlotTranslation(rowWidth, index, count, rtl, progress.get()) }] };
+  });
+  return amPlus ? <Animated.View pointerEvents="box-none" style={[{ flex: 1 }, style]}>{children}</Animated.View> : <>{children}</>;
 }
 
 export function GlobalTabBar() {
@@ -101,6 +116,13 @@ export function GlobalTabBar() {
     expand, hasSearch: dockHasSearch } = useLiquidDock();
   const navigationOverrides = useGlassTuning((s) => s.overrides.navigation);
   const glassMode = useGlassTuning((s) => s.mode);
+  const amPlus = glassMode === 'amPlus';
+  const navHeight = amPlus ? AMPP_DOCK.navigationHeight : TAB_BAR_HEIGHT;
+  const compactSize = amPlus ? AMPP_DOCK.compactSize : COMPACT_DOCK_SIZE;
+  const outerMargin = amPlus ? AMPP_DOCK.margin : BOTTOM_BAR_HORIZONTAL_MARGIN;
+  const bottomGap = amPlus ? AMPP_DOCK.bottomGap : TAB_BAR_BOTTOM_GAP;
+  const horizontalInset = amPlus ? AMPP_DOCK.tabInset : HORIZONTAL_INSET;
+  const iconSize = amPlus ? AMPP_DOCK.iconSize : 30;
   const glass = resolveGlassProfile('navigation', dark, navigationOverrides, glassMode);
   const router = useRouter();
   const navigationRef = useNavigationContainerRef();
@@ -130,8 +152,12 @@ export function GlobalTabBar() {
   }, []);
   useLayoutEffect(() => {
     if (compact) dockNavigationBlocked.current = true;
-  }, [compact]);
-  useAnimatedReaction(() => dockCompactTarget.get() || dockProgress.value > 0.001, (blocked, previous) => {
+  }, [compact, amPlus]);
+  // Moving slots retain fixed text layers. Until the row reaches its expanded
+  // endpoint, any tab tap restores that row rather than navigating through an
+  // overlapping moving hit rectangle. Accessibility activation uses this gate too.
+  useAnimatedReaction(() => amPlus ? amppProgress(dockProgress.get()) > 0
+    : dockCompactTarget.get() || dockProgress.value > 0.001, (blocked, previous) => {
     if (blocked !== previous) scheduleOnRN(updateDockNavigationBlocked, blocked);
   });
   // It is also the bar of the tab screens (the tabs navigator draws none):
@@ -152,21 +178,38 @@ export function GlobalTabBar() {
     .map(({ key }) => TABS.find((tab) => tab.segment === key))
     .filter((tab): tab is (typeof TABS)[number] => !!tab);
   const searchTab = enabledTabs.find((tab) => tab.segment === 'search');
-  const tabs = enabledTabs.filter((tab) => tab.segment !== 'search');
+  // AM++ puts Search at the expanded row's end and only detaches it on collapse.
+  const mainTabs = enabledTabs.filter((tab) => tab.segment !== 'search');
+  const tabs = amPlus && searchTab ? [...mainTabs, searchTab] : mainTabs;
   const tabOrder = tabs.map((tab) => tab.segment).join(',');
   // The gesture always uses expanded coordinates. Measuring the morphing
   // capsule with onLayout would send a JS state update on every layout frame.
-  const fullWidth = Math.min(BOTTOM_BAR_MAX_WIDTH, Math.max(COMPACT_DOCK_SIZE, screenWidth - BOTTOM_BAR_HORIZONTAL_MARGIN * 2));
-  const geometry = getLiquidDockGeometry(fullWidth, TAB_BAR_HEIGHT, COMPACT_DOCK_SIZE, COMPACT_DOCK_GAP, hasSearch, rtl);
+  const fullWidth = Math.min(BOTTOM_BAR_MAX_WIDTH, Math.max(compactSize, screenWidth - outerMargin * 2));
+  const geometry = amPlus ? getAmppDockGeometry(fullWidth, tabs.length, hasSearch, rtl)
+    : getLiquidDockGeometry(fullWidth, navHeight, compactSize, COMPACT_DOCK_GAP, hasSearch, rtl);
+  const searchExpandedWidth = amPlus
+    ? Math.min(fullWidth, Math.max(compactSize, (fullWidth - horizontalInset * 2) / Math.max(1, tabs.length))) : navHeight;
   const navigationOffsetX = geometry.navigationOffsetX;
   const barWidth = geometry.navigationWidth;
-  const baseMargin = Math.max(BOTTOM_BAR_HORIZONTAL_MARGIN, (screenWidth - BOTTOM_BAR_MAX_WIDTH) / 2);
+  const baseMargin = Math.max(outerMargin, (screenWidth - BOTTOM_BAR_MAX_WIDTH) / 2);
   const [glassPressed, setGlassPressed] = useState(false);
-  const tabWidth = tabs.length > 0 ? Math.max(0, barWidth - HORIZONTAL_INSET * 2) / tabs.length : 0;
+  const tabWidth = tabs.length > 0 ? Math.max(0, barWidth - horizontalInset * 2) / tabs.length : 0;
   const selectedIndex = tabs.findIndex((tab) => tab.segment === (current ?? origin));
   const [lastMainTab, setLastMainTab] = useState(tabs[selectedIndex]?.segment ?? tabs[0]?.segment);
   if (selectedIndex >= 0 && tabs[selectedIndex].segment !== lastMainTab) setLastMainTab(tabs[selectedIndex].segment);
-  const compactTab = tabs[selectedIndex] ?? tabs.find((tab) => tab.segment === lastMainTab) ?? tabs[0];
+  const selectedTab = tabs[selectedIndex] ?? tabs.find((tab) => tab.segment === lastMainTab) ?? tabs[0];
+  const compactTab = amPlus && selectedTab?.segment === 'search' ? mainTabs[0] ?? selectedTab : selectedTab;
+  const [amPlusInteraction, setAmPlusInteraction] = useState({ expanded: true, search: false });
+  useAnimatedReaction(
+    () => amPlus ? [amppExpandedAlpha(dockProgress.get()) > 0.5, amppSearchAlpha(dockProgress.get()) > 0.5] : null,
+    (value, previous) => {
+      if (value && (!previous || value[0] !== previous[0] || value[1] !== previous[1]))
+        scheduleOnRN(setAmPlusInteraction, { expanded: value[0], search: value[1] });
+    },
+  );
+  const expandedInteractive = amPlus ? amPlusInteraction.expanded : !compact;
+  const compactInteractive = amPlus ? !amPlusInteraction.expanded : compact;
+  const searchInteractive = !amPlus || amPlusInteraction.search;
   const selectionPosition = useSharedValue(0);
   const selectionDestination = useSharedValue(-1);
   const selectionOpacity = useSharedValue(0);
@@ -225,7 +268,8 @@ export function GlobalTabBar() {
     return {
       width: tabWidth,
       // Unsupported platforms use endpoint geometry rather than native morph.
-      opacity: compact ? 0 : selectionOpacity.value * (1 - progress),
+      opacity: amPlus ? selectionOpacity.value * amppExpandedAlpha(progress)
+        : compact ? 0 : selectionOpacity.value * (1 - progress),
       transform: [{ translateX: (selectionPosition.value - (rtl ? tabs.length - 1 : 0)) * tabWidth },
         { scaleX: scaleX.value }, { scaleY: scaleY.value }],
     };
@@ -237,8 +281,8 @@ export function GlobalTabBar() {
   useAnimatedReaction(() => motionEnabled.value ? [nativeMotionHost.value,
     selectionPosition.value, pressProgress.value, scaleX.value, scaleY.value,
     dragVelocity.value, panelOffset.value,
-    selectionOpacity.value * (1 - Math.max(0, Math.min(1, dockProgress.value))),
-    Math.max(0, Math.min(1, dockProgress.value))] : null, (motionState) => {
+    selectionOpacity.value * (amPlus ? amppExpandedAlpha(dockProgress.value) : 1 - amppProgress(dockProgress.value)),
+    amPlus ? amppSprungProgress(dockProgress.value) : amppProgress(dockProgress.value)] : null, (motionState) => {
     if (!motionState || !updateNativeTabsMotion || motionState[0] <= 0) return;
     const previous = lastNativeMotion.value;
     if (previous.length === motionState.length && motionState.every((value, index) => value === previous[index])) return;
@@ -256,9 +300,9 @@ export function GlobalTabBar() {
       return;
     }
     // A single full-width tab cannot grow sideways beyond the screen margins.
-    const horizontalScale = tabs.length === 1 ? 1 : tabs.length === 2 ? 1.1 : PRESSED_SCALE;
+    const horizontalScale = tabs.length === 1 ? 1 : tabs.length === 2 ? 1.1 : amPlus ? 1.5 : PRESSED_SCALE;
     scaleX.set(withSpring(horizontalScale, SCALE_X_SPRING));
-    scaleY.set(withSpring(PRESSED_SCALE, SCALE_Y_SPRING));
+    scaleY.set(withSpring(amPlus ? 1.45 : PRESSED_SCALE, SCALE_Y_SPRING));
   };
   const release = (drag = false) => {
     'worklet';
@@ -271,7 +315,7 @@ export function GlobalTabBar() {
       panelOffset.set(reduceMotion ? 0 : withSpring(0, RELEASE_SPRING));
     }
   };
-  const foregroundShadow = {
+  const foregroundShadow = amPlus ? {} : {
     textShadowColor: dark ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.85)',
     textShadowOffset: { width: 0, height: dark ? 1 : 0 },
     textShadowRadius: dark ? 2 : 1.5,
@@ -313,22 +357,35 @@ export function GlobalTabBar() {
   }, [shown, fade]);
   const fadeStyle = useAnimatedStyle(() => ({ opacity: fade.value }));
   const searchDockStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: geometry.searchTranslationX * Math.max(0, Math.min(1, dockProgress.value)) }],
-  }), [geometry.searchTranslationX]);
+    opacity: amPlus ? amppSearchAlpha(dockProgress.value) : 1,
+    transform: [{ translateX: amPlus ? 0 : geometry.searchTranslationX * amppProgress(dockProgress.value) }],
+  }), [geometry.searchTranslationX, amPlus]);
   const expandedContentStyle = useAnimatedStyle(() => ({
-    opacity: 1 - Math.max(0, Math.min(1, dockProgress.value)),
+    opacity: amPlus ? amppExpandedAlpha(dockProgress.value) : 1 - amppProgress(dockProgress.value),
   }));
-  const compactContentStyle = useAnimatedStyle(() => ({
-    opacity: Math.max(0, Math.min(1, dockProgress.value)),
-  }));
-  const expandedSearchIconTop = showLabels ? 10 : (TAB_BAR_HEIGHT - 30) / 2;
-  const searchIconStyle = useAnimatedStyle(() => {
-    const progress = Math.max(0, Math.min(1, dockProgress.value));
-    return { transform: [
-      { translateX: (COMPACT_DOCK_SIZE - TAB_BAR_HEIGHT) / 2 * progress },
-      { translateY: (TAB_BAR_HEIGHT - COMPACT_DOCK_SIZE + (COMPACT_DOCK_SIZE - 30) / 2 - expandedSearchIconTop) * progress },
+  const compactContentStyle = useAnimatedStyle(() => {
+    if (!amPlus) return { opacity: amppProgress(dockProgress.value) };
+    const controls = getAmppControls(fullWidth, searchExpandedWidth, dockProgress.value);
+    return { opacity: amppCompactAlpha(dockProgress.value), transform: [
+      { translateX: (controls.capsuleWidth - compactSize) / 2 },
+      { translateY: controls.top + (controls.height - compactSize) / 2 - (navHeight - compactSize) },
     ] };
-  }, [expandedSearchIconTop]);
+  });
+  const expandedSearchIconTop = amPlus ? (navHeight - iconSize) / 2 : showLabels ? 10 : (navHeight - iconSize) / 2;
+  const searchIconStyle = useAnimatedStyle(() => {
+    const progress = amppProgress(dockProgress.value);
+    if (amPlus) {
+      const controls = getAmppControls(fullWidth, searchExpandedWidth, dockProgress.value);
+      return { transform: [
+        { translateX: (searchExpandedWidth - controls.searchWidth) / 2 },
+        { translateY: controls.top + (controls.height - iconSize) / 2 - expandedSearchIconTop },
+      ] };
+    }
+    return { transform: [
+      { translateX: (compactSize - navHeight) / 2 * progress },
+      { translateY: (navHeight - compactSize + (compactSize - iconSize) / 2 - expandedSearchIconTop) * progress },
+    ] };
+  }, [expandedSearchIconTop, amPlus, fullWidth, searchExpandedWidth, navHeight, compactSize, iconSize]);
 
   /** Leaves for a tab, dropping the screens piled on top of it. */
   const go = (href: string, segment: TabSegment) => {
@@ -351,15 +408,22 @@ export function GlobalTabBar() {
   const selectTab = (index: number, allowReselect = true) => {
     const tab = tabs[index];
     if (!tab || !shown) return;
+    if (tab.segment === 'search') {
+      if (current === 'search') reselectTab('search');
+      else requestSearchFocus();
+      expand();
+      go(tab.href, tab.segment);
+      return;
+    }
     if (allowReselect && current === tab.segment) reselectTab(tab.segment);
     go(tab.href, tab.segment);
   };
   const tabsPan = Gesture.Pan()
-    .enabled(shown && !compact && tabWidth > 0 && tabs.length > 1)
+    .enabled(shown && expandedInteractive && tabWidth > 0 && tabs.length > 1)
     .activeOffsetX([-6, 6])
     .failOffsetY([-8, 8])
     .onBegin(() => {
-      if (dockCompactTarget.get() || dockProgress.value > 0.001) {
+      if (amPlus ? amppProgress(dockProgress.value) > 0 : dockCompactTarget.get() || dockProgress.value > 0.001) {
         dragGeneration.set(-1);
         return;
       }
@@ -376,7 +440,9 @@ export function GlobalTabBar() {
     })
     .onUpdate((event) => {
       if (dragGeneration.value !== geometryGeneration.value) return;
-      const target = Math.max(0, Math.min(tabs.length - 1, (event.x - HORIZONTAL_INSET) / tabWidth - 0.5));
+      const liveWidth = amPlus ? barWidth + (compactSize - barWidth) * amppProgress(dockProgress.get()) : barWidth;
+      const liveTabWidth = amPlus ? Math.max(1, (liveWidth - horizontalInset * 2) / tabs.length) : tabWidth;
+      const target = Math.max(0, Math.min(tabs.length - 1, (event.x - horizontalInset) / liveTabWidth - 0.5));
       selectionDestination.set(target);
       selectionPosition.set(reduceMotion ? target : withSpring(target, SELECTION_SPRING));
       if (!reduceMotion) {
@@ -387,7 +453,9 @@ export function GlobalTabBar() {
     })
     .onEnd((event, success) => {
       if (!success || dragGeneration.value !== geometryGeneration.value) return;
-      const physicalIndex = Math.max(0, Math.min(tabs.length - 1, Math.round((event.x - HORIZONTAL_INSET) / tabWidth - 0.5)));
+      const liveWidth = amPlus ? barWidth + (compactSize - barWidth) * amppProgress(dockProgress.get()) : barWidth;
+      const liveTabWidth = amPlus ? Math.max(1, (liveWidth - horizontalInset * 2) / tabs.length) : tabWidth;
+      const physicalIndex = Math.max(0, Math.min(tabs.length - 1, Math.round((event.x - horizontalInset) / liveTabWidth - 0.5)));
       dragFinished.set(true);
       selectionDestination.set(physicalIndex);
       selectionPosition.set(reduceMotion ? physicalIndex : withSpring(physicalIndex, SELECTION_SPRING));
@@ -419,20 +487,21 @@ export function GlobalTabBar() {
       collapsable={false}
       style={[
         styles.frame,
-        { bottom: insets.bottom + TAB_BAR_BOTTOM_GAP, width: barWidth,
-          height: TAB_BAR_HEIGHT,
+        { bottom: insets.bottom + bottomGap, width: barWidth,
+          height: navHeight,
           start: rtl ? screenWidth - baseMargin - navigationOffsetX - barWidth : baseMargin + navigationOffsetX },
         fadeStyle,
       ]}
     >
-      <View style={styles.shell} pointerEvents="box-none">
+      <View style={[styles.shell, { borderRadius: navHeight / 2 }]} pointerEvents="box-none">
         <GestureDetector gesture={tabsPan}>
-        <View collapsable={false} style={styles.bar} pointerEvents={compact ? 'box-none' : 'auto'}>
+        <View collapsable={false} style={[styles.bar, { borderRadius: navHeight / 2 }]} pointerEvents={expandedInteractive ? 'auto' : 'box-none'}>
           {blurOn ? isLiquidGlassAvailable && tabs.length > 0 ? (
-            <LiquidGlassTabsView style={StyleSheet.absoluteFill} radius={TAB_BAR_HEIGHT / 2}
-              materialPreset={glassMode === 'kyantDefault' ? 'tabs' : 'custom'}
-              tabsCount={tabs.length} tabHorizontalInset={HORIZONTAL_INSET} tabVerticalInset={INNER_GAP}
-              dockCompactWidth={COMPACT_DOCK_SIZE} dockCompactHeight={COMPACT_DOCK_SIZE}
+            <LiquidGlassTabsView style={StyleSheet.absoluteFill} radius={navHeight / 2}
+              materialPreset={amPlus ? 'amPlus' : glassMode === 'kyantDefault' ? 'tabs' : 'custom'}
+              dockRole={amPlus ? 'navigation' : undefined} dockRowWidth={amPlus ? fullWidth : undefined}
+              tabsCount={tabs.length} tabHorizontalInset={horizontalInset} tabVerticalInset={INNER_GAP}
+              dockCompactWidth={compactSize} dockCompactHeight={compactSize}
               dockCompactOffsetX={geometry.compactNavigationOffsetX}
               onMotionHostReady={(event) => nativeMotionHost.set(event.nativeEvent.hostId)}
               blur={blur ? glass.blur : 0} refraction={blur ? glass.refraction : 0}
@@ -442,19 +511,19 @@ export function GlobalTabBar() {
               tintColor={glass.tintColor ?? colors.surface} tintOpacity={blur ? glass.tintOpacity : 1}
               dark={dark} enabled />
           ) : <View pointerEvents="none" style={[styles.fallbackMaterial,
-            { width: compact ? COMPACT_DOCK_SIZE : barWidth, height: compact ? COMPACT_DOCK_SIZE : TAB_BAR_HEIGHT,
-              start: rtl && compact ? barWidth - COMPACT_DOCK_SIZE : 0 }]}>
-              <FloatingGlassBackdrop radius={TAB_BAR_HEIGHT / 2} tint={colors.surface} blurred={blur} />
+            { width: compact ? compactSize : barWidth, height: compact ? compactSize : navHeight,
+              start: rtl && compact ? barWidth - compactSize : 0 }]}>
+              <FloatingGlassBackdrop radius={navHeight / 2} tint={colors.surface} blurred={blur} />
             </View> : null}
           {blurOn && !isLiquidGlassAvailable && tabWidth > 0 && selectedIndex >= 0 ? (
-            <Animated.View pointerEvents="none" collapsable={false} style={[styles.selection, selectionStyle]}>
-              <FloatingGlassBackdrop appearance="selection" radius={TAB_BAR_HEIGHT / 2 - INNER_GAP} tint={colors.surface} blurred={blur} />
+            <Animated.View pointerEvents="none" collapsable={false} style={[styles.selection, { start: horizontalInset, borderRadius: navHeight / 2 - INNER_GAP }, selectionStyle]}>
+              <FloatingGlassBackdrop appearance="selection" radius={navHeight / 2 - INNER_GAP} tint={colors.surface} blurred={blur} />
             </Animated.View>
           ) : null}
-          <View style={styles.contentClip} pointerEvents={compact ? 'none' : 'box-none'}
-            accessibilityElementsHidden={compact} importantForAccessibility={compact ? 'no-hide-descendants' : 'auto'}>
-          <Animated.View style={[styles.items, { width: barWidth - HORIZONTAL_INSET * 2,
-            start: HORIZONTAL_INSET }, expandedContentStyle]}>
+          <View style={[styles.contentClip, { borderRadius: navHeight / 2 }]} pointerEvents={expandedInteractive ? 'box-none' : 'none'}
+            accessibilityElementsHidden={!expandedInteractive} importantForAccessibility={expandedInteractive ? 'auto' : 'no-hide-descendants'}>
+          <Animated.View style={[styles.items, { width: barWidth - horizontalInset * 2,
+            start: horizontalInset, height: navHeight - INNER_GAP * 2 }, expandedContentStyle]}>
           {/* The user's order, and only the ones they kept (Settings › Appearance
               › Navigation bar). `TABS` stays the catalogue: it is what says where
               each one goes and what it is called. */}
@@ -466,17 +535,19 @@ export function GlobalTabBar() {
               const from = !inTabs && origin === tab.segment;
               const color = here ? colors.accent : colors.text;
               return (
+                <NavigationSlot key={tab.href} amPlus={amPlus} index={index} count={tabs.length}
+                  rowWidth={fullWidth} rtl={rtl} progress={dockProgress}>
                 <NavigationItem
-                  key={tab.href}
                   // Same height without the names, so nothing else has to move: the
                   // icons just sit in the middle of it.
                   showLabels={showLabels}
+                  amPlus={amPlus}
                   glassPressed={glassPressed && index === selectedIndex}
                   // Multi-tab pointer feedback belongs to the Pan's full
                   // touch session. Activating it cancels RN Pressability and
                   // its onPressOut must not shrink a lens still being dragged.
                   onPressedChange={tabs.length === 1 ? (pressed) => {
-                    if (compact || dockNavigationBlocked.current) return;
+                    if (!expandedInteractive || dockNavigationBlocked.current) return;
                     setGlassPressed(pressed);
                     if (pressed) press();
                     else release();
@@ -485,7 +556,7 @@ export function GlobalTabBar() {
                   accessibilityState={{ selected: here }}
                   accessibilityLabel={t(tab.label)}
                   onPress={() => {
-                    if (compact || dockNavigationBlocked.current) {
+                    if (!expandedInteractive || dockNavigationBlocked.current) {
                       expand();
                       return;
                     }
@@ -495,31 +566,32 @@ export function GlobalTabBar() {
                     selectTab(index);
                   }}
                 >
-                  <View style={styles.iconBox}>
+                  <View style={[styles.iconBox, { width: iconSize, height: iconSize }]}>
                     <Icon
                       name={here || from ? ICONS[tab.segment] : `${ICONS[tab.segment]}-outline`}
-                      size={30}
+                      size={iconSize}
                       color={color}
                       style={foregroundShadow}
                     />
                   </View>
                   {showLabels ? (
-                    <Text style={[styles.label, here && styles.selectedLabel, { color }, foregroundShadow]} numberOfLines={1}>
+                    <Text style={[styles.label, here && styles.selectedLabel, amPlus && { fontSize: AMPP_DOCK.labelSize, fontWeight: '500' }, { color }, foregroundShadow]} numberOfLines={1}>
                       {t(tab.label)}
                     </Text>
                   ) : null}
                 </NavigationItem>
+                </NavigationSlot>
               );
             })}
           </Animated.View>
           </View>
-          <Animated.View pointerEvents={compact ? 'box-none' : 'none'}
-            accessibilityElementsHidden={!compact} importantForAccessibility={compact ? 'auto' : 'no-hide-descendants'}
-            style={[styles.compactContent, { start: rtl ? barWidth - COMPACT_DOCK_SIZE : 0 }, compactContentStyle]}>
-            <Pressable style={styles.compactButton} accessibilityRole="button"
+          <Animated.View pointerEvents={compactInteractive ? 'box-none' : 'none'}
+            accessibilityElementsHidden={!compactInteractive} importantForAccessibility={compactInteractive ? 'auto' : 'no-hide-descendants'}
+            style={[styles.compactContent, { start: rtl ? barWidth - compactSize : 0, width: compactSize, height: compactSize }, compactContentStyle]}>
+            <Pressable style={[styles.compactButton, { borderRadius: compactSize / 2 }]} accessibilityRole="button"
               accessibilityLabel={`${t(compactTab.label)}, ${t('Navigation bar')}`}
               onPress={expand}>
-              <Icon name={ICONS[compactTab.segment]} size={30} color={colors.accent} style={foregroundShadow} />
+              <Icon name={ICONS[compactTab.segment]} size={iconSize} color={amPlus && current === 'search' ? colors.text : colors.accent} style={foregroundShadow} />
             </Pressable>
           </Animated.View>
         </View>
@@ -528,18 +600,21 @@ export function GlobalTabBar() {
     </Animated.View>
     ) : null}
     {hasSearch && searchTab && blurOn ? (
-      <Animated.View pointerEvents={shown ? 'box-none' : 'none'} collapsable={false}
-        accessibilityElementsHidden={!shown} importantForAccessibility={shown ? 'auto' : 'no-hide-descendants'}
-        style={[styles.searchFrame, { bottom: insets.bottom + TAB_BAR_BOTTOM_GAP,
-          start: rtl ? screenWidth - baseMargin - geometry.searchOffsetX - TAB_BAR_HEIGHT
-            : baseMargin + geometry.searchOffsetX }, fadeStyle, searchDockStyle]}>
+      <Animated.View pointerEvents={shown && searchInteractive ? 'box-none' : 'none'} collapsable={false}
+        accessibilityElementsHidden={!shown || !searchInteractive} importantForAccessibility={shown && searchInteractive ? 'auto' : 'no-hide-descendants'}
+        style={[styles.searchFrame, { bottom: insets.bottom + bottomGap,
+          start: rtl ? screenWidth - baseMargin - geometry.searchOffsetX - searchExpandedWidth
+            : baseMargin + geometry.searchOffsetX, width: searchExpandedWidth, height: navHeight }, fadeStyle, searchDockStyle]}>
         <View pointerEvents="box-none" collapsable={false} style={styles.searchCircle}>
-          <FloatingGlassBackdrop radius={TAB_BAR_HEIGHT / 2} tint={colors.surface} blurred={blur}
-            dockProgress={dockProgress} dockExpandedWidth={TAB_BAR_HEIGHT}
-            dockCompactWidth={COMPACT_DOCK_SIZE} dockCompactHeight={COMPACT_DOCK_SIZE} />
-          <Pressable style={[styles.searchButton, { width: compact ? COMPACT_DOCK_SIZE : TAB_BAR_HEIGHT,
-            height: compact ? COMPACT_DOCK_SIZE : TAB_BAR_HEIGHT,
-            start: rtl && compact ? TAB_BAR_HEIGHT - COMPACT_DOCK_SIZE : 0 }]} accessibilityRole="tab"
+          <FloatingGlassBackdrop radius={navHeight / 2} tint={colors.surface} blurred={blur}
+            dockProgress={dockProgress} dockExpandedWidth={searchExpandedWidth}
+            dockRole={amPlus ? 'search' : undefined} dockRowWidth={amPlus ? fullWidth : undefined}
+            dockCompactWidth={compactSize} dockCompactHeight={compactSize}
+            dockCompactOffsetX={amPlus ? searchExpandedWidth - compactSize : undefined} />
+          <Pressable style={[styles.searchButton, { width: amPlus ? compactSize : compact ? compactSize : navHeight,
+            height: amPlus ? compactSize : compact ? compactSize : navHeight,
+            start: amPlus ? undefined : rtl && compact ? navHeight - compactSize : 0,
+            right: amPlus ? 0 : undefined }]} accessibilityRole="tab"
             accessibilityState={{ selected: current === 'search' }} accessibilityLabel={t('Search')}
             onPress={() => {
               if (current === 'search') reselectTab('search');
@@ -548,10 +623,10 @@ export function GlobalTabBar() {
               go(searchTab.href, searchTab.segment);
             }} />
           <Animated.View pointerEvents="none" style={[styles.searchIcon,
-            { top: expandedSearchIconTop }, searchIconStyle]}>
-            <Icon name="search" size={30} color={current === 'search' ? colors.accent : colors.text} style={foregroundShadow} />
+            { top: expandedSearchIconTop, left: (searchExpandedWidth - iconSize) / 2, width: iconSize, height: iconSize }, searchIconStyle]}>
+            <Icon name="search" size={iconSize} color={current === 'search' ? colors.accent : colors.text} style={foregroundShadow} />
           </Animated.View>
-          {showLabels ? <Animated.View pointerEvents="none" style={[styles.searchLabel, expandedContentStyle]}>
+          {showLabels && !amPlus ? <Animated.View pointerEvents="none" style={[styles.searchLabel, expandedContentStyle]}>
             <Text style={[styles.label, current === 'search' && styles.selectedLabel,
               { color: current === 'search' ? colors.accent : colors.text }, foregroundShadow]} numberOfLines={1}>
               {t('Search')}

@@ -41,7 +41,7 @@ const { getKyantGlassProfile } = await import('@/theme/glassDefaults');
 hook.deregister();
 
 const PARAMETERS_KEY = 'resonus.glass-tuning.v1';
-const MODE_KEY = 'resonus.glass-appearance.v2';
+const MODE_KEY = 'resonus.glass-appearance.v3';
 const saved = {
   schemaVersion: 1,
   overrides: {
@@ -64,20 +64,20 @@ beforeEach(async () => {
   storage.failedWrites.clear();
   storage.readGate = null;
   storage.writeGate = null;
-  useGlassTuning.setState({ overrides: { miniPlayer: {}, navigation: {}, controls: {} }, mode: 'kyantDefault', hydrated: false });
+  useGlassTuning.setState({ overrides: { miniPlayer: {}, navigation: {}, controls: {} }, mode: 'amPlus', hydrated: false });
   // Clear any failed-read/retry state from the preceding case.
   await useGlassTuning.getState().hydrate();
   useGlassTuning.setState({ hydrated: false });
 });
 
 describe('glass appearance modes and saved custom profiles', () => {
-  it('defaults to Kyant when no new mode was saved and preserves all legacy profiles', async () => {
+  it('defaults to AM++ when no preview mode was saved and preserves all legacy profiles', async () => {
     const original = JSON.stringify(saved);
     storage.items.set(PARAMETERS_KEY, original);
     await useGlassTuning.getState().hydrate();
-    assert.equal(useGlassTuning.getState().mode, 'kyantDefault');
+    assert.equal(useGlassTuning.getState().mode, 'amPlus');
     assert.deepEqual(useGlassTuning.getState().overrides, saved.overrides);
-    assert.equal(getGlassProfile('miniPlayer', false).refraction, 24);
+    assert.equal(getGlassProfile('miniPlayer', false).refraction, 16.125);
     assert.equal(getGlassProfile('navigation', false).refractionHeight, 24);
     assert.equal(storage.items.get(PARAMETERS_KEY), original);
     assert.equal(storage.items.has(MODE_KEY), false);
@@ -98,10 +98,11 @@ describe('glass appearance modes and saved custom profiles', () => {
     const legacyMode = JSON.stringify({ schemaVersion: 1, mode: 'custom' });
     const legacyProfiles = JSON.stringify(saved);
     storage.items.set('resonus.glass-appearance.v1', legacyMode);
+    storage.items.set('resonus.glass-appearance.v2', JSON.stringify({ schemaVersion: 1, mode: 'kyantDefault' }));
     storage.items.set(PARAMETERS_KEY, legacyProfiles);
     await useGlassTuning.getState().hydrate();
-    assert.equal(useGlassTuning.getState().mode, 'kyantDefault');
-    assert.equal(getGlassProfile('miniPlayer', false).blur, 2);
+    assert.equal(useGlassTuning.getState().mode, 'amPlus');
+    assert.equal(getGlassProfile('miniPlayer', false).blur, 4);
     assert.equal(storage.items.get('resonus.glass-appearance.v1'), legacyMode);
     assert.equal(storage.items.get(PARAMETERS_KEY), legacyProfiles);
     assert.deepEqual(storage.writes, []);
@@ -126,6 +127,35 @@ describe('glass appearance modes and saved custom profiles', () => {
     useGlassTuning.getState().setMode('custom');
     assert.equal(getGlassProfile('miniPlayer', true).refraction, 21);
     assert.equal(getGlassProfile('navigation', true).refractionHeight, 19);
+    assert.equal(exportGlassTuning(), original);
+  });
+
+  it('matches AM++ theme tint for the dock while retaining Kyant controls and saved custom values', async () => {
+    storage.items.set(PARAMETERS_KEY, JSON.stringify(saved));
+    await useGlassTuning.getState().hydrate();
+    const original = exportGlassTuning();
+    for (const dark of [false, true]) {
+      const mini = getGlassProfile('miniPlayer', dark);
+      const navigation = getGlassProfile('navigation', dark);
+      assert.equal(mini.blur, 4);
+      assert.equal(navigation.blur, 4);
+      assert.equal(mini.refraction, 16.125);
+      assert.equal(navigation.refraction, 24);
+      assert.equal(mini.tintOpacity, .4);
+      assert.equal(mini.tintColor, dark ? '#121212' : '#FAFAFA');
+      assert.equal(navigation.tintColor, mini.tintColor);
+      assert.deepEqual(getGlassProfile('controls', dark), getKyantGlassProfile('button', dark));
+    }
+    useGlassTuning.getState().update('miniPlayer', { blur: 40 });
+    useGlassTuning.getState().reset('navigation');
+    assert.equal(exportGlassTuning(), original);
+    useGlassTuning.getState().setMode('kyantDefault');
+    assert.equal(getGlassProfile('miniPlayer', false).tintOpacity, 0);
+    assert.equal(getGlassProfile('miniPlayer', false).blur, 2);
+    await useGlassTuning.getState().save();
+    useGlassTuning.setState({ mode: 'amPlus', hydrated: false });
+    await useGlassTuning.getState().hydrate();
+    assert.equal(useGlassTuning.getState().mode, 'kyantDefault');
     assert.equal(exportGlassTuning(), original);
   });
 
@@ -180,10 +210,10 @@ describe('glass appearance modes and saved custom profiles', () => {
     await useGlassTuning.getState().save();
     assert.deepEqual(JSON.parse(storage.items.get(PARAMETERS_KEY)!), saved);
     assert.deepEqual(JSON.parse(exportGlassTuning()), saved);
-    assert.deepEqual(JSON.parse(storage.items.get(MODE_KEY)!), { schemaVersion: 1, mode: 'kyantDefault' });
+    assert.deepEqual(JSON.parse(storage.items.get(MODE_KEY)!), { schemaVersion: 1, mode: 'amPlus' });
     useGlassTuning.setState({ mode: 'custom', overrides: { miniPlayer: {}, navigation: {}, controls: {} }, hydrated: false });
     await useGlassTuning.getState().hydrate();
-    assert.equal(useGlassTuning.getState().mode, 'kyantDefault');
+    assert.equal(useGlassTuning.getState().mode, 'amPlus');
     assert.deepEqual(useGlassTuning.getState().overrides, saved.overrides);
   });
 
@@ -230,13 +260,13 @@ describe('glass appearance modes and saved custom profiles', () => {
     assert.equal(storage.items.has(MODE_KEY), false);
     storage.failedWrites.clear();
     await useGlassTuning.getState().save();
-    assert.equal(JSON.parse(storage.items.get(MODE_KEY)!).mode, 'kyantDefault');
+    assert.equal(JSON.parse(storage.items.get(MODE_KEY)!).mode, 'amPlus');
   });
 
   it('rejects unknown persisted modes and sanitizes custom fields without mutating the input', async () => {
     storage.items.set(MODE_KEY, JSON.stringify({ schemaVersion: 1, mode: 'unknown' }));
     await useGlassTuning.getState().hydrate();
-    assert.equal(useGlassTuning.getState().mode, 'kyantDefault');
+    assert.equal(useGlassTuning.getState().mode, 'amPlus');
     const input = { blur: Infinity, refraction: 99, refractionHeight: -10, tintColor: '#abcDEF', depthEffect: true, other: 'discard' };
     assert.deepEqual(sanitizeGlassOverrides(input), { refraction: 48, refractionHeight: 0, tintColor: '#ABCDEF', depthEffect: true });
     assert.equal(input.refraction, 99);

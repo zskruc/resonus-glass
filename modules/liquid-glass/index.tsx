@@ -2,7 +2,7 @@ import React from 'react';
 import { Platform, processColor, View, type ColorValue, type NativeSyntheticEvent, type ViewProps } from 'react-native';
 import { requireNativeView, requireOptionalNativeModule } from 'expo';
 
-export type LiquidGlassMaterialPreset = 'custom' | 'button' | 'tabs' | 'dialog';
+export type LiquidGlassMaterialPreset = 'custom' | 'button' | 'tabs' | 'dialog' | 'amPlus';
 
 export type LiquidGlassViewProps = Omit<ViewProps, 'children'> & {
   /** Official catalog material or the previous user-tuned rendering. Defaults to button. */
@@ -35,6 +35,8 @@ export type LiquidGlassViewProps = Omit<ViewProps, 'children'> & {
   /** Enable the library's real lens dispersion shader. Default false. */
   chromaticAberration?: boolean;
   tintColor?: ColorValue;
+  /** Explicit uniform source for plain-page cards; null resumes live sampling. */
+  staticBackdropColor?: ColorValue | null;
   tintOpacity?: number;
   dark?: boolean;
   enabled?: boolean;
@@ -45,10 +47,16 @@ export type LiquidGlassViewProps = Omit<ViewProps, 'children'> & {
   dockCompactHeight?: number;
   /** Final physical displacement from the fixed host's left edge, in dp. */
   dockCompactOffsetX?: number;
+  /** AM++ uses different overshoot geometry for each capsule in the same row. */
+  dockRole?: 'mini' | 'navigation' | 'search';
+  dockRowWidth?: number;
   onMotionHostReady?: (event: NativeSyntheticEvent<{ hostId: number }>) => void;
 };
 
-type NativeProps = Omit<LiquidGlassViewProps, 'tintColor'> & { tintColor?: number };
+type NativeProps = Omit<LiquidGlassViewProps, 'tintColor' | 'staticBackdropColor'> & {
+  tintColor?: number;
+  staticBackdropColor?: number | null;
+};
 
 /** Physical left-to-right tab position, independent of navigation order/RTL. */
 export type LiquidGlassTabMotion = {
@@ -70,6 +78,7 @@ type NativeTabsProps = NativeProps & Omit<LiquidGlassTabsProps, keyof LiquidGlas
 type UpdateTabsMotion = (hostId: number, position: number, progress: number, scaleX: number,
   scaleY: number, velocity: number, panelOffset: number, opacity: number) => void;
 type UpdateDockProgress = (hostId: number, progress: number) => void;
+type UpdateButtonMotion = (hostId: number, progress: number, x: number, y: number) => void;
 
 export type LiquidGlassDiagnostics = {
   activeWindows: number;
@@ -91,7 +100,8 @@ export type LiquidGlassDiagnostics = {
 
 const nativeModule = Platform.OS === 'android'
   ? requireOptionalNativeModule<{ isSupported: boolean; getDiagnostics(): Promise<LiquidGlassDiagnostics>;
-    updateTabsMotion: UpdateTabsMotion; updateDockProgress: UpdateDockProgress }>('ResonusLiquidGlass')
+    updateTabsMotion: UpdateTabsMotion; updateDockProgress: UpdateDockProgress;
+    updateButtonMotion: UpdateButtonMotion }>('ResonusLiquidGlass')
   : null;
 
 export const isLiquidGlassAvailable = Boolean(nativeModule?.isSupported);
@@ -99,6 +109,7 @@ export const isLiquidGlassAvailable = Boolean(nativeModule?.isSupported);
 // runtime; wrapping/binding it would create an RN-thread remote JS function.
 export const updateNativeTabsMotion = nativeModule?.updateTabsMotion ?? null;
 export const updateNativeDockProgress = nativeModule?.updateDockProgress ?? null;
+export const updateNativeButtonMotion = nativeModule?.updateButtonMotion ?? null;
 
 /** Debug counters only; no screen content, device identity, or saved images. */
 export async function getLiquidGlassDiagnostics(): Promise<LiquidGlassDiagnostics> {
@@ -117,7 +128,9 @@ export function LiquidGlassTabsView({ materialPreset = 'button', tintColor = 'tr
     return <View style={props.style} pointerEvents="none" accessible={false} />;
   }
   const color = processColor(tintColor);
+  const staticColor = props.staticBackdropColor == null ? null : processColor(props.staticBackdropColor);
   return <NativeTabs {...props} materialPreset={materialPreset} pointerEvents="none" accessible={false}
+    staticBackdropColor={typeof staticColor === 'number' ? staticColor : null}
     tintColor={typeof color === 'number' ? color : processColor('transparent') as number} />;
 }
 
@@ -143,6 +156,7 @@ export function LiquidGlassView({
   depthEffect = materialPreset === 'custom',
   chromaticAberration = false,
   tintColor = materialPreset === 'custom' ? '#FFFFFF' : 'transparent',
+  staticBackdropColor = null,
   tintOpacity = materialPreset === 'custom' ? 0.18 : 0,
   dark = false,
   enabled = true,
@@ -152,6 +166,7 @@ export function LiquidGlassView({
     return <View {...viewProps} pointerEvents="none" accessible={false} />;
   }
   const color = processColor(tintColor);
+  const staticColor = staticBackdropColor == null ? null : processColor(staticBackdropColor);
   return (
     <NativeGlass
       {...viewProps}
@@ -174,6 +189,7 @@ export function LiquidGlassView({
       depthEffect={depthEffect}
       chromaticAberration={chromaticAberration}
       tintColor={typeof color === 'number' ? color : processColor('transparent') as number}
+      staticBackdropColor={typeof staticColor === 'number' ? staticColor : null}
       tintOpacity={tintOpacity}
       dark={dark}
       enabled={enabled}

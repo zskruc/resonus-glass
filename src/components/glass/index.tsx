@@ -4,16 +4,17 @@ import { forwardRef, useEffect, useRef } from 'react';
 import Animated, { ReduceMotion, useAnimatedReaction, useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
 import {
   Pressable, StyleSheet, Switch, TextInput, View,
-  type PressableProps, type StyleProp, type SwitchProps, type TextInputProps,
+  type ColorValue, type PressableProps, type StyleProp, type SwitchProps, type TextInputProps,
   type ViewProps, type ViewStyle,
 } from 'react-native';
 import { SafeAreaView, type SafeAreaViewProps } from 'react-native-safe-area-context';
 
-import { LiquidGlassView, LiquidGlassToggle, LiquidGlassSlider, isLiquidGlassAvailable, updateNativeDockProgress } from '../../../modules/liquid-glass';
+import { LiquidGlassView, LiquidGlassToggle, LiquidGlassSlider, isLiquidGlassAvailable, updateNativeDockProgress, updateNativeButtonMotion } from '../../../modules/liquid-glass';
 import { resolveGlassProfile, useGlassTuning, type GlassTarget } from '@/store/glassTuning';
 import { useTheme, useThemeMode } from '@/theme';
 import { getKyantGlassProfile } from '@/theme/glassDefaults';
 import { getGlassButtonMotion } from '@/lib/glassButtonMotion';
+import { DynamicGlassBackdrop } from './StaticGlassBackdropContext';
 
 export type GlassVariant = 'regular' | 'prominent' | 'subtle' | 'button';
 export interface GlassMaterial {
@@ -26,6 +27,8 @@ export interface GlassMaterial {
   tint?: string;
   enabled?: boolean;
   blurred?: boolean;
+  /** Explicit source for ordinary cards on a known flat page; never inferred globally. */
+  staticBackdropColor?: ColorValue | null;
 }
 
 function materialFromStyle(style: StyleProp<ViewStyle>): GlassMaterial {
@@ -47,14 +50,14 @@ function clearFill(style: StyleProp<ViewStyle>): ViewStyle {
 /** Decorative material inside an existing, non-collapsible native container. */
 export function GlassBackdrop({
   radius = 0, radiusTopLeft, radiusTopRight, radiusBottomLeft, radiusBottomRight,
-  variant = 'regular', tint, enabled = true, blurred = true,
+  variant = 'regular', tint, enabled = true, blurred = true, staticBackdropColor = null,
 }: GlassMaterial) {
   const colors = useTheme();
   const dark = useThemeMode() === 'dark';
   const overrides = useGlassTuning((s) => s.overrides.controls);
   const mode = useGlassTuning((s) => s.mode);
   if (!enabled) return null;
-  const kyantDefaults = mode === 'kyantDefault';
+  const kyantDefaults = mode === 'kyantDefault' || mode === 'amPlus';
   const materialPreset = kyantDefaults ? (variant === 'prominent' ? 'dialog' : 'button') : 'custom';
   const profile = kyantDefaults
     ? getKyantGlassProfile(variant === 'prominent' ? 'dialog' : 'button', dark)
@@ -65,6 +68,7 @@ export function GlassBackdrop({
   return isLiquidGlassAvailable ? (
     <LiquidGlassView pointerEvents="none" style={StyleSheet.absoluteFill}
       materialPreset={materialPreset}
+      staticBackdropColor={variant === 'regular' ? staticBackdropColor : null}
       radius={radius} radiusTopLeft={radiusTopLeft} radiusTopRight={radiusTopRight}
       radiusBottomLeft={radiusBottomLeft} radiusBottomRight={radiusBottomRight}
       blur={blurred ? profile.blur : 0}
@@ -87,20 +91,37 @@ type FloatingGlassProps = Pick<GlassMaterial, 'radius' | 'tint' | 'blurred'> & {
   dockCompactWidth?: number;
   dockCompactHeight?: number;
   dockCompactOffsetX?: number;
+  dockRole?: 'mini' | 'navigation' | 'search';
+  dockRowWidth?: number;
+  buttonPressProgress?: SharedValue<number>;
+  buttonPressX?: SharedValue<number>;
+  buttonPressY?: SharedValue<number>;
 };
 
 export function FloatingGlassBackdrop({ radius, tint, blurred = true, appearance = 'bar', target = 'navigation',
-  dockProgress, dockExpandedWidth, dockCompactWidth, dockCompactHeight, dockCompactOffsetX }: FloatingGlassProps) {
+  dockProgress, dockExpandedWidth, dockCompactWidth, dockCompactHeight, dockCompactOffsetX, dockRole, dockRowWidth,
+  buttonPressProgress, buttonPressX, buttonPressY }: FloatingGlassProps) {
+  const mode = useGlassTuning((s) => s.mode);
+  const amPlus = mode === 'amPlus';
   const host = useSharedValue(0);
   const previous = useSharedValue<number[]>([]);
+  const previousPress = useSharedValue<number[]>([]);
   // The native material and its RN foreground consume this mapper's progress.
-  useAnimatedReaction(() => dockProgress ? [host.get(), Math.max(0, Math.min(1, dockProgress.get()))] : null, (state) => {
+  useAnimatedReaction(() => dockProgress ? [host.get(), Math.max(amPlus ? -0.09 : 0, Math.min(amPlus ? 1.09 : 1, dockProgress.get()))] : null, (state) => {
     if (!state || !updateNativeDockProgress || state[0] <= 0) return;
     const last = previous.get();
     if (last[0] === state[0] && last[1] === state[1]) return;
     updateNativeDockProgress(state[0], state[1]);
     previous.set(state);
-  }, [dockProgress]);
+  }, [dockProgress, amPlus]);
+  useAnimatedReaction(() => amPlus && buttonPressProgress ? [host.get(), buttonPressProgress.get(),
+    buttonPressX?.get() ?? 0, buttonPressY?.get() ?? 0] : null, (state) => {
+    if (!state || !updateNativeButtonMotion || state[0] <= 0) return;
+    const last = previousPress.get();
+    if (last.length === state.length && state.every((value, index) => last[index] === value)) return;
+    updateNativeButtonMotion(state[0], state[1], state[2], state[3]);
+    previousPress.set(state);
+  }, [amPlus, buttonPressProgress, buttonPressX, buttonPressY]);
   const fallbackDockStyle = useAnimatedStyle(() => {
     if (!dockProgress || dockExpandedWidth === undefined || dockCompactWidth === undefined) return {};
     const p = Math.max(0, Math.min(1, dockProgress.get()));
@@ -110,8 +131,7 @@ export function FloatingGlassBackdrop({ radius, tint, blurred = true, appearance
   const colors = useTheme();
   const dark = useThemeMode() === 'dark';
   const overrides = useGlassTuning((s) => s.overrides[target]);
-  const mode = useGlassTuning((s) => s.mode);
-  const kyantDefaults = mode === 'kyantDefault';
+  const kyantDefaults = mode === 'kyantDefault' || amPlus;
   const profile = resolveGlassProfile(target, dark, overrides, mode);
   // The mini's transparent RGBA also prevents the native no-frame fallback
   // from adding a fill before its first backdrop image arrives.
@@ -124,10 +144,11 @@ export function FloatingGlassBackdrop({ radius, tint, blurred = true, appearance
   return (
     isLiquidGlassAvailable ? (
         <LiquidGlassView pointerEvents="none" style={StyleSheet.absoluteFill}
-          materialPreset={kyantDefaults ? (target === 'miniPlayer' ? 'button' : 'tabs') : 'custom'}
+          materialPreset={amPlus ? 'amPlus' : kyantDefaults ? (target === 'miniPlayer' ? 'button' : 'tabs') : 'custom'}
           preferUnblurredBackdrop={!kyantDefaults && target === 'miniPlayer' && blurred}
           dockCompactWidth={dockCompactWidth} dockCompactHeight={dockCompactHeight} dockCompactOffsetX={dockCompactOffsetX}
-          onMotionHostReady={dockProgress ? (event) => host.set(event.nativeEvent.hostId) : undefined}
+          dockRole={dockRole ?? (target === 'miniPlayer' ? 'mini' : 'navigation')} dockRowWidth={dockRowWidth}
+          onMotionHostReady={dockProgress || buttonPressProgress ? (event) => host.set(event.nativeEvent.hostId) : undefined}
           radius={radius} blur={blurred ? profile.blur : 0} refraction={blurred ? profile.refraction : 0}
           refractionHeight={blurred ? profile.refractionHeight : 0}
           highlightWidth={profile.highlightWidth} highlightOpacity={profile.highlightOpacity}
@@ -139,7 +160,8 @@ export function FloatingGlassBackdrop({ radius, tint, blurred = true, appearance
           dark={dark} enabled />
       ) : (
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, fallbackDockStyle, {
-          borderRadius: radius, backgroundColor: target === 'miniPlayer' ? 'transparent' : tint ?? colors.surface,
+          borderRadius: radius, backgroundColor: amPlus ? profile.tintColor ?? colors.surface
+            : target === 'miniPlayer' ? 'transparent' : tint ?? colors.surface,
           borderWidth: StyleSheet.hairlineWidth,
           borderColor: dark ? 'rgba(255,255,255,0.23)' : 'rgba(255,255,255,0.90)',
         }]} />
@@ -149,7 +171,7 @@ export function FloatingGlassBackdrop({ radius, tint, blurred = true, appearance
 
 export const GlassSurface = forwardRef<View, ViewProps & GlassMaterial>(function GlassSurface({
   radius, radiusTopLeft, radiusTopRight, radiusBottomLeft, radiusBottomRight, variant, tint,
-  enabled = true, blurred, style, children, ...props
+  enabled = true, blurred, staticBackdropColor, style, children, ...props
 }, ref) {
   const material = materialFromStyle(style);
   return (
@@ -157,15 +179,17 @@ export const GlassSurface = forwardRef<View, ViewProps & GlassMaterial>(function
       <GlassBackdrop {...material} radius={radius ?? material.radius}
         radiusTopLeft={radiusTopLeft ?? material.radiusTopLeft} radiusTopRight={radiusTopRight ?? material.radiusTopRight}
         radiusBottomLeft={radiusBottomLeft ?? material.radiusBottomLeft} radiusBottomRight={radiusBottomRight ?? material.radiusBottomRight}
-        variant={variant} tint={tint ?? material.tint} enabled={enabled} blurred={blurred} />
-      {children}
+        variant={variant} tint={tint ?? material.tint} enabled={enabled} blurred={blurred}
+        staticBackdropColor={staticBackdropColor} />
+      {/* A card's contents are foreground, rather than the page's plain backdrop. */}
+      <DynamicGlassBackdrop>{children}</DynamicGlassBackdrop>
     </View>
   );
 });
 
 const MATERIAL_PROPS: (keyof GlassMaterial)[] = [
   'radius', 'radiusTopLeft', 'radiusTopRight', 'radiusBottomLeft', 'radiusBottomRight',
-  'variant', 'tint', 'enabled', 'blurred',
+  'variant', 'tint', 'enabled', 'blurred', 'staticBackdropColor',
 ];
 
 type GlassPressableProps = PressableProps & GlassMaterial & {
@@ -270,7 +294,7 @@ export const GlassPressable = forwardRef<View, GlassPressableProps>(function Gla
   const nativeProps = { ...props };
   for (const key of MATERIAL_PROPS) delete nativeProps[key];
   delete nativeProps.buttonMaterial;
-  if (isLiquidGlassAvailable && mode === 'kyantDefault' && props.enabled !== false && props.buttonMaterial !== false) {
+  if (isLiquidGlassAvailable && (mode === 'kyantDefault' || mode === 'amPlus') && props.enabled !== false && props.buttonMaterial !== false) {
     return <KyantGlassButton {...nativeProps} ref={ref} tint={props.tint} blurred={props.blurred} />;
   }
   return <Pressable {...nativeProps} ref={ref} />;

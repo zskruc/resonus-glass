@@ -15,6 +15,7 @@ internal object TabsMotionHosts {
   private val hosts = ConcurrentHashMap<Int, WeakReference<LiquidGlassView>>()
   private var motionCalls = 0L
   private var dockCalls = 0L
+  private var buttonCalls = 0L
   private var lastLog = 0L
 
   fun attach(view: LiquidGlassView): Int {
@@ -28,8 +29,27 @@ internal object TabsMotionHosts {
   fun diagnostics(): Map<String, Any> = mapOf(
     "registeredMotionHosts" to hosts.size,
     "directMotionCalls" to motionCalls,
-    "directDockCalls" to dockCalls
+    "directDockCalls" to dockCalls,
+    "directButtonCalls" to buttonCalls
   )
+
+  fun updateButton(token: Int, progress: Double, x: Double, y: Double) {
+    if (Looper.myLooper() !== Looper.getMainLooper() || !progress.isFinite() || !x.isFinite() || !y.isFinite()) return
+    val view = hosts[token]?.get()
+    if (view == null) { hosts.remove(token); return }
+    if (!view.isAttachedToWindow || view.materialPreset != "amPlus" || view.dockRole != "mini") return
+    val p = progress.toFloat().coerceIn(0f, 1f)
+    val px = x.toFloat().coerceIn(-2000f, 2000f)
+    val py = y.toFloat().coerceIn(-2000f, 2000f)
+    if (view.buttonPressProgress != p || view.buttonPressX != px || view.buttonPressY != py) {
+      Snapshot.withMutableSnapshot {
+        view.buttonPressProgress = p
+        view.buttonPressX = px
+        view.buttonPressY = py
+      }
+    }
+    buttonCalls++
+  }
 
   fun updateDock(token: Int, progress: Double) {
     if (Looper.myLooper() !== Looper.getMainLooper() || !progress.isFinite()) return
@@ -39,7 +59,8 @@ internal object TabsMotionHosts {
       return
     }
     if (!view.isAttachedToWindow || view.dockCompactWidth <= 0f) return
-    val nextProgress = progress.toFloat().coerceIn(0f, 1f)
+    val nextProgress = if (view.materialPreset == "amPlus") AmPlusDockGeometry.rawProgress(progress.toFloat())
+      else progress.toFloat().coerceIn(0f, 1f)
     // Different JS doubles can collapse to the same Float, especially at the
     // spring's tail. Avoid allocating/applying a snapshot with no state change.
     if (view.dockProgress != nextProgress) {

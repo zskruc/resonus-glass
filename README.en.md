@@ -41,15 +41,17 @@ These features describe the released Glass baseline. Development previews may ch
 | Channel | Version | Android version code | Availability |
 | --- | --- | --- | --- |
 | Stable | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest), in-app update checks |
-| Development preview | `0.8.4.1-preview.6` | `73` | Local test APK; not published as a stable release |
+| Development preview | `0.8.4.1-ampp.1` | `74` | Local test APK; not published as a stable release |
 
-Development previews on `preview/kyant-defaults` compare AndroidLiquidGlass example defaults and page-switching behavior. Preview changes are not necessarily included in the stable release. They do not guarantee sustained 120 fps across every page; consult the corresponding source, APK version, and validation records for their actual scope.
+Development previews on `preview/ampp-dock` adapt AM++ phone mini-player/navigation materials and collapse motion. Preview changes are not necessarily included in the stable release. They do not guarantee sustained 120 fps across every page; consult the corresponding source, APK version, and validation records for their actual scope.
 
 The visible version follows the latest reviewed upstream stable baseline. Glass selectively ports changes: it **is not the complete upstream 0.8.4** and does not include all of that release's new features. Consult the [Glass changelog](./CHANGELOG.md) and [upstream fix scope](./docs/LIQUID-GLASS-PREVIEW.md#上游修复范围) for the changes included here.
 
 Further Glass changes within the same upstream baseline can use a fourth version component, such as `0.8.4.1`; a subsequent upstream baseline uses `0.8.5`. For a stable release, the app version, Git tag, and release version match, and Android `versionCode` must increase for each release. Matching visible versions do not make the original and Glass APKs interchangeable.
 
 The `glass` branch preserves this project's customizations. [juananzzz/resonus](https://github.com/juananzzz/resonus) remains the upstream source; changes are compared and validated before suitable fixes are integrated. Automatically fetching upstream commits does not guarantee automatic conflict resolution or compatibility with custom glass interactions. See the [upstream maintenance guide](./docs/UPSTREAM.md) for the review and checking process.
+
+The current preview adapts AM++ phone mini-player/navigation materials and collapse motion. Settings → Glass tuning lets you compare AM++ reference, Kyant defaults and existing custom profiles. See [AM++ adaptation](./docs/AMPP-ADAPTATION.md) for its scope and further candidates. The previous defaults preview remains on `preview/kyant-defaults`.
 
 ## Build Android from source
 

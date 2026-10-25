@@ -1,6 +1,8 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MINI_PLAYER_GAP, MINI_PLAYER_HEIGHT, spacing, TAB_BAR_BOTTOM_GAP, TAB_BAR_HEIGHT } from '@/theme';
+import { useGlassTuning } from '@/store/glassTuning';
+import { AMPP_DOCK } from '@/lib/amppDock';
 import { useMiniPlayerShown, useTabBarShown } from './useTabBar';
 
 /**
@@ -17,8 +19,11 @@ import { useMiniPlayerShown, useTabBarShown } from './useTabBar';
 export function useScreenBottomPadding(): number {
   const insets = useSafeAreaInsets();
   const withBar = useTabBarShown();
-  const miniBottom = withBar ? TAB_BAR_BOTTOM_GAP + TAB_BAR_HEIGHT + MINI_PLAYER_GAP + insets.bottom : insets.bottom + spacing.sm;
-  return miniBottom + MINI_PLAYER_HEIGHT + spacing.md;
+  const amPlus = useGlassTuning((state) => state.mode === 'amPlus');
+  const miniBottom = withBar ? insets.bottom + (amPlus
+    ? AMPP_DOCK.bottomGap + AMPP_DOCK.navigationHeight + AMPP_DOCK.gap
+    : TAB_BAR_BOTTOM_GAP + TAB_BAR_HEIGHT + MINI_PLAYER_GAP) : insets.bottom + spacing.sm;
+  return miniBottom + (amPlus ? AMPP_DOCK.miniHeight : MINI_PLAYER_HEIGHT) + spacing.md;
 }
 
 /**
@@ -33,6 +38,9 @@ export function useFloatingBottom(): number {
   const insets = useSafeAreaInsets();
   const withBar = useTabBarShown();
   const withMini = useMiniPlayerShown();
-  const base = withBar ? TAB_BAR_BOTTOM_GAP + TAB_BAR_HEIGHT + MINI_PLAYER_GAP + insets.bottom : insets.bottom + spacing.sm;
-  return base + (withMini ? MINI_PLAYER_HEIGHT + spacing.md : spacing.md);
+  const amPlus = useGlassTuning((state) => state.mode === 'amPlus');
+  const base = withBar ? insets.bottom + (amPlus
+    ? AMPP_DOCK.bottomGap + AMPP_DOCK.navigationHeight + AMPP_DOCK.gap
+    : TAB_BAR_BOTTOM_GAP + TAB_BAR_HEIGHT + MINI_PLAYER_GAP) : insets.bottom + spacing.sm;
+  return base + (withMini ? (amPlus ? AMPP_DOCK.miniHeight : MINI_PLAYER_HEIGHT) + spacing.md : spacing.md);
 }

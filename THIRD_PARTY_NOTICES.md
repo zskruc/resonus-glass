@@ -27,3 +27,18 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## AM++ phone dock geometry and motion
+
+The optional AM++ reference appearance adapts phone mini-player/navigation
+geometry, spring rebound, content cross-fades and capsule material rules from
+[Kifranei/AM-plus-plus](https://github.com/Kifranei/AM-plus-plus), commit
+`97fa2e4efc9ec7476daca383221f55b5d10f847c`, forked from Zennmn/AM-plus-plus.
+Those AM++ changes are licensed under GPL-3.0, compatible with this project's
+GPL-3.0-or-later distribution under GPLv3; see LICENSE. Original Kyant
+Backdrop/catalog code remains Apache-2.0, with its existing notices retained.
+
+Adapted files: AM++ GlassPolicy.kt, GlassBarCollapse.kt, GlassBarCollapseLayout.kt,
+NativeLiquidButton.kt and LiquidBottomTabs.kt; integration and control ownership
+are implemented for Resonus rather than Apple Music/Xposed. No Apple image
+resources or AMLL tablet-media implementation is included in this adaptation.

@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 856 of them.
+Every string the app can show, under the screen it shows up on. 858 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -778,6 +778,8 @@ you are actually typing into, which is easier than reading it here.
 | --- | --- |
 | `Adds a rounded three-dimensional lens shape.` |  |
 | `Adds subtle colored edges to refracted details.` |  |
+| `AM++ reference` |  |
+| `AM++ reference uses matching mini player and navigation glass, with a shared spring collapse. Search joins the expanded bar and separates on the right when collapsed. Other controls keep Kyant defaults.` |  |
 | `Applied to all glass controls` |  |
 | `Apply to all controls` |  |
 | `Auto` |  |

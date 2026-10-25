@@ -3,10 +3,14 @@
  * https://github.com/Kyant0/AndroidLiquidGlass/blob/kmp/app/src/commonMain/kotlin/com/kyant/backdrop/catalog/components/LiquidBottomTabs.kt
  * Copyright Kyant0. Licensed under Apache-2.0; see ANDROID_LIQUID_GLASS_LICENSE.
  * RN owns navigation, labels, font settings, accessibility and pointer gestures.
+ * AM++ preset adapts panel squeeze, clipped press light and collapsing light anchor
+ * from Kifranei/AM-plus-plus commit 97fa2e4efc9ec7476daca383221f55b5d10f847c
+ * (GPL-3.0); original Kyant shader and material remain Apache-2.0.
  */
 package expo.modules.liquidglass
 
 import android.util.Log
+import android.os.Build
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,10 +30,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
@@ -37,6 +44,7 @@ import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.draw
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
@@ -116,6 +124,47 @@ private fun DrawScope.drawTabsInteractiveHighlight(progress: Float, center: Offs
   )
 }
 
+/** Reference smoothstep light, clipped so a compact circle never leaves a square halo. */
+internal class AmPlusInteractiveHighlight {
+  private val shader = if (Build.VERSION.SDK_INT >= 33) android.graphics.RuntimeShader("""
+uniform float2 size;
+layout(color) uniform half4 color;
+uniform float radius;
+uniform float2 position;
+half4 main(float2 coord) {
+  float dist = distance(coord, position);
+  float intensity = smoothstep(radius, radius * 0.5, dist);
+  return color * intensity;
+}
+""") else null
+  private val shaderBrush = shader?.let { ShaderBrush(it) }
+  private val clip = Path()
+  private var clipWidth = -1f
+  private var clipHeight = -1f
+
+  fun DrawScope.draw(progress: Float, center: Offset) {
+    val p = progress.coerceIn(0f, 1f)
+    if (p <= 0f || size.minDimension <= 0f) return
+    if (clipWidth != size.width || clipHeight != size.height) {
+      clipWidth = size.width
+      clipHeight = size.height
+      clip.reset()
+      clip.addRoundRect(RoundRect(0f, 0f, size.width, size.height, CornerRadius(size.minDimension / 2f)))
+    }
+    clipPath(clip) {
+      val light = shader
+      if (light != null && Build.VERSION.SDK_INT >= 33) {
+        drawRect(Color.White.copy(alpha = 0.08f * p), blendMode = BlendMode.Plus)
+        light.setFloatUniform("size", size.width, size.height)
+        light.setColorUniform("color", android.graphics.Color.argb(0.15f * p, 1f, 1f, 1f))
+        light.setFloatUniform("radius", size.minDimension * 1.5f)
+        light.setFloatUniform("position", center.x.coerceIn(0f, size.width), center.y.coerceIn(0f, size.height))
+        drawRect(shaderBrush!!, blendMode = BlendMode.Plus)
+      } else drawRect(Color.White.copy(alpha = 0.25f * p), blendMode = BlendMode.Plus)
+    }
+  }
+}
+
 @Composable
 internal fun LiquidBottomTabsMaterial(
   backdrop: Backdrop,
@@ -130,6 +179,8 @@ internal fun LiquidBottomTabsMaterial(
   panelOffset: () -> Float,
   selectionOpacity: () -> Float,
   officialMaterial: Boolean,
+  amPlusMaterial: Boolean,
+  dockProgress: () -> Float,
   blurRadius: Float,
   refraction: Float,
   refractionHeight: Float,
@@ -141,13 +192,18 @@ internal fun LiquidBottomTabsMaterial(
   tintOpacity: () -> Float,
   dark: Boolean
 ) {
+  val amPlusHighlight = if (amPlusMaterial) remember { AmPlusInteractiveHighlight() } else null
+  val selectionVisible by remember(amPlusMaterial) {
+    derivedStateOf { !amPlusMaterial || selectionOpacity() > 0.001f }
+  }
   // Derived state changes composition only on entering/leaving interaction.
   // At rest, alpha-zero highlight/shadow modifiers still record GPU layers in
   // Backdrop 1.0.0, so omit the entire selected-lens stack, not just its effect.
-  val interacting by remember {
+  val interacting by remember(amPlusMaterial) {
     derivedStateOf {
-      pressProgress() > 0.001f || abs(pressedScaleX() - 1f) > 0.001f ||
+      selectionVisible && (pressProgress() > 0.001f || abs(pressedScaleX() - 1f) > 0.001f ||
         abs(pressedScaleY() - 1f) > 0.001f || abs(velocity()) > 0.001f || abs(panelOffset()) > 0.001f
+      )
     }
   }
   LaunchedEffect(interacting) {
@@ -169,12 +225,12 @@ internal fun LiquidBottomTabsMaterial(
     val heightPx = constraints.maxHeight.toFloat()
     val insetPx = with(density) { horizontalInset.dp.toPx() }
     val topPx = with(density) { verticalInset.dp.toPx() }
-    val tabWidthPx = ((widthPx - insetPx * 2f) / tabsCount).coerceAtLeast(0f)
+    val tabWidthPx = ((widthPx - insetPx * 2f) / tabsCount.coerceAtLeast(1)).coerceAtLeast(0f)
     val tabHeightPx = (heightPx - topPx * 2f).coerceAtLeast(0f)
     val tabWidth = with(density) { tabWidthPx.toDp() }
     val tabHeight = with(density) { tabHeightPx.toDp() }
     val panelScene = rememberCanvasBackdrop {
-      val panelScale = 1f + 16f.dp.toPx() / widthPx.coerceAtLeast(1f) * pressProgress()
+      val panelScale = 1f + (if (amPlusMaterial) 8f else 16f).dp.toPx() / widthPx.coerceAtLeast(1f) * pressProgress()
       val offsetPx = with(density) { panelOffset().dp.toPx() }
       withTransform({
         scale(1f / panelScale, 1f / panelScale, Offset(widthPx / 2f, heightPx / 2f))
@@ -199,7 +255,7 @@ internal fun LiquidBottomTabsMaterial(
         highlight = { if (officialMaterial) Highlight.Default else Highlight(width = highlightWidth.dp, alpha = highlightOpacity) },
         shadow = if (officialMaterial) ({ Shadow.Default }) else null,
         layerBlock = {
-          val scale = 1f + 16f.dp.toPx() / size.width.coerceAtLeast(1f) * pressProgress()
+          val scale = 1f + (if (amPlusMaterial) 8f else 16f).dp.toPx() / size.width.coerceAtLeast(1f) * pressProgress()
           scaleX = scale
           scaleY = scale
         },
@@ -208,12 +264,19 @@ internal fun LiquidBottomTabsMaterial(
           val progress = pressProgress()
           if (progress > 0f) {
             val boundedPosition = position().coerceIn(0f, (tabsCount - 1).toFloat())
-            drawTabsInteractiveHighlight(progress,
-              Offset(insetPx + (boundedPosition + 0.5f) * tabWidthPx, size.height / 2f))
+            val tabCenter = insetPx + (boundedPosition + 0.5f) * tabWidthPx
+            if (amPlusHighlight != null) {
+              val collapse = dockProgress().coerceIn(0f, 1f)
+              val center = tabCenter + (size.width / 2f - tabCenter) * collapse
+              with(amPlusHighlight) { draw(progress, Offset(center, size.height / 2f)) }
+            } else drawTabsInteractiveHighlight(progress, Offset(tabCenter, size.height / 2f))
           }
         }
       )
     )
+
+    // Do not retain invisible selected-lens layers after the expanded row has faded.
+    if (!selectionVisible) return@BoxWithConstraints
 
     if (materialBackdrop == null) {
       Box(Modifier.width(tabWidth).height(tabHeight).graphicsLayer {
@@ -248,7 +311,7 @@ internal fun LiquidBottomTabsMaterial(
           effects = {
             val progress = pressProgress()
             vibrancy()
-            blur(8f.dp.toPx())
+            blur((if (amPlusMaterial) blurRadius else 8f).dp.toPx())
             lens(24f.dp.toPx() * progress, 24f.dp.toPx() * progress,
               depthEffect = false, chromaticAberration = false)
           },
@@ -257,8 +320,12 @@ internal fun LiquidBottomTabsMaterial(
           onDrawSurface = { drawRect(tint.copy(alpha = tintOpacity() * tint.alpha)) },
           onDrawFront = {
             val boundedPosition = position().coerceIn(0f, (tabsCount - 1).toFloat())
-            drawTabsInteractiveHighlight(pressProgress(),
-              Offset(insetPx + (boundedPosition + 0.5f) * tabWidthPx, size.height / 2f))
+            val tabCenter = insetPx + (boundedPosition + 0.5f) * tabWidthPx
+            if (amPlusHighlight != null) {
+              val collapse = dockProgress().coerceIn(0f, 1f)
+              val center = tabCenter + (size.width / 2f - tabCenter) * collapse
+              with(amPlusHighlight) { draw(pressProgress(), Offset(center, size.height / 2f)) }
+            } else drawTabsInteractiveHighlight(pressProgress(), Offset(tabCenter, size.height / 2f))
           }
         )
       )

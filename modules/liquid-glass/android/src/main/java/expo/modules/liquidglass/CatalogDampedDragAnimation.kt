@@ -2,12 +2,13 @@
  * Adapted from Kyant0/AndroidLiquidGlass (65ab177), Copyright 2025 Kyant.
  * Apache-2.0; see ANDROID_LIQUID_GLASS_LICENSE. Modified for Expo integration
  * and cancellation-safe gestures; all catalog spring/material defaults retained.
+ * Job/generation cleanup adapted from AM++ commit97fa2e4 (GPL-3.0);
+ * see THIRD_PARTY_NOTICES.md. Original Kyant sections remain Apache-2.0.
  */
 package expo.modules.liquidglass
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.MutatorMutex
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -15,7 +16,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -57,7 +60,11 @@ class DampedDragAnimation(
     private val scaleYAnimation =
         Animatable(initialScale, 0.001f)
 
-    private val mutatorMutex = MutatorMutex()
+    private var motionJob: Job? = null
+    private var velocityJob: Job? = null
+    private var pressJob: Job? = null
+    private var releaseJob: Job? = null
+    private val velocityGeneration = CatalogMotionGeneration()
 
     private val velocityTracker = VelocityTracker()
 
@@ -91,8 +98,15 @@ class DampedDragAnimation(
     }
 
     fun press() {
+        releaseJob?.cancel()
+        pressJob?.cancel()
+        val generation = velocityGeneration.advance()
+        velocityJob?.cancel()
         velocityTracker.resetTracking()
-        animationScope.launch {
+        velocityJob = animationScope.launch {
+            if (velocityGeneration.accepts(generation)) resetVelocity()
+        }
+        pressJob = animationScope.launch {
             launch { pressProgressAnimation.animateTo(1f, pressProgressAnimationSpec) }
             launch { scaleXAnimation.animateTo(pressedScale, scaleXAnimationSpec) }
             launch { scaleYAnimation.animateTo(pressedScale, scaleYAnimationSpec) }
@@ -100,47 +114,77 @@ class DampedDragAnimation(
     }
 
     fun release() {
-        animationScope.launch {
+        releaseJob?.cancel()
+        releaseJob = animationScope.launch {
             awaitFrame()
             if (value != targetValue) {
                 val threshold = (valueRange.endInclusive - valueRange.start) * 0.025f
-                snapshotFlow { valueAnimation.value }
-                    .filter { abs(it - valueAnimation.targetValue) < threshold }
-                    .first()
+                snapshotFlow { abs(valueAnimation.value - valueAnimation.targetValue) }
+                    .first { it < threshold }
             }
-            launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
-            launch { scaleXAnimation.animateTo(initialScale, scaleXAnimationSpec) }
-            launch { scaleYAnimation.animateTo(initialScale, scaleYAnimationSpec) }
+            // A released control must not keep the velocity from its last drag
+            // frame. Invalidate queued writes before restoring the idle shape.
+            velocityGeneration.advance()
+            velocityJob?.cancelAndJoin()
+            pressJob?.cancelAndJoin()
+            coroutineScope {
+                launch { resetVelocity() }
+                launch {
+                    pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec)
+                    pressProgressAnimation.snapTo(0f)
+                }
+                launch {
+                    scaleXAnimation.animateTo(initialScale, scaleXAnimationSpec)
+                    scaleXAnimation.snapTo(initialScale)
+                }
+                launch {
+                    scaleYAnimation.animateTo(initialScale, scaleYAnimationSpec)
+                    scaleYAnimation.snapTo(initialScale)
+                }
+            }
         }
     }
 
     fun updateValue(value: Float) {
         val targetValue = value.coerceIn(valueRange)
-        animationScope.launch {
-            launch { valueAnimation.animateTo(targetValue, valueAnimationSpec) { updateVelocity() } }
-        }
-    }
-
-    fun animateToValue(value: Float) {
-        animationScope.launch {
-            mutatorMutex.mutate {
-                press()
-                val targetValue = value.coerceIn(valueRange)
-                launch { valueAnimation.animateTo(targetValue, valueAnimationSpec) }
-                if (velocity != 0f) {
-                    launch { velocityAnimation.animateTo(0f, velocityAnimationSpec) }
-                }
-                release()
+        val generation = velocityGeneration.current
+        motionJob = animationScope.launch {
+            // Animatable retargets the running spring. Cancelling on each tiny
+            // move instead would throw away its frame time and velocity.
+            if (velocityGeneration.accepts(generation)) {
+                valueAnimation.animateTo(targetValue, valueAnimationSpec) { updateVelocity(generation) }
             }
         }
     }
 
-    private fun updateVelocity() {
-        velocityTracker.addPosition(
-            SystemClock.uptimeMillis(),
-            Offset(value, 0f)
-        )
+    fun animateToValue(value: Float) {
+        val targetValue = value.coerceIn(valueRange)
+        velocityGeneration.advance()
+        motionJob?.cancel()
+        velocityJob?.cancel()
+        press()
+        motionJob = animationScope.launch {
+            coroutineScope {
+                launch { valueAnimation.animateTo(targetValue, valueAnimationSpec) }
+                launch { resetVelocity() }
+            }
+        }
+        release()
+    }
+
+    private suspend fun resetVelocity() {
+        velocityAnimation.animateTo(0f, velocityAnimationSpec)
+        velocityAnimation.snapTo(0f)
+    }
+
+    private fun updateVelocity(generation: Int) {
+        if (!velocityGeneration.accepts(generation)) return
+        velocityTracker.addPosition(SystemClock.uptimeMillis(), Offset(value, 0f))
         val targetVelocity = velocityTracker.calculateVelocity().x / (valueRange.endInclusive - valueRange.start)
-        animationScope.launch { velocityAnimation.animateTo(targetVelocity, velocityAnimationSpec) }
+        velocityJob = animationScope.launch {
+            if (velocityGeneration.accepts(generation)) {
+                velocityAnimation.animateTo(targetVelocity, velocityAnimationSpec)
+            }
+        }
     }
 }

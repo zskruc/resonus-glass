@@ -19,7 +19,7 @@ export function MenuGlassBackdrop({ radius = 28, radiusTopLeft, radiusTopRight,
   radiusBottomLeft, radiusBottomRight, highContrast = false }: MenuGlassBackdropProps) {
   const colors = useTheme();
   const dark = useThemeMode() === 'dark';
-  const kyantDefaults = useGlassTuning((state) => state.mode === 'kyantDefault');
+  const kyantDefaults = useGlassTuning((state) => state.mode === 'kyantDefault' || state.mode === 'amPlus');
   const profile = kyantDefaults ? getKyantGlassProfile('dialog', dark) : {
     blur: 12,
     refraction: 10,

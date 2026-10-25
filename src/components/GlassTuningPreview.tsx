@@ -3,6 +3,7 @@ import { FloatingGlassBackdrop, GlassBackdrop } from '@/components/glass';
 import { useForegroundEffect } from '@/hooks/useForegroundEffect';
 import { useT } from '@/i18n';
 import { useGlassTuning, type GlassTarget } from '@/store/glassTuning';
+import { AMPP_DOCK } from '@/lib/amppDock';
 import { useSettings } from '@/store/settings';
 import { useTheme, useThemeMode } from '@/theme';
 import { useCallback, useRef, useState } from 'react';
@@ -17,6 +18,7 @@ export function GlassTuningPreview({ target }: { target: GlassTarget }) {
   const colors = useTheme();
   const dark = useThemeMode() === 'dark';
   const mode = useGlassTuning((state) => state.mode);
+  const amPlus = mode === 'amPlus';
   const blurMiniPlayer = useSettings((state) => state.blurMiniPlayer);
   const blurBars = useSettings((state) => state.blurBars);
   const scroll = useRef<ScrollView>(null);
@@ -52,6 +54,7 @@ export function GlassTuningPreview({ target }: { target: GlassTarget }) {
     { icon: 'home-outline' as const, label: t('Home') },
     { icon: 'compass-outline' as const, label: t('Explore') },
     { icon: 'library-outline' as const, label: t('Your library') },
+    ...(amPlus ? [{ icon: 'search-outline' as const, label: t('Search') }] : []),
   ];
 
   return (
@@ -107,8 +110,8 @@ export function GlassTuningPreview({ target }: { target: GlassTarget }) {
             </View>
           ) : (
             <>
-              <View collapsable={false} style={styles.mini}>
-                <FloatingGlassBackdrop target="miniPlayer" radius={24}
+              <View collapsable={false} style={[styles.mini, amPlus && { height: AMPP_DOCK.miniHeight }]}>
+                <FloatingGlassBackdrop target="miniPlayer" radius={amPlus ? AMPP_DOCK.miniHeight / 2 : 24}
                   blurred={blurMiniPlayer} />
                 <View style={[styles.cover, { backgroundColor: ALBUM_COLORS[0] }]}><View style={styles.coverDisc} /></View>
                 <View style={styles.trackText}>
@@ -119,28 +122,28 @@ export function GlassTuningPreview({ target }: { target: GlassTarget }) {
                   <View style={styles.transportButton}><Icon name="play-forward" size={28} color={ink} /></View>
                 </View>
               </View>
-              <View style={styles.navigationRow}>
-                <View collapsable={false} style={styles.navigation}>
-                  <FloatingGlassBackdrop target="navigation" radius={31} tint={colors.surface} blurred={blurBars} />
+              <View style={[styles.navigationRow, amPlus && { height: AMPP_DOCK.navigationHeight }]}>
+                <View collapsable={false} style={[styles.navigation, amPlus && { height: AMPP_DOCK.navigationHeight, paddingHorizontal: AMPP_DOCK.tabInset }]}>
+                  <FloatingGlassBackdrop target="navigation" radius={amPlus ? AMPP_DOCK.navigationHeight / 2 : 31} tint={colors.surface} blurred={blurBars} />
                   {tabs.map((tab, index) => (
                     <View key={tab.icon} collapsable={false} style={styles.tab}>
                       {index === 0 ? <FloatingGlassBackdrop target="navigation" appearance="selection" radius={27} blurred={blurBars} /> : null}
-                      <Icon name={tab.icon} size={30} color={index === 0 ? colors.accent : ink} />
-                      <Text numberOfLines={1} style={[styles.tabLabel, { color: index === 0 ? colors.accent : secondary }]}>{tab.label}</Text>
+                      <Icon name={tab.icon} size={amPlus ? AMPP_DOCK.iconSize : 30} color={index === 0 ? colors.accent : ink} />
+                      <Text numberOfLines={1} style={[styles.tabLabel, { color: index === 0 ? colors.accent : secondary }, amPlus && { fontSize: AMPP_DOCK.labelSize }]}>{tab.label}</Text>
                     </View>
                   ))}
                 </View>
-                <View collapsable={false} style={styles.search}>
+                {!amPlus ? <View collapsable={false} style={styles.search}>
                   <FloatingGlassBackdrop target="navigation" radius={31} tint={colors.surface} blurred={blurBars} />
                   <Icon name="search-outline" size={30} color={ink} />
                   <Text numberOfLines={1} style={[styles.tabLabel, { color: secondary }]}>{t('Search')}</Text>
-                </View>
+                </View> : null}
               </View>
             </>
           )}
         </View>
       </View>
-      <Text style={[styles.hint, { color: colors.textMuted }]}>{t(mode === 'kyantDefault' ? 'Kyant defaults'
+      <Text style={[styles.hint, { color: colors.textMuted }]}>{t(mode === 'amPlus' ? 'AM++ reference' : mode === 'kyantDefault' ? 'Kyant defaults'
         : mode === 'iphoneReference' ? 'iPhone reference' : 'Custom parameters')} · {t('Drag the background, or let it move slowly.')}</Text>
     </View>
   );

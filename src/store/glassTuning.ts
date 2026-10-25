@@ -2,10 +2,10 @@
 import { create } from 'zustand';
 
 import { getItem, setItemStrict } from '@/lib/storage';
-import { DEFAULT_GLASS_PROFILES, IPHONE_REFERENCE_GLASS_PROFILES, getKyantGlassProfile } from '@/theme/glassDefaults';
+import { DEFAULT_GLASS_PROFILES, IPHONE_REFERENCE_GLASS_PROFILES, getAmPlusGlassProfile, getKyantGlassProfile } from '@/theme/glassDefaults';
 
 export type GlassTarget = 'miniPlayer' | 'navigation' | 'controls';
-export type GlassAppearanceMode = 'kyantDefault' | 'iphoneReference' | 'custom';
+export type GlassAppearanceMode = 'amPlus' | 'kyantDefault' | 'iphoneReference' | 'custom';
 
 export interface GlassProfile {
   blur: number;
@@ -24,10 +24,9 @@ export type GlassOverrides = Partial<GlassProfile>;
 type OverridesByTarget = Record<GlassTarget, GlassOverrides>;
 
 const STORAGE_KEY = 'resonus.glass-tuning.v1';
-// Start this preview in the upstream examples instead of restoring an older
-// reference selection. The old mode and custom profiles remain available to a
-// previous APK; only explicit Save writes this new selection.
-const MODE_STORAGE_KEY = 'resonus.glass-appearance.v2';
+// A separate preview selection keeps previous APK appearance choices intact.
+// Custom optical profiles stay in v1; only explicit Save persists this mode.
+const MODE_STORAGE_KEY = 'resonus.glass-appearance.v3';
 const TARGETS: GlassTarget[] = ['miniPlayer', 'navigation', 'controls'];
 
 /** These are also the native module's accepted limits. */
@@ -68,6 +67,7 @@ export function sanitizeGlassOverrides(value: unknown): GlassOverrides {
 }
 
 export function getGlassDefaults(target: GlassTarget, dark: boolean, mode: GlassAppearanceMode = 'custom'): GlassProfile {
+  if (mode === 'amPlus') return getAmPlusGlassProfile(target, dark);
   if (mode === 'kyantDefault') return getKyantGlassProfile(target === 'navigation' ? 'navigation' : 'button', dark);
   // Optical values are shared between themes; the mini has no color fill.
   return { ...(mode === 'iphoneReference' ? IPHONE_REFERENCE_GLASS_PROFILES : DEFAULT_GLASS_PROFILES)[target] };
@@ -78,7 +78,7 @@ export function resolveGlassProfile(target: GlassTarget, dark: boolean, override
   const profile = mode === 'custom' ? { ...defaults, ...sanitizeGlassOverrides(overrides) } : defaults;
   // Legacy saved colors remain in storage, but the mini's live material is
   // always untinted. Keep every saved optical value and other target intact.
-  return target === 'miniPlayer' && mode !== 'kyantDefault' ? { ...profile, tintOpacity: 0, tintColor: null } : profile;
+  return target === 'miniPlayer' && mode !== 'kyantDefault' && mode !== 'amPlus' ? { ...profile, tintOpacity: 0, tintColor: null } : profile;
 }
 
 interface GlassTuningState {
@@ -102,7 +102,7 @@ let hydrationReadFailed = false;
 
 export const useGlassTuning = create<GlassTuningState>((set, get) => ({
   overrides: emptyOverrides(),
-  mode: 'kyantDefault',
+  mode: 'amPlus',
   hydrated: false,
   hydrate: () => {
     if (get().hydrated && !hydrationReadFailed) return Promise.resolve();
@@ -111,7 +111,7 @@ export const useGlassTuning = create<GlassTuningState>((set, get) => ({
       try {
         const reads = await Promise.allSettled([getItem(STORAGE_KEY), getItem(MODE_STORAGE_KEY)]);
         const loaded = emptyOverrides();
-        let loadedMode: GlassAppearanceMode = 'kyantDefault';
+        let loadedMode: GlassAppearanceMode = 'amPlus';
         let modeReadFailed = reads[1].status === 'rejected';
         let failed = reads.some((read) => read.status === 'rejected');
         if (reads[0].status === 'fulfilled') {
@@ -125,7 +125,7 @@ export const useGlassTuning = create<GlassTuningState>((set, get) => ({
         if (reads[1].status === 'fulfilled') {
           try {
             const stored: unknown = reads[1].value ? JSON.parse(reads[1].value) : null;
-            if (isRecord(stored) && stored.schemaVersion === 1 && (stored.mode === 'custom' || stored.mode === 'iphoneReference' || stored.mode === 'kyantDefault')) {
+            if (isRecord(stored) && stored.schemaVersion === 1 && (stored.mode === 'amPlus' || stored.mode === 'custom' || stored.mode === 'iphoneReference' || stored.mode === 'kyantDefault')) {
               loadedMode = stored.mode;
             }
           } catch { failed = true; modeReadFailed = true; }
@@ -157,7 +157,7 @@ export const useGlassTuning = create<GlassTuningState>((set, get) => ({
     return hydration;
   },
   setMode: (mode) => {
-    if (mode !== 'kyantDefault' && mode !== 'iphoneReference' && mode !== 'custom') return;
+    if (mode !== 'amPlus' && mode !== 'kyantDefault' && mode !== 'iphoneReference' && mode !== 'custom') return;
     if (!get().hydrated || hydrationReadFailed) modeChangedBeforeHydration = true;
     set({ mode });
   },

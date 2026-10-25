@@ -857,5 +857,7 @@
   "Pop": "流行",
   "Rock": "摇滚",
   "Normal": "标准",
-  "Flat": "平直"
+  "Flat": "平直",
+  "AM++ reference": "AM++ 参考",
+  "AM++ reference uses matching mini player and navigation glass, with a shared spring collapse. Search joins the expanded bar and separates on the right when collapsed. Other controls keep Kyant defaults.": "AM++ 参考使用一致的迷你播放器和导航栏玻璃材质，并通过同一弹簧联动折叠。展开时搜索合入底栏，折叠后分离到右侧。其他控件保留开源默认材质。"
 }

@@ -9,6 +9,7 @@ import { useEffect, useLayoutEffect, useState } from 'react';
 import Animated, { useAnimatedReaction, useAnimatedStyle, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AMPP_DOCK, amppMiniSink, amppProgress } from '@/lib/amppDock';
 import { NO_MINI_PLAYER, useTabBarShown } from '@/hooks/useTabBar';
 import { COMPACT_DOCK_SIZE, useLiquidDock } from '@/hooks/useLiquidDock';
 import { motion } from '@/theme/motion';
@@ -23,13 +24,18 @@ export function GlobalMiniPlayer() {
   // is nearly everywhere and not only inside the tabs (see `useTabBarShown`).
   const withBar = useTabBarShown();
   const dock = useLiquidDock();
-  const { progress, uiEnabled } = dock;
+  const { progress, uiEnabled, amPlus } = dock;
+  const navHeight = amPlus ? AMPP_DOCK.navigationHeight : TAB_BAR_HEIGHT;
+  const miniHeight = amPlus ? AMPP_DOCK.miniHeight : MINI_PLAYER_HEIGHT;
+  const bottomGap = amPlus ? AMPP_DOCK.bottomGap : TAB_BAR_BOTTOM_GAP;
+  const miniGap = amPlus ? AMPP_DOCK.gap : MINI_PLAYER_GAP;
+  const compactSize = amPlus ? AMPP_DOCK.compactSize : COMPACT_DOCK_SIZE;
 
   // favorites-add too: its search bar lives at the bottom and the mini would
   // cover it. The list is shared because whatever floats at the bottom (the
   // toast, the multi-select bar) has to know where the mini is not.
   const visible = !NO_MINI_PLAYER.includes(root as string);
-  const bottom = withBar ? TAB_BAR_BOTTOM_GAP + TAB_BAR_HEIGHT + MINI_PLAYER_GAP + insets.bottom : insets.bottom + spacing.sm;
+  const bottom = withBar ? bottomGap + navHeight + miniGap + insets.bottom : insets.bottom + spacing.sm;
 
   // Keep the last visible position so it doesn't jump while fading out
   // when opening a full-screen modal.
@@ -59,11 +65,12 @@ export function GlobalMiniPlayer() {
     }));
   }, [visible, opacity]);
   const expandedBottom = visible ? bottom : lastDock.bottom;
-  const compactBottom = insets.bottom + TAB_BAR_BOTTOM_GAP + (COMPACT_DOCK_SIZE - MINI_PLAYER_HEIGHT) / 2;
+  const compactBottom = insets.bottom + bottomGap + (compactSize - miniHeight) / 2;
   const style = useAnimatedStyle(() => ({
-    transform: [{ translateY: (expandedBottom - compactBottom) * Math.max(0, Math.min(1, visualProgress.get())) }],
+    transform: [{ translateY: (expandedBottom - compactBottom) * amppProgress(visualProgress.get())
+      + (amPlus ? amppMiniSink(visualProgress.get()) : 0) }],
     opacity: opacity.get(),
-  }), [expandedBottom, compactBottom]);
+  }), [expandedBottom, compactBottom, amPlus]);
 
   return (
     <Animated.View

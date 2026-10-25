@@ -6,7 +6,7 @@
  */
 import Icon from '@/components/Icon';
 import { GlassBackdrop, GlassPressable, GlassSlider, GlassSurface, GlassSwitch, GlassTextInput } from '@/components/glass';
-import { Children, createContext, useContext, useEffect, useRef, useState } from 'react';
+import { Children, createContext, useContext, useEffect, useRef, useState, type ComponentProps } from 'react';
 import {
   Modal,
   Pressable,
@@ -19,8 +19,9 @@ import { useSafeAreaFrame, useSafeAreaInsets } from 'react-native-safe-area-cont
 
 import { useAccent } from '@/hooks/useAccent';
 import { CONTENT_MAX_WIDTH } from '@/hooks/useScreenSize';
-import { colors, fontSize, radius, spacing, SCREEN_BOTTOM_PADDING, themed, tracking } from '@/theme';
+import { colors, fontSize, radius, spacing, SCREEN_BOTTOM_PADDING, themed, tracking, useTheme } from '@/theme';
 import { BackChevron } from './BackChevron';
+import { DynamicGlassBackdrop, StaticGlassBackdropProvider, useStaticGlassBackdropColor } from './glass/StaticGlassBackdropContext';
 
 /**
  * The frame every settings screen sits in.
@@ -35,7 +36,12 @@ import { BackChevron } from './BackChevron';
  */
 export function SettingsSafeArea({ children }: { children: React.ReactNode }) {
   const insets = useSafeAreaInsets();
-  return <View style={[settingsStyles.safe, { paddingTop: insets.top }]}>{children}</View>;
+  const background = useTheme().background;
+  return (
+    <StaticGlassBackdropProvider color={background}>
+      <View style={[settingsStyles.safe, { paddingTop: insets.top }]}>{children}</View>
+    </StaticGlassBackdropProvider>
+  );
 }
 
 /** Header with back arrow and centered title. `back={false}` for a screen that
@@ -71,6 +77,12 @@ export function SettingsPage({ title, children }: { title: string; children: Rea
 /** Inside a `SettingsGroup`, a row leaves the box to the group. */
 const GroupContext = createContext(false);
 
+/** Only these plain-page cards opt into a uniform source; previews stay live. */
+function SettingsCard(props: ComponentProps<typeof GlassSurface>) {
+  const staticBackdropColor = useStaticGlassBackdropColor(props.variant ?? 'regular');
+  return <GlassSurface {...props} staticBackdropColor={staticBackdropColor} />;
+}
+
 /** The box a row draws around itself, unless a group already draws one. */
 function useCardBox() {
   return useContext(GroupContext) ? null : settingsStyles.cardBox;
@@ -87,14 +99,14 @@ export function SettingsGroup({ children }: { children: React.ReactNode }) {
   if (rows.length === 0) return null;
   return (
     <GroupContext.Provider value>
-      <GlassSurface radius={radius.lg} style={settingsStyles.cardBox}>
+      <SettingsCard radius={radius.lg} style={settingsStyles.cardBox}>
         {rows.map((row, i) => (
           <View key={i}>
             {i > 0 ? <View style={settingsStyles.groupDivider} /> : null}
             {row}
           </View>
         ))}
-      </GlassSurface>
+      </SettingsCard>
     </GroupContext.Provider>
   );
 }
@@ -127,6 +139,7 @@ export function SettingRow({
   onPress?: () => void;
 }) {
   const box = useCardBox();
+  const staticBackdropColor = useStaticGlassBackdropColor('regular');
   const body = (
     <>
       {icon ? (
@@ -145,7 +158,7 @@ export function SettingRow({
   if (!onPress) {
     return (
       <View style={[box, settingsStyles.row, box && { backgroundColor: 'transparent' }]}>
-        {box ? <GlassBackdrop radius={radius.lg} tint={colors.surface} /> : null}
+        {box ? <GlassBackdrop radius={radius.lg} tint={colors.surface} staticBackdropColor={staticBackdropColor} /> : null}
         {body}
       </View>
     );
@@ -247,7 +260,7 @@ export function SelectList<T extends string | number | boolean>({
 
   if (!collapsible) {
     return (
-      <GlassSurface enabled={!!box} radius={radius.lg} style={box}>
+      <SettingsCard enabled={!!box} radius={radius.lg} style={box}>
         {options.map((opt, i) => {
           const isActive = opt.value === value;
           return (
@@ -271,7 +284,7 @@ export function SelectList<T extends string | number | boolean>({
             </Pressable>
           );
         })}
-      </GlassSurface>
+      </SettingsCard>
     );
   }
 
@@ -323,6 +336,7 @@ export function SelectList<T extends string | number | boolean>({
         visible={anchor != null}
         onRequestClose={() => setAnchor(null)}
       >
+        <DynamicGlassBackdrop>
         <Pressable style={StyleSheet.absoluteFill} onPress={() => setAnchor(null)} />
         {menu != null ? (
           <GlassSurface
@@ -375,6 +389,7 @@ export function SelectList<T extends string | number | boolean>({
             </ScrollView>
           </GlassSurface>
         ) : null}
+        </DynamicGlassBackdrop>
       </Modal>
     </>
   );
@@ -423,7 +438,7 @@ export function SliderRow({
   const shown = live ?? value;
 
   return (
-    <GlassSurface enabled={!!box} radius={radius.lg} style={[box, disabled && { opacity: 0.5 }]}>
+    <SettingsCard enabled={!!box} radius={radius.lg} style={[box, disabled && { opacity: 0.5 }]}>
       <View style={[settingsStyles.row, { paddingBottom: 0 }]}>
         <View style={settingsStyles.rowLabelBox}>
           <Text style={settingsStyles.rowLabel}>{label}</Text>
@@ -488,7 +503,7 @@ export function SliderRow({
         maximumTrackTintColor={colors.control}
         thumbTintColor={colors.knob}
       />
-    </GlassSurface>
+    </SettingsCard>
   );
 }
 
@@ -626,6 +641,7 @@ function FineTunePad({
 
   return (
     <Modal transparent statusBarTranslucent visible={visible} animationType="fade" onRequestClose={close}>
+      <DynamicGlassBackdrop>
       <Pressable style={settingsStyles.padBackdrop} onPress={close} />
       <View style={settingsStyles.padCenter} pointerEvents="box-none">
         <GlassSurface radius={radius.lg} variant="prominent" style={settingsStyles.padCard}>
@@ -638,6 +654,7 @@ function FineTunePad({
           </GlassPressable>
         </GlassSurface>
       </View>
+      </DynamicGlassBackdrop>
     </Modal>
   );
 }
@@ -662,7 +679,7 @@ export function SwitchList({
   const accent = useAccent();
   const box = useCardBox();
   return (
-    <GlassSurface enabled={!!box} radius={radius.lg} style={box}>
+    <SettingsCard enabled={!!box} radius={radius.lg} style={box}>
       {options.map((opt, i) => (
         // The whole row and not the switch alone. A switch is a small thing to
         // hit with a thumb, and it sits at the far edge of the screen, which on
@@ -703,7 +720,7 @@ export function SwitchList({
           />
         </Pressable>
       ))}
-    </GlassSurface>
+    </SettingsCard>
   );
 }
 
@@ -731,7 +748,7 @@ export function TextRow({
   const near = value.length >= maxLength - 3;
   const box = useCardBox();
   return (
-    <GlassSurface enabled={!!box} radius={radius.lg} style={[box, settingsStyles.textRow]}>
+    <SettingsCard enabled={!!box} radius={radius.lg} style={[box, settingsStyles.textRow]}>
       <View style={settingsStyles.textRowTop}>
         <View style={settingsStyles.rowLabelBox}>
           <Text style={settingsStyles.rowLabel}>{label}</Text>
@@ -753,19 +770,19 @@ export function TextRow({
         autoCorrect={false}
         returnKeyType="done"
       />
-    </GlassSurface>
+    </SettingsCard>
   );
 }
 
 export function Field({ label, value }: { label: string; value: string }) {
   const box = useCardBox();
   return (
-    <GlassSurface enabled={!!box} radius={radius.lg} style={[box, settingsStyles.field]}>
+    <SettingsCard enabled={!!box} radius={radius.lg} style={[box, settingsStyles.field]}>
       <Text style={settingsStyles.fieldLabel}>{label}</Text>
       <Text style={settingsStyles.fieldValue} numberOfLines={1}>
         {value}
       </Text>
-    </GlassSurface>
+    </SettingsCard>
   );
 }
 

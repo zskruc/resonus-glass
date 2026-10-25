@@ -18,10 +18,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.Layout
@@ -83,6 +85,10 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
   internal var tintColor by mutableIntStateOf(AndroidColor.TRANSPARENT)
   internal var tintOpacity by mutableFloatStateOf(0f)
   internal var dark by mutableStateOf(false)
+  internal var staticBackdropColor: Int? by mutableStateOf(null)
+    private set
+  /** Local opaque/control drawing may safely remain in another material's source. */
+  protected open val suppressDuringBackdropCapture: Boolean get() = staticBackdropColor == null
   // Only the complete bottom navigation opts into this interactive material.
   // Reanimated updates these on the UI thread; the shared capture is unchanged.
   internal var tabsCount by mutableIntStateOf(0)
@@ -97,10 +103,15 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
   internal var tabSelectionOpacity by mutableFloatStateOf(1f)
   internal var dockCompactWidth by mutableFloatStateOf(0f)
     private set
+  internal var dockRole by mutableStateOf("mini")
+  internal var dockRowWidth by mutableFloatStateOf(0f)
   internal var dockExpandedHeight by mutableFloatStateOf(0f)
   internal var dockCompactHeight by mutableFloatStateOf(0f)
   internal var dockCompactOffsetX by mutableFloatStateOf(0f)
   internal var dockProgress by mutableFloatStateOf(0f)
+  internal var buttonPressProgress by mutableFloatStateOf(0f)
+  internal var buttonPressX by mutableFloatStateOf(0f)
+  internal var buttonPressY by mutableFloatStateOf(0f)
   internal var glassEnabled by mutableStateOf(true)
     private set
 
@@ -170,6 +181,14 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
     if (tintOpacity == value) return
     tintOpacity = value
     if (progressiveBlur) snapshot?.onMaterialChanged()
+  }
+
+  internal fun updateStaticBackdropColor(value: Int?) {
+    if (staticBackdropColor == value) return
+    staticBackdropColor = value
+    if (isAttachedToWindow) {
+      if (value == null) attachBackdrop() else detachBackdrop()
+    }
   }
 
   /** Actual physical child bounds, rather than the fixed RN host. */
@@ -294,7 +313,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
   }
 
   private fun attachBackdrop() {
-    if (!glassEnabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.S || snapshot != null) return
+    if (!glassEnabled || staticBackdropColor != null || Build.VERSION.SDK_INT < Build.VERSION_CODES.S || snapshot != null) return
     snapshot = WindowBackdrops.attach(this, appContext.currentActivity?.window?.decorView)
   }
 
@@ -355,7 +374,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
 
   override fun dispatchDraw(canvas: Canvas) {
     // Also prevents nested capture if a wrapper was flattened by React Native.
-    if (WindowBackdrops.isCapturing) {
+    if (WindowBackdrops.isCapturing && suppressDuringBackdropCapture) {
       needsDisplayListRestore = true
       WindowBackdrops.onHostSuppressed(this)
       return
@@ -412,8 +431,12 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
     val tint = Color(tintColor)
     val opacity = tintOpacity
     val isDark = dark
+    val staticBackground = staticBackdropColor
     val enabled = glassEnabled
     val preset = materialPreset
+    val amPlusMaterial = preset == "amPlus"
+    val amPlusButtonHighlight = if (amPlusMaterial && tabsCount == 0)
+      remember { AmPlusInteractiveHighlight() } else null
     val officialMaterial = preset != "custom"
     val dialogMaterial = preset == "dialog"
     val glassRefractionHeight = refractionHeight ?: if (officialMaterial) 12f else glassRefraction * 0.65f
@@ -426,7 +449,12 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
       @Suppress("UNUSED_VARIABLE") val version = frameVersion
       @Suppress("UNUSED_VARIABLE") val geometry = geometryVersion
       val captured = snapshot?.frame
-      if (enabled && captured != null && (!isProgressiveBlur || isProgressiveFrameCurrent(captured))) {
+      if (enabled && staticBackground != null) {
+        // Settings cards sit over a declared flat page color. Keeping the
+        // identical source local avoids capturing/repositioning a whole page
+        // merely to blur and refract the same uniform color while scrolling.
+        drawRect(Color(staticBackground))
+      } else if (enabled && captured != null && (!isProgressiveBlur || isProgressiveFrameCurrent(captured))) {
         getLocationOnScreen(sampleLocation)
         drawIntoCanvas { composeCanvas ->
           drawCapturedBackdrop(composeCanvas.nativeCanvas, captured,
@@ -480,6 +508,8 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
           panelOffset = { tabPanelOffset },
           selectionOpacity = { tabSelectionOpacity },
           officialMaterial = officialMaterial,
+          amPlusMaterial = amPlusMaterial,
+          dockProgress = { dockProgress },
           blurRadius = if (enabled) glassBlur else 0f,
           refraction = if (enabled) glassRefraction else 0f,
           refractionHeight = if (enabled) glassRefractionHeight else 0f,
@@ -488,7 +518,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
           depthEffect = glassDepthEffect,
           chromaticAberration = glassChromaticAberration,
           tint = tint,
-          tintOpacity = { if (enabled && (officialMaterial || snapshot?.frame != null)) opacity else maxOf(opacity, 0.82f) },
+          tintOpacity = { if (enabled && (officialMaterial || staticBackground != null || snapshot?.frame != null)) opacity else maxOf(opacity, 0.82f) },
           dark = isDark
         )
       } else {
@@ -498,7 +528,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
             shape = {
               // The JS API names physical corners. Mapping them to start/end lets
               // Backdrop's lens and Compose's outline agree in RTL as well as LTR.
-              RoundedCornerShape(
+              if (amPlusMaterial) RoundedCornerShape(50) else RoundedCornerShape(
                 topStart = (if (isLtr) topLeft else topRight).dp,
                 topEnd = (if (isLtr) topRight else topLeft).dp,
                 bottomEnd = (if (isLtr) bottomRight else bottomLeft).dp,
@@ -513,11 +543,13 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
                   vibrancy()
                 }
                 blur(glassBlur.dp.toPx())
+                val edge = if (amPlusMaterial && glassRefraction > 0f && glassRefractionHeight > 0f)
+                  AmPlusDockGeometry.edgeLens(size.height, size.width, 24f.dp.toPx()) else 0f
                 lens(
-                  glassRefractionHeight.dp.toPx(),
-                  glassRefraction.dp.toPx(),
-                  depthEffect = glassDepthEffect,
-                  chromaticAberration = glassChromaticAberration
+                  if (amPlusMaterial) edge else glassRefractionHeight.dp.toPx(),
+                  if (amPlusMaterial) edge else glassRefraction.dp.toPx(),
+                  depthEffect = !amPlusMaterial && glassDepthEffect,
+                  chromaticAberration = !amPlusMaterial && glassChromaticAberration
                 )
               }
             },
@@ -532,7 +564,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
             onDrawSurface = {
               // API 31/32 retain true background blur, but Android's shader lens
               // and directional highlight require API 33 (handled by Backdrop).
-              val hasFrame = snapshot?.frame != null
+              val hasFrame = staticBackground != null || snapshot?.frame != null
               // A page boundary briefly has no image. Official materials keep
               // their own surface alpha rather than flashing the old .82 fill.
               val materialOpacity = if (enabled && (officialMaterial || hasFrame)) opacity else maxOf(opacity, 0.82f)
@@ -544,6 +576,14 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
               } else {
                 // Other materials preserve their surface's own RGBA alpha.
                 drawRect(tint.copy(alpha = materialOpacity * tint.alpha))
+              }
+            },
+            onDrawFront = {
+              if (amPlusButtonHighlight != null && dockRole == "mini") {
+                with(amPlusButtonHighlight) {
+                  draw(buttonPressProgress,
+                    Offset(buttonPressX.dp.toPx() - materialOffsetX, buttonPressY.dp.toPx() - materialOffsetY))
+                }
               }
             }
           )
@@ -565,7 +605,9 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
       val fullWidth = constraints.maxWidth
       val fullHeight = constraints.maxHeight
       val enabled = dockCompactWidth > 0f
-      val progress = if (enabled) dockProgress.coerceIn(0f, 1f) else 0f
+      val amPlus = materialPreset == "amPlus"
+      val progress = if (!enabled) 0f else if (amPlus) AmPlusDockGeometry.rawProgress(dockProgress)
+        else dockProgress.coerceIn(0f, 1f)
       val targetWidth = if (enabled) dockCompactWidth.dp.roundToPx().coerceIn(0, fullWidth) else fullWidth
       // The background edge may grow during collapse. Its RN host reserves
       // the larger endpoint while other controls still start at full height.
@@ -573,11 +615,22 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
         dockExpandedHeight.dp.roundToPx().coerceIn(0, fullHeight) else fullHeight
       val targetHeight = if (enabled && dockCompactHeight > 0f)
         dockCompactHeight.dp.roundToPx().coerceIn(0, fullHeight) else fullHeight
-      val materialWidth = (fullWidth + (targetWidth - fullWidth) * progress).roundToInt()
-      val materialHeight = (expandedHeight + (targetHeight - expandedHeight) * progress).roundToInt()
-      val offsetX = (dockCompactOffsetX.dp.toPx() * progress).roundToInt()
-        .coerceIn(0, (fullWidth - materialWidth).coerceAtLeast(0))
-      val offsetY = fullHeight - materialHeight
+      val role = if (tabsCount > 0) "navigation" else dockRole
+      val rowWidth = if (dockRowWidth > 0f) dockRowWidth.dp.toPx() else fullWidth.toFloat()
+      val materialWidth = (if (amPlus && enabled) {
+        if (role == "mini") AmPlusDockGeometry.miniWidth(fullWidth.toFloat(), targetWidth.toFloat(), progress)
+        else AmPlusDockGeometry.sideWidth(fullWidth.toFloat(), targetWidth.toFloat(), rowWidth, progress, 8f.dp.toPx())
+      } else fullWidth + (targetWidth - fullWidth) * progress).roundToInt().coerceAtLeast(0)
+      val materialHeight = (if (amPlus && enabled)
+        AmPlusDockGeometry.height(expandedHeight.toFloat(), targetHeight.toFloat(), progress)
+        else expandedHeight + (targetHeight - expandedHeight) * progress).roundToInt().coerceAtLeast(0)
+      val offsetX = if (amPlus && enabled) AmPlusDockGeometry.left(role, fullWidth.toFloat(),
+        materialWidth.toFloat(), dockCompactOffsetX.dp.toPx(), progress).roundToInt()
+        else (dockCompactOffsetX.dp.toPx() * progress).roundToInt()
+          .coerceIn(0, (fullWidth - materialWidth).coerceAtLeast(0))
+      val offsetY = if (amPlus && enabled) AmPlusDockGeometry.top(role, fullHeight.toFloat(),
+        expandedHeight.toFloat(), targetHeight.toFloat(), materialHeight.toFloat(), progress).roundToInt()
+        else fullHeight - materialHeight
       val materialChanged = materialOffsetX != offsetX || materialOffsetY != offsetY ||
         this@LiquidGlassView.materialWidth != materialWidth || this@LiquidGlassView.materialHeight != materialHeight
       materialOffsetX = offsetX
