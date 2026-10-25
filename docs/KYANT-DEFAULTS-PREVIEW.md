@@ -1,6 +1,6 @@
 # Kyant 默认材质预览
 
-本次预览版本为 **0.8.4.1-preview.3 / Android versionCode 70**，用于比较 Kyant 示例组件的原始材质与之前保存的自定义材质。布局、字体、导航位置、折叠门槛、播放器行为及已有的背景采样优化保持当前实现。
+本次预览版本为 **0.8.4.1-preview.4 / Android versionCode 71**，用于比较 Kyant 示例组件的原始材质与之前保存的自定义材质。布局、字体、导航位置、折叠门槛、播放器行为及已有的背景采样优化保持当前实现。
 
 ## 来源与范围
 
@@ -79,3 +79,10 @@ Button 和 Tabs 的 `vibrancy()` 使用饱和度 1.5。Dialog 也使用饱和度
 - 120 Hz 请求与实际 120 fps 分别判断。系统温控、省电策略和硬件仍有最终决定权；该策略不能掩盖超出 8.33 ms 的实际渲染耗时。三星当前的 `hasArrSupport=false`，不能仅凭 Android 15 的 ARR 文档将设备上的降刷唯一归因于 ARR。
 
 对应实现见 [原生控件](../modules/liquid-glass/android/src/main/java/expo/modules/liquidglass/LiquidGlassControls.kt) 与 [高刷策略](../modules/high-refresh/README.md)。本轮实机验证状态随 APK 验证记录另行记录，未验证的连接状态不写成已通过。
+
+
+## preview.4：移动玻璃的绘制通知合批
+
+preview.3 实测确认窗口持续请求 120 Hz，但长列表滚动仍有真实漏帧；不能把屏幕刷新率当作实际 120 fps。新增的列表收藏等玻璃按钮随歌曲行移动，原来的几何更新逐个发送全局 Compose 通知，会把同一帧内多个控件的重绘反复唤醒。
+
+本轮将同一帧的位置变更先更新完，再统一应用绘制通知；保留当帧位置校正和旧异步画面拒收，不降低背景采样率，不修改官方玻璃参数，也不加入像素读回。结果以对应 APK 的实机验证记录为准。

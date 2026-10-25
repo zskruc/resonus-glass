@@ -198,6 +198,11 @@ internal class WindowBackdrop(
       surfaceGeometryRedrawCount++
       if (surface.isolateModalForeground) menuGeometryRedrawCount++
     }
+    override fun commitChanges() {
+      // All geometry changes are staged before applying their drawing
+      // observers. This still runs in pre-draw, before the capture or draw.
+      Snapshot.sendApplyNotifications()
+    }
   }
   private val screenRect = Rect()
   private val surfaceLocation = IntArray(2)

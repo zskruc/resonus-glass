@@ -7,6 +7,8 @@ internal class BackdropGeometryChanges<T : Any> {
   interface Observer<T> {
     fun fingerprint(surface: T): Long
     fun changed(surface: T)
+    /** Apply observers after every changed target has its current geometry. */
+    fun commitChanges() {}
   }
 
   private class Observation(var fingerprint: Long, var frame: Long)
@@ -19,6 +21,7 @@ internal class BackdropGeometryChanges<T : Any> {
     val previousFrame = frame
     frame++
     var changed = visible.size != visibleCount
+    var pendingChanges = false
     visibleCount = visible.size
     for (index in visible.indices) {
       val surface = visible[index]
@@ -35,8 +38,11 @@ internal class BackdropGeometryChanges<T : Any> {
       if (surfaceChanged) {
         changed = true
         observer.changed(surface)
+        pendingChanges = true
       }
     }
+    // One Compose snapshot apply for the window, never one per moving button.
+    if (pendingChanges) observer.commitChanges()
     return changed
   }
 

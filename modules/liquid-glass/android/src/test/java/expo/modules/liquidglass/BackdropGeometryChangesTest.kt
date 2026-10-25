@@ -14,17 +14,25 @@ class BackdropGeometryChangesTest {
   private class Scene : BackdropGeometryChanges.Observer<Surface> {
     val tracker = BackdropGeometryChanges<Surface>()
     val redraws = ArrayList<Surface>()
+    val commits = ArrayList<List<Surface>>()
+    private val pending = ArrayList<Surface>()
     var gpuBusy = false
     var notifiedWhileBusy = false
     override fun fingerprint(surface: Surface): Long = surface.bounds * 31L + surface.transform
     override fun changed(surface: Surface) {
       redraws.add(surface)
+      pending.add(surface)
       if (gpuBusy) notifiedWhileBusy = true
+    }
+    override fun commitChanges() {
+      commits.add(pending.toList())
+      pending.clear()
     }
     fun update(vararg surfaces: Surface): Boolean = tracker.update(surfaces.asList(), this)
     fun settle(vararg surfaces: Surface) {
       update(*surfaces)
       redraws.clear()
+      commits.clear()
     }
   }
 
@@ -147,4 +155,38 @@ class BackdropGeometryChangesTest {
     assertTrue(scene.update(surface))
     assertSame(surface, scene.redraws.single())
   }
+
+  @Test fun aScrollingWindowCommitsAllMovedButtonsInOneSameFrameBatch() {
+    val scene = Scene()
+    val buttons = Array(20) { Surface(bounds = it.toLong()) }
+    scene.settle(*buttons)
+    scene.gpuBusy = true
+    buttons.forEach { it.bounds += 5 }
+    assertTrue(scene.update(*buttons))
+    // All targets have been updated before one observer apply, even with both
+    // image slots busy. No later image callback or VSync is needed.
+    assertEquals(1, scene.commits.size)
+    assertEquals(buttons.size, scene.commits.single().size)
+    buttons.forEachIndexed { index, button -> assertSame(button, scene.commits.single()[index]) }
+    assertTrue(scene.notifiedWhileBusy)
+    scene.redraws.clear()
+    scene.commits.clear()
+    repeat(100) { assertFalse(scene.update(*buttons)) }
+    assertTrue(scene.redraws.isEmpty())
+    assertTrue(scene.commits.isEmpty())
+  }
+
+  @Test fun disappearanceAloneDoesNotApplyAndRestoredFirstGeometryIsCommittedImmediately() {
+    val scene = Scene()
+    val first = Surface()
+    val second = Surface()
+    scene.settle(first, second)
+    assertTrue(scene.update(first))
+    assertTrue(scene.commits.isEmpty())
+    assertTrue(scene.update(first, second))
+    assertEquals(1, scene.commits.size)
+    assertEquals(1, scene.commits.single().size)
+    assertSame(second, scene.commits.single().single())
+  }
+
 }

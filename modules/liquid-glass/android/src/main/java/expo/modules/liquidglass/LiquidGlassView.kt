@@ -19,7 +19,6 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
@@ -393,9 +392,8 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
     geometryVersion++
     // Called before drawing the moving menu: reuse the existing image at the
     // current screen origin instead of waiting for asynchronous capture delivery.
-    // Apply the drawing observer now so the old display list cannot ride along
-    // with the parent's transform for another frame and then snap back.
-    Snapshot.sendApplyNotifications()
+    // WindowBackdrop applies all changed materials' drawing observers once,
+    // before this pre-draw finishes, so they cannot lag the parent transform.
     composeView.invalidate()
     invalidate()
   }
