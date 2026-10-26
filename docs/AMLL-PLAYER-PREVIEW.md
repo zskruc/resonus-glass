@@ -2,9 +2,9 @@
 
 `0.8.4.1-amll.4` · Android `versionCode 86` · `preview/amll-player`
 
-本页记录开发预览。当前 `.4` 安装包已构建并校验，包含共用歌词模糊、底栏点按动效、首页标题设置及全局绘制／封面解码修复。按用户要求先交付 APK，暂不安装；持续滑动、长列表内存及闪退的实机复测尚未完成。下文保留 `.1` 至 `.3` 历史记录。正式下载仍以仓库 Releases 为准。
+本页记录开发预览。当前 `.4` 安装包已构建并校验，包含共用歌词模糊、底栏点按动效、首页标题设置及全局绘制／封面解码修复。APK 已在三星 SM_S9380 上覆盖安装，版本、首次安装日期及首页封面显示已检查，启动错误日志为空；持续滑动、长列表内存及闪退的实机复测尚未完成。下文保留 `.1` 至 `.3` 历史记录。正式下载仍以仓库 Releases 为准。
 
-The `.4` preview APK has been built and verified. It unifies lyric blur, restores tab-tap motion, adds a custom Home heading and addresses shared rendering/artwork-decoding costs. The requested deliverable is an APK for later testing; it has not been installed or validated for sustained scrolling, long-list memory or crash recovery. Earlier `.1`–`.3` records remain below. Use repository Releases for stable downloads.
+The `.4` preview APK has been built and verified. It unifies lyric blur, restores tab-tap motion, adds a custom Home heading and addresses shared rendering/artwork-decoding costs. The APK has been installed over the existing app on Samsung SM_S9380. Its version, unchanged first-install date and visible Home artwork were checked, with no filtered startup errors. Sustained scrolling, long-list memory and crash recovery remain unvalidated. Earlier `.1`–`.3` records remain below. Use repository Releases for stable downloads.
 
 ## 来源与实现边界 / Reference and implementation boundary
 
@@ -112,9 +112,9 @@ All switches use a shared compact wrapper: 54×44dp instead of 64×48dp, approxi
 
 ### 当前 `.4` / Current `.4`
 
-367 项 JavaScript 测试及 106 项原生测试（玻璃 93、背景 6、高刷 7）通过。ARM64 Release APK 构建成功，核对版本 `0.8.4.1-amll.4`、编号 `86`、原包名与原签名一致。Expo Image 原生源码重新编译成功，发布混淆映射确认新首帧解码器与磁盘预取路径已包含。静态检查无错误，保留 21 条既有代码警告，警告均不在本轮修改行。当前未安装到三星；取得的系统日志来自已有版本，不能当作 `.4` 的帧率或长列表验证。历史日志确认过动态图片解码时的内存耗尽，但此次所有闪退原因及修复效果仍需实机复测。
+367 项 JavaScript 测试及 106 项原生测试（玻璃 93、背景 6、高刷 7）通过。ARM64 Release APK 构建成功，核对版本 `0.8.4.1-amll.4`、编号 `86`、原包名与原签名一致。Expo Image 原生源码重新编译成功，发布混淆映射确认新首帧解码器与磁盘预取路径已包含。静态检查无错误，保留 21 条既有代码警告，警告均不在本轮修改行。已覆盖安装到三星，版本核对为 `.4`/86，首次安装日期保持 2026-10-05 17:44:34；首页和封面正常显示，过滤的启动错误日志为空。安装前取得的系统日志来自旧版本，不能当作 `.4` 的帧率或长列表验证。历史日志确认过动态图片解码时的内存耗尽，但此次所有闪退原因及修复效果仍需实机复测。
 
-All 367 JavaScript tests and 106 native tests (93 glass, 6 background, 7 refresh) passed. The ARM64 release APK built successfully; version `0.8.4.1-amll.4`/86, application ID and the existing signing certificate were verified. Expo Image was compiled from source, and the release mapping confirms the new static-decoder and disk-prefetch paths were included. ESLint reports no errors and 21 existing-code warnings, none on modified lines. This APK has not been installed; collected Android logs belong to the previous installed version and are not `.4` frame-rate or long-list acceptance evidence. Historical logs confirm an animated-image decoding OOM; the causes of all reported exits and this fix's effectiveness still require device testing.
+All 367 JavaScript tests and 106 native tests (93 glass, 6 background, 7 refresh) passed. The ARM64 release APK built successfully; version `0.8.4.1-amll.4`/86, application ID and the existing signing certificate were verified. Expo Image was compiled from source, and the release mapping confirms the new static-decoder and disk-prefetch paths were included. ESLint reports no errors and 21 existing-code warnings, none on modified lines. This APK was installed over the existing Samsung app and verified as `.4`/86; the first-install date remains 2026-10-05 17:44:34. Home artwork rendered and filtered startup errors were empty. Earlier Android logs belong to the previous version and are not `.4` frame-rate or long-list acceptance evidence. Historical logs confirm an animated-image decoding OOM; the causes of all reported exits and this fix's effectiveness still require device testing.
 
 ### `.3` 检查历史 / `.3` validation history
 
