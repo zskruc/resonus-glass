@@ -47,7 +47,7 @@ The current preview is on `preview/amll-player`. It adds an independently implem
 
 Settings → Glass tuning now supports independent AM++ parameters for the mini player, navigation and other controls, plus one-tap restoration and saving of all AM++ defaults. Existing Custom profiles remain separate. A dock fix clears inherited compact-icon offsets when switching among AM++, Kyant defaults, iPhone reference and Custom appearances. Earlier integration details remain in the [AM++ adaptation guide](./docs/AMPP-ADAPTATION.md).
 
-Samsung installation and real scrolling checks are pending device connection. The background has its own maximum 60 fps work budget and does not change the existing 120Hz UI/window requests. This is not a new measurement of 120 fps or a guarantee of sustained frame rates on every page. These preview changes have not been included in a stable release.
+The preview has been installed on Samsung and passed initial UI checks; long-session scrolling and frame-time validation remain pending. The background has its own maximum 60 fps work budget and does not change the existing 120Hz UI/window requests. This is not a new measurement of 120 fps or a guarantee of sustained frame rates on every page. These preview changes have not been included in a stable release.
 
 When the artwork palette is enabled, the play/pause button uses the same immediate current-artwork role as the progress and volume tracks. The Resonus layout retains its separate background-palette stability wait and transition; the AMLL layout uses its own native artwork field.
 
