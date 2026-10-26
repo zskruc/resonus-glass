@@ -36,33 +36,43 @@ export function amllPlayerControlLayout({ width, viewportWidth = width, viewport
   // controls beside transport in portrait too, with five distinct hit targets.
   const actions: AmllTransportAction[] = ['shuffle', 'previous', 'toggle', 'next', 'repeat'];
   const contentWidth = Math.max(availableWidth, actions.length * 44);
-  const transportPadding = horizontal ? 0 : Math.min(contentWidth * .02, height * .02,
-    Math.max(0, (contentWidth - actions.length * 44) / 2));
-  const transportButtonSize = horizontal
-    ? Math.max(44, Math.min(96, contentWidth * .18))
-    : Math.max(44, Math.min(112, height * .10, (contentWidth - transportPadding * 2) / actions.length));
-  const transportPaddingTop = horizontal ? 0 : height * .02;
-  const rowWidth = contentWidth - transportPadding * 2;
-  const spare = Math.max(0, rowWidth - actions.length * transportButtonSize);
-  const gap = spare / (horizontal ? actions.length - 1 : actions.length + 1);
-  const slots = actions.map((action, index) => ({
-    action,
-    left: transportPadding + (horizontal ? 0 : gap) + index * (transportButtonSize + gap),
-    size: transportButtonSize,
-  }));
+  const referenceScale = Math.max(.7, Math.min(1.35, height / 832));
+  const transportButtonSize = horizontal ? Math.max(44, Math.min(96, contentWidth * .18))
+    : contentWidth >= 344 ? Math.min(68, 2 * (contentWidth * .2211805556 - Math.max(22, contentWidth * .0625)) - 44)
+      : Math.max(44, Math.min(60, contentWidth / 5));
+  // Keep the reference's main three centers (85 / 192 / 299 on a 384dp
+  // phone). The user-requested mode buttons occupy the two outer 44dp targets.
+  const centers = !horizontal && contentWidth >= 344
+    ? [Math.max(22, contentWidth * .0625), contentWidth * .2211805556, contentWidth / 2,
+      contentWidth * .7788194444, Math.min(contentWidth - 22, contentWidth * .9375)]
+    : actions.map((_, index) => horizontal
+      ? transportButtonSize / 2 + index * (contentWidth - transportButtonSize) / 4
+      : (index + .5) * contentWidth / 5);
+  const slots = actions.map((action, index) => {
+    const size = !horizontal && (action === 'shuffle' || action === 'repeat') ? 44 : transportButtonSize;
+    return { action, left: centers[index] - size / 2, top: (transportButtonSize - size) / 2, size };
+  });
   const visuals = amllControlVisuals(viewportWidth, height, horizontal);
   const progressHeight = 44 + Math.ceil(16 * scale);
-  const transportHeight = Math.ceil(transportButtonSize + transportPaddingTop);
   const auxiliaryHeight = horizontal ? 0 : visuals.utilitySize;
   const volumeHeight = showVolume ? 44 : 0;
-  const volumeBottomPadding = showVolume && !horizontal ? height <= 512 ? 16 : height <= 768 ? 32 : 64 : 0;
+  const volumeTop = progressHeight;
+  const transportTop = horizontal ? progressHeight : Math.max(
+    129.8 * referenceScale - transportButtonSize / 2,
+    progressHeight + volumeHeight + (showVolume ? 8 : 0));
+  const auxiliaryTop = horizontal ? 0 : Math.max(228.6 * referenceScale - auxiliaryHeight / 2,
+    transportTop + transportButtonSize + 16);
+  const transportHeight = transportButtonSize;
+  const volumeBottomPadding = 0;
+  const fullHeight = horizontal ? progressHeight + transportHeight + volumeHeight : auxiliaryTop + auxiliaryHeight;
   return {
-    height: progressHeight + transportHeight + auxiliaryHeight + volumeHeight + volumeBottomPadding,
+    height: fullHeight,
     contentWidth, scrollable: contentWidth > availableWidth,
-    progressHeight, transportHeight, transportButtonSize, transportPaddingTop,
+    progressHeight, transportHeight, transportButtonSize, transportPaddingTop: 0,
+    transportTop, auxiliaryTop, volumeTop: horizontal ? progressHeight + transportHeight : volumeTop,
     ...visuals, auxiliaryHeight, volumeHeight, volumeBottomPadding, slots,
     rows: horizontal ? ['progress', 'transport', ...(showVolume ? ['volume'] : [])]
-      : ['progress', 'transport', 'auxiliary', ...(showVolume ? ['volume'] : [])],
+      : ['progress', ...(showVolume ? ['volume'] : []), 'transport', 'auxiliary'],
   };
 }
 
@@ -78,7 +88,9 @@ export function amllBottomActionLayout(width: number, horizontal: boolean, viewp
     { action: 'lyrics', left: contentWidth - size * 2 - gap, size },
     { action: 'queue', left: contentWidth - size, size },
   ] : ['lyrics', 'output', 'queue'].map((action, index) => ({
-    action: action as AmllBottomAction, left: gap + index * (size + gap), size,
+    action: action as AmllBottomAction,
+    left: (contentWidth >= 240 ? [88.933 / 384, .5, 295.067 / 384][index] * contentWidth
+      : gap + index * (size + gap) + size / 2) - size / 2, size,
   }));
   return { contentWidth, scrollable: contentWidth > availableWidth, height: size, glyphSize, selectedGlyphSize, slots };
 }
@@ -86,5 +98,6 @@ export function amllBottomActionLayout(width: number, horizontal: boolean, viewp
 export function amllMoreButtonSize(viewportWidth: number, viewportHeight: number) {
   const width = valid(viewportWidth, 360);
   const height = valid(viewportHeight, 640);
+  if (height >= width) return 28;
   return width <= 1000 ? Math.max(32, Math.min(width * .05, height * .04)) : Math.max(24, height * .035);
 }

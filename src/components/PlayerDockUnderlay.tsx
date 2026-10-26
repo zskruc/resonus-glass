@@ -4,19 +4,28 @@ import Animated, { useAnimatedReaction, useAnimatedStyle } from 'react-native-re
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { useScreenSize } from '@/hooks/useScreenSize';
-import { playerDockClipOffset, playerSurfaceHeight, playerSurfaceOffset } from '@/lib/playerReveal';
+import { playerArtworkFlight, playerDockClipOffset, playerSurfaceHeight, playerSurfaceOffset } from '@/lib/playerReveal';
 
 let nextMaterialBinding = 0;
 const materialBinding = (active: boolean) => ({ active, serial: ++nextMaterialBinding });
 
-/** Globals sit above Stack. Clip them to the part its opaque player uncovered. */
-export function PlayerDockUnderlay({ active, children }: { active: boolean; children: ReactNode }) {
+/** Shared-artwork flights fade the whole dock; ordinary slides reveal it by clipping. */
+export function PlayerDockUnderlay({ active, children }: { active: boolean; mini?: boolean; children: ReactNode }) {
   const { height } = useScreenSize();
-  const frame = useAnimatedStyle(() => ({
-    transform: [{ translateY: active ? playerDockClipOffset(playerSurfaceOffset.get(), playerSurfaceHeight.get(), height) : 0 }],
-  }), [active, height]);
+  const frame = useAnimatedStyle(() => {
+    const flight = active ? playerArtworkFlight.get() : null;
+    return {
+      // Compact Tabs share the mini's vertical band. Clipping at the morphing
+      // background's bottom hides their side buttons until after route pop.
+      opacity: flight ? flight.frame.miniContentOpacity : 1,
+      transform: [{ translateY: flight ? 0
+        : active ? playerDockClipOffset(playerSurfaceOffset.get(), playerSurfaceHeight.get(), height) : 0 }],
+    };
+  }, [active, height]);
   const content = useAnimatedStyle(() => ({
-    transform: [{ translateY: active ? -playerDockClipOffset(playerSurfaceOffset.get(), playerSurfaceHeight.get(), height) : 0 }],
+    transform: [{ translateY: active && playerArtworkFlight.get()
+      ? 0
+      : active ? -playerDockClipOffset(playerSurfaceOffset.get(), playerSurfaceHeight.get(), height) : 0 }],
   }), [active, height]);
   return (
     <Animated.View pointerEvents="box-none" collapsable={false} style={[styles.frame, { height }, frame]}>

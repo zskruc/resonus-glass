@@ -1,16 +1,22 @@
 # AMLL 播放器预览 / AMLL player preview
 
-`0.8.4.1-amll.12` · Android `versionCode 94` · `preview/amll-player`
+`0.8.4.1-amll.13` · Android `versionCode 95` · `preview/amll-player`
 
-## 当前 `.12` / Current `.12`
+## 当前 `.13` / Current `.13`
 
-ARM64 APK 已构建，版本、包名和原签名校验通过；463 项应用测试、118 项玻璃模块原生测试、类型检查和翻译检查通过，lint 为 0 错误、117 项已有警告。`.12` 尚未安装到手机，按用户要求等待后续连接后测试；不能以此前 `.10`／`.11` 安装推导本版已验收。
+最终修复包已安装到三星，基础转场视觉检查已完成，最终观感仍待用户确认；不代表持续帧率、长列表或全场景验收。当前采用 f728743/AppleMusicStylePlayer 的共享封面与独立背景裁切，Primuse 整页形变仍已撤销。当前实现、来源及完整验证边界以 [Apple Music 转场说明](./APPLE-MUSIC-TRANSITION.md) 为准，下文保留历史记录。
 
-The ARM64 APK is built and its version, package and original certificate are verified. All 463 app tests, 118 native glass-module tests, typechecking and translation checks pass; lint reports zero errors and 117 existing warnings. `.12` is not installed, awaiting the user's later connection and testing. Earlier `.10`/`.11` installations are not acceptance of this build.
+The final fix is installed on Samsung with basic transition visual checks completed; user approval, sustained frame rate, long-list and all-scenario acceptance remain pending. The current transition adapts f728743/AppleMusicStylePlayer shared artwork and independent background clipping; the Primuse whole-player morph remains removed. The [Apple Music transition guide](./APPLE-MUSIC-TRANSITION.md) is authoritative for current implementation, provenance and validation. Historical records follow.
 
-本版恢复 `.10` 的入场／退场动效，保留播放器与底栏的同步揭露及返回交接，撤销用户拒绝的 Primuse 形变实验。旋转时稳定 surface owner、独立更新高度的非视觉安全修复继续保留，避免清零 mini 上拉进度。Tab 的 UI 线程即时点按反馈、列表稳定 callback ref 及统一浮动玻璃弹窗仍保留。转场候选只作为[研究记录](./PLAYER-MINI-TRANSITIONS.md)，不再作为当前实现。
+## `.12` 历史回滚 / Historical `.12` rollback
 
-Entry/dismissal motion returns to `.10`, retaining synchronized dock reveal and route-pop handoff. A separate nonvisual safety fix keeps the surface owner stable across rotation and publishes height independently, preserving an active mini pull. The rejected Primuse morph is removed. UI-thread tab feedback, the stable list callback ref and unified floating glass panels remain. The [transition candidates](./PLAYER-MINI-TRANSITIONS.md) are research records, not active implementations.
+当时 ARM64 APK 已构建并核对版本、包名和原签名，463 项应用测试、118 项玻璃模块原生测试及类型、翻译检查通过。该阶段构建待装；随后 `.12` 已安装，但未取得有效的本应用 Player 视觉或持续滚动验收记录。
+
+At that stage the ARM64 APK was built with version, package and original certificate verified; 463 app tests, 118 native glass-module tests, typechecking and translation checks passed. Installation was pending then. `.12` was subsequently installed, but no valid acceptance record for this app's player appearance or sustained scrolling was obtained.
+
+`.12` 当时恢复 `.10` 的入场／退场动效，保留播放器与底栏的同步揭露及返回交接，撤销用户拒绝的 Primuse 形变实验。旋转时稳定 surface owner、独立更新高度的非视觉安全修复继续保留，避免清零 mini 上拉进度。Tab 的 UI 线程即时点按反馈、列表稳定 callback ref 及统一浮动玻璃弹窗仍保留。候选比较见[研究记录](./PLAYER-MINI-TRANSITIONS.md)，后续 `.13` 采用的转场以上方当前说明为准。
+
+In `.12`, entry/dismissal motion returned to `.10`, retaining synchronized dock reveal and route-pop handoff. A separate nonvisual safety fix kept the surface owner stable across rotation and published height independently, preserving an active mini pull. The rejected Primuse morph was removed. UI-thread tab feedback, the stable list callback ref and unified floating glass panels remained. See the [candidate research](./PLAYER-MINI-TRANSITIONS.md) for comparisons and the current guide above for the later `.13` transition.
 
 控件使用 AMLL 派生的白色 SVG，并恢复适合手机的可见大小：上一首／下一首约 36dp、播放约 46dp，辅助图标约 24dp，触摸区至少 44dp。竖屏直接显示随机、上一首、播放／暂停、下一首和循环，采用 80／140ms 短按压／释放反馈，确认点击后立即调用原回调。竖屏根布局预留最多 48dp 底部空间，将封面、歌曲信息及控制区整体上移；次要文字为 0.78 白色透明度。滑条继续采用当前封面主题色。
 
@@ -24,9 +30,9 @@ See the source/license boundaries below, [performance evidence](./PLAYLIST-SCROL
 
 `0.8.4.1-amll.9` · Android `versionCode 91` · `preview/amll-player`
 
-当时 `.9` APK 已构建并核对原签名，425 项应用测试、113 项玻璃模块测试及两组原生方法回归通过；该阶段尚未安装。这是历史状态，当前构建与实机范围以上方 `.12` 段落为准。
+当时 `.9` APK 已构建并核对原签名，425 项应用测试、113 项玻璃模块测试及两组原生方法回归通过；该阶段尚未安装。这是历史状态，当前构建与实机范围以上方 `.13` 及其链接说明为准。
 
-At that stage the `.9` APK was built with the original certificate; 425 app tests, 113 glass-module tests and both native-method harnesses passed, with installation still pending. This is historical status; the `.12` section above describes the current build and validation boundary.
+At that stage the `.9` APK was built with the original certificate; 425 app tests, 113 glass-module tests and both native-method harnesses passed, with installation still pending. This is historical status; the `.13` section and linked guide above describe the current build and validation boundary.
 
 `.9` 的 Player 页可在状态栏下方、大封面上方整片区域下拉退出；歌词页可从顶部小封面、歌曲名与创作者区域下拉，原有阈值保持不变。横屏与短屏按可见标题区域判断，歌词、滑条和控制按钮区域不作为返回手势入口。子页面底栏的来源选项卡继续显示主题色和选中态。
 

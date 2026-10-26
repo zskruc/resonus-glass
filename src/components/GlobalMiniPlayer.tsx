@@ -16,6 +16,7 @@ import { motion } from '@/theme/motion';
 import { MINI_PLAYER_GAP, MINI_PLAYER_HEIGHT, spacing, TAB_BAR_BOTTOM_GAP, TAB_BAR_HEIGHT } from '@/theme';
 import { MiniPlayer } from './MiniPlayer';
 import { PlayerDockUnderlay } from './PlayerDockUnderlay';
+import { playerCanReturnToMini } from '@/lib/playerReveal';
 
 export function GlobalMiniPlayer() {
   const insets = useSafeAreaInsets();
@@ -37,6 +38,7 @@ export function GlobalMiniPlayer() {
   // toast, the multi-select bar) has to know where the mini is not.
   const visible = !NO_MINI_PLAYER.includes(root as string);
   const underlay = usePlayerDockUnderlay(visible);
+  useLayoutEffect(() => { playerCanReturnToMini.set(underlay.reveal); }, [underlay.reveal]);
   const bottom = withBar ? bottomGap + navHeight + miniGap + insets.bottom : insets.bottom + spacing.sm;
 
   // Keep the last visible position so it doesn't jump while fading out
@@ -76,7 +78,7 @@ export function GlobalMiniPlayer() {
   }), [expandedBottom, compactBottom, amPlus, underlay.reveal, underlay.returning]);
 
   return (
-    <PlayerDockUnderlay active={underlay.reveal}>
+    <PlayerDockUnderlay active={underlay.reveal} mini>
     <Animated.View
       style={[{ position: 'absolute', left: 0, right: 0, bottom: expandedBottom }, style]}
       pointerEvents={visible ? 'box-none' : 'none'}

@@ -9,7 +9,7 @@ import { Stack } from 'expo-router';
 import { NavigationBar } from 'expo-navigation-bar';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState, type ComponentProps } from 'react';
 import { ActivityIndicator, AppState, Platform, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Freeze } from 'react-freeze';
@@ -23,6 +23,8 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { FrameMeter } from '@/components/FrameMeter';
 import { PlaybackColorWarmup } from '@/components/PlaybackColorWarmup';
 import { GlobalMiniPlayer } from '@/components/GlobalMiniPlayer';
+import { PlayerArtworkOverlay } from '@/components/PlayerArtworkOverlay';
+import { PlayerUnderlayTransform } from '@/components/PlayerUnderlayTransform';
 import { BottomScrollEdge } from '@/components/BottomScrollEdge';
 import { GlobalTabBar } from '@/components/GlobalTabBar';
 import { LiquidDockProvider } from '@/hooks/useLiquidDock';
@@ -69,6 +71,11 @@ installAppFont();
 /** How long the offline copy of the library waits before being read, when the
  *  app has a server and nothing is going to ask for it yet. */
 const MIRROR_DELAY_MS = 15_000;
+
+type RootScreenLayoutProps = Parameters<NonNullable<ComponentProps<typeof Stack>['screenLayout']>>[0];
+function renderRootScreen({ route, children }: RootScreenLayoutProps) {
+  return <PlayerUnderlayTransform routeKey={route.key} routeName={route.name}>{children}</PlayerUnderlayTransform>;
+}
 
 /** Queue and lyrics are whole screens. On iOS `modal` is a sheet that stops
  *  short of the top, so there they need the full-screen one. */
@@ -339,6 +346,7 @@ export default function RootLayout() {
             <Freeze freeze={away}>
             <BarBlurTarget>
             <Stack
+              screenLayout={renderRootScreen}
               screenOptions={({ route }) => ({
                 headerShown: false,
                 // Keep settings content opaque throughout Android navigation,
@@ -439,6 +447,7 @@ export default function RootLayout() {
             {auth || offline ? <BottomScrollEdge /> : null}
             {auth || offline ? <GlobalMiniPlayer /> : null}
             {auth || offline ? <GlobalTabBar /> : null}
+            {auth || offline ? <PlayerArtworkOverlay /> : null}
             {auth || offline ? <SongMenuSheet /> : null}
             {auth || offline ? <SongInfoSheet /> : null}
             {auth || offline ? <ArtistPickerSheet /> : null}

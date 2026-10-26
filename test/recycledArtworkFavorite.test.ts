@@ -124,6 +124,7 @@ function favorite() {
   render({ id: 'A', starred: false, resetKey: 'row-A' });
   return { render, requests, changes, undos, resyncs: () => resyncs,
     tree: () => tree, icon: () => (tree.props.children as Element).props.name,
+    iconProps: () => (tree.props.children as Element).props,
     writes: runtime.writes, unmount: runtime.unmount };
 }
 
@@ -164,6 +165,90 @@ function artwork() {
 }
 
 describe('favorite state in a recycled song row', () => {
+  it('retains default heart artwork, colors and touch bounds for existing callers', () => {
+    const h = favorite();
+    assert.equal(h.icon(), 'heart-outline');
+    assert.equal(h.iconProps().color, '#aaa');
+    assert.equal(h.iconProps().size, 22);
+    assert.equal(h.tree().props.hitSlop, 10);
+    assert.equal(h.tree().props.accessibilityLabel, 'Add to favorites');
+    h.render({ id: 'A', starred: true });
+    assert.equal(h.icon(), 'heart');
+    assert.equal(h.iconProps().color, '#123');
+    assert.equal(h.tree().props.accessibilityLabel, 'Remove from favorites');
+    h.render({ id: 'A', starred: false, unselectedColor: '#456' });
+    assert.equal(h.icon(), 'heart-outline');
+    assert.equal(h.iconProps().color, '#456');
+    h.render({ id: 'A', starred: true, unselectedColor: '#456' });
+    assert.equal(h.iconProps().color, '#123', 'unselected ink never changes the default selected accent');
+  });
+
+  it('renders native white star states and custom bounds while retaining actual star/unstar cache operations', async () => {
+    const h = favorite();
+    const style = [{ width: 44, height: 44 }, { borderRadius: 22, backgroundColor: '#FFFFFF26' }];
+    const hitSlop = { top: 4, bottom: 6, left: 8, right: 10 };
+    h.render({ id: 'A', glyph: 'star', starred: false, selectedColor: '#FFFFFF', unselectedColor: '#ddd',
+      size: 24, style, hitSlop });
+    assert.equal(h.icon(), 'star-outline');
+    assert.equal(h.iconProps().color, '#ddd');
+    assert.equal(h.iconProps().size, 24);
+    assert.equal(h.tree().props.style, style, 'the caller layout passes to the existing press target unchanged');
+    assert.equal(h.tree().props.hitSlop, hitSlop);
+    const added = h.tree().props.onPress(); h.render();
+    assert.equal(h.icon(), 'star');
+    assert.equal(h.iconProps().color, '#FFFFFF');
+    assert.equal(h.tree().props.accessibilityLabel, 'Remove from favorites');
+    assert.deepEqual(h.requests.map(({ kind, id, type }) => [kind, id, type]), [['star', 'A', 'song']]);
+    h.requests[0].resolve(); await added; h.render();
+    assert.deepEqual(h.changes, [['song', 'A', true]]);
+    const removed = h.tree().props.onPress(); h.render();
+    assert.equal(h.icon(), 'star-outline');
+    assert.equal(h.iconProps().color, '#ddd');
+    assert.deepEqual(h.requests.map(({ kind, id, type }) => [kind, id, type]),
+      [['star', 'A', 'song'], ['unstar', 'A', 'song']]);
+    h.requests[1].resolve(); await removed; h.render();
+    assert.deepEqual(h.changes, [['song', 'A', true], ['song', 'A', false]]);
+    h.render({ id: 'A', glyph: 'star', starred: false, hitSlop: 0 });
+    assert.equal(h.tree().props.hitSlop, 0, 'zero is a valid explicit touch-bound override');
+    assert.equal(h.iconProps().color, '#aaa', 'omitted unselected ink keeps the theme default');
+    h.render({ id: 'A', glyph: 'star', starred: true });
+    assert.equal(h.iconProps().color, '#123', 'a star caller without selectedColor still uses the theme accent');
+  });
+
+  it('does not transfer a held star touch or old callbacks through A to B to the same A reset key', async () => {
+    const h = favorite();
+    const a = { id: 'A', glyph: 'star', starred: false, selectedColor: '#FFFFFF', resetKey: 'row-A' };
+    h.render(a);
+    const firstA = h.tree();
+    firstA.props.onTouchStart(pressEvent(10));
+    firstA.props.onPressIn(pressEvent(10));
+    firstA.props.onPressOut(pressEvent(20));
+    await turn();
+    h.render({ id: 'B', glyph: 'star', starred: true, selectedColor: '#FFFFFF', resetKey: 'row-B' });
+    assert.equal(h.icon(), 'star');
+    assert.equal(h.iconProps().color, '#FFFFFF');
+    h.tree().props.onPressIn(pressEvent(30));
+    h.render(a);
+    h.tree().props.onPressIn(pressEvent(40));
+    h.tree().props.onTouchEnd(pressEvent(50));
+    h.tree().props.onPressOut(pressEvent(50));
+    await h.tree().props.onPress(pressEvent(50));
+    await firstA.props.onPress(pressEvent(60));
+    assert.equal(h.requests.length, 0, 'neither a reentered physical touch nor the old A closure can target the new A lifetime');
+    assert.equal(h.icon(), 'star-outline');
+    await turn();
+    h.tree().props.onTouchStart(pressEvent(70));
+    h.tree().props.onPressIn(pressEvent(70));
+    h.tree().props.onTouchEnd(pressEvent(80));
+    const current = h.tree().props.onPress(pressEvent(80));
+    assert.equal(h.requests.length, 1);
+    assert.equal(h.requests[0].id, 'A');
+    h.requests[0].resolve(); await current; h.render();
+    assert.equal(h.icon(), 'star');
+    assert.equal(h.iconProps().color, '#FFFFFF');
+    assert.deepEqual(h.changes, [['song', 'A', true]]);
+  });
+
   it('does not let A failure/finally overwrite B optimistic favorite or release B busy state', async () => {
     const h = favorite();
     const old = h.tree();

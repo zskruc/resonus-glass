@@ -161,6 +161,33 @@ Source boundaries and preview validation are documented in
 [AMLL player preview](./docs/AMLL-PLAYER-PREVIEW.md). This adaptation does not imply
 AMLL or Apple endorsement, or use of Apple's private rendering implementation.
 
+## AppleMusicStylePlayer artwork transition
+
+The optional mini-player/full-player transition adapts geometry and gesture
+rules from [f728743/AppleMusicStylePlayer](https://github.com/f728743/AppleMusicStylePlayer),
+pinned commit [`a0b5631417dec05d092c3c61df4679ed361743bf`](https://github.com/f728743/AppleMusicStylePlayer/tree/a0b5631417dec05d092c3c61df4679ed361743bf).
+Copyright (c) 2025 Alexey Vorobyov. The complete upstream MIT license is retained
+unchanged in [licenses/APPLE-MUSIC-STYLE-PLAYER-MIT.txt](./licenses/APPLE-MUSIC-STYLE-PLAYER-MIT.txt).
+
+`ExpandableNowPlaying.swift`, `CompactNowPlaying.swift`,
+`RegularNowPlaying.swift` and `NowPlayingBackground.swift` inform
+`src/lib/appleMusicPlayerTransition.ts`, `src/hooks/useAppleMusicPlayerMotion.ts`,
+`src/components/PlayerArtworkOverlay.tsx` and
+`src/components/PlayerUnderlayTransform.tsx`, with integration into the existing
+mini/player route lifecycle. The adaptation uses one artwork overlay between
+measured endpoints, an independently clipped fixed-layout background and the
+source's 300ms/no-extra-bounce intent. Reanimated's critically damped timing is
+an approximation of SwiftUI smooth, not the same solver. Source window-depth
+geometry is applied only to the originating screen, not the entire navigation
+Stack or the player. The native background-only clip container is a Resonus
+integration; it imports no SwiftUI/UIKit runtime or private display API.
+
+The existing upward pull from mini-player is a Resonus extension, not a feature
+claimed from this demo. Primuse's rejected whole-player transition remains
+removed. These MIT portions do not change the separate AGPL/GPL notices for
+the existing controls, glass and lyrics. Scope and pending preview validation:
+[Apple Music transition](./docs/APPLE-MUSIC-TRANSITION.md).
+
 ## Expo Image static artwork and disk prefetch patch
 
 `patches/expo-image@57.0.3.patch` modifies Expo Image 57.0.3, using the existing Glide bitmap decoders and pool ownership for opt-in first-frame artwork. It separates static and animated cache keys, makes disk-only prefetch download data without a drawable, clears completed/cancelled targets and makes animation starts idempotent. The preview builds `expo-image` from source so the patch is included. Expo Image and the modified files retain the following MIT terms:

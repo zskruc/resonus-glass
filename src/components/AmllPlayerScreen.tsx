@@ -11,7 +11,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import Animated, {
-  cancelAnimation, interpolate, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue, withSpring,
+  cancelAnimation, interpolate, measure, useAnimatedRef, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue, withSpring,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureDetector } from 'react-native-gesture-handler';
@@ -21,7 +21,7 @@ import { AmllPlayerBackground } from '@/components/AmllPlayerBackground';
 import { AmllSlider } from '@/components/AmllSlider';
 import { AudioQualityBadge } from '@/components/AudioQualityBadge';
 import { Cover } from '@/components/Cover';
-import { AmllPlayerControls, AmllPlayerBottomActions, AmllPlayerMoreButton } from '@/components/AmllPlayerControls';
+import { AmllPlayerControls, AmllPlayerBottomActions, AmllPlayerFavoriteButton, AmllPlayerMoreButton } from '@/components/AmllPlayerControls';
 import { SyncedLyricsView } from '@/components/LyricsCard';
 import { MarqueeText } from '@/components/MarqueeText';
 import { OutputSheet } from '@/components/OutputSheet';
@@ -45,6 +45,7 @@ import { useSettings } from '@/store/settings';
 import { useSongMenu } from '@/store/songMenu';
 import { useToast } from '@/store/toast';
 import { useUpnp } from '@/store/upnp';
+import { PlayerSurfaceClipView, isNativePlayerSurfaceClipAvailable } from '../../modules/liquid-glass';
 
 const INK = '#FFFFFF';
 const SECONDARY = 'rgba(255,255,255,0.78)';
@@ -92,22 +93,46 @@ export function AmllPlayerScreen() {
   const openQuality = useRef<() => void>(() => {});
   const openSpeed = useRef<() => void>(() => {});
   const columnScroll = useRef<ScrollView>(null);
+  // Fixed layout anchor for the shared artwork transition. The decoded image
+  // inside it keeps one native lifetime while playback/lyrics alter its scale.
+  const artworkFrameRef = useAnimatedRef<View>();
   const active = focused && foreground;
   const layout = useMemo(() => amllPlayerLayout({
     width: Math.max(1, window.width - insets.left - insets.right),
     viewportWidth: window.width,
+    viewportHeight: window.height, topInset: insets.top,
     height: Math.max(1, window.height - insets.top - insets.bottom - AMLL_TOP_PADDING),
     fontScale: window.fontScale, showVolume, showQuality,
   }), [window.width, window.height, window.fontScale, insets.left, insets.right, insets.top, insets.bottom, showVolume, showQuality]);
   const headerArea = useMemo(() => amllPlayerHeaderArea(layout, showLyrics, insets.top, insets.left),
     [layout, showLyrics, insets.top, insets.left]);
   const columnOffset = useSharedValue(0);
+  const lyricProgress = useSharedValue(0);
+  const playbackCoverScale = useSharedValue(playing ? 1 : .85);
+  const horizontal = layout.horizontal;
+  const readArtwork = useCallback(() => {
+    'worklet';
+    if (!artworkFrameRef()) return null;
+    const anchor = measure(artworkFrameRef);
+    if (!anchor) return null;
+    const p = lyricProgress.get();
+    const expanded = layout.coverFrame.size * (horizontal ? 1 : playbackCoverScale.get());
+    const size = interpolate(p, [0, 1], [expanded, layout.smallCover.size]);
+    return {
+      x: anchor.pageX - layout.coverFrame.x + interpolate(p, [0, 1],
+        [layout.largeCover.x + (layout.coverFrame.size - expanded) / 2, layout.smallCover.x]),
+      y: anchor.pageY - layout.coverFrame.y + interpolate(p, [0, 1],
+        [layout.largeCover.y + (layout.coverFrame.size - expanded) / 2, layout.smallCover.y]),
+      width: size, height: size, cornerRadius: interpolate(p, [0, 1], [8, horizontal ? 8 : 6]),
+    };
+  }, [artworkFrameRef, lyricProgress, playbackCoverScale, layout, horizontal]);
   const onColumnScroll = useAnimatedScrollHandler({
     onScroll: (event) => { columnOffset.set(event.contentOffset.y); },
   });
-  const transition = useAmllPlayerTransition({ height: window.height, focused, enabled: active,
-    headerArea, headerScrollOffset: columnOffset });
-  const interactive = active && !transition.closing;
+  const transition = useAmllPlayerTransition({ width: window.width, height: window.height, focused, enabled: active,
+    headerArea, headerScrollOffset: columnOffset, readArtwork, controlsHeight: layout.fullControlsHeight,
+    artworkIdentity: song?.id });
+  const interactive = active && !transition.closing && transition.entryReady;
   const cover = song ? songCoverUrl(song, COVER.card) : undefined;
   const coverTint = useCoverTint(cover);
   // Read the current artwork directly: a background crossfade must never hold
@@ -118,8 +143,6 @@ export function AmllPlayerScreen() {
   const lyrics = useLyrics(song ?? undefined);
   const title = live?.title || song?.title || t('Now playing');
   const artist = live?.artist || song?.artist || t('Unknown artist');
-  const lyricProgress = useSharedValue(0);
-  const horizontal = layout.horizontal;
   const controlsActive = interactive && (!showLyrics || horizontal);
 
   useEffect(() => {
@@ -132,13 +155,19 @@ export function AmllPlayerScreen() {
   }, [showLyrics, active, transition.closing, lyricProgress]);
   useEffect(() => () => cancelAnimation(lyricProgress), [lyricProgress]);
   useEffect(() => {
+    if (active && !transition.closing && transition.entryReady) playbackCoverScale.set(withSpring(playing ? 1 : .85, COVER_SPRING));
+    else cancelAnimation(playbackCoverScale);
+  }, [playing, active, transition.closing, transition.entryReady, playbackCoverScale]);
+  useEffect(() => () => cancelAnimation(playbackCoverScale), [playbackCoverScale]);
+  useEffect(() => {
     columnOffset.set(0);
     columnScroll.current?.scrollTo({ y: 0, animated: false });
   }, [showLyrics, horizontal, columnOffset]);
 
   const coverStyle = useAnimatedStyle(() => {
     const progress = lyricProgress.value;
-    const size = interpolate(progress, [0, 1], [layout.largeCover.size, layout.smallCover.size]);
+    const expandedSize = layout.coverFrame.size * (horizontal ? 1 : playbackCoverScale.value);
+    const size = interpolate(progress, [0, 1], [expandedSize, layout.smallCover.size]);
     const scale = size / layout.largeCover.size;
     return {
       width: layout.largeCover.size,
@@ -146,11 +175,11 @@ export function AmllPlayerScreen() {
       // One decoded cover changes through a compositor transform instead of
       // resizing/reloading an image or handing it between two separate views.
       transform: [
-        { translateX: interpolate(progress, [0, 1], [layout.largeCover.x, layout.smallCover.x]) },
-        { translateY: interpolate(progress, [0, 1], [layout.largeCover.y, layout.smallCover.y]) },
+        { translateX: interpolate(progress, [0, 1], [layout.largeCover.x + (layout.coverFrame.size - expandedSize) / 2, layout.smallCover.x]) },
+        { translateY: interpolate(progress, [0, 1], [layout.largeCover.y + (layout.coverFrame.size - expandedSize) / 2, layout.smallCover.y]) },
         { scale },
       ],
-      borderRadius: interpolate(progress, [0, 1], [18, horizontal ? 18 : 12]) / scale,
+      borderRadius: interpolate(progress, [0, 1], [8, horizontal ? 8 : 6]) / scale,
     };
   });
   const leftStyle = useAnimatedStyle(() => ({
@@ -202,12 +231,13 @@ export function AmllPlayerScreen() {
   }, [song?.id, interactive]);
 
   const metadata = (compact: boolean) => (
-    <View style={styles.metadataRow}>
+    <View style={[styles.metadataRow, !compact && !horizontal && { marginRight: -8, gap: 0 }]}>
       <View style={styles.metadataText}>
         <MarqueeText text={title} enabled={marquee && active && (compact ? showLyrics : !showLyrics || horizontal)}
           style={compact ? styles.compactTitle : styles.title} />
         <Text numberOfLines={1} style={compact ? styles.compactArtist : styles.artist}>{artist}</Text>
       </View>
+      {!compact && song && !song.url ? <AmllPlayerFavoriteButton id={song.id} starred={!!song.starred} active={interactive} /> : null}
       <AmllPlayerMoreButton label={t('More options')} onPress={showMenu} active={interactive}
         viewportWidth={window.width} viewportHeight={window.height} />
     </View>
@@ -235,10 +265,13 @@ export function AmllPlayerScreen() {
   return (
     <Animated.View style={[styles.screen, transition.rootStyle]}>
       {focused ? <><StatusBar style="light" /><NavigationBar style="light" /></> : null}
-      <AmllPlayerBackground uri={cover} active={interactive && playing} />
+      {isNativePlayerSurfaceClipAvailable ? <PlayerSurfaceClipView style={StyleSheet.absoluteFill}
+        onClipHostReady={transition.onClipHostReady}>
+        <AmllPlayerBackground uri={cover} active={interactive && playing} />
+      </PlayerSurfaceClipView> : <AmllPlayerBackground uri={cover} active={interactive && playing} />}
       <GestureDetector gesture={transition.handleGesture}>
-      <View style={[styles.safe, { paddingTop: insets.top + AMLL_TOP_PADDING, paddingBottom: insets.bottom,
-        paddingLeft: insets.left + layout.padding, paddingRight: insets.right + layout.padding }]}>
+      <Animated.View style={[styles.safe, { paddingTop: insets.top + AMLL_TOP_PADDING, paddingBottom: insets.bottom,
+        paddingLeft: insets.left + layout.padding, paddingRight: insets.right + layout.padding }, transition.contentStyle]}>
           <Animated.View>
             <Pressable accessibilityRole="button" accessibilityLabel={t('Close')} onPress={transition.close}
               style={[styles.handleButton, { height: layout.headerHeight }]} hitSlop={{ top: 8, bottom: 8 }}>
@@ -260,7 +293,10 @@ export function AmllPlayerScreen() {
               bounces={false} overScrollMode="never"
               nestedScrollEnabled contentContainerStyle={{ height: layout.contentHeight }}>
               <View style={{ width: layout.leftWidth, height: layout.contentHeight }}>
-                <Animated.View style={[styles.cover, coverStyle]}>
+                <Animated.View ref={artworkFrameRef} collapsable={false} pointerEvents="box-none" onLayout={transition.onArtworkLayout}
+                  style={{ position: 'absolute', left: layout.coverFrame.x, top: layout.coverFrame.y,
+                    width: layout.coverFrame.size, height: layout.coverFrame.size }} />
+                <Animated.View style={[styles.cover, coverStyle, transition.artworkStyle]}>
                   <Pressable accessibilityRole="button" accessibilityLabel={showLyrics ? t('Show cover') : t('Lyrics')}
                     onPress={switchLyrics} onLongPress={showMenu} style={styles.coverPressable}>
                     <Cover uri={cover} size={layout.largeCover.size} transition={0}
@@ -278,7 +314,8 @@ export function AmllPlayerScreen() {
                     </Animated.View>
                     <Animated.View pointerEvents={showLyrics ? 'auto' : 'none'}
                       accessibilityElementsHidden={!showLyrics} importantForAccessibility={showLyrics ? 'auto' : 'no-hide-descendants'}
-                      style={[styles.lyrics, { left: 0, right: 0, top: layout.lyricsTop, height: layout.lyricsHeight }, lyricsStyle]}>
+                      style={[styles.lyrics, { left: layout.metadataInset, right: layout.metadataInset,
+                        top: layout.lyricsTop, height: layout.lyricsHeight }, lyricsStyle]}>
                       {lyricContent}
                     </Animated.View>
                   </>
@@ -286,13 +323,14 @@ export function AmllPlayerScreen() {
                 <Animated.View pointerEvents={horizontal || !showLyrics ? 'auto' : 'none'}
                   accessibilityElementsHidden={!horizontal && showLyrics}
                   importantForAccessibility={horizontal || !showLyrics ? 'auto' : 'no-hide-descendants'}
-                  style={[styles.metadata, { left: 0, right: 0, top: layout.metadataTop, height: layout.metadataHeight }, bigMetaStyle]}>
+                  style={[styles.metadata, { left: layout.metadataInset, right: layout.metadataInset,
+                    top: layout.metadataTop, height: layout.metadataHeight }, bigMetaStyle]}>
                   {metadata(false)}
                 </Animated.View>
                 <Animated.View pointerEvents={horizontal || !showLyrics ? 'auto' : 'none'}
                   accessibilityElementsHidden={!horizontal && showLyrics}
                   importantForAccessibility={horizontal || !showLyrics ? 'auto' : 'no-hide-descendants'}
-                  style={[styles.controls, controlsStyle]}>
+                  style={[styles.controls, controlsStyle, transition.controlsMotionStyle]}>
                   <AmllPlayerControls width={layout.leftWidth} viewportWidth={window.width} viewportHeight={layout.referenceHeight}
                     horizontal={horizontal} fontScale={window.fontScale} playing={playing} buffering={buffering}
                     shuffle={shuffle} repeat={repeat} onPrevious={previous} onToggle={toggle} onNext={next}
@@ -317,7 +355,7 @@ export function AmllPlayerScreen() {
           viewportHeight={layout.referenceHeight} showLyrics={showLyrics}
           onLyrics={switchLyrics} onOutput={() => setOutputOpen(true)} onQueue={() => pushOnce('/queue')}
           outputLabel={remoteName ? `${t('Devices')}: ${remoteName}` : t('Devices')} active={interactive} /> : null}
-      </View>
+      </Animated.View>
       </GestureDetector>
       <OutputSheet visible={outputOpen && focused} onClose={() => setOutputOpen(false)} />
       <SpeedSheet openRef={openSpeed} />
@@ -327,7 +365,7 @@ export function AmllPlayerScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#25252D' },
+  screen: { flex: 1, backgroundColor: 'transparent' },
   safe: { flex: 1 },
   handleButton: { alignItems: 'center', justifyContent: 'flex-start' },
   handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.42)' },
@@ -337,9 +375,9 @@ const styles = StyleSheet.create({
   coverPressable: { flex: 1 },
   metadata: { position: 'absolute', justifyContent: 'center' },
   metadataRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  metadataText: { flex: 1, minWidth: 0, gap: 4 },
-  title: { color: INK, fontSize: 24, fontWeight: '600', lineHeight: 29 },
-  artist: { color: SECONDARY, fontSize: 18, lineHeight: 23 },
+  metadataText: { flex: 1, minWidth: 0 },
+  title: { color: INK, fontSize: 20, fontWeight: '600', lineHeight: 29.0666667, includeFontPadding: false },
+  artist: { color: SECONDARY, fontSize: 20, lineHeight: 29.0666667, includeFontPadding: false },
   compactTitle: { color: INK, fontSize: 18, fontWeight: '600', lineHeight: 23 },
   compactArtist: { color: SECONDARY, fontSize: 14, lineHeight: 19 },
   lyrics: { position: 'absolute' },

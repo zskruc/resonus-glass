@@ -12,6 +12,8 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { useT } from '@/i18n';
+import { FavoriteButton } from '@/components/FavoriteButton';
+import { useFavoriteIds } from '@/hooks/useFavoriteIds';
 import {
   amllBottomActionLayout, amllMoreButtonSize, amllPlayerControlLayout,
   type AmllTransportAction,
@@ -42,8 +44,9 @@ const ICONS: Record<string, ImageSource> = {
   more: require('../../assets/amll-controls/more.svg'),
 };
 
-function Glyph({ name, size }: { name: string; size: number }) {
-  return <Image source={ICONS[name]} style={{ width: size, height: size }}
+function Glyph({ name, size, rotate = 0 }: { name: string; size: number; rotate?: number }) {
+  return <Image source={ICONS[name]} style={{ width: size, height: size,
+    transform: rotate ? [{ rotate: `${rotate}deg` }] : undefined }}
     contentFit="contain" transition={0} recyclingKey={name} accessible={false} pointerEvents="none" />;
 }
 
@@ -107,7 +110,7 @@ function MediaButton({ label, size, visualSize = size, active, selected, onPress
       style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       <View pointerEvents="none" style={[styles.buttonSurface,
         { width: visualSize, height: visualSize, borderRadius: visualSize / 2 },
-        kind === 'menu' && { backgroundColor: '#FFFFFF15' }]}>
+        kind === 'menu' && { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
         <Animated.View style={[StyleSheet.absoluteFill, { borderRadius: visualSize / 2 }, background]} />
         <Animated.View style={[styles.glyphCenter, animated]}>{children}</Animated.View>
       </View>
@@ -195,13 +198,15 @@ export function AmllPlayerControls(props: AmllPlayerControlsProps) {
   };
   return (
     <View style={{ width, height: layout.height }}>
-      <View style={{ height: layout.progressHeight }}>{progress}</View>
+      <View style={{ position: 'absolute', left: horizontal ? 0 : width / 12, right: horizontal ? 0 : width / 12,
+        top: 0, height: layout.progressHeight }}>{progress}</View>
       <ScrollView horizontal scrollEnabled={layout.scrollable} showsHorizontalScrollIndicator={false}
-        bounces={false} style={{ height: layout.transportHeight, flexGrow: 0 }}
+        bounces={false} style={{ position: 'absolute', left: 0, top: layout.transportTop,
+          width, height: layout.transportHeight, flexGrow: 0 }}
         contentContainerStyle={{ width: layout.contentWidth, height: layout.transportHeight }}>
         <View style={{ width: layout.contentWidth, height: layout.transportHeight }}>
-          {layout.slots.map(({ action, left, size }) => <View key={action}
-            style={{ position: 'absolute', left, top: layout.transportPaddingTop }}>
+          {layout.slots.map(({ action, left, top, size }) => <View key={action}
+            style={{ position: 'absolute', left, top }}>
             <MediaButton label={labels[action]} size={size} active={active} onPress={handlers[action]}
               selected={action === 'shuffle' ? shuffle : action === 'repeat' ? repeat !== 'off' : undefined}
               onLongPress={action === 'toggle' ? onLongPressPlay : undefined}>
@@ -210,9 +215,11 @@ export function AmllPlayerControls(props: AmllPlayerControlsProps) {
           </View>)}
         </View>
       </ScrollView>
-      {!horizontal ? <AmllPlayerBottomActions {...props} active={active} /> : null}
-      {volume ? <View style={{ height: layout.volumeHeight, overflow: 'hidden' }}>{volume}</View> : null}
-      {layout.volumeBottomPadding > 0 ? <View style={{ height: layout.volumeBottomPadding }} /> : null}
+      {!horizontal ? <View style={{ position: 'absolute', left: 0, top: layout.auxiliaryTop }}>
+        <AmllPlayerBottomActions {...props} active={active} />
+      </View> : null}
+      {volume ? <View style={{ position: 'absolute', left: horizontal ? 0 : width / 12, right: horizontal ? 0 : width / 12,
+        top: layout.volumeTop, height: layout.volumeHeight, overflow: 'hidden' }}>{volume}</View> : null}
     </View>
   );
 }
@@ -224,8 +231,24 @@ export function AmllPlayerMoreButton({ onPress, viewportWidth, viewportHeight, l
   const size = amllMoreButtonSize(viewportWidth, viewportHeight);
   return <MediaButton kind="menu" onPress={onPress} active={active} label={label || t('More options')}
     size={Math.max(44, size)} visualSize={size}>
-    <Glyph name="more" size={size * .72} />
+    <Glyph name="more" size={size * .72} rotate={viewportHeight >= viewportWidth ? 90 : 0} />
   </MediaButton>;
+}
+
+/** The shared favorite transaction with a flat player-only star presentation. */
+export function AmllPlayerFavoriteButton({ id, starred, active = true }: {
+  id: string; starred?: boolean; active?: boolean;
+}) {
+  const favorites = useFavoriteIds(active);
+  return <View pointerEvents={active ? 'auto' : 'none'} accessibilityElementsHidden={!active}
+    importantForAccessibility={active ? 'auto' : 'no-hide-descendants'}
+    style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+    <View pointerEvents="none" style={{ position: 'absolute', width: 28, height: 28, borderRadius: 14,
+      backgroundColor: 'rgba(255,255,255,0.15)' }} />
+    <FavoriteButton id={id} starred={favorites ? favorites.has(id) : starred} glyph="star" size={22}
+      selectedColor={WHITE} unselectedColor={WHITE} resetKey={`amll:${id}`} hitSlop={0}
+      style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }} />
+  </View>;
 }
 
 const styles = StyleSheet.create({

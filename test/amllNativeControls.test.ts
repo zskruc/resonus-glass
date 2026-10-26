@@ -30,6 +30,8 @@ function harness() {
     });
   }
   const calls: string[] = [];
+  let favoriteIds: Set<string> | undefined;
+  const favoriteReads: boolean[] = [];
   const dependencies: Record<string, any> = {
     react: { useRef: (value: unknown) => slot(() => ({ current: value })), useEffect: effect, useLayoutEffect: effect },
     'react/jsx-runtime': { jsx, jsxs: jsx },
@@ -50,6 +52,8 @@ function harness() {
       Easing: { bezier: (...points: number[]) => points },
     },
     '@/i18n': { useT: () => (value: string) => value },
+    '@/components/FavoriteButton': { FavoriteButton: 'FavoriteButton' },
+    '@/hooks/useFavoriteIds': { useFavoriteIds: (enabled: boolean) => { favoriteReads.push(enabled); return favoriteIds; } },
     '@/lib/amllPlayerControls': geometry,
     '@/theme/motion': { motion: { reduceMotion: { decorative: 'system' } } },
   };
@@ -78,6 +82,8 @@ function harness() {
   function button(node: Element) { return render(node.type, node.props, `button:${node.props.label}`); }
   function glyph(node: Element) { return render(node.type, node.props, `glyph:${node.props.name}`); }
   return { controls, buttons, button, glyph, calls,
+    favoriteReads, setFavoriteIds(ids: Set<string> | undefined) { favoriteIds = ids; },
+    favorite(next: object = {}) { return render(exports.AmllPlayerFavoriteButton, { id: 'song', starred: true, ...next }, 'favorite'); },
     utilities(next: object = {}) { props = { ...props, ...next }; return render(exports.AmllPlayerBottomActions, props, 'utilities'); },
     more(next: object = {}) { return render(exports.AmllPlayerMoreButton, { viewportWidth: 384, viewportHeight: 840,
       onPress: () => calls.push('more'), ...next }, 'more'); },
@@ -125,9 +131,33 @@ test('lyrics, queue, output and More keep callbacks and use checked artwork rath
   assert.equal(utilities[1].props.label, 'Living room');
   for (const node of utilities) h.button(node).props.onPress();
   const more = h.more(); h.button(more).props.onPress();
+  assert.equal(more.props.size, 44);
+  assert.equal(more.props.visualSize, 28);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.glyph(more.props.children).props.style.transform)), [{ rotate: '90deg' }]);
   assert.deepEqual(h.calls, ['lyrics', 'output', 'queue', 'more']);
   assert.equal(h.glyph(utilities[0].props.children).props.source.endsWith('/lyrics-on.svg'), true);
   assert.equal(h.values('Show cover')[0].animation, undefined, 'confirmed action never starts a delayed click bounce');
+});
+
+test('the player favorite keeps the shared transaction, follows central favorite state and disables hidden entry controls', () => {
+  const h = harness();
+  let tree = h.favorite();
+  const shared = () => findAll(tree, (node) => node.type === 'FavoriteButton')[0];
+  assert.equal(shared().props.glyph, 'star');
+  assert.equal(shared().props.starred, true, 'song.starred remains the pre-query fallback');
+  assert.equal(shared().props.selectedColor, '#FFFFFF');
+  assert.equal(shared().props.unselectedColor, '#FFFFFF');
+  assert.equal(shared().props.hitSlop, 0);
+  assert.equal(shared().props.style.width, 44);
+  assert.equal(shared().props.resetKey, 'amll:song', 'existing physical touch ownership stays enabled');
+  h.setFavoriteIds(new Set()); tree = h.favorite();
+  assert.equal(shared().props.starred, false, 'an empty loaded set overrides stale song metadata');
+  h.setFavoriteIds(new Set(['song'])); tree = h.favorite();
+  assert.equal(shared().props.starred, true);
+  tree = h.favorite({ active: false });
+  assert.equal(tree.props.pointerEvents, 'none');
+  assert.equal(tree.props.importantForAccessibility, 'no-hide-descendants');
+  assert.equal(h.favoriteReads.at(-1), false);
 });
 
 test('the actual native button gives short press/release feedback, acts immediately and rejects stale callbacks', () => {

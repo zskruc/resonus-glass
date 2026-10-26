@@ -5,10 +5,26 @@ import { amllBottomActionLayout, amllMoreButtonSize, amllPlayerControlLayout } f
 test('portrait exposes shuffle and repeat around transport by user choice and places utilities before volume', () => {
   const layout = amllPlayerControlLayout({ width: 348, viewportHeight: 840, horizontal: false, showVolume: true });
   assert.deepEqual(layout.slots.map((slot) => slot.action), ['shuffle', 'previous', 'toggle', 'next', 'repeat']);
-  assert.deepEqual(layout.rows, ['progress', 'transport', 'auxiliary', 'volume']);
+  assert.deepEqual(layout.rows, ['progress', 'volume', 'transport', 'auxiliary']);
   assert.equal(layout.auxiliaryHeight, 48);
-  assert.equal(layout.height, layout.progressHeight + layout.transportHeight + layout.auxiliaryHeight
-    + layout.volumeHeight + layout.volumeBottomPadding);
+  assert.equal(layout.height, layout.auxiliaryTop + layout.auxiliaryHeight);
+  assert.ok(layout.transportTop >= layout.volumeTop + layout.volumeHeight);
+  assert.ok(layout.auxiliaryTop >= layout.transportTop + layout.transportHeight);
+});
+
+test('portrait main transport and utility centers follow the measured Samsung reference while modes keep separate targets', () => {
+  const layout = amllPlayerControlLayout({ width: 384, viewportWidth: 384, viewportHeight: 832,
+    horizontal: false, showVolume: false });
+  const centers = layout.slots.map((slot) => slot.left + slot.size / 2);
+  for (const [index, expected] of [24, 84.9333333, 192, 299.0666667, 360].entries()) {
+    assert.ok(Math.abs(centers[index] - expected) < .001);
+  }
+  assert.ok(Math.abs(layout.transportTop + layout.transportHeight / 2 - 129.8) < .001);
+  assert.ok(Math.abs(layout.auxiliaryTop + layout.auxiliaryHeight / 2 - 228.6) < .001);
+  const footer = amllBottomActionLayout(384, false);
+  for (const [index, expected] of [88.933, 192, 295.067].entries()) {
+    assert.ok(Math.abs(footer.slots[index].left + footer.slots[index].size / 2 - expected) < .001);
+  }
 });
 
 test('landscape keeps shuffle and repeat around transport, with a separate physical output-left footer', () => {
@@ -50,7 +66,7 @@ test('large text reserves a full time-label row and small phone More keeps an ac
   const accessible = amllPlayerControlLayout({ width: 348, viewportHeight: 840, horizontal: false, showVolume: true, fontScale: 2.5 });
   assert.ok(accessible.progressHeight >= 44 + 16 * 2.5);
   assert.ok(accessible.height > ordinary.height);
-  assert.equal(amllMoreButtonSize(384, 840), 32);
+  assert.equal(amllMoreButtonSize(384, 840), 28);
   for (const value of [Number.NaN, 0, Number.POSITIVE_INFINITY]) {
     const layout = amllPlayerControlLayout({ width: value, viewportHeight: value, horizontal: false, showVolume: true });
     assert.ok(Number.isFinite(layout.height));

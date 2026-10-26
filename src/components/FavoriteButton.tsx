@@ -1,7 +1,7 @@
 /** Heart to mark/unmark favorites (Subsonic star/unstar). */
 import Icon from '@/components/Icon';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { type GestureResponderEvent } from 'react-native';
+import { type GestureResponderEvent, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
 import { GlassPressable } from '@/components/glass';
 
 import { star, unstar, type StarType } from '@/api/data';
@@ -22,11 +22,17 @@ interface Props {
   undo?: boolean;
   /** Readable ink when this button sits over the floating glass player. */
   unselectedColor?: string;
+  /** Optional player presentation; defaults retain the shared heart button. */
+  glyph?: 'heart' | 'star';
+  selectedColor?: string;
+  style?: StyleProp<ViewStyle>;
+  hitSlop?: PressableProps['hitSlop'];
   /** Recycled list binding; isolates local requests and Undo callbacks. */
   resetKey?: string;
 }
 
-export function FavoriteButton({ id, type = 'song', starred, size = 22, undo, unselectedColor, resetKey }: Props) {
+export function FavoriteButton({ id, type = 'song', starred, size = 22, undo, unselectedColor,
+  glyph = 'heart', selectedColor, style, hitSlop = 10, resetKey }: Props) {
   const auth = useAuthStore((s) => s.auth);
   const offline = useAuthStore((s) => s.offline);
   const t = useT();
@@ -117,7 +123,8 @@ export function FavoriteButton({ id, type = 'song', starred, size = 22, undo, un
 
   return (
     <GlassPressable
-      hitSlop={10}
+      hitSlop={hitSlop}
+      style={style}
       // PressIn also fires when one finger reenters the press rect. Only a
       // native touch-down may replace the owner of a recycled cell's touch.
       onTouchStart={resetKey === undefined ? undefined : (event) => {
@@ -140,9 +147,9 @@ export function FavoriteButton({ id, type = 'song', starred, size = 22, undo, un
       accessibilityLabel={fav ? t('Remove from favorites') : t('Add to favorites')}
     >
       <Icon
-        name={fav ? 'heart' : 'heart-outline'}
+        name={fav ? glyph : glyph === 'star' ? 'star-outline' : 'heart-outline'}
         size={size}
-        color={fav ? colors.accent : unselectedColor ?? colors.textSecondary}
+        color={fav ? selectedColor ?? colors.accent : unselectedColor ?? colors.textSecondary}
       />
     </GlassPressable>
   );

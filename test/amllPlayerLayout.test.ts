@@ -31,7 +31,28 @@ test('large accessibility text uses a scrollable column rather than shrinking or
   assert.ok(layout.lyricsTop >= layout.smallCover.y + layout.compactMetadataHeight);
   assert.ok(layout.lyricsTop + layout.lyricsHeight <= layout.contentHeight);
   assert.equal(layout.footerHeight, 0);
-  assert.ok(layout.controlLayout.volumeBottomPadding > 0);
+  assert.equal(layout.controlLayout.volumeBottomPadding, 0);
+  assert.ok(layout.controlLayout.transportTop >= layout.controlLayout.volumeTop + layout.controlLayout.volumeHeight);
+});
+
+test('Samsung portrait anchors match the measured Apple Music screen after safe-area origin is applied once', () => {
+  const topInset = 24, bottomInset = 16, fullHeight = 832;
+  const layout = amllPlayerLayout({ width: 384, viewportWidth: 384, viewportHeight: fullHeight,
+    topInset, height: fullHeight - topInset - bottomInset - 8, fontScale: 1, showVolume: false, showQuality: true });
+  const origin = topInset + 8 + layout.headerHeight;
+  const close = (actual: number, expected: number) => assert.ok(Math.abs(actual - expected) < .01, `${actual} ≈ ${expected}`);
+  close(layout.coverFrame.x, 24);
+  close(layout.coverFrame.y + origin, 106.9333333);
+  close(layout.coverFrame.size, 336);
+  close(layout.pausedCover.x, 49.2);
+  close(layout.pausedCover.y + origin, 132.1333333);
+  close(layout.pausedCover.size, 285.6);
+  close(layout.metadataInset, 32);
+  close(layout.metadataTop + origin, 483.7333333);
+  close(layout.metadataHeight, 58.1333333);
+  close(layout.controlsTop + origin + 22, 566.4);
+  close(layout.controlsTop + origin + layout.controlLayout.transportTop + layout.controlLayout.transportHeight / 2, 674.2);
+  close(layout.controlsTop + origin + layout.controlLayout.auxiliaryTop + 24, 773);
 });
 
 test('portrait lyric view uses a small cover while the cover view can expand to its available slot', () => {

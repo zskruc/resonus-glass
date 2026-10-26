@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import * as layoutRules from '@/lib/amllPlayerLayout';
 import * as transitionRules from '@/lib/amllPlayerTransition';
+import * as artworkRules from '@/lib/appleMusicPlayerTransition';
 
 type Event = { translationY: number; velocityY: number };
 type Animation = { kind: string; target: number; options?: Record<string, unknown>; done?: (finished: boolean) => void };
@@ -98,6 +99,7 @@ function harness(width = 412, height = 840, lyrics = false, fontScale = 1) {
   const headerArea = layoutRules.amllPlayerHeaderArea(layout, lyrics, 30, 0);
   const props = { height, focused: true, enabled: true, headerArea, headerScrollOffset };
   const exports: Record<string, any> = {};
+  const artworkFallbacks = new WeakMap<object, object>();
   runInNewContext(compiled.outputText, { exports,
     require(name: string) {
       if (name === 'react') return react;
@@ -129,6 +131,23 @@ function harness(width = 412, height = 840, lyrics = false, fontScale = 1) {
       if (name === '@/lib/amllPlayerLayout') return layoutRules;
       if (name === '@/lib/amllPlayerTransition') return transitionRules;
       if (name === '@/lib/playerReveal') return bus;
+      if (name === '@/lib/appleMusicPlayerTransition') return artworkRules;
+      if (name === './useAppleMusicPlayerMotion') return {
+        // This suite exercises the existing header/navigation fallback when no
+        // artwork reader or native clip host was supplied. The new hook has
+        // its own mounted-hook suite; keep this boundary out of its lifecycle.
+        useAppleMusicPlayerMotion: ({ offset, readArtwork }: { offset: Mutable; readArtwork?: unknown }) => {
+          assert.equal(readArtwork, undefined);
+          if (!artworkFallbacks.has(offset)) artworkFallbacks.set(offset, {
+            running: { get: () => false }, phase: { get: () => 'idle' },
+            surfaceOffset: { get: () => bus.revealOffset.get() >= 0 ? bus.revealOffset.get() : offset.get() },
+            beginClose: () => false, abandon() {}, cancelDrag() { assert.fail('unavailable artwork cannot own a header drag'); },
+            available: false, handlesEntry: false, entryReady: true,
+            contentStyle: {}, artworkStyle: {}, controlsStyle: {}, onArtworkLayout() {}, onClipHostReady() {},
+          });
+          return artworkFallbacks.get(offset);
+        },
+      };
       if (name === '@/theme/motion') return { motion: { reduceMotion: { essential: 'system' }, duration: { move: 220 }, easing: {} } };
       throw new Error(`Unexpected transition import ${name}`);
     },

@@ -27,6 +27,10 @@ class LiquidGlassModule : Module() {
     }
     Function("readDockScrollIntent") { token: Int, scope: String -> TabsMotionHosts.readDockScrollIntent(token, scope) }
     Function("expandDockScrollInput") { token: Int -> TabsMotionHosts.expandDockScrollInput(token) }
+    Function("updatePlayerSurfaceClip") { token: Int, left: Double, top: Double,
+      width: Double, height: Double, radius: Double, opacity: Double ->
+      PlayerSurfaceClipHosts.update(token, left, top, width, height, radius, opacity)
+    }
 
     View(LiquidGlassView::class) {
       Events("onMotionHostReady", "onDockCollapseIntent")
@@ -109,6 +113,14 @@ class LiquidGlassModule : Module() {
       Prop("disabled") { view: LiquidGlassSliderView, value: Boolean -> view.controlDisabled = value }
       Prop("dark") { view: LiquidGlassSliderView, value: Boolean -> view.dark = value }
       Prop("activeTrackTintColor") { view: LiquidGlassSliderView, value: Int? -> view.activeTrackTintColor = value }
+    }
+
+    // Expo assigns its first View the DEFAULT alias. Keep LiquidGlassView
+    // first; this decorative background has an explicit, separate lookup.
+    View(PlayerSurfaceClipView::class) {
+      Name("PlayerSurfaceClip")
+      Events("onClipHostReady")
+      Prop("initialOpacity") { view: PlayerSurfaceClipView, value: Double -> view.setInitialOpacity(value) }
     }
 
   }

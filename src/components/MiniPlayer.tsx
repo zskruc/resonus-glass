@@ -3,11 +3,13 @@
  * play/pause button; tapping it opens the player.
  */
 import Icon from '@/components/Icon';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { ActivityIndicator, I18nManager, Pressable, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
+  measure,
+  useAnimatedRef,
   Extrapolation,
   interpolate,
   useAnimatedReaction,
@@ -18,7 +20,7 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
-import { scheduleOnRN } from 'react-native-worklets';
+import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 
 import { COVER, songCoverUrl } from '@/api/data';
 import { useFavoriteIds } from '@/hooks/useFavoriteIds';
@@ -30,7 +32,7 @@ import { AMPP_DOCK, amppExpandedAlpha, amppProgress, amppSprungProgress, getAmpp
 import { getGlassButtonMotion } from '@/lib/glassButtonMotion';
 import { MINI_SWIPE_TRAVEL, miniSwipeDirection, miniSwipeOffset } from '@/lib/miniPlayerSwipe';
 import { router } from 'expo-router';
-import { revealOffset } from '@/lib/playerReveal';
+import { miniArtworkMetrics, playerArtworkFlight, playerSurfaceOwner, revealOffset } from '@/lib/playerReveal';
 import { pushOnce } from '@/lib/pushOnce';
 import { currentSong, useLiveInfo, usePlayerStore } from '@/store/player';
 import { useScreenSize } from '@/hooks/useScreenSize';
@@ -94,10 +96,28 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
   const fullWidth = Math.max(0, screenW - baseMargin * 2);
   const geometry = amPlus ? getAmppDockGeometry(fullWidth, 1, hasSearch, I18nManager.isRTL)
     : getLiquidDockGeometry(fullWidth, navHeight, compactSize, COMPACT_DOCK_GAP, hasSearch, I18nManager.isRTL);
+  const compactWidth = geometry.miniWidth;
+  const frameRef = useAnimatedRef<View>();
+  const artworkRef = useAnimatedRef<Animated.View>();
+  const recordArtwork = useCallback(() => {
+    'worklet';
+    // Reanimated's Fabric ref starts as null, while measure() only rejects -1.
+    // The first reaction can run before either view has attached.
+    if (!frameRef() || !artworkRef()) return;
+    const frame = measure(frameRef);
+    const picture = measure(artworkRef);
+    if (!frame || !picture || picture.width <= 0 || picture.height <= 0) return;
+    const p = visualProgress.get();
+    miniArtworkMetrics.set({ viewportWidth: screenW, viewportHeight: screenH,
+      miniPlayer: { x: frame.pageX + geometry.miniPhysicalOffsetX * p, y: frame.pageY,
+        width: fullWidth + (compactWidth - fullWidth) * p, height: miniHeight, cornerRadius: miniHeight / 2 },
+      miniArtwork: { x: picture.pageX, y: picture.pageY, width: picture.width, height: picture.height, cornerRadius: 4 },
+    });
+  }, [frameRef, artworkRef, visualProgress, geometry.miniPhysicalOffsetX, screenW, screenH, fullWidth, compactWidth, miniHeight]);
+  useAnimatedReaction(() => visualProgress.get(), () => { recordArtwork(); });
   // Minimized navigation sits physically left and Search sits right;
   // foreground offsets still follow React Native's logical text direction.
   const leadingSpace = geometry.miniLogicalLeadingSpace;
-  const compactWidth = geometry.miniWidth;
   const targetStart = targetCompact ? leadingSpace : 0;
   const targetWidth = targetCompact ? compactWidth : fullWidth;
   const target = targetCompact ? 1 : 0;
@@ -117,6 +137,7 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
   const previous = usePlayerStore((s) => s.previous);
   const reset = usePlayerStore((s) => s.reset);
   const t = useT();
+  const playerPresentation = useSettings((state) => state.playerPresentation);
   const buttons = useSettings((s) => s.miniPlayerButtons);
   const hasSecondary = buttons !== 'none';
   const hasPrevious = buttons === 'previousNext';
@@ -173,7 +194,11 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
   // Pulled up, the player comes with the finger (see `playerReveal`): it is
   // opened with no animation and `revealOffset` places it.
   const revealing = useSharedValue(false);
-  const startReveal = () => pushOnce('/player?reveal=1');
+  const startReveal = () => pushOnce(playerPresentation === 'amll' ? '/player?reveal=1&artwork=1' : '/player?reveal=1');
+  const openPlayer = () => {
+    if (playerPresentation === 'amll') scheduleOnUI(recordArtwork);
+    pushOnce(playerPresentation === 'amll' ? '/player?artwork=1' : '/player');
+  };
   // Down at the bottom, out of sight: it is let go of (`revealOffset` back to
   // -1) by the player as it unmounts, or it would flash back up for a frame.
   const cancelReveal = () => {
@@ -219,6 +244,7 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
         translateX.value = 0;
         translateY.value = 0;
         if (e.translationY < -REVEAL_START) {
+          recordArtwork();
           revealing.value = true;
           revealOffset.value = screenH;
           scheduleOnRN(startReveal);
@@ -302,6 +328,7 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
   }));
   const coverSwipeStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
+    opacity: playerArtworkFlight.get()?.owner === playerSurfaceOwner.get() && playerSurfaceOwner.get() > 0 ? 0 : 1,
   }));
   const titleSwipeStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
@@ -337,7 +364,8 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
   const favorited = favIds ? favIds.has(song.id) : !!song.starred;
 
   return (
-    <View pointerEvents="box-none" style={[styles.frame, { height: miniHeight, marginStart: baseMargin, marginEnd: baseMargin }]}>
+    <View ref={frameRef} collapsable={false} onLayout={() => scheduleOnUI(recordArtwork)} pointerEvents="box-none"
+      style={[styles.frame, { height: miniHeight, marginStart: baseMargin, marginEnd: baseMargin }]}>
       <GestureDetector gesture={pan}>
         <Animated.View pointerEvents="box-none" collapsable={false} style={[styles.card, { height: miniHeight }, cardStyle]}>
           {/* Native material morphs inside fixed bounds. It must not inherit
@@ -352,11 +380,11 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
           <Pressable
             collapsable={false}
             style={[styles.hitArea, { start: targetStart, width: targetWidth, height: miniHeight, borderRadius: miniHeight / 2 }]}
-            onPress={() => pushOnce('/player')}
+            onPress={openPlayer}
           >
             <Animated.View pointerEvents="none" style={[styles.details, detailsStyle]}>
               <Animated.View style={[styles.artwork, { start: targetCoverStart, top: (miniHeight - 30) / 2 }, coverMotion]}>
-                <Animated.View style={coverSwipeStyle}>
+                <Animated.View ref={artworkRef} collapsable={false} style={coverSwipeStyle}>
                   <Cover uri={cover} size={30} transition={0} autoplay={props.active ?? true} preferStatic={false}
                     style={styles.cover} placeholderIcon={song.url ? 'radio' : 'musical-notes'} />
                 </Animated.View>

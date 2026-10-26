@@ -41,7 +41,7 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 | 渠道 | 版本 | Android 更新编号 | 获取方式 |
 | --- | --- | --- | --- |
 | 正式发布 | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest)，App 内检查更新 |
-| 开发预览 | `0.8.4.1-amll.12` | `94` | ARM64 APK 已构建并校验原签名；尚未安装，实机测试待完成 |
+| 开发预览 | `0.8.4.1-amll.13` | `95` | ARM64 修复包已安装到三星并完成基础转场检查，最终观感待用户确认 |
 
 当前开发预览位于 `preview/amll-player` 分支。播放页结合 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 派生的原生控件与 SVG，以及独立实现的封面／歌词界面和网格流动背景。「设置 → 播放器 → 播放器布局」可切回 Resonus 原有布局；下方「播放器背景」仅影响原有布局。控件与 SVG 的 **AGPL-3.0-only** 来源、保留的原有许可证和实现范围见 [第三方声明](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) 与 [预览说明](./docs/AMLL-PLAYER-PREVIEW.md)。
 
@@ -57,11 +57,15 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 
 `.4` 让全部播放页共用 Resonus 歌词模糊与过渡，按真实视口限制滤镜；恢复底栏点按的完整按压／移动／释放动画，并在设置的外观首页组加入首页标题自定义。共享玻璃记录与透镜只在交互期间运行，背景采样排除缓存透镜，页面导航查找跳过列表内容。歌曲缩略图使用静态首帧，磁盘预取只下载文件并清理请求，避免额外动画解码；播放器动画能力与暂停状态独立保留。
 
-当前 `.12` 恢复 `.10` 的播放器入场／退场动效，保留播放器与底栏的同步揭露和返回交接，撤销用户拒绝的 Primuse 卡片形变实验。保留 Tab 的 UI 线程即时点按反馈、列表稳定 callback ref 修复，以及统一浮动玻璃弹窗；弹窗覆盖范围见 [统一面板说明](./docs/UNIFIED-GLASS-PANELS.md)，转场研究状态见 [候选记录](./docs/PLAYER-MINI-TRANSITIONS.md)。
+当前 `.13` 采用用户选定的 [f728743/AppleMusicStylePlayer](https://github.com/f728743/AppleMusicStylePlayer) 转场结构：一张共享封面在 mini player 和大封面的实测位置之间移动，背景保持固定全屏布局并独立裁切；来源页面单独产生景深，不缩放整个导航 Stack 或播放器。300ms、无额外弹跳的意图以 Reanimated 近似；保留现有路由交接、取消回弹和 mini 上拉扩展，Primuse 整页形变仍已移除。实现、MIT 归属与验证边界见 [Apple Music 转场说明](./docs/APPLE-MUSIC-TRANSITION.md)。
 
-播放器使用白色 SVG，按手机可见笔画控制尺寸；竖屏同时显示随机、上一首、播放／暂停、下一首和循环五个按钮，采用短按压／释放反馈。竖屏布局在底部预留最多 48dp，将封面、信息和控制区整体上移；次要文字使用 0.78 白色透明度。播放进度与音量轨道继续跟随封面主题色。
+播放器布局参考用户三星上的 Apple Music：暂停时封面缩至 0.85，使用易读的白色 SVG，歌曲信息行带收藏星标和更多入口；竖屏同时显示随机、上一首、播放／暂停、下一首和循环五个按钮，并保留短按压／释放反馈。播放进度与音量轨道继续跟随封面主题色。参考截图属于私有测试资料，不公开上传。
 
-当前 463 项应用测试、118 项玻璃模块原生测试、类型与翻译检查全部通过；lint 为 0 错误、117 项已有警告。`.12` ARM64 APK 已构建，版本、包名和原签名校验通过，尚未安装到手机；后续 USB 连接与持续滚动、崩溃、动效和全弹窗视觉验收待完成。`.10`、`.11` 曾安装测试，不代表本轮已验收。性能来源与边界见 [播放列表记录](./docs/PLAYLIST-SCROLL-PERFORMANCE.md)。系统 120Hz 请求、绘制次数和单元测试都不等同于恒定 120 fps；背景保留独立最高约 60 fps 工作预算，预览尚未纳入正式 Release。
+Tab 的 UI 线程即时点按反馈、列表稳定 callback ref 修复和统一浮动玻璃弹窗继续保留；弹窗覆盖范围见 [统一面板说明](./docs/UNIFIED-GLASS-PANELS.md)，之前的候选与回滚记录见 [转场研究](./docs/PLAYER-MINI-TRANSITIONS.md)。
+
+`.13` 的 527 项应用测试、125 项玻璃模块原生测试、类型和翻译检查通过；lint 为 0 错误、117 项警告。最终 ARM64 delivery 构建成功并保留原包名与签名；首包未就绪视图测量错误、来源路由捕获和背景 host 就绪竞态已修复，交付路径中的安装包已替换为修复版。
+
+三星实机已确认共享封面的真实大小变化与回位、完整入场、顶部短拉取消／长拉退出、歌词切换与歌词页顶部下拉返回；修复版检查期间未出现新的崩溃。白色 SVG、三星参考布局、暂停封面 0.85 与收藏／更多入口也已看到。最后底栏同步修订让 Mini 和 Tabs 在共享封面转场中按同一 `1 - progress` 淡入；原有滑动回退仍使用裁切揭露。最终覆盖包已确认底栏与 Mini 同步出现，本轮观察未再看到返回后底栏迟现。这是基础视觉检查，最终观感仍待用户确认；不能据此判定持续帧率、长列表、长期稳定性或全场景通过。`.12` 已安装，但其参考截图不构成本应用播放器验收，也没有该版有效性能样本。性能证据边界见 [播放列表记录](./docs/PLAYLIST-SCROLL-PERFORMANCE.md)。系统 120Hz 请求、绘制次数和单元测试都不等同于恒定 120 fps；背景保留独立最高约 60 fps 工作预算，预览尚未纳入正式 Release。
 
 Resonus 原有布局开启封面配色时，播放／暂停按钮直接使用当前封面色，和进度条、音量条同步；其背景配色仍保留单独的稳定等待与过渡。AMLL 布局使用独立的原生封面背景和无常驻圆底的播放按钮，滑条主题色保留。
 
@@ -111,6 +115,7 @@ bash scripts/build-glass-preview.sh
 | 版本变化与 APK | [更新日志](./CHANGELOG.md) · [Releases](https://github.com/zskruc/resonus-glass/releases) |
 | 功能与验证范围 | [Glass 说明](./docs/LIQUID-GLASS-PREVIEW.md) |
 | AMLL 播放器预览 | [布局、背景与验证边界](./docs/AMLL-PLAYER-PREVIEW.md) |
+| Apple Music 转场 | [共享封面、独立背景与来源页景深](./docs/APPLE-MUSIC-TRANSITION.md) |
 | 播放列表性能 | [现场、修复与未验收范围](./docs/PLAYLIST-SCROLL-PERFORMANCE.md) |
 | 原生材质实现 | [Liquid Glass 模块](./modules/liquid-glass/README.md) |
 | 上游更新流程 | [上游维护说明](./docs/UPSTREAM.md) |
@@ -126,6 +131,7 @@ bash scripts/build-glass-preview.sh
 - [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)：**Apache-2.0**。原生材质依赖 Backdrop 1.0.0，并适配其 Bottom Tabs 示例；[许可证](./modules/liquid-glass/ANDROID_LIQUID_GLASS_LICENSE)。
 - [sdegenaar/liquid_glass_widgets](https://github.com/sdegenaar/liquid_glass_widgets)：**MIT**，Copyright © 2024–2026 Sebastian Degenaar。参考并适配其联动布局和最小化控制器；未引入 Flutter 引擎；[许可证](./modules/liquid-glass/LIQUID_GLASS_WIDGETS_LICENSE)。
 - Primuse：歌词动效的部分实现遵循 **MIT**，详见 [第三方声明](./THIRD_PARTY_NOTICES.md)。
+- [f728743/AppleMusicStylePlayer](https://github.com/f728743/AppleMusicStylePlayer)：**MIT**，Copyright © 2025 Alexey Vorobyov。适配共享封面转场、背景轮廓与下拉规则；[完整许可证](./licenses/APPLE-MUSIC-STYLE-PLAYER-MIT.txt)及[实现范围](./docs/APPLE-MUSIC-TRANSITION.md)。
 - [AMLL](https://github.com/amll-dev/applemusic-like-lyrics)：播放控件及选定 SVG 派生自固定版本，保留 **AGPL-3.0-only**、[完整许可证](./licenses/AMLL-AGPL-3.0.txt) 与 [文件来源／组合分发要求](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference)。封面网格背景独立实现，未嵌入其 Web 运行库、着色器或动画引擎；不将图标来源声明为 Apple 授权。
 
 原项目图标、其他依赖和原有第三方声明继续保留各自权利与许可。

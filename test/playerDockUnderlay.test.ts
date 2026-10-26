@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import * as amppDock from '../src/lib/amppDock';
+import { resolveAppleMusicPlayerTransition } from '../src/lib/appleMusicPlayerTransition';
 
 type Deps = readonly unknown[] | undefined;
 type Element = { type: unknown; props: Record<string, any> };
@@ -167,15 +168,19 @@ function underlay() {
   return { r, bus, view };
 }
 
-function mini() {
+function mini(initialRoot = '(tabs)', presentation = 'amll') {
   const r = runtime();
   const route = routes(r);
+  route.context.segments = [initialRoot];
+  route.context.presentation = presentation;
+  const bus = load('lib/playerReveal.ts', r);
   const dock = { progress: mutable(0.75), uiEnabled: mutable(true), amPlus: true,
     compact: true, hasSearch: true, enabled: true };
   const component = load('components/GlobalMiniPlayer.tsx', r, {
     'expo-router': route.router,
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 30, bottom: 20, left: 0, right: 0 }) },
     '@/lib/amppDock': amppDock,
+    '@/lib/playerReveal': bus,
     '@/hooks/useTabBar': route.hook,
     '@/hooks/useLiquidDock': { COMPACT_DOCK_SIZE: 44, useLiquidDock: () => dock },
     '@/theme/motion': { motion: { duration: { fade: 200 }, reduceMotion: { decorative: 'system' } } },
@@ -188,13 +193,26 @@ function mini() {
     route.context.segments = [root]; tree = r.render(() => component.GlobalMiniPlayer(), runPassive); return tree;
   }
   render(); r.ui();
-  return { r, dock, render, tree: () => tree,
+  return { r, dock, bus, render, tree: () => tree,
     wrapper: () => tree.props.children as Element,
     child: () => (tree.props.children as Element).props.children as Element,
     style: () => (tree.props.children as Element).props.style[1].updater(),
     opacity: () => r.values[2],
     finishOpacity() { const opacity = r.values[2]; if (opacity.animation) opacity.set(opacity.animation.target); },
   };
+}
+
+function publishFlight(bus: Record<string, any>, phase: 'opening' | 'closing' | 'handoff', progress: number, dragOffsetY = 0) {
+  const frame = resolveAppleMusicPlayerTransition({
+    viewportWidth: 384, viewportHeight: 800, progress, dragOffsetY,
+    snapshot: { viewportWidth: 384, viewportHeight: 800,
+      miniPlayer: { x: 16, y: 700, width: 352, height: 56 },
+      miniArtwork: { x: 24, y: 708, width: 40, height: 40 },
+      playerArtwork: { x: 32, y: 144, width: 320, height: 320 } },
+  });
+  assert.ok(frame);
+  bus.playerArtworkFlight.set({ owner: bus.createPlayerSurfaceOwner(), phase, frame });
+  return frame;
 }
 
 describe('player dock route ownership', () => {
@@ -282,6 +300,74 @@ describe('player dock native clipping and material lifecycle', () => {
     assert.equal(tree.props.children.props.style[2].updater().transform[0].translateY, 0);
   });
 
+  it('fades Tabs and Mini from the same hero frame without clipping either until the route handoff', () => {
+    const h = underlay();
+    const mini = underlay();
+    const child = jsx('Tabs', { bottom: 20 });
+    const tree = h.r.render(() => h.view.PlayerDockUnderlay({ active: true, children: child })) as Element;
+    const miniTree = mini.r.render(() => mini.view.PlayerDockUnderlay({ active: true, mini: true, children: null })) as Element;
+    const inner = tree.props.children as Element;
+    h.bus.playerSurfaceOffset.set(240);
+    h.bus.playerSurfaceHeight.set(800);
+    mini.bus.playerSurfaceOffset.set(240);
+    mini.bus.playerSurfaceHeight.set(800);
+    const frames: ['opening' | 'closing' | 'handoff', number, number][] = [
+      ['opening', 0, 0], ['opening', .4, 0], ['opening', 1, 0],
+      ['closing', 1, 0], ['closing', .4, 0], ['closing', .4, 240], ['closing', 0, 0], ['handoff', 0, 0],
+    ];
+    for (const [phase, progress, drag] of frames) {
+      const frame = publishFlight(h.bus, phase, progress, drag);
+      mini.bus.playerArtworkFlight.set(h.bus.playerArtworkFlight.get());
+      const frameStyle = tree.props.style[2].updater();
+      const contentStyle = inner.props.style[2].updater();
+      const miniStyle = miniTree.props.style[2].updater();
+      assert.equal(frameStyle.opacity, frame.miniContentOpacity);
+      assert.equal(frameStyle.opacity, 1 - progress);
+      assert.equal(frameStyle.opacity, miniStyle.opacity, 'both collapsed dock pieces become visible in the same frame');
+      assert.equal(frameStyle.transform[0].translateY, 0, 'Tabs cannot remain behind the moving background-bottom clip');
+      assert.equal(contentStyle.transform[0].translateY, 0);
+      assert.equal(miniStyle.transform[0].translateY, 0);
+      assert.equal(miniTree.props.children.props.style[2].updater().transform[0].translateY, 0);
+      assert.equal(inner.props.nativeID, 'resonus-dock-selection-host');
+      assert.equal(inner.props.children, child);
+    }
+    const frame = publishFlight(h.bus, 'closing', 0);
+    frame.background.rect.y = -100;
+    frame.background.rect.height = 56;
+    assert.equal(tree.props.style[2].updater().transform[0].translateY, 0, 'hero background bounds do not reposition the dock');
+    assert.equal(Math.abs(inner.props.style[2].updater().transform[0].translateY), 0);
+    h.bus.playerArtworkFlight.set(null);
+    mini.bus.playerArtworkFlight.set(null);
+    assert.equal(tree.props.style[2].updater().opacity, 1);
+    assert.equal(tree.props.style[2].updater().transform[0].translateY, -560, 'ordinary slide fallback resumes after the flight ends');
+    assert.equal(inner.props.style[2].updater().transform[0].translateY, 560);
+    assert.equal(miniTree.props.style[2].updater().opacity, 1);
+    assert.equal(miniTree.props.style[2].updater().transform[0].translateY, -560);
+    assert.equal(miniTree.props.children.props.style[2].updater().transform[0].translateY, 560);
+  });
+
+  it('uses shared Mini content opacity without moving it through opening, closing and handoff', () => {
+    const h = underlay();
+    let active = true;
+    const render = () => h.r.render(() => h.view.PlayerDockUnderlay({ active, mini: true, children: null })) as Element;
+    let tree = render();
+    const frames: ['opening' | 'closing' | 'handoff', number][] = [
+      ['opening', 0], ['opening', .4], ['opening', 1], ['closing', 1], ['closing', .4], ['closing', 0], ['handoff', 0],
+    ];
+    for (const [phase, progress] of frames) {
+      const flight = publishFlight(h.bus, phase, progress);
+      assert.equal(tree.props.style[2].updater().opacity, flight.miniContentOpacity);
+      assert.equal(tree.props.style[2].updater().transform[0].translateY, 0);
+      assert.equal(tree.props.children.props.style[2].updater().transform[0].translateY, 0);
+      assert.equal(tree.props.pointerEvents, 'box-none', 'the wrapper leaves interaction eligibility to the retained MiniPlayer');
+    }
+    publishFlight(h.bus, 'opening', 1);
+    active = false; tree = render();
+    assert.equal(tree.props.style[2].updater().opacity, 1, 'an old flight cannot fade a returned or unrelated route');
+    assert.equal(tree.props.style[2].updater().transform[0].translateY, 0);
+    assert.equal(tree.props.children.props.style[2].updater().transform[0].translateY, 0);
+  });
+
   it('rejects queued material-ready callbacks from earlier A to B to A bindings and after unmount', () => {
     const h = underlay(); let active = true;
     const render = (next = active) => { active = next; return h.r.render(() => h.view.usePlayerDockMaterialReady(active)); };
@@ -319,6 +405,22 @@ describe('player dock native clipping and material lifecycle', () => {
 });
 
 describe('GlobalMiniPlayer dismissal underlay', () => {
+  it('publishes native return eligibility only while the captured MiniPlayer belongs beneath this AMLL route', () => {
+    const h = mini();
+    assert.equal(h.bus.playerCanReturnToMini.get(), false);
+    h.render('player', false);
+    assert.equal(h.bus.playerCanReturnToMini.get(), true, 'layout effect publishes before passive fades');
+    h.render('queue'); assert.equal(h.bus.playerCanReturnToMini.get(), false);
+    h.render('player'); assert.equal(h.bus.playerCanReturnToMini.get(), true, 'queue covering the same player retains its origin');
+    h.render('(tabs)'); assert.equal(h.bus.playerCanReturnToMini.get(), false);
+    h.render('queue'); h.render('player'); assert.equal(h.bus.playerCanReturnToMini.get(), false, 'a later queue origin cannot borrow Home');
+    for (const [origin, presentation] of [['queue', 'amll'], ['player', 'amll'], ['(tabs)', 'resonus']]) {
+      const other = mini(origin, presentation);
+      other.render('player');
+      assert.equal(other.bus.playerCanReturnToMini.get(), false, `${origin}/${presentation} has no captured AMLL MiniPlayer`);
+    }
+  });
+
   it('paints the revealed and returning mini fully opaque before passive effects, with interactions restored only after pop', () => {
     const h = mini();
     h.opacity().set(0.35);

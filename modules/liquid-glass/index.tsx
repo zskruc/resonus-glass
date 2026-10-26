@@ -91,6 +91,8 @@ type UpdateDockProgress = (hostId: number, progress: number) => void;
 type UpdateButtonMotion = (hostId: number, progress: number, x: number, y: number) => void;
 type ReadDockScrollIntent = (hostId: number, scope: string) => number;
 type ExpandDockScrollInput = (hostId: number) => void;
+type UpdatePlayerSurfaceClip = (hostId: number, left: number, top: number, width: number,
+  height: number, radius: number, opacity: number) => void;
 
 export type LiquidGlassDiagnostics = {
   activeWindows: number;
@@ -114,7 +116,7 @@ const nativeModule = Platform.OS === 'android'
   ? requireOptionalNativeModule<{ isSupported: boolean; getDiagnostics(): Promise<LiquidGlassDiagnostics>;
     updateTabsMotion: UpdateTabsMotion; updateDockProgress: UpdateDockProgress;
     updateButtonMotion: UpdateButtonMotion; readDockScrollIntent: ReadDockScrollIntent;
-    expandDockScrollInput: ExpandDockScrollInput }>('ResonusLiquidGlass')
+    expandDockScrollInput: ExpandDockScrollInput; updatePlayerSurfaceClip?: UpdatePlayerSurfaceClip }>('ResonusLiquidGlass')
   : null;
 
 export const isLiquidGlassAvailable = Boolean(nativeModule?.isSupported);
@@ -125,6 +127,28 @@ export const updateNativeDockProgress = nativeModule?.updateDockProgress ?? null
 export const updateNativeButtonMotion = nativeModule?.updateButtonMotion ?? null;
 export const readNativeDockScrollIntent = nativeModule?.readDockScrollIntent ?? null;
 export const expandNativeDockScrollInput = nativeModule?.expandDockScrollInput ?? null;
+export const updateNativePlayerSurfaceClip = nativeModule?.updatePlayerSurfaceClip ?? null;
+export const isNativePlayerSurfaceClipAvailable = updateNativePlayerSurfaceClip !== null;
+
+export type PlayerSurfaceClipViewProps = ViewProps & {
+  /** Background children only. The entire native subtree always ignores touch. */
+  onClipHostReady?: (event: NativeSyntheticEvent<{ hostId: number; cornerRadius?: number }>) => void;
+  initialOpacity?: number;
+};
+const NativePlayerSurfaceClip = isNativePlayerSurfaceClipAvailable
+  ? requireNativeView<PlayerSurfaceClipViewProps & React.RefAttributes<View>>('ResonusLiquidGlass', 'PlayerSurfaceClip')
+  : null;
+
+/** Decorative background mask; never wrap the cover, controls or other inputs. */
+export const PlayerSurfaceClipView = React.forwardRef<View, PlayerSurfaceClipViewProps>(function PlayerSurfaceClipView(
+  { onClipHostReady, initialOpacity = 0, ...props }, ref,
+) {
+  if (!NativePlayerSurfaceClip) return <View {...props} ref={ref} pointerEvents="none"
+    accessible={false} importantForAccessibility="no-hide-descendants" />;
+  return <NativePlayerSurfaceClip {...props} ref={ref} collapsable={false} initialOpacity={initialOpacity}
+    onClipHostReady={onClipHostReady} pointerEvents="none" accessible={false}
+    importantForAccessibility="no-hide-descendants" />;
+});
 
 /** Debug counters only; no screen content, device identity, or saved images. */
 export async function getLiquidGlassDiagnostics(): Promise<LiquidGlassDiagnostics> {

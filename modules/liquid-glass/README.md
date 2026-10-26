@@ -131,6 +131,44 @@ tabs animation path. `ResonusTabsMotion` reports its update count at the first
 call and at most every two seconds during changing motion; it contains no
 account data, screen content, saved appearance, or device identity.
 
+## Background-only player surface clip / 仅背景裁剪
+
+`PlayerSurfaceClipView` hosts only the fixed full-viewport `AmllPlayerBackground`
+subtree. Never wrap artwork, controls, lyrics, touch targets or the whole player
+in it. It neither scales/translates a View nor changes Yoga dimensions per
+frame. The caller computes a background-only rounded rectangle and sends
+`updateNativePlayerSurfaceClip(hostId, left, top, width, height, radius, opacity)`
+directly from Worklets' UI runtime. Distances are dp; alpha is dimensionless.
+`onClipHostReady` supplies a fresh token for each attachment and an optional
+`cornerRadius` in dp. Android 12+ reads the public top-left rounded corner from
+root window insets once on attachment; missing geometry and older devices report
+zero. `initialOpacity` defaults to zero. The raw HostFunction is exported without
+a JS binding/wrapper.
+
+This is a decorative subtree: both RN/RNGH native target traversal and Android
+touch dispatch always ignore it and its children (`ReactPointerEventsView.NONE`).
+The JS fallback also enforces no pointer or accessibility targets. The separate
+`PlayerSurfaceClip` native name and event do not replace Glass or tabs. Glass
+remains the module's first/default native View for existing consumers.
+
+The host reuses its Path and RectF, clamps radius to the supplied rectangle,
+rejects non-finite/negative-size frames, and does not invalidate unchanged clips.
+Opacity-only updates use native View alpha. It retains hardware Canvas clipping
+for ordinary and integrated TextureView children; separate SurfaceView surfaces
+are outside this container's contract. There is no forced software layer, bitmap
+snapshot, frame clock or per-frame main-thread posting. Fabric measures/layouts
+RN children independently, so this ExpoView does not run LinearLayout's child
+placement. Parent and background bounds remain full-screen while the drawing
+clip changes. Weak attachment tokens are removed on detach, and clip state is
+cleared before a reattached host accepts a fresh frame.
+
+该入口只裁剪背景，不能承载播放器交互内容。原生与回退层都强制禁用触摸，原有
+Glass 默认视图及材质参数不变。背景与容器保持固定全屏布局，通过 UI 线程同步
+标量更新可复用圆角路径与透明度；没有逐帧 Yoga 重排、整页缩放、位图截图或投递
+队列。挂载事件通过公开 WindowInsets API 一次读取屏幕左上圆角（dp），旧设备或
+无数据时为零，不在每帧读取。形状与 host 解绑回归用于源码验证，硬件背景的设备
+呈现仍须实机验收。
+
 ## License
 
 Resonus remains GPL-3.0-or-later. AndroidLiquidGlass / Backdrop is Apache-2.0, compatible with GPLv3. The original copyright and license apply; the Apache license is included as `ANDROID_LIQUID_GLASS_LICENSE` and beside the vendored 1.0.0 source. The vendored source replaces the same-version binary, backports Zennmn AM++'s minimum record capacity / clip-compositing extension, and extends that contract to the original shadow/highlight layers (GPL-3.0 additions), with complete provenance and both licenses in its `UPSTREAM.md`. AM++ motion reserves expanded backing while live logical lens/outline geometry remains unchanged; stable endpoints and other modes use the previous exact-size/offscreen path. `LiquidBottomTabsMaterial.kt` adapts the upstream sample component's interactive material, with source attribution and Apache-2.0 notice in the file; Resonus retains its own React Native navigation/gesture implementation.
