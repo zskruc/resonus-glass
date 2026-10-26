@@ -83,7 +83,8 @@
       "buildFromSource": [
         "expo-audio",
         "expo-file-system",
-        "expo-network"
+        "expo-network",
+        "expo-image"
       ]
     }
   }

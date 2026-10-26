@@ -5,8 +5,15 @@
  */
 package expo.modules.liquidglass
 
+import kotlin.math.abs
+
 /** One formula for the visible lens and both inverse backdrop transforms. */
 internal object AmPlusSelectionMotion {
+  /** The source row/optical overlay only exist for the finite selection gesture. */
+  fun isInteracting(press: Float, scaleX: Float, scaleY: Float, velocity: Float, offset: Float): Boolean =
+    press > .001f || abs(scaleX - 1f) > .001f || abs(scaleY - 1f) > .001f ||
+      abs(velocity) > .001f || abs(offset) > .001f
+
   private fun speed(velocity: Float, press: Float): Float =
     (if (velocity.isFinite()) velocity else 0f) / 10f *
       (if (press.isFinite()) press.coerceIn(0f, 1f) else 0f)

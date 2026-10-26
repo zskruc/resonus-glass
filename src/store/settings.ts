@@ -5,6 +5,7 @@ import { create } from 'zustand';
 import { isLanguage, LANGUAGE_NAMES, type Language } from '@/i18n/languages';
 import { type TabSegment } from '@/lib/tabOrigin';
 import { hashKey } from '@/lib/localLibrary';
+import { normalizeHomeTitle } from '@/lib/homeTitle';
 import { setPerfEnabled } from '@/lib/perfLog';
 import { profileScopeGuard } from '@/lib/profileScope';
 import { queryClient } from '@/lib/query';
@@ -817,6 +818,7 @@ type CustomSetter =
   | 'setHideUnavailableOffline'
   | 'setReplayGainPreampDb'
   | 'setCustomGreeting'
+  | 'setCustomHomeTitle'
   | 'setGridColumns'
   | 'setAccentColor'
   | 'setThemeMode'
@@ -1074,6 +1076,8 @@ interface SettingsState extends Omit<AutoSetters, CustomSetter> {
   showGreeting: boolean;
   /** Custom greeting; empty = the automatic one based on time of day. */
   customGreeting: string;
+  /** Large Home heading only; empty restores the existing greeting/Home rule. */
+  customHomeTitle: string;
   /** Home explore chips, in order (each with its state). With none active, the
    *  row disappears: that replaces the old toggle. */
   homeChips: HomeChip[];
@@ -1169,6 +1173,7 @@ interface SettingsState extends Omit<AutoSetters, CustomSetter> {
   setHomeSection: (key: HomeSectionKey, value: boolean) => void;
   /** Trims to GREETING_MAX internally: the cap doesn't depend on the caller. */
   setCustomGreeting: (value: string) => void;
+  setCustomHomeTitle: (value: string) => void;
   setHomeChip: (key: HomeChipKey, value: boolean) => void;
   /** One section on or off, by key, the way the Home chips do it. */
   setExploreSection: (key: ExploreSectionKey, value: boolean) => void;
@@ -1319,6 +1324,7 @@ const DEFAULTS = {
   quickGridSize: 8,
   showGreeting: false,
   customGreeting: '',
+  customHomeTitle: '',
   homeChips: DEFAULT_HOME_CHIPS.map((c) => ({ ...c })),
   exploreSections: DEFAULT_EXPLORE_SECTIONS.map((s) => ({ ...s })),
   bottomTabs: DEFAULT_BOTTOM_TABS.map((t) => ({ ...t })),
@@ -1626,6 +1632,9 @@ function applySaved(raw: unknown, set: (partial: Partial<SettingsState>) => void
   if (typeof parsed.customGreeting === 'string') {
     set({ customGreeting: parsed.customGreeting.slice(0, GREETING_MAX) });
   }
+  if (typeof parsed.customHomeTitle === 'string') {
+    set({ customHomeTitle: normalizeHomeTitle(parsed.customHomeTitle) });
+  }
   // Two older names are still read here, and this is the whole of the
   // rename's cost. The row used to be called the Explore chips, one word
   // away from the Explore tab and meaning something else entirely; a
@@ -1833,6 +1842,11 @@ export const useSettings = create<SettingsState>((set, get) => ({
 
   setCustomGreeting: (customGreeting) => {
     set({ customGreeting: customGreeting.slice(0, GREETING_MAX) });
+    persist(snapshot(get));
+  },
+
+  setCustomHomeTitle: (customHomeTitle) => {
+    set({ customHomeTitle: normalizeHomeTitle(customHomeTitle) });
     persist(snapshot(get));
   },
 

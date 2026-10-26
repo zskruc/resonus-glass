@@ -438,6 +438,20 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
     invalidate()
   }
 
+  internal fun suppressSelectionOverlayForCapture() = amPlusSelectionOverlay.suppressForCapture()
+
+  internal fun restoreSelectionOverlayAfterCapture() = amPlusSelectionOverlay.restoreAfterCapture()
+
+  /** isShown does not include alpha: the global dock stays mounted under player routes. */
+  internal fun hasVisibleOpticalAncestors(): Boolean {
+    var ancestor: View? = this
+    while (ancestor != null) {
+      if (ancestor.visibility != View.VISIBLE || ancestor.alpha <= .001f) return false
+      ancestor = ancestor.parent as? View
+    }
+    return true
+  }
+
   internal fun restoreDisplayListAfterCapture(): Boolean {
     if (needsDisplayListRestore) {
       needsDisplayListRestore = false

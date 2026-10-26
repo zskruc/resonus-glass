@@ -741,6 +741,7 @@ export function TextRow({
   placeholder,
   maxLength,
   onChange,
+  onEndEditing,
 }: {
   label: string;
   description?: string;
@@ -748,6 +749,8 @@ export function TextRow({
   placeholder?: string;
   maxLength: number;
   onChange: (v: string) => void;
+  /** Optional commit boundary for fields that normalize text after IME composition. */
+  onEndEditing?: (text: string) => void;
 }) {
   const accent = useAccent();
   const near = value.length >= maxLength - 3;
@@ -769,6 +772,7 @@ export function TextRow({
         style={settingsStyles.textInput}
         value={value}
         onChangeText={onChange}
+        onEndEditing={onEndEditing ? (event) => onEndEditing(event.nativeEvent.text) : undefined}
         placeholder={placeholder}
         placeholderTextColor={colors.textMuted}
         maxLength={maxLength}

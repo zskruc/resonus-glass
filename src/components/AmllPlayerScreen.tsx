@@ -255,7 +255,7 @@ export function AmllPlayerScreen() {
                   <Pressable accessibilityRole="button" accessibilityLabel={showLyrics ? t('Show cover') : t('Lyrics')}
                     onPress={switchLyrics} onLongPress={showMenu} style={styles.coverPressable}>
                     <Cover uri={cover} size={layout.largeCover.size} transition={0}
-                      contentFit={fitCover ? 'contain' : 'cover'} autoplay={interactive && playing}
+                      contentFit={fitCover ? 'contain' : 'cover'} autoplay={interactive && playing} preferStatic={false}
                       style={{ width: '100%', height: '100%', borderRadius: 0 }} />
                   </Pressable>
                 </Animated.View>

@@ -5,13 +5,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AmPlusForegroundEpochTest {
-  @Test fun firstVisibleRowRecordsBeforeTouchAndStableFramesDoNotLoop() {
+  @Test fun firstInteractingRowRecordsAndStableFramesDoNotLoop() {
     val epoch = AmPlusForegroundEpoch()
     assertTrue(epoch.needsRecord(true, 24, false))
     repeat(120) { assertFalse(epoch.needsRecord(true, 24, false)) }
   }
 
-  @Test fun routeLabelsTypographyAndDirtyDrawsRefreshWithoutWaitingForPress() {
+  @Test fun visibleContentChangesRefreshDuringTheGesture() {
     val epoch = AmPlusForegroundEpoch()
     epoch.needsRecord(true, 24, false)
     assertTrue(epoch.needsRecord(true, 25, false))
@@ -27,5 +27,15 @@ class AmPlusForegroundEpochTest {
     assertTrue(epoch.needsRecord(true, 24, false))
     epoch.invalidate()
     assertTrue(epoch.needsRecord(true, 24, false))
+  }
+
+  @Test fun idleDirtyRowsCannotKeepRecordingAcrossHundredsOfPageScrolls() {
+    val epoch = AmPlusForegroundEpoch()
+    repeat(300) { page ->
+      repeat(120) { frame -> assertFalse(epoch.needsRecord(false, (page * 120L) + frame, true)) }
+      assertTrue(epoch.needsRecord(true, page.toLong(), false))
+      assertFalse(epoch.needsRecord(true, page.toLong(), false))
+      assertFalse(epoch.needsRecord(false, page.toLong(), true))
+    }
   }
 }

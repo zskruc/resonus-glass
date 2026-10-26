@@ -256,7 +256,9 @@ function TrackRowBase({
       ) : null}
       {showArtwork ? (
         <View style={styles.artwork}>
-          <Cover uri={songCoverUrl(song, COVER.thumb)} size={48} />
+          {/* Fast lists should not start two-image fades on every newly mounted
+              row. Keep the decoded cache and render the thumbnail directly. */}
+          <Cover uri={songCoverUrl(song, COVER.thumb)} size={48} transition={0} />
           {/* Over the picture where there is no number to give up, behind a
               scrim so the bars read on artwork of any colour. */}
           {isCurrent && position === undefined ? (

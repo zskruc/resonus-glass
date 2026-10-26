@@ -9,17 +9,19 @@ import Icon from '@/components/Icon';
 import { GlassSurface, GlassPressable } from '@/components/glass';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, View, type TextStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
+  makeMutable,
   scrollTo,
   useAnimatedReaction,
   useAnimatedRef,
   useAnimatedStyle,
   useScrollViewOffset,
   useSharedValue,
+  type SharedValue,
   withTiming,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
@@ -31,8 +33,9 @@ import { type LyricLine, type LyricWord } from '@/api/subsonic';
 import { useDominantColor } from '@/hooks/useDominantColor';
 import { useLyrics } from '@/hooks/useLyrics';
 import { useT } from '@/i18n';
-import { amllLyricBlurRadius, lyricBlurRadius } from '@/lib/lyricMotion';
+import { lyricBlurRadius } from '@/lib/lyricMotion';
 import { retainedLyricFocus } from '@/lib/lyricLifecycle';
+import { collectLyricMeasurements, lyricViewportWindow, sameLyricViewportWindow, updateLyricViewportVisibility, type LyricViewportWindow } from '@/lib/lyricViewport';
 import { pushOnce } from '@/lib/pushOnce';
 import { currentSong, usePlayerStore } from '@/store/player';
 import {
@@ -198,6 +201,38 @@ export function SyncedLyricsView({
   // on the lines.
   const targetY = useSharedValue(0);
   const offsets = useRef<{ y: number; h: number }[]>([]);
+  // Per-row flags change only at viewport boundaries; no scroll-driven JS renders.
+  const blurVisibility = useMemo(() => Array.from({ length: lines.length }, () => makeMutable(false)), [lines.length]);
+  const measuredRows = useSharedValue<number[]>([]);
+  const viewportHeight = useSharedValue(0);
+  const visibleWindow = useSharedValue<LyricViewportWindow>({ first: -1, last: -1, indices: [] });
+  const measurementFrame = useRef<number | null>(null);
+  const publishMeasurements = useCallback(() => {
+    if (measurementFrame.current != null) return;
+    measurementFrame.current = requestAnimationFrame(() => {
+      measurementFrame.current = null;
+      measuredRows.set(collectLyricMeasurements(offsets.current, lines.length));
+    });
+  }, [lines.length, measuredRows]);
+  useLayoutEffect(() => {
+    publishMeasurements();
+    return () => {
+      if (measurementFrame.current != null) cancelAnimationFrame(measurementFrame.current);
+      measurementFrame.current = null;
+    };
+  }, [publishMeasurements]);
+  useAnimatedReaction(
+    () => active ? lyricViewportWindow(measuredRows.get(), liveY.get(), viewportHeight.get()) : null,
+    (next, previous) => {
+      // Leaving a page freezes its painted filters as well as the lyric clock.
+      if (next === null) return;
+      const painted = visibleWindow.get();
+      if (previous === null || !sameLyricViewportWindow(next, painted)) {
+        updateLyricViewportVisibility(blurVisibility, painted, next);
+        visibleWindow.set(next);
+      }
+    },
+  );
   const userScroll = useRef(false);
   const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [viewH, setViewH] = useState(0);
@@ -245,10 +280,11 @@ export function SyncedLyricsView({
     // immediately after the listener changes the font size without turning
     // every ordinary layout pass into another render.
     const changed = previous === undefined || previous.y !== y || previous.h !== h;
+    if (changed) publishMeasurements();
     if (activeRef.current && index === currentRef.current && (placedFor.current !== index || changed)) {
       setPlaced((n) => n + 1);
     }
-  }, []);
+  }, [publishMeasurements]);
 
   // Each targetY change pushes the scroll from the UI thread.
   useAnimatedReaction(
@@ -341,7 +377,10 @@ export function SyncedLyricsView({
         ref={scrollRef}
         scrollEnabled={active}
         nestedScrollEnabled={nested}
-        onLayout={(e) => setViewH(e.nativeEvent.layout.height)}
+        onLayout={(e) => {
+          viewportHeight.set(e.nativeEvent.layout.height);
+          setViewH(e.nativeEvent.layout.height);
+        }}
         onScrollBeginDrag={() => {
           if (!activeRef.current) return;
           userScroll.current = true;
@@ -376,7 +415,8 @@ export function SyncedLyricsView({
             highlighted={i === current}
             active={active}
             past={current >= 0 && i < current}
-            blurRadius={amll ? amllLyricBlurRadius(i, current, blurEnabled) : lyricBlurRadius(i, current, blurEnabled)}
+            blurRadius={lyricBlurRadius(i, current, blurEnabled)}
+            blurVisible={blurVisibility[i]}
             large={large}
             size={size}
             weight={weight}
@@ -433,6 +473,7 @@ const LyricRow = memo(({
   active = true,
   past,
   blurRadius,
+  blurVisible,
   large,
   size,
   weight,
@@ -449,6 +490,8 @@ const LyricRow = memo(({
   past: boolean;
   /** Primuse-style depth blur; zero keeps the row's filter layer disabled. */
   blurRadius: number;
+  /** Only actual viewport rows may keep an offscreen filter surface. */
+  blurVisible: SharedValue<boolean>;
   large?: boolean;
   size: LyricsSize;
   weight: LyricsWeight;
@@ -466,6 +509,7 @@ const LyricRow = memo(({
   const inactiveOpacity = amll ? past ? 0.32 : 0.42 : past ? 0.36 : 0.46;
   const dim = useSharedValue(highlighted ? 1 : inactiveOpacity);
   const blur = useSharedValue(blurRadius);
+  const targetBlur = useSharedValue(blurRadius);
   useLayoutEffect(() => {
     cancelAnimation(focus);
     if (!active) return;
@@ -486,16 +530,26 @@ const LyricRow = memo(({
     });
     return () => cancelAnimation(dim);
   }, [active, highlighted, inactiveOpacity, dim]);
-  useLayoutEffect(() => {
-    cancelAnimation(blur);
-    if (!active) return;
-    blur.value = withTiming(blurRadius, {
-      duration: motion.duration.depth,
-      easing: motion.easing.depth,
-      reduceMotion: motion.reduceMotion.essential,
-    });
-    return () => cancelAnimation(blur);
-  }, [active, blur, blurRadius]);
+  useLayoutEffect(() => { targetBlur.set(blurRadius); }, [targetBlur, blurRadius]);
+  useLayoutEffect(() => () => cancelAnimation(blur), [blur]);
+  useAnimatedReaction(
+    () => ({ radius: targetBlur.get(), visible: blurVisible.get() }),
+    (next, previous) => {
+      cancelAnimation(blur);
+      if (!active) return;
+      if (!next.visible || !previous?.visible) {
+        // Invisible rows hold a scalar target, not an animating blur layer.
+        // Overscan makes an entering row ready before its text is on screen.
+        blur.set(next.radius);
+      } else {
+        blur.set(withTiming(next.radius, {
+          duration: motion.duration.depth,
+          easing: motion.easing.depth,
+          reduceMotion: motion.reduceMotion.essential,
+        }));
+      }
+    },
+  );
   // The growth (8%) is compensated by the right margin of `content` so the
   // active line, scaling from the left, doesn't overflow the edge.
   const anim = useAnimatedStyle(() => {
@@ -503,10 +557,9 @@ const LyricRow = memo(({
     return {
       opacity: dim.value,
       transform: [{ scale: 1 + focus.value * (amll ? 0.04 : 0.08) }],
-      // RN's Android filter clips descendants. AMLL also releases a filter
-      // immediately outside its focus window, rather than keeping an old
-      // offscreen layer alive while its blur value animates back to zero.
-      filter: radius > 0.01 && (!amll || blurRadius > 0) ? [{ blur: radius }] : [],
+      // All presentations keep the same visible-row transition, including its
+      // fade to clear. Release only rows outside the actual viewport budget.
+      filter: blurVisible.value && radius > 0.01 ? [{ blur: radius }] : [],
     };
   });
   const lineStyle = amll ? amllLyricsLineStyle(size, weight) : lyricsLineStyle(large, size, weight, centered);

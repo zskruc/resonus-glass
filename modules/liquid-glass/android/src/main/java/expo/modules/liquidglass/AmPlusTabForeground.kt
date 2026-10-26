@@ -27,12 +27,12 @@ import kotlin.math.roundToInt
 /**
  * The selected lens needs its own row, including real RN glyphs and labels.
  * This small hardware recording is separate from the shared page capture and
- * refreshes when the real row changes, including before the first interaction.
- * It creates no Bitmap/readback and does not schedule an idle frame loop.
+ * exists only while the selected lens is interacting. It creates no Bitmap or
+ * readback. A hidden compact row must never keep an idle redraw loop alive.
  */
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
 internal class AmPlusTabForeground(private val owner: LiquidGlassView) : ViewTreeObserver.OnPreDrawListener {
-  private val node = RenderNode("Resonus AM++ refraction foreground")
+  private var node: RenderNode? = null
   private val tintPaint = Paint(Paint.ANTI_ALIAS_FLAG)
   private var accent = 0
   private var observer: ViewTreeObserver? = null
@@ -53,14 +53,17 @@ internal class AmPlusTabForeground(private val owner: LiquidGlassView) : ViewTre
   fun detach() {
     observer?.takeIf { it.isAlive }?.removeOnPreDrawListener(this)
     observer = null
-    node.discardDisplayList()
+    node?.discardDisplayList()
+    node = null
     ready = false
     epoch.invalidate()
   }
 
   private fun active() = owner.materialPreset == "amPlus" && owner.glassEnabled && owner.tabsCount > 0 &&
     owner.tabSelectionOpacity > .001f && owner.isAttachedToWindow && owner.isShown &&
-    owner.windowVisibility == View.VISIBLE
+    owner.windowVisibility == View.VISIBLE && owner.hasWindowFocus() && owner.hasVisibleOpticalAncestors() &&
+    AmPlusSelectionMotion.isInteracting(owner.tabPressProgress, owner.tabScaleX, owner.tabScaleY,
+      owner.tabVelocity, owner.tabPanelOffset)
 
   private fun containsConsumer(view: View): Boolean {
     if (view is LiquidGlassView) return true
@@ -71,7 +74,6 @@ internal class AmPlusTabForeground(private val owner: LiquidGlassView) : ViewTre
   }
 
   private fun fingerprint(view: View, previous: Long): Long {
-    sourceDirty = sourceDirty || view.isDirty
     var hash = previous * 31 + System.identityHashCode(view)
     hash = hash * 31 + view.left
     hash = hash * 31 + view.top
@@ -79,21 +81,37 @@ internal class AmPlusTabForeground(private val owner: LiquidGlassView) : ViewTre
     hash = hash * 31 + view.height
     hash = hash * 31 + view.visibility
     hash = hash * 31 + view.alpha.toBits()
+    // Android does not draw/clean alpha-zero descendants. Inspecting their
+    // dirty flags can re-record forever, because our own recording invalidates
+    // this traversal's owner again. The hidden row contributes only its bounds.
+    if (view.visibility != View.VISIBLE || view.alpha <= .001f || view.width <= 0 || view.height <= 0) return hash
     view.matrix.getValues(matrixValues)
     for (value in matrixValues) hash = hash * 31 + value.toBits()
     if (view is TextView) {
       hash = hash * 31 + view.text.hashCode()
       hash = hash * 31 + view.textSize.toBits()
+      hash = hash * 31 + view.currentTextColor
       hash = hash * 31 + (view.typeface?.hashCode() ?: 0)
     }
-    if (view is ViewGroup) for (index in 0 until view.childCount) hash = fingerprint(view.getChildAt(index), hash)
+    if (view is ViewGroup && view.childCount > 0) {
+      for (index in 0 until view.childCount) hash = fingerprint(view.getChildAt(index), hash)
+    } else {
+      // A dirty parent includes invalidations propagated from our own optical
+      // layers. Only a visible drawing leaf is an actual content invalidation.
+      sourceDirty = sourceDirty || view.isDirty
+    }
     return hash
   }
 
   override fun onPreDraw(): Boolean {
-    if (failed || recording) return true
+    if (failed || recording || WindowBackdrops.isCapturing) return true
     if (!active() || owner.width <= 0 || owner.height <= 0) {
       epoch.needsRecord(false, 0, false)
+      if (ready) {
+        node?.discardDisplayList()
+        node = null
+        ready = false
+      }
       return true
     }
     val parent = owner.parent as? ViewGroup ?: return true
@@ -107,6 +125,7 @@ internal class AmPlusTabForeground(private val owner: LiquidGlassView) : ViewTre
     if (!epoch.needsRecord(true, nextFingerprint, sourceDirty)) return true
     recording = true
     try {
+      val node = node ?: RenderNode("Resonus AM++ refraction foreground").also { this.node = it }
       node.setPosition(0, 0, owner.width, owner.height)
       val canvas = node.beginRecording()
       try {
@@ -132,14 +151,16 @@ internal class AmPlusTabForeground(private val owner: LiquidGlassView) : ViewTre
       // The page material remains usable if a vendor forbids hardware View recording.
       failed = true
       ready = false
-      node.discardDisplayList()
+      node?.discardDisplayList()
+      node = null
       Log.w("ResonusTabForeground", "Refraction foreground disabled: ${error.javaClass.simpleName}")
     } finally { recording = false }
     return true
   }
 
   fun draw(canvas: Canvas, offsetX: Float, offsetY: Float, color: Int) {
-    if (!ready || failed || !canvas.isHardwareAccelerated) return
+    if (!ready || failed || WindowBackdrops.isCapturing || !canvas.isHardwareAccelerated) return
+    val node = node ?: return
     if (accent != color) {
       accent = color
       tintPaint.colorFilter = PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN)

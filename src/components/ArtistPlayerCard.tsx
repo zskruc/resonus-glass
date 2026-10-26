@@ -64,6 +64,7 @@ export function ArtistPlayerCard() {
               style={StyleSheet.absoluteFill}
               contentFit="cover"
               autoplay={false}
+              preferStatic
             />
           ) : null}
           <Text style={styles.label}>{t('About the artist')}</Text>

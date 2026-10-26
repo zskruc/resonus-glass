@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 897 of them.
+Every string the app can show, under the screen it shows up on. 900 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -908,6 +908,18 @@ you are actually typing into, which is easier than reading it here.
 | `New releases` | Home shelf and album sort: albums by the year they came out, newest first. Not "Recently added", which is when the server got hold of them |
 | `Random albums` | A section of Home: albums picked at random, to happen upon something |
 
+## Settings › Home title
+
+| String | What it is |
+| --- | --- |
+| `Changes only the large Home heading. A custom title replaces the greeting. Leave it empty to restore your greeting settings or the translated Home title. Saved when you finish editing.` | The line under “Home title”, explaining it |
+| `Good afternoon` | Home's greeting. The hours it changes at are part of the language too, see TRANSLATING.md |
+| `Good evening` | Home's greeting. The hours it changes at are part of the language too, see TRANSLATING.md |
+| `Good morning` | Home's greeting. The hours it changes at are part of the language too, see TRANSLATING.md |
+| `Good night` | Home's greeting, for the small hours. Spanish uses the same words as for the evening, which is fine |
+| `Home title` |  |
+| `Title preview` |  |
+
 ## Settings › Language
 
 | String | What it is |
@@ -1002,6 +1014,7 @@ you are actually typing into, which is easier than reading it here.
 | `Home buttons` | The icons at the top right of Home (search, history, settings), which of them show and in what order |
 | `Home chips` | The row of tappable category chips |
 | `Home sections` | Reorder which sections appear on Home |
+| `Home title` |  |
 | `Interaction` | Section header grouping toggles |
 | `Interface` | Section header grouping toggles |
 | `Language` |  |

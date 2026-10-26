@@ -7,6 +7,7 @@ import { AppState, View, type StyleProp, type ViewStyle } from 'react-native';
 import { CACHED_COVER, COVER } from '@/api/data';
 import { useImageAnimation } from '@/hooks/useImageAnimation';
 import { bump } from '@/lib/perfLog';
+import { createCoverPathCache } from '@/lib/coverPathCache';
 import { useSettings, type CoverCorners } from '@/store/settings';
 import { colors, radius } from '@/theme';
 
@@ -49,6 +50,8 @@ interface Props {
    * active. Defaults to a still image; only visible playback artwork opts in.
    */
   autoplay?: boolean;
+  /** False for artwork that can animate later, including while currently paused. */
+  preferStatic?: boolean;
   style?: StyleProp<ViewStyle | ImageStyle>;
   /**
    * Called once the picture has loaded, with the `uri` it was asked for and
@@ -83,17 +86,12 @@ const CACHE_SIZES = [COVER.card, COVER.full, COVER.thumb, 500, 300, 100] as cons
  * again on the way back, and again for every row scrolling recycled. On a
  * fifteen thousand song library most of them miss, which is the expensive case.
  *
- * A hit is kept for good, since a file in the cache does not leave while the
- * app is running. A miss is kept for a minute: offline nothing new arrives, but
+ * Recent hits are retained in a bounded lookup cache, sharing in-flight reads
+ * for tracks from the same album. A miss is kept for a minute: offline nothing new arrives, but
  * back online the mirror does save covers, and a miss remembered for ever would
  * hold a placeholder over one that is now there.
  */
-const MISS_TTL = 60_000;
-const memo = new Map<string, { path?: string; at: number }>();
-
-async function cachedPath(url: string): Promise<string | undefined> {
-  const seen = memo.get(url);
-  if (seen && (seen.path || Date.now() - seen.at < MISS_TTL)) return seen.path;
+const cachedPath = createCoverPathCache(async (url) => {
   const sized = (n: number) => url.replace(/([?&](?:size|fillWidth|fillHeight)=)\d+/g, `$1${n}`);
   const look = async (candidate: string) => {
     const path = await Image.getCachePathAsync(candidate).catch(() => null);
@@ -112,13 +110,13 @@ async function cachedPath(url: string): Promise<string | undefined> {
   if (found) {
     bump('cover cache · asked for');
   } else {
-    const others = await Promise.all(CACHE_SIZES.map((n) => look(sized(n))));
+    const candidates = [...new Set(CACHE_SIZES.map(sized))].filter((candidate) => candidate !== url);
+    const others = await Promise.all(candidates.map(look));
     found = others.find(Boolean);
     bump(found ? 'cover cache · another size' : 'cover cache · missing');
   }
-  memo.set(url, { path: found, at: Date.now() });
   return found;
-}
+});
 
 /**
  * Covers still waiting to draw the picture they were last given, so they can be
@@ -320,6 +318,7 @@ export function Cover({
   placeholderIcon = 'musical-notes',
   contentFit = 'cover',
   autoplay = false,
+  preferStatic,
   style,
   onAnimatedDetected,
 }: Props) {
@@ -398,6 +397,10 @@ export function Cover({
       transition={transition}
       recyclingKey={shown}
       autoplay={animation.autoplay}
+      // Decode ordinary list/card art as a bitmap rather than constructing a
+      // stopped animation decoder for each thumbnail. Detection/playback art
+      // retains its animated resource across pause/focus changes.
+      preferStatic={preferStatic ?? (!autoplay && !onAnimatedDetected)}
       onDisplay={() => {
         redraw.onDisplay();
         animation.onDisplay();

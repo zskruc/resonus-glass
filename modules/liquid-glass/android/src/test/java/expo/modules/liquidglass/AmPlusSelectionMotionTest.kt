@@ -1,10 +1,22 @@
 package expo.modules.liquidglass
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AmPlusSelectionMotionTest {
+  @Test fun expensiveSourceAndOverlayHaveTheSameFiniteInteractionLifetime() {
+    assertFalse(AmPlusSelectionMotion.isInteracting(0f, 1f, 1f, 0f, 0f))
+    assertFalse(AmPlusSelectionMotion.isInteracting(.0009f, 1.0009f, .9991f, .0009f, -.0009f))
+    assertTrue(AmPlusSelectionMotion.isInteracting(.5f, 1f, 1f, 0f, 0f))
+    assertTrue(AmPlusSelectionMotion.isInteracting(0f, 1.2f, 1f, 0f, 0f))
+    assertTrue(AmPlusSelectionMotion.isInteracting(0f, 1f, .8f, 0f, 0f))
+    assertTrue(AmPlusSelectionMotion.isInteracting(0f, 1f, 1f, -2f, 0f))
+    assertTrue(AmPlusSelectionMotion.isInteracting(0f, 1f, 1f, 0f, -2f))
+    repeat(10_000) { assertFalse(AmPlusSelectionMotion.isInteracting(0f, 1f, 1f, 0f, 0f)) }
+  }
+
   @Test fun releaseRemovesVelocityDeformationEvenBeforeTheVelocitySpringHasSettled() {
     for (velocity in listOf(-10f, -2f, 2f, 10f)) {
       assertEquals(1f, AmPlusSelectionMotion.scaleX(1f, velocity, 0f), 0f)

@@ -1,0 +1,389 @@
+diff --git a/android/src/main/java/expo/modules/image/CustomOptions.kt b/android/src/main/java/expo/modules/image/CustomOptions.kt
+index dacba94a7e3b413cb1bdc90e74b79222e4ec1af4..a4460e1efba109b83db908dc24a9e59ef940956d 100644
+--- a/android/src/main/java/expo/modules/image/CustomOptions.kt
++++ b/android/src/main/java/expo/modules/image/CustomOptions.kt
+@@ -3,6 +3,12 @@ package expo.modules.image
+ import com.bumptech.glide.load.Option
+ 
+ object CustomOptions {
++  // Separate decoded static frames from animated resources, including transformed disk cache.
++  val preferStatic = Option.disk<Boolean>("ExpoPreferStatic.v1", false) { key, value, digest ->
++    digest.update(key)
++    digest.update(if (value == true) 1.toByte() else 0.toByte())
++  }
++
+   // To pass the tint color to the SVG decoder, we need to wrap it in a custom Glide option.
+   val tintColor = Option.memory<Int>("ExpoTintColor")
+ }
+diff --git a/android/src/main/java/expo/modules/image/DiskImagePrefetch.kt b/android/src/main/java/expo/modules/image/DiskImagePrefetch.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..93f274708ef39af18f7c0b61e6a83ae0cba607ea
+--- /dev/null
++++ b/android/src/main/java/expo/modules/image/DiskImagePrefetch.kt
+@@ -0,0 +1,49 @@
++package expo.modules.image
++
++import android.content.Context
++import com.bumptech.glide.Glide
++import com.bumptech.glide.RequestManager
++import com.bumptech.glide.request.FutureTarget
++import com.bumptech.glide.load.model.GlideUrl
++import com.bumptech.glide.load.model.Headers
++import kotlinx.coroutines.CancellationException
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.NonCancellable
++import kotlinx.coroutines.async
++import kotlinx.coroutines.awaitAll
++import kotlinx.coroutines.coroutineScope
++import kotlinx.coroutines.runInterruptible
++import kotlinx.coroutines.withContext
++import java.io.File
++
++/** Download encoded bytes into Glide's existing DATA cache without decoding. */
++internal suspend fun prefetchDiskImages(context: Context, urls: List<String>, headers: Headers): Boolean =
++  coroutineScope {
++    urls.map { url ->
++      async {
++        // Request creation/clearing stays on main; the blocking Future.get is
++        // interruptible on IO so module destruction cancels in-flight downloads.
++        var manager: RequestManager? = null
++        var target: FutureTarget<File>? = null
++        try {
++          withContext(Dispatchers.Main.immediate) {
++            val currentManager = Glide.with(context)
++            manager = currentManager
++            // Retain ownership before crossing a cancellable dispatcher boundary.
++            target = currentManager.downloadOnly().load(GlideUrl(url, headers)).submit()
++          }
++          val currentTarget = target ?: return@async false
++          runInterruptible(Dispatchers.IO) { currentTarget.get() }
++          true
++        } catch (cancellation: CancellationException) {
++          throw cancellation
++        } catch (_: Exception) {
++          false
++        } finally {
++          withContext(NonCancellable + Dispatchers.Main.immediate) {
++            target?.let { manager?.clear(it) }
++          }
++        }
++      }
++    }.awaitAll().all { it }
++  }
+diff --git a/android/src/main/java/expo/modules/image/ExpoImageAppGlideModule.kt b/android/src/main/java/expo/modules/image/ExpoImageAppGlideModule.kt
+index 5735515fb2a04ab717956a93b506cb1edb934c39..7a3a0ae2b75e2266157e07280be5f205291acdb4 100644
+--- a/android/src/main/java/expo/modules/image/ExpoImageAppGlideModule.kt
++++ b/android/src/main/java/expo/modules/image/ExpoImageAppGlideModule.kt
+@@ -2,6 +2,8 @@ package expo.modules.image
+ 
+ import android.content.Context
+ import android.util.Log
++import com.bumptech.glide.Glide
++import com.bumptech.glide.Registry
+ import com.bumptech.glide.GlideBuilder
+ import com.bumptech.glide.annotation.GlideModule
+ import com.bumptech.glide.module.AppGlideModule
+@@ -12,6 +14,13 @@ import com.bumptech.glide.module.AppGlideModule
+  */
+ @GlideModule
+ class ExpoImageAppGlideModule : AppGlideModule() {
++  override fun registerComponents(context: Context, glide: Glide, registry: Registry) {
++    super.registerComponents(context, glide, registry)
++    // App modules register last, so these opt-in decoders run before the
++    // library's animated Drawable decoders without replacing SVG/AVIF loaders.
++    registerStaticImageDecoders(context, glide, registry)
++  }
++
+   override fun applyOptions(context: Context, builder: GlideBuilder) {
+     super.applyOptions(context, builder)
+ 
+diff --git a/android/src/main/java/expo/modules/image/ExpoImageModule.kt b/android/src/main/java/expo/modules/image/ExpoImageModule.kt
+index 2adb8be76b93496b638e4b3fb4b716ce13987a35..695e0e58e3a7c2d9b36699c231bbc892b834e983 100644
+--- a/android/src/main/java/expo/modules/image/ExpoImageModule.kt
++++ b/android/src/main/java/expo/modules/image/ExpoImageModule.kt
+@@ -44,10 +44,13 @@ import expo.modules.kotlin.types.Either
+ import expo.modules.kotlin.types.EitherOfThree
+ import expo.modules.kotlin.types.toKClass
+ import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.launch
+ import kotlinx.coroutines.withContext
+ import java.io.File
+ import java.io.FileOutputStream
+ import java.net.URL
++import java.util.concurrent.atomic.AtomicBoolean
++import java.util.concurrent.atomic.AtomicInteger
+ 
+ class ExpoImageModule : Module() {
+   // Whether JS subscribed to `imageLoaded`. Skips the per-image-load bridge hop when nothing is
+@@ -72,10 +75,20 @@ class ExpoImageModule : Module() {
+     }
+ 
+     AsyncFunction("prefetch") { urls: List<String>, cachePolicy: CachePolicy, headersMap: Map<String, String>?, promise: Promise ->
+-      val context = appContext.reactContext ?: return@AsyncFunction false
+-
+-      var imagesLoaded = 0
+-      var failed = false
++      val resolved = AtomicBoolean(false)
++      fun resolveOnce(value: Boolean) {
++        if (resolved.compareAndSet(false, true)) promise.resolve(value)
++      }
++      val context = appContext.reactContext
++      if (context == null) {
++        resolveOnce(false)
++        return@AsyncFunction
++      }
++      if (urls.isEmpty()) {
++        resolveOnce(true)
++        return@AsyncFunction
++      }
++      val imagesLoaded = AtomicInteger(0)
+ 
+       val headers = headersMap?.let {
+         LazyHeaders.Builder().apply {
+@@ -85,6 +98,24 @@ class ExpoImageModule : Module() {
+         }.build()
+       } ?: Headers.DEFAULT
+ 
++      if (cachePolicy == CachePolicy.DISK) {
++        // A disk-only prefetch must not construct a full-size animated drawable.
++        // The job also owns every target, including cancellation cleanup.
++        appContext.backgroundCoroutineScope.launch {
++          val success = try {
++            prefetchDiskImages(context, urls, headers)
++          } catch (_: Exception) {
++            // Cancellation also has a Boolean result; target cleanup has
++            // already completed in the helper's NonCancellable finally blocks.
++            false
++          }
++          resolveOnce(success)
++        }.invokeOnCompletion { cause ->
++          if (cause != null) resolveOnce(false)
++        }
++        return@AsyncFunction
++      }
++
+       urls.forEach {
+         Glide
+           .with(context)
+@@ -102,10 +133,7 @@ class ExpoImageModule : Module() {
+               target: Target<Drawable>,
+               isFirstResource: Boolean
+             ): Boolean {
+-              if (!failed) {
+-                failed = true
+-                promise.resolve(false)
+-              }
++              resolveOnce(false)
+               return true
+             }
+ 
+@@ -116,10 +144,8 @@ class ExpoImageModule : Module() {
+               dataSource: DataSource,
+               isFirstResource: Boolean
+             ): Boolean {
+-              imagesLoaded++
+-
+-              if (imagesLoaded == urls.size) {
+-                promise.resolve(true)
++              if (imagesLoaded.incrementAndGet() == urls.size) {
++                resolveOnce(true)
+               }
+               return true
+             }
+@@ -392,6 +418,10 @@ class ExpoImageModule : Module() {
+         view.allowDownscaling = allowDownscaling != false
+       }
+ 
++      Prop("preferStatic") { view: ExpoImageViewWrapper, preferStatic: Boolean? ->
++        view.preferStatic = preferStatic == true
++      }
++
+       Prop("autoplay") { view: ExpoImageViewWrapper, autoplay: Boolean? ->
+         view.autoplay = autoplay != false
+       }
+diff --git a/android/src/main/java/expo/modules/image/ExpoImageViewWrapper.kt b/android/src/main/java/expo/modules/image/ExpoImageViewWrapper.kt
+index 7abe582b602c194ee58c6e39e4812e6b21f3a4b8..745a3994f21ed3ee0927a4996e0045a3d6e5a435 100644
+--- a/android/src/main/java/expo/modules/image/ExpoImageViewWrapper.kt
++++ b/android/src/main/java/expo/modules/image/ExpoImageViewWrapper.kt
+@@ -17,8 +17,10 @@ import com.bumptech.glide.Glide
+ import com.bumptech.glide.RequestManager
+ import com.bumptech.glide.load.engine.DiskCacheStrategy
+ import com.bumptech.glide.load.resource.bitmap.DownsampleStrategy
++import com.bumptech.glide.load.resource.gif.GifOptions
+ import com.bumptech.glide.request.RequestOptions
+ import com.github.penfeizhou.animation.gif.GifDrawable
++import com.github.penfeizhou.animation.glide.AnimationDecoderOption
+ import expo.modules.image.enums.ContentFit
+ import expo.modules.image.enums.Priority
+ import expo.modules.image.events.GlideRequestListener
+@@ -164,6 +166,15 @@ class ExpoImageViewWrapper(context: Context, appContext: AppContext) : ExpoView(
+ 
+   internal var autoplay: Boolean = true
+ 
++  // Playback state and decoding capability are independent: a paused player
++  // must retain its animation, while static list artwork never needs a decoder.
++  internal var preferStatic: Boolean = false
++    set(value) {
++      if (field == value) return
++      field = value
++      shouldRerender = true
++    }
++
+   internal var lockResource: Boolean = false
+ 
+   internal var priority: Priority = Priority.NORMAL
+@@ -183,7 +194,8 @@ class ExpoImageViewWrapper(context: Context, appContext: AppContext) : ExpoView(
+     if (setAnimating) {
+       if (resource.isPaused) {
+         resource.resume()
+-      } else {
++      } else if (!resource.isRunning) {
++        // penfeizhou start() resets a running decoder rather than being a no-op.
+         resource.start()
+       }
+     } else {
+@@ -193,7 +205,7 @@ class ExpoImageViewWrapper(context: Context, appContext: AppContext) : ExpoView(
+ 
+   private fun setIsAnimating(resource: Animatable, setAnimating: Boolean) {
+     if (setAnimating) {
+-      resource.start()
++      if (!resource.isRunning) resource.start()
+     } else {
+       resource.stop()
+     }
+@@ -436,6 +448,14 @@ class ExpoImageViewWrapper(context: Context, appContext: AppContext) : ExpoView(
+ 
+   private fun createPropOptions(): RequestOptions {
+     return RequestOptions()
++      .customize(`when` = preferStatic) {
++        set(CustomOptions.preferStatic, true)
++        set(AnimationDecoderOption.DISABLE_ANIMATION_GIF_DECODER, true)
++        set(AnimationDecoderOption.DISABLE_ANIMATION_WEBP_DECODER, true)
++        set(AnimationDecoderOption.DISABLE_ANIMATION_APNG_DECODER, true)
++        set(AnimationDecoderOption.DISABLE_ANIMATION_AVIF_DECODER, true)
++        set(GifOptions.DISABLE_ANIMATION, true)
++      }
+       .priority(this@ExpoImageViewWrapper.priority.toGlidePriority())
+       .customize(`when` = cachePolicy != CachePolicy.MEMORY_AND_DISK && cachePolicy != CachePolicy.MEMORY) {
+         skipMemoryCache(true)
+diff --git a/android/src/main/java/expo/modules/image/StaticImageDecoder.kt b/android/src/main/java/expo/modules/image/StaticImageDecoder.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..435ae00c27c1639d4a3d39b21e672ea122face9f
+--- /dev/null
++++ b/android/src/main/java/expo/modules/image/StaticImageDecoder.kt
+@@ -0,0 +1,73 @@
++package expo.modules.image
++
++import android.content.Context
++import android.graphics.Bitmap
++import android.graphics.drawable.BitmapDrawable
++import android.os.Build
++import com.bumptech.glide.Glide
++import com.bumptech.glide.Registry
++import com.bumptech.glide.load.ImageHeaderParser.ImageType
++import com.bumptech.glide.load.ImageHeaderParserUtils
++import com.bumptech.glide.load.Options
++import com.bumptech.glide.load.ResourceDecoder
++import com.bumptech.glide.load.engine.Resource
++import com.bumptech.glide.load.resource.bitmap.BitmapDrawableDecoder
++import com.bumptech.glide.load.resource.bitmap.ByteBufferBitmapDecoder
++import com.bumptech.glide.load.resource.bitmap.ByteBufferBitmapImageDecoderResourceDecoder
++import com.bumptech.glide.load.resource.bitmap.Downsampler
++import com.bumptech.glide.load.resource.bitmap.InputStreamBitmapImageDecoderResourceDecoder
++import com.bumptech.glide.load.resource.bitmap.StreamBitmapDecoder
++import java.io.InputStream
++import java.nio.ByteBuffer
++
++/** Reuse Glide's sized bitmap decode and pool ownership for opt-in first frames. */
++internal fun registerStaticImageDecoders(context: Context, glide: Glide, registry: Registry) {
++  val parsers = registry.imageHeaderParsers
++  val downsampler = Downsampler(parsers, context.resources.displayMetrics, glide.bitmapPool, glide.arrayPool)
++  val buffers: ResourceDecoder<ByteBuffer, Bitmap>
++  val streams: ResourceDecoder<InputStream, Bitmap>
++  if (Build.VERSION.SDK_INT >= 28) {
++    // decodeBitmap returns one frame for GIF/WebP/APNG, unlike decodeDrawable.
++    buffers = ByteBufferBitmapImageDecoderResourceDecoder()
++    streams = InputStreamBitmapImageDecoderResourceDecoder()
++  } else {
++    buffers = ByteBufferBitmapDecoder(downsampler)
++    streams = StreamBitmapDecoder(downsampler, glide.arrayPool)
++  }
++  registry.prepend(
++    ByteBuffer::class.java,
++    BitmapDrawable::class.java,
++    StaticImageDecoder(BitmapDrawableDecoder(context.resources, buffers)) {
++      ImageHeaderParserUtils.getType(parsers, it.duplicate())
++    }
++  )
++  registry.prepend(
++    InputStream::class.java,
++    BitmapDrawable::class.java,
++    StaticImageDecoder(BitmapDrawableDecoder(context.resources, streams)) {
++      ImageHeaderParserUtils.getType(parsers, it, glide.arrayPool)
++    }
++  )
++}
++
++private class StaticImageDecoder<T : Any>(
++  private val decoder: ResourceDecoder<T, BitmapDrawable>,
++  private val imageType: (T) -> ImageType
++) : ResourceDecoder<T, BitmapDrawable> {
++  override fun handles(source: T, options: Options): Boolean {
++    if (options.get(CustomOptions.preferStatic) != true) return false
++    return when (imageType(source)) {
++      ImageType.GIF, ImageType.ANIMATED_WEBP,
++      // The ordinary PNG header includes APNG. Its default frame is sufficient
++      // for a list cover, with no frame sequence/decoder retained in memory.
++      ImageType.PNG, ImageType.PNG_A -> true
++      ImageType.ANIMATED_AVIF -> Build.VERSION.SDK_INT >= 31
++      // Leave JPEG/AVIF and unknown/vector formats to their existing loaders.
++      // In particular, old Android uses Glide's static libavif integration.
++      else -> false
++    }
++  }
++
++  override fun decode(source: T, width: Int, height: Int, options: Options): Resource<BitmapDrawable>? =
++    decoder.decode(source, width, height, options)
++}
+diff --git a/build/Image.types.d.ts b/build/Image.types.d.ts
+index 28a57e36fa499baa94919094fd990719fc4c11d5..dde1274f170eee9434c262a3fbc01949323eeae1 100644
+--- a/build/Image.types.d.ts
++++ b/build/Image.types.d.ts
+@@ -241,6 +241,16 @@ export interface ImageProps extends Omit<ViewProps, 'style' | 'children'> {
+      * @platform ios
+      */
+     autoplay?: boolean;
++
++    /**
++     * Decode the main image as a static first frame instead of allocating an
++     * animation decoder. Independent of autoplay; leave false for artwork that
++     * must later resume animation or report whether its source is animated.
++     * SVG and other vector formats retain their normal decoder.
++     * @default false
++     * @platform android
++     */
++    preferStatic?: boolean;
+     /**
+      * SF Symbol effect animations. Can be a single effect string, an effect object,
+      * or an array of effect strings and/or objects.
+diff --git a/src/Image.types.ts b/src/Image.types.ts
+index 80a1e9d6ae8a68e779bcf031ee22438882390219..5f8fa60e9f6b9a3fa70a1e6be1d313eed4ef7d05 100644
+--- a/src/Image.types.ts
++++ b/src/Image.types.ts
+@@ -290,6 +290,16 @@ export interface ImageProps extends Omit<ViewProps, 'style' | 'children'> {
+    */
+   autoplay?: boolean;
+ 
++  /**
++   * Decode the main image as a static first frame instead of allocating an
++   * animation decoder. Independent of autoplay; leave false for artwork that
++   * must later resume animation or report whether its source is animated.
++   * SVG and other vector formats retain their normal decoder.
++   * @default false
++   * @platform android
++   */
++  preferStatic?: boolean;
++
+   /**
+    * SF Symbol effect animations. Can be a single effect string, an effect object,
+    * or an array of effect strings and/or objects.

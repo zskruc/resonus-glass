@@ -4,6 +4,10 @@ import android.graphics.Rect
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
+import android.widget.AdapterView
+import android.widget.HorizontalScrollView
+import android.widget.ScrollView
+import androidx.core.view.ScrollingView
 import com.facebook.react.uimanager.util.ReactFindViewUtil
 import com.swmansion.rnscreens.Screen
 import com.swmansion.rnscreens.ScreenContainer
@@ -18,11 +22,13 @@ internal class NativeBackdropPage {
   private var observedTopReference: WeakReference<Screen>? = null
   private var childContainerReference: WeakReference<ScreenContainer>? = null
   private var searchedChildContainer = false
+  private var childLayoutChanged = true
+  private val childDiscovery = NavigationDiscoveryEpoch()
   private var childDiscoveryObserver: ViewTreeObserver? = null
   private val childDiscoveryLayoutListener = ViewTreeObserver.OnGlobalLayoutListener {
-    // A drawable outer Screen can precede its nested navigator's mount. Only
-    // permit another discovery here; the next pre-draw performs the actual DFS.
-    searchedChildContainer = false
+    // A list mounting new rows is also a global layout. Recheck only the
+    // navigation skeleton; row/content changes must not reopen a whole DFS.
+    childLayoutChanged = true
   }
   private var searchedSource = false
   private val visibleRect = Rect()
@@ -30,7 +36,10 @@ internal class NativeBackdropPage {
   /** A newly attached material can arrive while the content hierarchy is mounting. */
   fun retryMissingStack() {
     if (stackReference?.get() == null) searchedSource = false
-    if (childContainerReference?.get() == null) searchedChildContainer = false
+    if (childContainerReference?.get() == null) {
+      searchedChildContainer = false
+      childDiscovery.invalidate()
+    }
   }
 
   fun observe(source: View): Boolean {
@@ -40,6 +49,7 @@ internal class NativeBackdropPage {
       observedTopReference = null
       childContainerReference = null
       searchedChildContainer = false
+      childDiscovery.invalidate()
       // Ordinary non-navigation roots retain their original capture behavior.
       return policy.observe(source, isDrawable(source, source))
     }
@@ -52,6 +62,7 @@ internal class NativeBackdropPage {
       observedTopReference = top?.let { WeakReference(it) }
       childContainerReference = null
       searchedChildContainer = false
+      childDiscovery.invalidate()
     }
     val outerReady = top != null && isDrawable(top, source)
     val childContainer = top?.let { findChildContainer(it, outerReady) }
@@ -132,12 +143,14 @@ internal class NativeBackdropPage {
     if (childContainerReference != null) {
       childContainerReference = null
       searchedChildContainer = false
+      childDiscovery.invalidate()
     }
     observeMissingChildLayouts(top)
-    // Discover once after this outer page becomes drawable. A negative result
-    // is retried only after a global layout, a parent change or replacement,
-    // never just because another animation frame was drawn.
-    if (!ready || searchedChildContainer) return null
+    if (!ready || (searchedChildContainer && !childLayoutChanged)) return null
+    childLayoutChanged = false
+    // ScrollView/virtualized-list subtrees cannot contain the page navigator.
+    // Their hundreds of row insertions leave this bounded signature unchanged.
+    if (!childDiscovery.needsSearch(true, navigationStructure(top))) return null
     searchedChildContainer = true
     val found = findOutermostChildContainer(top)
     childContainerReference = found?.let { WeakReference(it) }
@@ -152,6 +165,8 @@ internal class NativeBackdropPage {
     // observer. Migrate the listener and allow one discovery on that new tree.
     stopChildDiscoveryObservation()
     searchedChildContainer = false
+    childDiscovery.invalidate()
+    childLayoutChanged = true
     if (observer.isAlive) {
       // Android may have merged the listener from a now-dead floating VTO.
       // Remove that migrated registration before attaching it to this tree.
@@ -173,12 +188,26 @@ internal class NativeBackdropPage {
 
   private fun findOutermostChildContainer(view: View): ScreenContainer? {
     if (view is ScreenContainer) return view
+    if (isNavigationLeaf(view)) return null
     if (view is ViewGroup) {
       for (index in 0 until view.childCount) {
         findOutermostChildContainer(view.getChildAt(index))?.let { return it }
       }
     }
     return null
+  }
+
+  private fun isNavigationLeaf(view: View): Boolean = view is ScrollView || view is HorizontalScrollView ||
+    view is AdapterView<*> || view is ScrollingView
+
+  private fun navigationStructure(view: View): Long {
+    var hash = System.identityHashCode(view).toLong()
+    if (view is ScreenContainer || isNavigationLeaf(view)) return hash
+    if (view is ViewGroup) {
+      hash = hash * 31L + view.childCount
+      for (index in 0 until view.childCount) hash = hash * 31L + navigationStructure(view.getChildAt(index))
+    }
+    return hash
   }
 
   private fun isDescendantOf(view: View, source: View): Boolean {
@@ -197,6 +226,8 @@ internal class NativeBackdropPage {
     observedTopReference = null
     childContainerReference = null
     searchedChildContainer = false
+    childLayoutChanged = true
+    childDiscovery.invalidate()
     searchedSource = false
     policy.observe(null, false)
   }

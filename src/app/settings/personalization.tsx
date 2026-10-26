@@ -187,6 +187,11 @@ export default function AppearanceSettings() {
 
         <Text style={settingsStyles.sectionTitle}>{t('Home')}</Text>
         <SettingsGroup>
+          <SettingRow
+            label={t('Home title')}
+            chevron
+            onPress={() => router.push('/settings/home-title')}
+          />
           <SwitchList
             options={[
               {

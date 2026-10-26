@@ -48,6 +48,7 @@ import { columnsFor, useScreenSize } from '@/hooks/useScreenSize';
 import { songsLabel, useT } from '@/i18n';
 import { greetingHours } from '@/i18n/languages';
 import { haptic } from '@/lib/haptics';
+import { resolveHomeTitle } from '@/lib/homeTitle';
 import { listPerf } from '@/lib/listPerf';
 import { bump } from '@/lib/perfLog';
 import { playShuffle } from '@/lib/playShuffle';
@@ -879,6 +880,7 @@ export default function HomeScreen() {
   const showPlayingElsewhere = useSettings((s) => s.showPlayingElsewhere);
   const showGreeting = useSettings((s) => s.showGreeting);
   const customGreeting = useSettings((s) => s.customGreeting);
+  const customHomeTitle = useSettings((s) => s.customHomeTitle);
   const language = useSettings((s) => s.language);
   const homeSections = useSettings((s) => s.homeSections);
   useSettings((s) => s.appFont); // re-render when font changes
@@ -978,7 +980,7 @@ export default function HomeScreen() {
               {/* The screen's name when there is no greeting, where Explore and
                   Your library have theirs. */}
               <Text style={styles.greeting} numberOfLines={1}>
-                {showGreeting ? greeting : t('Home')}
+                {resolveHomeTitle(customHomeTitle, showGreeting, greeting, t('Home'))}
               </Text>
             </View>
             <View style={styles.headerRight}>

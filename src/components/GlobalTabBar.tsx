@@ -26,7 +26,6 @@ import Animated, {
   useDerivedValue,
   useReducedMotion,
   useSharedValue,
-  withDelay,
   withSpring,
   withTiming,
   type SharedValue,
@@ -45,6 +44,7 @@ import { motion } from '@/theme/motion';
 import { useT } from '@/i18n';
 import { rememberTab, requestSearchFocus, reselectTab, tabOrigin, TABS, type TabSegment } from '@/lib/tabOrigin';
 import { getActiveTabJumpAction } from '@/lib/tabNavigation';
+import { useLiquidTabsPress } from '@/hooks/useLiquidTabsPress';
 import { getCompactNavigationContentStyle, getLiquidDockGeometry } from '@/lib/liquidDock';
 import { AMPP_DOCK, amppExpandedAlpha, amppProgress, amppSearchAlpha, amppSprungProgress, getAmppControls, getAmppDockGeometry, getAmppSlotTranslation } from '@/lib/amppDock';
 import { useSettings } from '@/store/settings';
@@ -62,13 +62,8 @@ const ICONS: Record<string, 'home' | 'search' | 'library' | 'albums' | 'settings
 
 // Same critically damped tracking and soft shape springs as the upstream tabs.
 const SELECTION_SPRING = { damping: 63.25, stiffness: 1000, mass: 1, reduceMotion: motion.reduceMotion.decorative };
-const PRESS_SPRING = { damping: 63.25, stiffness: 1000, mass: 1, reduceMotion: motion.reduceMotion.decorative };
-const SCALE_X_SPRING = { damping: 18.97, stiffness: 250, mass: 1, reduceMotion: motion.reduceMotion.decorative };
-const SCALE_Y_SPRING = { damping: 22.14, stiffness: 250, mass: 1, reduceMotion: motion.reduceMotion.decorative };
-const RELEASE_SPRING = { damping: 34.64, stiffness: 300, mass: 1, reduceMotion: motion.reduceMotion.decorative };
 const INNER_GAP = 4;
 const HORIZONTAL_INSET = 12;
-const PRESSED_SCALE = 78 / 56;
 
 function NavigationItem({
   showLabels, glassPressed, amPlus, onPressedChange, onPressIn, onPressOut, ...props
@@ -212,6 +207,7 @@ export function GlobalTabBar() {
   const expandedInteractive = amPlus ? amPlusInteraction.expanded : !compact;
   const compactInteractive = amPlus ? !amPlusInteraction.expanded : compact;
   const searchInteractive = !amPlus || amPlusInteraction.search;
+  const tabCount = tabs.length;
   const selectionPosition = useSharedValue(0);
   const selectionDestination = useSharedValue(-1);
   const selectionOpacity = useSharedValue(0);
@@ -230,6 +226,10 @@ export function GlobalTabBar() {
   const nativeMotionHost = useSharedValue(0);
   const lastNativeMotion = useSharedValue<number[]>([]);
   const motionEnabled = useSharedValue(false);
+  const { press, release, releasePending, releaseFrameReady } = useLiquidTabsPress({
+    count: tabCount, amPlus, reduceMotion, pressProgress, scaleX, scaleY, dragVelocity,
+    panelOffset, selectionPosition, selectionDestination, dragging,
+  });
   useEffect(() => {
     // A rotation, changed layout style, hidden bar, or reordered tabs invalidates a gesture that
     // started with different coordinates. It must not select an old index.
@@ -243,9 +243,11 @@ export function GlobalTabBar() {
       scaleY.set(1);
       dragVelocity.set(0);
       panelOffset.set(0);
+      releasePending.set(false);
+      releaseFrameReady.set(0);
       scheduleOnRN(setGlassPressed, false);
     });
-  }, [tabWidth, tabOrder, shown, compact, amPlus, geometryGeneration, dragging, dragFinished, pressProgress, scaleX, scaleY, dragVelocity, panelOffset]);
+  }, [tabWidth, tabOrder, shown, compact, amPlus, geometryGeneration, dragging, dragFinished, pressProgress, scaleX, scaleY, dragVelocity, panelOffset, releasePending, releaseFrameReady]);
   useLayoutEffect(() => {
     if (tabWidth <= 0 || selectedIndex < 0) {
       selectionOpacity.set(withTiming(0, { duration: motion.duration.exit }));
@@ -255,16 +257,22 @@ export function GlobalTabBar() {
     const animate = positioned.current && !reduceMotion;
     positioned.current = true;
     scheduleOnUI(() => {
+      const routeChanged = routeSelection.get() !== target;
       routeSelection.set(target);
       // A completed drag already started this same spring on the UI thread.
       // Ordinary taps start it with the route commit, never ahead of the page.
       if (selectionDestination.get() !== target) {
+        // Source animateToValue includes press/shape even for a plain tap.
+        // Start it on route commit so page and material change together. A
+        // completed drag already owns both this destination and its release.
+        if (animate && routeChanged && shown && expandedInteractive && dockProgress.get() <= .001) press();
         selectionDestination.set(target);
         selectionPosition.set(animate ? withSpring(target, SELECTION_SPRING) : target);
+        if (animate && routeChanged) release();
       }
       selectionOpacity.set(withTiming(inTabs ? 1 : 0.38, { duration: motion.duration.exit }));
     });
-  }, [tabWidth, selectedIndex, tabs.length, inTabs, routeSelection, selectionDestination, selectionPosition, selectionOpacity, reduceMotion, rtl]);
+  }, [tabWidth, selectedIndex, tabs.length, inTabs, routeSelection, selectionDestination, selectionPosition, selectionOpacity, reduceMotion, rtl, shown, expandedInteractive, dockProgress, press, release]);
   const selectionStyle = useAnimatedStyle(() => {
     const progress = Math.max(0, Math.min(1, dockProgress.value));
     return {
@@ -299,29 +307,6 @@ export function GlobalTabBar() {
     lastNativeMotion.set(motionState);
   });
 
-  const press = (drag = false) => {
-    'worklet';
-    if (reduceMotion) return;
-    if (!drag) {
-      pressProgress.set(withSpring(1, PRESS_SPRING));
-      return;
-    }
-    // A single full-width tab cannot grow sideways beyond the screen margins.
-    const horizontalScale = tabs.length === 1 ? 1 : tabs.length === 2 ? 1.1 : amPlus ? 1.5 : PRESSED_SCALE;
-    scaleX.set(withSpring(horizontalScale, SCALE_X_SPRING));
-    scaleY.set(withSpring(amPlus ? 1.45 : PRESSED_SCALE, SCALE_Y_SPRING));
-  };
-  const release = (drag = false) => {
-    'worklet';
-    pressProgress.set(reduceMotion ? 0 : drag
-      ? withDelay(120, withSpring(0, PRESS_SPRING)) : withSpring(0, PRESS_SPRING));
-    if (drag) {
-      scaleX.set(reduceMotion ? 1 : withDelay(120, withSpring(1, SCALE_X_SPRING)));
-      scaleY.set(reduceMotion ? 1 : withDelay(120, withSpring(1, SCALE_Y_SPRING)));
-      dragVelocity.set(reduceMotion ? 0 : withSpring(0, RELEASE_SPRING));
-      panelOffset.set(reduceMotion ? 0 : withSpring(0, RELEASE_SPRING));
-    }
-  };
   const foregroundShadow = amPlus ? {} : {
     textShadowColor: dark ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.85)',
     textShadowOffset: { width: 0, height: dark ? 1 : 0 },
@@ -434,7 +419,7 @@ export function GlobalTabBar() {
       dragGeneration.set(geometryGeneration.value);
       dragFinished.set(false);
       dragging.set(false);
-      press();
+      press(false);
     })
     .onStart(() => {
       if (dragGeneration.value !== geometryGeneration.value) return;
@@ -477,7 +462,7 @@ export function GlobalTabBar() {
         selectionDestination.set(routeSelection.value);
         selectionPosition.set(reduceMotion ? routeSelection.value : withSpring(routeSelection.value, SELECTION_SPRING));
       }
-      release(wasDragging);
+      release();
     });
 
   if (tabs.length === 0 && !searchTab) return null;

@@ -114,3 +114,30 @@ Source boundaries and preview validation are documented in
 上述固定版本的 AMLL 提供播放页与背景效果的视觉参考；本预览独立实现原生界面，
 没有嵌入其运行库或复制其源码、着色器、SVG、控制点预设数组及动画引擎。
 本仓库继续采用 GPL-3.0-or-later，未修改根许可证，也不声称像素级一致或获 AMLL／Apple 认可。
+
+
+## Expo Image static artwork and disk prefetch patch
+
+`patches/expo-image@57.0.3.patch` modifies Expo Image 57.0.3, using the existing Glide bitmap decoders and pool ownership for opt-in first-frame artwork. It separates static and animated cache keys, makes disk-only prefetch download data without a drawable, clears completed/cancelled targets and makes animation starts idempotent. The preview builds `expo-image` from source so the patch is included. Expo Image and the modified files retain the following MIT terms:
+
+The MIT License (MIT)
+
+Copyright (c) 2015-present 650 Industries, Inc. (aka Expo)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

@@ -64,7 +64,6 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /** Records one material for the selected lens without another screen capture. */
@@ -224,9 +223,8 @@ internal fun LiquidBottomTabsMaterial(
   // Backdrop 1.0.0, so omit the entire selected-lens stack, not just its effect.
   val interacting by remember(amPlusMaterial) {
     derivedStateOf {
-      selectionVisible && (pressProgress() > 0.001f || abs(pressedScaleX() - 1f) > 0.001f ||
-        abs(pressedScaleY() - 1f) > 0.001f || abs(velocity()) > 0.001f || abs(panelOffset()) > 0.001f
-      )
+      selectionVisible && AmPlusSelectionMotion.isInteracting(pressProgress(), pressedScaleX(),
+        pressedScaleY(), velocity(), panelOffset())
     }
   }
   LaunchedEffect(interacting) {

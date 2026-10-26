@@ -357,7 +357,7 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
             <Animated.View pointerEvents="none" style={[styles.details, detailsStyle]}>
               <Animated.View style={[styles.artwork, { start: targetCoverStart, top: (miniHeight - 30) / 2 }, coverMotion]}>
                 <Animated.View style={coverSwipeStyle}>
-                  <Cover uri={cover} size={30} transition={0} autoplay={props.active ?? true}
+                  <Cover uri={cover} size={30} transition={0} autoplay={props.active ?? true} preferStatic={false}
                     style={styles.cover} placeholderIcon={song.url ? 'radio' : 'musical-notes'} />
                 </Animated.View>
               </Animated.View>

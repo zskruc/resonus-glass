@@ -1,10 +1,10 @@
 # AMLL 播放器预览 / AMLL player preview
 
-`0.8.4.1-amll.3` · Android `versionCode 85` · `preview/amll-player`
+`0.8.4.1-amll.4` · Android `versionCode 86` · `preview/amll-player`
 
-本页记录开发预览。当前 `.3` 已在三星 SM_S9380 上覆盖安装，并完成歌词点按播放、图标、滚动折叠、选中液滴与完整退出录屏检查。下文保留 `.1`、`.2` 历史记录；`.3` 的验收见当前验证段。正式下载仍以仓库 Releases 为准。
+本页记录开发预览。当前 `.4` 安装包已构建并校验，包含共用歌词模糊、底栏点按动效、首页标题设置及全局绘制／封面解码修复。按用户要求先交付 APK，暂不安装；持续滑动、长列表内存及闪退的实机复测尚未完成。下文保留 `.1` 至 `.3` 历史记录。正式下载仍以仓库 Releases 为准。
 
-The `.3` preview was installed over the existing app on Samsung SM_S9380 and received checks for lyric seeking/resume, glyph sizing, scroll collapse, the selection droplet and a complete recorded dismissal. Earlier `.1`/`.2` records remain below; current results are separated. Use repository Releases for stable downloads.
+The `.4` preview APK has been built and verified. It unifies lyric blur, restores tab-tap motion, adds a custom Home heading and addresses shared rendering/artwork-decoding costs. The requested deliverable is an APK for later testing; it has not been installed or validated for sustained scrolling, long-list memory or crash recovery. Earlier `.1`–`.3` records remain below. Use repository Releases for stable downloads.
 
 ## 来源与实现边界 / Reference and implementation boundary
 
@@ -25,7 +25,7 @@ The visual reference is the pinned AMLL commit above, specifically `react-full`'
 - 歌词、输出与队列等辅助图标显示为 24dp，点击区域仍为 48dp；不通过放大图形来填满触摸区域。
 - 歌词继续使用 Resonus 的本地、服务器与 LRCLIB 数据和跳播逻辑。有时间轴的歌词使用现有逐字与同步渲染，纯文本歌词可单独滚动。
 - AMLL 页面点击同步歌词会跳到对应时间；若当前暂停，同时恢复播放，正在播放时继续播放。原有歌词页面未传入此回调时，仍保持仅跳播的行为。
-- AMLL 歌词模糊复用现有 Resonus 的强度与前后行差异，仅给当前行前后各四行分配滤镜，最多八行；没有移植 AM++ 的模糊算法或参数。开关关闭、手动浏览及无当前行时的清晰策略保留，失焦时继续保留最后一帧而停止动画。
+- 所有播放页共用 Resonus 的 `lyricBlurRadius` 强度、前后行差异及过渡；移除 AMLL 独立的前后四行限制。滤镜只分配给真实视口及少量预留的已测量行，远离播放行但仍在屏幕内的文字继续模糊。开关关闭、手动浏览及无当前行时保持清晰，失焦保留最后一帧并停止动画。未移植 AM++ 模糊算法。
 - 播放、暂停、切歌、随机、循环、进度、系统或远程音量、音质详情、输出设备、队列和歌曲菜单继续调用已有功能。AMLL 的播放按钮不再显示封面色圆底，进度条与音量条仍直接读取当前封面主题色；Resonus 原有布局的按钮与封面配色偏好保持原样。
 
 The player defaults to the large-cover view. The cover or lyric button switches to a small-cover header and full-page lyrics; progress, transport and volume controls are hidden in lyric mode. Active lyrics anchor at 10% of the lyric region in portrait and 42% in landscape. One cover view moves and scales through native animation; small viewports and accessibility text can scroll rather than overlap.
@@ -34,7 +34,7 @@ Tapping the top handle, dragging down and system Back dismiss the entire player 
 
 Portrait orders previous/play-pause/next, then lyrics/output/queue, then volume. Shuffle/repeat move into an optional playback-control group in More options, without changing ordinary song menus or the previous Resonus layout. Landscape keeps five transport buttons, output at the lower left and lyrics/queue at the lower right. It uses approximately 45% for artwork/controls and 55% for lyrics, centering the same information column when lyrics are hidden. Existing Resonus lyric sources, timed-word rendering, seek behavior, playback, queue, output, volume, quality and song-menu actions remain in use; untimed lyrics receive their own text scroll view. The AMLL play button has no persistent artwork-colored circle, while progress and volume tracks retain current-artwork colors. The previous Resonus layout's buttons and palette preferences remain unchanged.
 
-Auxiliary glyphs such as lyrics, output and queue are 24dp within 48dp touch targets. Tapping a synchronized lyric in the AMLL player seeks to that time and resumes playback if paused; an already-playing song continues. Other lyric views keep seek-only behavior unless they opt into the callback. AMLL now reuses Resonus's existing blur strength and past/future treatment within four rows on either side, with at most eight filtered rows. It does not port AM++ blur parameters or its algorithm. The existing clear states for a disabled switch, manual browsing and no current lyric are retained, as is the frozen last frame when focus is lost.
+Auxiliary glyphs such as lyrics, output and queue are 24dp within 48dp touch targets. Tapping a synchronized lyric in the AMLL player seeks to that time and resumes playback if paused; an already-playing song continues. Other lyric views keep seek-only behavior unless they opt into the callback. All player presentations share Resonus's `lyricBlurRadius`, past/future treatment and transitions. The AMLL-only four-row distance cutoff is removed: filters belong only to measured rows in the viewport plus a small margin, so visible lyrics remain blurred even far from the playing line. The disabled/manual-browsing/no-current-line clear states and frozen last frame remain. AM++ blur parameters and its algorithm are not ported.
 
 在 **设置 → 播放器 → 播放器布局** 选择 **Resonus 原有布局**，即可切回之前的播放页，原有偏好不会被清除。下面的 **播放器背景**（纯色／封面颜色／模糊封面）仅适用于 Resonus 原有布局；AMLL 布局使用本页所述的网格背景。
 
@@ -81,6 +81,27 @@ The source relationships above are implemented against the pinned Zennmn commit.
 
 Playback, navigation and window interfaces belong to Resonus; this does not run the complete Xposed host, Apple Music private interfaces or Apple image resources. Existing Custom parameters and non-AM++ appearances remain available. Lyric blur stays with Resonus's existing implementation. See the [third-party source mapping](../THIRD_PARTY_NOTICES.md#am-phone-dock-input-geometry-and-selected-material). Build and device acceptance are recorded separately below.
 
+## `.4` 滚动与资源生命周期 / `.4` scrolling and resource lifetime
+
+- AM++ 前景记录与选中透镜限于实际交互；静止、隐藏、失焦及结束交互时停止记录并释放前景／overlay 引用。隐藏子树的 dirty 标志不再驱动自重绘。
+- 共享背景采样显式排除选中透镜 overlay，包含 Android 已缓存的显示列表，避免把透镜重新采样进自己的背景。
+- 页面导航发现跳过滚动列表；无嵌套导航的页面按导航结构缓存查找结果，歌曲行布局不再触发整棵列表查找。
+- 歌曲列表缩略图直接显示，不为每批新行启动交叉淡入；离线封面查询合并同一专辑的并发请求，并将结果限定在最近 512 项。
+- 普通列表／卡片和静态背景显式使用首帧位图解码，不为每张缩略图建立动画帧解码器；SVG 和不支持的新格式保留原有解码路径。播放器允许动画的资源不随暂停或失焦切换解码能力；重复启动同一动画改为幂等。磁盘预取仅下载原文件，成功、失败和取消均清理目标请求，静态／动态解码缓存分开。
+- 三星历史退出记录中存在动态封面帧解码器的 `OutOfMemoryError`。这证明有过内存耗尽，不证明每次长列表闪退都来自同一调用栈。原始日志保存在本机忽略目录，不发布账号信息或设备日志。
+
+Foreground recording and the selected-lens overlay are limited to actual AM++ interaction, then released. Hidden dirty descendants no longer drive self-invalidating recording. Shared capture explicitly excludes even cached overlay display lists. Navigation discovery skips scroll/list content and caches negative results against navigation structure, so mounting song rows does not rescan them. Song thumbnails avoid per-row crossfades; offline artwork probes share in-flight album requests and retain at most 512 recent results.
+
+Opt-in static decoding returns first-frame bitmaps for ordinary covers/backgrounds, without allocating an animation decoder per thumbnail; vector/unsupported formats retain their existing path. Playback-capable artwork retains its decoder across pause/focus changes, and repeated animation start becomes idempotent. Disk-only prefetch downloads the original data without decoding a drawable and clears its request on success, failure and cancellation. Static/dynamic decoded cache keys remain separate. The version-pinned Expo Image patch is built from source and must be reviewed/rebased when that dependency is upgraded.
+
+Samsung's historical exit/crash records contain an animated-artwork frame-decoder `OutOfMemoryError`. This confirms an earlier memory-exhaustion crash, without establishing that every reported long-list exit has the same cause. Raw logs remain in ignored local storage and are not published.
+
+## 首页标题 / Home heading
+
+在 **设置 → 外观 → 首页 → 首页标题** 自定义大标题。编辑预览即时更新，结束编辑或退出时保存；留空恢复原有问候语／翻译标题规则。导航标签、路由与问候语偏好不受影响，设置按当前资料保存。
+
+Use **Settings → Appearance → Home → Home title** to customize the large heading. The local editing draft previews immediately and commits when editing ends or the page closes. Empty text restores the existing greeting/localized-Home rule. Navigation labels/routes and the independent greeting preference remain unchanged; the title is saved per profile.
+
 ## 全局开关尺寸 / Compact global switches
 
 所有开关通过统一入口缩小约 15.6%，布局从 64×48dp 调整为 54×44dp，每行释放 10dp 横向文字空间，保留 44dp 触摸高度。内部拖拽坐标经缩放逆映射，材质、颜色与开关逻辑保持不变；设置、登录、分享、播放列表编辑及玻璃调节页均采用相同尺寸。
@@ -89,7 +110,13 @@ All switches use a shared compact wrapper: 54×44dp instead of 64×48dp, approxi
 
 ## 验证状态 / Validation status
 
-### 当前 `.3` / Current `.3`
+### 当前 `.4` / Current `.4`
+
+367 项 JavaScript 测试及 106 项原生测试（玻璃 93、背景 6、高刷 7）通过。ARM64 Release APK 构建成功，核对版本 `0.8.4.1-amll.4`、编号 `86`、原包名与原签名一致。Expo Image 原生源码重新编译成功，发布混淆映射确认新首帧解码器与磁盘预取路径已包含。静态检查无错误，保留 21 条既有代码警告，警告均不在本轮修改行。当前未安装到三星；取得的系统日志来自已有版本，不能当作 `.4` 的帧率或长列表验证。历史日志确认过动态图片解码时的内存耗尽，但此次所有闪退原因及修复效果仍需实机复测。
+
+All 367 JavaScript tests and 106 native tests (93 glass, 6 background, 7 refresh) passed. The ARM64 release APK built successfully; version `0.8.4.1-amll.4`/86, application ID and the existing signing certificate were verified. Expo Image was compiled from source, and the release mapping confirms the new static-decoder and disk-prefetch paths were included. ESLint reports no errors and 21 existing-code warnings, none on modified lines. This APK has not been installed; collected Android logs belong to the previous installed version and are not `.4` frame-rate or long-list acceptance evidence. Historical logs confirm an animated-image decoding OOM; the causes of all reported exits and this fix's effectiveness still require device testing.
+
+### `.3` 检查历史 / `.3` validation history
 
 TypeScript、翻译检查和改动源码 ESLint 全部通过（无错误、无警告）；346 项 JavaScript 测试与 89 项玻璃模块原生测试通过。ARM64 Release 成功构建，核对版本 `0.8.4.1-amll.3`、编号 `85`、原包名与签名后覆盖安装，首次安装日期仍为 2026-10-05。
 

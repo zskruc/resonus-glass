@@ -1039,6 +1039,7 @@ function ResonusPlayerScreen() {
               blurRadius={60}
               transition={BACKDROP_FADE}
               autoplay={false}
+              preferStatic
               onDisplay={() => {
                 backdrop.onDisplay();
                 backdropSource.onDisplay();

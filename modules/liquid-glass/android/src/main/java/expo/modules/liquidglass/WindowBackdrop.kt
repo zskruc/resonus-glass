@@ -135,6 +135,10 @@ internal object WindowBackdrops {
       // visibility property, ordinary alpha, or dispatching ordinary visibility
       // events. Android's isVisibleToUser can still report false while it is zero.
       excluded.forEach { it.transitionAlpha = 0f }
+      // ViewOverlay lives outside LiquidGlassView.dispatchDraw. Explicitly
+      // exclude even its cached RenderNode; an onDraw guard alone cannot stop
+      // replay of a previous selected layer into the backdrop it samples.
+      surfaces.forEach { it.suppressSelectionOverlayForCapture() }
       return capture()
     } finally {
       try {
@@ -142,14 +146,14 @@ internal object WindowBackdrops {
       } finally {
         isCapturing = wasCapturing
         if (!isCapturing) {
-          // Drawing an alpha-zero parent can still re-record dirty child nodes.
-          // A suppressed host then has an empty display list shared by the live
-          // window. Restore it before that window draws, not when the asynchronous
-          // GPU image arrives one or more display frames later.
           try {
-            suppressedHosts.forEach { it.restoreDisplayListAfterCapture() }
+            surfaces.forEach { it.restoreSelectionOverlayAfterCapture() }
           } finally {
-            suppressedHosts.clear()
+            // Drawing an alpha-zero parent can still re-record dirty child nodes.
+            // Restore suppressed hosts even if an overlay's restoration fails.
+            try {
+              suppressedHosts.forEach { it.restoreDisplayListAfterCapture() }
+            } finally { suppressedHosts.clear() }
           }
         }
       }

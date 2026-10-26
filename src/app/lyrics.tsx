@@ -96,6 +96,7 @@ export default function LyricsScreen() {
             blurRadius={60}
             transition={600}
             autoplay={false}
+            preferStatic
           />
           {/* Same wash as the player: blur alone doesn't guarantee the lyrics
               stay readable over a bright cover, and which way it washes
