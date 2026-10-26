@@ -168,3 +168,14 @@ warmup shares the exact synchronous palette cache for the current/next/previous
 artwork. Uncached artwork still depends on image availability: the tracks use a
 neutral fallback immediately, then apply the actual color once available. The
 optional full-player background palette timing and slider gestures are unchanged.
+
+## 即时播放按钮颜色 / Immediate play-button color
+
+`0.8.4.1-ampp.9` / Android versionCode `82` 将播放／暂停按钮的填色和配套
+图标色改为直接使用当前封面的控制颜色。启用可选封面配色时，按钮与进度条、
+音量条使用同一份同步颜色结果，不再等待背景配色的900ms稳定门槛。背景与
+文字角色的过渡、配色开关关闭时的中性按钮、播放／暂停音频逻辑均保持原样。
+
+The optional artwork-colored play/pause button consumes the current control
+palette's accent and matched onAccent immediately, alongside both playback
+tracks. The delayed background palette and audio play/pause behavior are unchanged.

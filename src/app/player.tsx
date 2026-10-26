@@ -406,24 +406,26 @@ export default function PlayerScreen() {
   if (coverTint.known && coverTint.color !== lastDominant) setLastDominant(coverTint.color);
   const dominant = coverTint.known ? coverTint.color : lastDominant;
   const lightMode = useThemeMode() === 'light';
-  const trackTint = useMemo(() => {
+  // All playback controls consume the current artwork in this render. The
+  // optional background below keeps its separate stable-artwork timing.
+  const controlPalette = useMemo(() => {
     const readable = cover && !cover.startsWith(CACHED_COVER) && coverTint.known
       && coverTint.color !== colors.surfaceHighlight;
-    return (readable ? buildPlayerPalette(coverTint.color, !lightMode)?.accent : null)
-      ?? (lightMode ? '#424242' : '#E5E5E5');
+    return readable ? buildPlayerPalette(coverTint.color, !lightMode) : null;
   }, [cover, coverTint.known, coverTint.color, lightMode]);
+  const trackTint = controlPalette?.accent ?? (lightMode ? '#424242' : '#E5E5E5');
   const { palette, transitionDuration } = usePlayerPalette({
     artworkKey: cover && !cover.startsWith(CACHED_COVER) ? cover : undefined,
     seed: coverTint.color, ready: coverTint.known, enabled: paletteEnabled, dark: !lightMode,
   });
   const paletteTextStyle = palette ? { color: palette.text } : undefined;
   const paletteSecondaryStyle = palette ? { color: palette.textSecondary } : undefined;
-  // Play, the played part of the bar and, on light, the controls: pale with a
-  // deep icon on dark, deep with a pale icon on light. Neutral whatever
-  // background shade is picked, so they never pick up its hue.
+  // The optional artwork-colored play button updates alongside both tracks,
+  // with its matched readable icon. Other controls retain their existing ink.
   const tintBase = BACKGROUND_TINTS.neutral.dark.surfaceHighlight;
-  const playFill = palette?.accent ?? (lightMode ? toneOf(tintBase, 0.22, 0.2) : toneOf(tintBase, 0.9, 0.3));
-  const playInk = palette?.onAccent ?? (lightMode ? toneOf(tintBase, 0.97, 0.2) : toneOf(tintBase, 0.14, 0.3));
+  const buttonPalette = paletteEnabled ? controlPalette : null;
+  const playFill = buttonPalette?.accent ?? (lightMode ? toneOf(tintBase, 0.22, 0.2) : toneOf(tintBase, 0.9, 0.3));
+  const playInk = buttonPalette?.onAccent ?? (lightMode ? toneOf(tintBase, 0.97, 0.2) : toneOf(tintBase, 0.14, 0.3));
   const ink = palette?.text ?? (lightMode ? toneOf(tintBase, 0.2, 0.2) : colors.text);
   // Under the blurred artwork the flat colour is irrelevant, but it still
   // paints the frame before the image decodes, so it stays dark rather than
