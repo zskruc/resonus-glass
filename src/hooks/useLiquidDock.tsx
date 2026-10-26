@@ -10,6 +10,7 @@ import { createLiquidDockScrollState, updateLiquidDockScroll, type LiquidDockScr
 import { currentSong, usePlayerStore } from '@/store/player';
 import { useSettings } from '@/store/settings';
 import { useTabBarShown } from './useTabBar';
+import { expandNativeDockScrollInput, isLiquidGlassAvailable, readNativeDockScrollIntent } from '../../modules/liquid-glass';
 
 export const COMPACT_DOCK_SIZE = 50;
 export const COMPACT_DOCK_GAP = 8;
@@ -28,6 +29,12 @@ interface LiquidDock {
   enabled: boolean;
   hasSearch: boolean;
   amPlus: boolean;
+  scope: string;
+  nativeInput: boolean;
+  nativeInputHost: SharedValue<number>;
+  nativeIntent: SharedValue<number>;
+  uiScope: SharedValue<string>;
+  requestNativeCompact: (compact: boolean, scope: string) => void;
   uiEnabled: SharedValue<boolean>;
   uiCompact: SharedValue<boolean>;
   generation: SharedValue<number>;
@@ -39,9 +46,12 @@ const noop = () => {};
 const defaultDock: LiquidDock = {
   progress: makeMutable(0), compact: false, expand: noop, enabled: false, hasSearch: false, amPlus: false,
   uiEnabled: makeMutable(false), uiCompact: makeMutable(false), generation: makeMutable(0), notifyCompact: noop,
+  scope: '', nativeInput: false, nativeInputHost: makeMutable(0), nativeIntent: makeMutable(0),
+  uiScope: makeMutable(''), requestNativeCompact: noop,
 };
 const LiquidDockContext = createContext(defaultDock);
-type LiquidDockScroll = Pick<LiquidDock, 'progress' | 'expand' | 'enabled' | 'uiEnabled' | 'uiCompact' | 'generation' | 'notifyCompact' | 'amPlus'>;
+type LiquidDockScroll = Pick<LiquidDock, 'progress' | 'expand' | 'enabled' | 'uiEnabled' | 'uiCompact' | 'generation' | 'notifyCompact' | 'amPlus'
+  | 'nativeInput' | 'nativeInputHost' | 'nativeIntent' | 'uiScope'>;
 // A target change redraws dock controls, but does not change a list's handler.
 const LiquidDockScrollContext = createContext<LiquidDockScroll>(defaultDock);
 
@@ -55,11 +65,15 @@ export function LiquidDockProvider({ children }: PropsWithChildren) {
   const hasSong = usePlayerStore((state) => currentSong(state) !== null);
   const entries = useSettings((state) => state.bottomTabs);
   const amPlus = useGlassTuning((state) => state.mode === 'amPlus');
+  const nativeInput = amPlus && isLiquidGlassAvailable && readNativeDockScrollIntent !== null;
   const [keyboardVisible, setKeyboardVisible] = useState(Keyboard.isVisible());
   const progress = useSharedValue(0);
   const uiEnabled = useSharedValue(false);
   const uiCompact = useSharedValue(false);
   const generation = useSharedValue(0);
+  const nativeInputHost = useSharedValue(0);
+  const nativeIntent = useSharedValue(0);
+  const uiScope = useSharedValue('');
   // The same dock is drawn on detail and settings screens when tabs are
   // visible there. Its interaction follows that visibility, not a tab route.
   const enabled = withBar && hasSong && !keyboardVisible
@@ -72,6 +86,7 @@ export function LiquidDockProvider({ children }: PropsWithChildren) {
   if (targetState.scope !== scope) setTargetState({ scope, compact: false });
   const compact = targetState.scope === scope && targetState.compact;
   const enabledRef = useRef(enabled);
+  const scopeRef = useRef(scope);
   const generationRef = useRef(0);
 
   useEffect(() => {
@@ -82,34 +97,60 @@ export function LiquidDockProvider({ children }: PropsWithChildren) {
 
   useLayoutEffect(() => {
     enabledRef.current = enabled;
+    scopeRef.current = scope;
     const nextGeneration = ++generationRef.current;
     scheduleOnUI(() => {
       generation.set(nextGeneration);
+      uiScope.set(scope);
+      nativeIntent.set(0);
+      if (nativeInput) expandNativeDockScrollInput?.(nativeInputHost.get());
       uiEnabled.set(enabled);
       uiCompact.set(false);
       progress.set(0);
     });
-  }, [route, enabled, hasSearch, amPlus, generation, progress, uiCompact, uiEnabled]);
+  }, [route, enabled, hasSearch, amPlus, scope, nativeInput, generation, progress, uiCompact, uiEnabled, uiScope, nativeIntent, nativeInputHost]);
 
   const notifyCompact = useCallback((target: boolean, eventGeneration: number) => {
     if (!enabledRef.current || eventGeneration !== generationRef.current) return;
     setTargetState((previous) => previous.compact === target ? previous : { ...previous, compact: target });
   }, []);
+  const requestNativeCompact = useCallback((target: boolean, eventScope: string) => {
+    if (!nativeInput || !enabledRef.current || eventScope !== scopeRef.current) return;
+    const expectedGeneration = generationRef.current;
+    scheduleOnUI(() => {
+      if (!uiEnabled.get() || generation.get() !== expectedGeneration) return;
+      const serial = readNativeDockScrollIntent?.(nativeInputHost.get(), uiScope.get()) ?? 0;
+      // A queued event must not revive a decision superseded by reversal,
+      // manual expansion, a route handoff, or a new native input owner.
+      if (serial === 0 || (serial > 0) !== target) return;
+      nativeIntent.set(serial);
+      if (uiCompact.get() !== target) {
+        uiCompact.set(target);
+        progress.set(withSpring(target ? 1 : 0, dockSpring(target, true)));
+      }
+      scheduleOnRN(notifyCompact, target, expectedGeneration);
+    });
+  }, [nativeInput, generation, uiEnabled, nativeInputHost, uiScope, nativeIntent, uiCompact, progress, notifyCompact]);
   const expand = useCallback(() => {
     // A tap cancels a previous list's momentum decision until the next drag.
     const nextGeneration = ++generationRef.current;
     scheduleOnUI(() => {
       generation.set(nextGeneration);
+      if (nativeInput) expandNativeDockScrollInput?.(nativeInputHost.get());
       const wasCompact = uiCompact.get();
       uiCompact.set(false);
       if (wasCompact || progress.get() !== 0) progress.set(withSpring(0, dockSpring(false, amPlus)));
     });
     setTargetState((previous) => previous.compact ? { ...previous, compact: false } : previous);
-  }, [generation, progress, uiCompact, amPlus]);
-  const value = useMemo(() => ({ progress, compact, expand, enabled, hasSearch, uiEnabled, uiCompact, generation, notifyCompact, amPlus }),
-    [progress, compact, expand, enabled, hasSearch, uiEnabled, uiCompact, generation, notifyCompact, amPlus]);
-  const scrollValue = useMemo(() => ({ progress, expand, enabled, uiEnabled, uiCompact, generation, notifyCompact, amPlus }),
-    [progress, expand, enabled, uiEnabled, uiCompact, generation, notifyCompact, amPlus]);
+  }, [generation, progress, uiCompact, amPlus, nativeInput, nativeInputHost]);
+  const value = useMemo(() => ({ progress, compact, expand, enabled, hasSearch, uiEnabled, uiCompact, generation, notifyCompact, amPlus,
+    scope, nativeInput, nativeInputHost, nativeIntent, uiScope, requestNativeCompact }),
+    [progress, compact, expand, enabled, hasSearch, uiEnabled, uiCompact, generation, notifyCompact, amPlus,
+      scope, nativeInput, nativeInputHost, nativeIntent, uiScope, requestNativeCompact]);
+  const scrollValue = useMemo(() => ({ progress, expand, enabled, uiEnabled, uiCompact, generation, notifyCompact, amPlus,
+    nativeInput, nativeInputHost, nativeIntent, uiScope }),
+    [progress, expand, enabled, uiEnabled, uiCompact, generation, notifyCompact, amPlus,
+      nativeInput, nativeInputHost, nativeIntent, uiScope]);
   return (
     <LiquidDockContext.Provider value={value}>
       <LiquidDockScrollContext.Provider value={scrollValue}>{children}</LiquidDockScrollContext.Provider>
@@ -129,12 +170,26 @@ interface ScrollContext extends Record<string, unknown> {
 
 /** Attach only to a screen's primary vertical animated list/scroll view. */
 export function useLiquidDockScrollHandler() {
-  const { progress, uiEnabled, uiCompact, generation, notifyCompact, amPlus } = useContext(LiquidDockScrollContext);
+  const { progress, uiEnabled, uiCompact, generation, notifyCompact, amPlus,
+    nativeInput, nativeInputHost, nativeIntent, uiScope } = useContext(LiquidDockScrollContext);
   const focused = useIsFocused();
+  const applyNativeIntent = () => {
+    'worklet';
+    if (!focused || !uiEnabled.get() || !readNativeDockScrollIntent) return;
+    const serial = readNativeDockScrollIntent(nativeInputHost.get(), uiScope.get());
+    if (serial === 0 || serial === nativeIntent.get()) return;
+    nativeIntent.set(serial);
+    const target = serial > 0;
+    if (target === uiCompact.get()) return;
+    uiCompact.set(target);
+    progress.set(withSpring(target ? 1 : 0, dockSpring(target, true)));
+    scheduleOnRN(notifyCompact, target, generation.get());
+  };
   // The provider resets the dock for every real route/availability change.
   // Replaying an incoming screen's layout effects must not expand it again.
   return useAnimatedScrollHandler<ScrollContext>({
     onBeginDrag: (event, context) => {
+      if (nativeInput) { applyNativeIntent(); return; }
       context.generation = generation.get();
       context.state = createLiquidDockScrollState(uiCompact.get());
       context.userDragging = focused && uiEnabled.get();
@@ -146,6 +201,7 @@ export function useLiquidDockScrollHandler() {
       scheduleOnRN(notifyCompact, target, generation.get());
     },
     onEndDrag: (event, context) => {
+      if (nativeInput) { applyNativeIntent(); return; }
       // A coalesced final offset may arrive only here. Count it as part of the
       // real drag; the subsequent content inertia must not complete its intent.
       if (focused && uiEnabled.get() && context.state && context.userDragging
@@ -170,6 +226,7 @@ export function useLiquidDockScrollHandler() {
       if (context.state) context.state.distance = 0;
     },
     onScroll: (event, context) => {
+      if (nativeInput) { applyNativeIntent(); return; }
       if (!focused || !uiEnabled.get()) return;
       if (!context.state || context.generation !== generation.get()) {
         context.state = createLiquidDockScrollState(uiCompact.get());
@@ -184,5 +241,6 @@ export function useLiquidDockScrollHandler() {
       progress.set(withSpring(target ? 1 : 0, dockSpring(target, amPlus)));
       scheduleOnRN(notifyCompact, target, generation.get());
     },
-  }, [focused, progress, uiEnabled, uiCompact, generation, notifyCompact, amPlus]);
+  }, [focused, progress, uiEnabled, uiCompact, generation, notifyCompact, amPlus,
+    nativeInput, nativeInputHost, nativeIntent, uiScope]);
 }

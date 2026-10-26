@@ -41,15 +41,23 @@ These features describe the released Glass baseline. Development previews may ch
 | Channel | Version | Android version code | Availability |
 | --- | --- | --- | --- |
 | Stable | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest), in-app update checks |
-| Development preview | `0.8.4.1-amll.1` | `83` | Local test build; not published as a stable release |
+| Development preview | `0.8.4.1-amll.3` | `85` | Built and installed on Samsung; initial checks passed; not a stable release |
 
 The current preview is on `preview/amll-player`. It adds an independently implemented native player visually informed by [AMLL](https://github.com/amll-dev/applemusic-like-lyrics): a shared cover transition, full-page lyrics, a landscape two-column layout and a moving mesh background that preserves the artwork's spatial color distribution. Settings → Player → Player layout can restore the previous Resonus layout. The Player background option below applies only to that previous layout. See the [AMLL player preview guide](./docs/AMLL-PLAYER-PREVIEW.md) for scope, provenance and validation status.
 
+`.2` opens on the large-cover view. Tapping the top handle, dragging down or using system Back dismisses the entire player; its last lyric frame remains visible while subsequent lyric animation stops. Portrait orders the three transport buttons, lyrics/output/queue and volume, with shuffle/repeat moved into an optional playback group in More options. Landscape keeps five transport buttons, with output at the lower left and lyrics/queue at the lower right. The AMLL play button loses its artwork-colored circle while progress and volume tracks retain artwork colors. The previous Resonus layout is unchanged.
+
+`.3` reduces auxiliary glyphs such as lyrics, output and queue to 24dp while retaining 48dp touch targets. Tapping a synchronized lyric seeks there and starts playback. AMLL lyrics reuse the existing Resonus blur strength with a maximum of eight nearby filtered rows; this round does not port AM++'s lyric-blur algorithm.
+
+Global switches are about 16% smaller in a 54×44dp layout, retaining a 44dp touch height and leaving more horizontal room for settings text.
+
 Settings → Glass tuning now supports independent AM++ parameters for the mini player, navigation and other controls, plus one-tap restoration and saving of all AM++ defaults. Existing Custom profiles remain separate. A dock fix clears inherited compact-icon offsets when switching among AM++, Kyant defaults, iPhone reference and Custom appearances. Earlier integration details remain in the [AM++ adaptation guide](./docs/AMPP-ADAPTATION.md).
 
-The preview has been installed on Samsung and passed initial UI checks; long-session scrolling and frame-time validation remain pending. The background has its own maximum 60 fps work budget and does not change the existing 120Hz UI/window requests. This is not a new measurement of 120 fps or a guarantee of sustained frame rates on every page. These preview changes have not been included in a stable release.
+This round ports the pinned Zennmn/AM-plus-plus page-input controller, collapse geometry, independent selected-lens content row and velocity/press deformation into the source. Playback, navigation and window interfaces are adapted to Resonus, with Custom and non-AM++ appearances retained. See the [AM++ source-port mapping](./docs/AMLL-PLAYER-PREVIEW.md#ampp-source-port) for the source files, hardware foreground recording and JSI bridge.
 
-When the artwork palette is enabled, the play/pause button uses the same immediate current-artwork role as the progress and volume tracks. The Resonus layout retains its separate background-palette stability wait and transition; the AMLL layout uses its own native artwork field.
+The `.3` preview was built and installed on Samsung, with initial checks for lyric seeking/resume, auxiliary glyphs, scroll collapse, foreground refraction and complete recorded dismissal. All 346 app tests and 89 native glass-module tests passed. Long-session frame-time and battery validation remain pending; a 120Hz system request does not guarantee sustained 120 fps across every page. The background retains its independent approximately 60 fps maximum work budget. These preview changes are not in a stable release.
+
+When the artwork palette is enabled in the previous Resonus layout, the play/pause button uses the same immediate current-artwork role as the progress and volume tracks; its background palette retains a separate stability wait and transition. AMLL uses its own native artwork field and a play button without a persistent circle, while keeping artwork-colored tracks.
 
 Playback track colors now commit immediately, with bounded foreground warmup of adjacent artwork. Cached colors update on track change; unread artwork still requires image access and uses a neutral placeholder rather than the previous song's color.
 

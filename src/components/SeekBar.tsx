@@ -15,7 +15,7 @@
  */
 import { GlassSlider as Slider } from '@/components/glass';
 import type { PlayerSliderComponent } from '@/components/AmllSlider';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { AppState, Platform, Pressable, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { useT } from '@/i18n';
@@ -33,6 +33,7 @@ export function SeekBar({
   mutedTrackTint,
   sliderComponent,
   active = true,
+  centerAccessory,
 }: {
   duration: number;
   style?: StyleProp<ViewStyle>;
@@ -44,6 +45,8 @@ export function SeekBar({
   sliderComponent?: PlayerSliderComponent;
   /** False while a retained player is hidden or the app is in the background. */
   active?: boolean;
+  /** Optional inline quality badge between the two time labels. */
+  centerAccessory?: ReactNode;
 }) {
   // Its own subscription to the theme: the screens around it have one, but a
   // component that reads a colour is the one that has to be told to paint again.
@@ -116,12 +119,14 @@ export function SeekBar({
         thumbTintColor={tint ?? colors.text}
       />
       <View style={styles.times}>
-        <Text style={[styles.time, textTint ? { color: textTint } : undefined]}>{formatDuration(shown)}</Text>
+        <Text style={[styles.time, centerAccessory ? { flex: 1 } : undefined, textTint ? { color: textTint } : undefined]}>{formatDuration(shown)}</Text>
+        {centerAccessory ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>{centerAccessory}</View> : null}
         <Pressable
           // Not upward: that is the end of the bar, which has to seek.
           hitSlop={{ top: 0, bottom: 12, left: 12, right: 12 }}
           accessibilityRole="button"
           accessibilityLabel={remaining ? t('Show total time') : t('Show remaining time')}
+          style={centerAccessory ? { flex: 1, alignItems: 'flex-end' } : undefined}
           onPress={() => setRemaining(!remaining)}
         >
           <Text style={[styles.time, textTint ? { color: textTint } : undefined]}>

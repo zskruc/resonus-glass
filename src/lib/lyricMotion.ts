@@ -45,8 +45,8 @@ export function lyricBlurRadius(
 }
 
 /**
- * AMLL's near-focus depth, with a fixed native filter budget. Distant rows
- * already fade into the edge mask and must not allocate offscreen blur layers.
+ * Reuse Resonus's existing depth treatment within the AMLL native layer budget.
+ * Distant rows fade into the edge mask instead of allocating more blur layers.
  */
 export function amllLyricBlurRadius(
   rowIndex: number,
@@ -56,7 +56,7 @@ export function amllLyricBlurRadius(
   if (!enabled || rowIndex < 0 || activeRowIndex < 0) return 0;
   const distance = Math.abs(rowIndex - activeRowIndex);
   if (distance === 0 || distance > 4) return 0;
-  return Math.min(1.2, distance * 0.3);
+  return lyricBlurRadius(rowIndex, activeRowIndex, enabled);
 }
 
 /**

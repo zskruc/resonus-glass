@@ -74,13 +74,23 @@ type LiquidGlassTabsProps = LiquidGlassViewProps & {
   tabsCount: number;
   tabHorizontalInset: number;
   tabVerticalInset: number;
+  tabAccentColor?: ColorValue;
+  /** Observe page input independently of blur/material settings. */
+  dockScrollEnabled?: boolean;
+  dockScrollScope?: string;
+  dockScrollCollapsed?: boolean;
+  onDockCollapseIntent?: (event: NativeSyntheticEvent<{ collapsed: boolean; scope: string }>) => void;
   onMotionHostReady: (event: NativeSyntheticEvent<{ hostId: number }>) => void;
 };
-type NativeTabsProps = NativeProps & Omit<LiquidGlassTabsProps, keyof LiquidGlassViewProps>;
+type NativeTabsProps = NativeProps & Omit<LiquidGlassTabsProps, keyof LiquidGlassViewProps | 'tabAccentColor'> & {
+  tabAccentColor?: number;
+};
 type UpdateTabsMotion = (hostId: number, position: number, progress: number, scaleX: number,
   scaleY: number, velocity: number, panelOffset: number, opacity: number) => void;
 type UpdateDockProgress = (hostId: number, progress: number) => void;
 type UpdateButtonMotion = (hostId: number, progress: number, x: number, y: number) => void;
+type ReadDockScrollIntent = (hostId: number, scope: string) => number;
+type ExpandDockScrollInput = (hostId: number) => void;
 
 export type LiquidGlassDiagnostics = {
   activeWindows: number;
@@ -103,7 +113,8 @@ export type LiquidGlassDiagnostics = {
 const nativeModule = Platform.OS === 'android'
   ? requireOptionalNativeModule<{ isSupported: boolean; getDiagnostics(): Promise<LiquidGlassDiagnostics>;
     updateTabsMotion: UpdateTabsMotion; updateDockProgress: UpdateDockProgress;
-    updateButtonMotion: UpdateButtonMotion }>('ResonusLiquidGlass')
+    updateButtonMotion: UpdateButtonMotion; readDockScrollIntent: ReadDockScrollIntent;
+    expandDockScrollInput: ExpandDockScrollInput }>('ResonusLiquidGlass')
   : null;
 
 export const isLiquidGlassAvailable = Boolean(nativeModule?.isSupported);
@@ -112,6 +123,8 @@ export const isLiquidGlassAvailable = Boolean(nativeModule?.isSupported);
 export const updateNativeTabsMotion = nativeModule?.updateTabsMotion ?? null;
 export const updateNativeDockProgress = nativeModule?.updateDockProgress ?? null;
 export const updateNativeButtonMotion = nativeModule?.updateButtonMotion ?? null;
+export const readNativeDockScrollIntent = nativeModule?.readDockScrollIntent ?? null;
+export const expandNativeDockScrollInput = nativeModule?.expandDockScrollInput ?? null;
 
 /** Debug counters only; no screen content, device identity, or saved images. */
 export async function getLiquidGlassDiagnostics(): Promise<LiquidGlassDiagnostics> {
@@ -125,14 +138,16 @@ const NativeGlass: React.ComponentType<NativeProps> | null = nativeModule
 const NativeTabs = NativeGlass as React.ComponentType<NativeTabsProps> | null;
 
 /** Native material only; original RN tabs retain their touch/accessibility. */
-export function LiquidGlassTabsView({ materialPreset = 'button', tintColor = 'transparent', ...props }: LiquidGlassTabsProps) {
+export function LiquidGlassTabsView({ materialPreset = 'button', tintColor = 'transparent', tabAccentColor, ...props }: LiquidGlassTabsProps) {
   if (!NativeTabs || !isLiquidGlassAvailable) {
     return <View style={props.style} pointerEvents="none" accessible={false} />;
   }
   const color = processColor(tintColor);
   const staticColor = props.staticBackdropColor == null ? null : processColor(props.staticBackdropColor);
+  const accent = tabAccentColor == null ? undefined : processColor(tabAccentColor);
   return <NativeTabs {...props} materialPreset={materialPreset} pointerEvents="none" accessible={false}
     staticBackdropColor={typeof staticColor === 'number' ? staticColor : null}
+    tabAccentColor={typeof accent === 'number' ? accent : undefined}
     tintColor={typeof color === 'number' ? color : processColor('transparent') as number} />;
 }
 

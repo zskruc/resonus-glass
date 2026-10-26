@@ -148,6 +148,38 @@ function Action({
   );
 }
 
+/** Only the opt-in AMLL player adds these global playback-mode actions. */
+function PlaybackModeActions({ canChange }: { canChange: () => boolean }) {
+  const card = useContext(MenuCardContext);
+  const t = useT();
+  const shuffle = usePlayerStore((state) => state.shuffle);
+  const repeat = usePlayerStore((state) => state.repeat);
+  const repeatLabel = repeat === 'one' ? t('Repeat one song') : repeat === 'all' ? t('Repeat all songs') : t('Off');
+  return (
+    <>
+      <Pressable accessibilityRole="switch" accessibilityLabel={t('Shuffle')}
+        accessibilityState={{ checked: shuffle }}
+        onPress={() => { if (canChange()) usePlayerStore.getState().toggleShuffle(); }}
+        style={({ pressed }) => [styles.action, card && styles.cardAction, pressed && { opacity: .6 }]}>
+        <Icon name="shuffle" size={card ? 20 : 24} color={colors.text} />
+        <Text style={[styles.actionText, card && styles.cardActionText, { flex: 1 }]}>{t('Shuffle')}</Text>
+        <Text style={styles.modeValue}>{shuffle ? t('On') : t('Off')}</Text>
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel={`${t('Repeat')}: ${repeatLabel}`}
+        accessibilityValue={{ text: repeatLabel }}
+        onPress={() => { if (canChange()) usePlayerStore.getState().cycleRepeat(); }}
+        style={({ pressed }) => [styles.action, card && styles.cardAction, pressed && { opacity: .6 }]}>
+        <Icon name={repeat === 'one' ? 'repeat-outline' : 'repeat'} size={card ? 20 : 24} color={colors.text} />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={[styles.actionText, card && styles.cardActionText]}>{t('Repeat')}</Text>
+          <Text style={styles.modeValue}>{repeatLabel}</Text>
+        </View>
+      </Pressable>
+      <View style={styles.divider} />
+    </>
+  );
+}
+
 export function SongMenuSheet() {
   const song = useSongMenu((s) => s.song);
   const session = useSongMenu((s) => s.session);
@@ -676,6 +708,7 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
                   scrollEventThrottle={16}
                   onScroll={(e) => { if (!isCard) setAtTop(e.nativeEvent.contentOffset.y <= 0); }}
                 >
+                  {extras.playbackModes ? <PlaybackModeActions canChange={isOpenSession} /> : null}
                   <Action
                     icon="add-circle-outline"
                     label={t('Add to a playlist')}
@@ -786,7 +819,10 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
                     <Action
                       icon="mic-outline"
                       label={t('Lyrics')}
-                      onPress={() => go('/lyrics')}
+                      onPress={() => {
+                        if (extras.lyrics) dismissAction(extras.lyrics);
+                        else go('/lyrics');
+                      }}
                     />
                   ) : null}
                   {/* The player's buttons that are hidden from its bottom row,
@@ -967,6 +1003,7 @@ const styles = themed((colors) => ({
   cardArtist: { fontSize: 13 },
   cardAction: { minHeight: 48, paddingVertical: 10, gap: 12 },
   cardActionText: { fontSize: 17, flex: 1, flexShrink: 1 },
+  modeValue: { color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
   cardNote: { paddingLeft: 0 },
   cardNewPlaylistIcon: { width: 32, height: 32 },
   sheet: {

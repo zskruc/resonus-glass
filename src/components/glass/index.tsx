@@ -14,6 +14,7 @@ import { resolveGlassProfile, sanitizeGlassOverrides, useGlassTuning, type Glass
 import { useTheme, useThemeMode } from '@/theme';
 import { getKyantGlassProfile } from '@/theme/glassDefaults';
 import { glassMaterialTuningMask } from '@/lib/glassMaterialTuning';
+import { GLASS_SWITCH_SIZE } from '@/lib/glassSwitchSize';
 import { DynamicGlassBackdrop } from './StaticGlassBackdropContext';
 
 export type GlassVariant = 'regular' | 'prominent' | 'subtle' | 'button';
@@ -237,13 +238,17 @@ export function GlassSwitch({
 }: SwitchProps) {
   const dark = useThemeMode() === 'dark';
   if (!isLiquidGlassAvailable) {
-    return <Switch {...viewProps} style={style} value={value} disabled={disabled}
-      onValueChange={onValueChange} onChange={onChange}
-      trackColor={trackColor} thumbColor={thumbColor} ios_backgroundColor={ios_backgroundColor} />;
+    return (
+      <View collapsable={false} style={[switchStyles.frame, style]}>
+        <Switch {...viewProps} style={switchStyles.control} value={value} disabled={disabled}
+          onValueChange={onValueChange} onChange={onChange}
+          trackColor={trackColor} thumbColor={thumbColor} ios_backgroundColor={ios_backgroundColor} />
+      </View>
+    );
   }
   return (
-    <View {...viewProps} collapsable={false} style={[{ width: 64, height: 48, flexShrink: 0 }, style]}>
-      <LiquidGlassToggle style={StyleSheet.absoluteFill} value={value} disabled={disabled} dark={dark}
+    <View {...viewProps} collapsable={false} style={[switchStyles.frame, style]}>
+      <LiquidGlassToggle style={switchStyles.control} value={value} disabled={disabled} dark={dark}
         onStartShouldSetResponder={() => true}
         onResponderTerminationRequest={() => false}
         accessible={viewProps.accessible}
@@ -257,6 +262,26 @@ export function GlassSwitch({
     </View>
   );
 }
+
+const switchStyles = StyleSheet.create({
+  frame: {
+    width: GLASS_SWITCH_SIZE.width,
+    height: GLASS_SWITCH_SIZE.touchHeight,
+    minHeight: GLASS_SWITCH_SIZE.touchHeight,
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
+  },
+  control: {
+    position: 'absolute',
+    width: GLASS_SWITCH_SIZE.nativeWidth,
+    height: GLASS_SWITCH_SIZE.nativeHeight,
+    // Native hit testing applies the inverse matrix, so its 20dp drag travel,
+    // cancellation and optical recipe continue using catalog coordinates.
+    transform: [{ scale: GLASS_SWITCH_SIZE.scale }],
+  },
+});
 
 export function GlassSlider({
   style, value, minimumValue, maximumValue, step, disabled, activeTrackTintColor,

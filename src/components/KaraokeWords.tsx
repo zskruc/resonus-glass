@@ -7,7 +7,7 @@
  */
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
-import { memo, useEffect } from 'react';
+import { memo, useLayoutEffect } from 'react';
 import { StyleSheet, Text, View, type StyleProp, type TextStyle } from 'react-native';
 import Animated, {
   cancelAnimation,
@@ -21,6 +21,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import type { LyricWord } from '@/api/subsonic';
+import { lyricClockPlan } from '@/lib/lyricLifecycle';
 import {
   lyricWordDurationMs,
   MIN_WORD_TRANSITION_MS,
@@ -30,11 +31,12 @@ import {
 } from '@/lib/lyricMotion';
 import { usePlayerStore } from '@/store/player';
 
-const CLOCK_RUNWAY_MS = 1200;
-
 interface KaraokeWordsProps {
   words: LyricWord[];
-  active: boolean;
+  /** The current lyric line; independent of whether this retained view is visible. */
+  highlighted: boolean;
+  /** Freeze the rendered words in place while the page exits or is hidden. */
+  active?: boolean;
   centered: boolean;
   textStyle: StyleProp<TextStyle>;
   activeColor: string;
@@ -48,7 +50,8 @@ interface KaraokeWordsProps {
  */
 export const KaraokeWords = memo(function KaraokeWords({
   words,
-  active,
+  highlighted,
+  active = true,
   centered,
   textStyle,
   activeColor,
@@ -56,9 +59,10 @@ export const KaraokeWords = memo(function KaraokeWords({
   paddingVertical,
 }: KaraokeWordsProps) {
   const label = words.map((word) => word.value).join('');
-  const content = active ? (
+  const content = highlighted ? (
     <ActiveWordFlow
       words={words}
+      active={active}
       textStyle={textStyle}
       activeColor={activeColor}
       inactiveColor={inactiveColor}
@@ -88,30 +92,36 @@ export const KaraokeWords = memo(function KaraokeWords({
 
 function ActiveWordFlow({
   words,
+  active = true,
   textStyle,
   activeColor,
   inactiveColor,
-}: Omit<KaraokeWordsProps, 'active' | 'centered' | 'paddingVertical'>) {
+}: Omit<KaraokeWordsProps, 'highlighted' | 'centered' | 'paddingVertical'>) {
   const positionSec = usePlayerStore((s) => s.positionSec);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const speed = usePlayerStore((s) => s.speed);
   const reduceMotion = useReducedMotion();
   const clockMs = useSharedValue(positionSec * 1000);
+  const bounceEnabled = useSharedValue(isPlaying && !reduceMotion);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     cancelAnimation(clockMs);
-    const start = positionSec * 1000;
-    clockMs.value = start;
-    if (isPlaying) {
-      clockMs.value = withTiming(start + CLOCK_RUNWAY_MS * (speed || 1), {
-        duration: CLOCK_RUNWAY_MS,
+    const plan = lyricClockPlan(positionSec, isPlaying, speed, active);
+    // Cancel before the first exiting frame without changing the sweep or bounce pose.
+    if (!plan) return;
+    bounceEnabled.value = isPlaying && !reduceMotion;
+    clockMs.value = plan.startMs;
+    if (plan.durationMs > 0) {
+      clockMs.value = withTiming(plan.targetMs, {
+        duration: plan.durationMs,
         easing: Easing.linear,
         // Highlight progress carries timing information and must not jump even
         // when decorative motion is disabled at the system level.
         reduceMotion: ReduceMotion.Never,
       });
     }
-  }, [clockMs, isPlaying, positionSec, speed]);
+    return () => cancelAnimation(clockMs);
+  }, [clockMs, bounceEnabled, isPlaying, positionSec, speed, active, reduceMotion]);
 
   return words.map((word, index) => (
     <TimedWord
@@ -119,7 +129,7 @@ function ActiveWordFlow({
       word={word}
       durationMs={lyricWordDurationMs(words, index)}
       clockMs={clockMs}
-      animateBounce={isPlaying && !reduceMotion}
+      animateBounce={bounceEnabled}
       textStyle={textStyle}
       activeColor={activeColor}
       inactiveColor={inactiveColor}
@@ -139,7 +149,7 @@ const TimedWord = memo(function TimedWord({
   word: LyricWord;
   durationMs: number;
   clockMs: SharedValue<number>;
-  animateBounce: boolean;
+  animateBounce: SharedValue<boolean>;
   textStyle: StyleProp<TextStyle>;
   activeColor: string;
   inactiveColor: string;
@@ -148,7 +158,7 @@ const TimedWord = memo(function TimedWord({
   const height = useSharedValue(0);
 
   const motionStyle = useAnimatedStyle(() => {
-    if (!animateBounce) return { transform: [{ scale: 1 }] };
+    if (!animateBounce.value) return { transform: [{ scale: 1 }] };
     const duration = Math.max(MIN_WORD_TRANSITION_MS, durationMs);
     const raw = Math.max(0, Math.min(1, (clockMs.value - word.start) / duration));
     const scale = 1 + WORD_BOUNCE_SCALE * Math.sin(raw * Math.PI);

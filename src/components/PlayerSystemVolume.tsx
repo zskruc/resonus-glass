@@ -30,6 +30,7 @@ export function PlayerSystemVolume({
   active = true,
   sliderComponent,
   mutedTrackTint,
+  showLabel = true,
 }: {
   tint: string;
   /** Only the filled track follows artwork; device icons and labels stay neutral. */
@@ -39,6 +40,8 @@ export function PlayerSystemVolume({
   active?: boolean;
   sliderComponent?: PlayerSliderComponent;
   mutedTrackTint?: string;
+  /** The AMLL presentation keeps only the speaker icons and bar. */
+  showLabel?: boolean;
 }) {
   const t = useT();
   const state = useMediaControls(active);
@@ -184,9 +187,9 @@ export function PlayerSystemVolume({
         />
         <Icon name="volume-high" size={20} color={tint} />
       </View>
-      <Text style={{ color: tint, opacity: 0.62, fontSize: 10, fontWeight: '500', textAlign: 'center', marginTop: -4 }}>
+      {showLabel ? <Text style={{ color: tint, opacity: 0.62, fontSize: 10, fontWeight: '500', textAlign: 'center', marginTop: -4 }}>
         {disabled && state.fixed && !remote ? t('Volume is controlled by the output device') : label}
-      </Text>
+      </Text> : null}
     </View>
   );
 }

@@ -41,6 +41,7 @@ import { removeLegacyRadioCovers } from '@/lib/legacyRadioCovers';
 import { startPerfLog } from '@/lib/perfLog';
 import { queryClient } from '@/lib/query';
 import { primaryUrl } from '@/lib/serverUrls';
+import { playerModalAnimation } from '@/lib/amllPlayerTransition';
 import { useAuthStore } from '@/store/auth';
 import { useAutoDownloads } from '@/store/autoDownloads';
 import { checkAutoUrlNow, initAutoUrl } from '@/store/autoUrl';
@@ -165,6 +166,7 @@ export default function RootLayout() {
   // bar, sheets, toast) repaints from here; the screens inside subscribe on
   // their own, because a stack keeps them mounted and out of this render.
   const palette = useTheme();
+  const playerPresentation = useSettings((state) => state.playerPresentation);
   // The window behind everything the app draws. It shows through for an instant
   // between screens and under an overscroll, and left at the launch colour it
   // was a dark flash in the middle of the light theme.
@@ -411,9 +413,11 @@ export default function RootLayout() {
                   presentation: 'containedTransparentModal',
                   // Pulled up out of the mini player it has no animation of its
                   // own: the finger is what brings it up (see `playerReveal`).
-                  animation: (route.params as { reveal?: string } | undefined)?.reveal
-                    ? 'none'
-                    : 'fade_from_bottom',
+                  animation: playerModalAnimation(playerPresentation,
+                    !!(route.params as { reveal?: string } | undefined)?.reveal),
+                  // AMLL owns the whole surface's entry/exit. A second native
+                  // gesture/animation would detach its backdrop before handoff.
+                  gestureEnabled: playerPresentation !== 'amll',
                   // Override the global opaque contentStyle: without this the
                   // modal container itself is painted with colors.background and
                   // dragging the player only exposes that dark surface, never the

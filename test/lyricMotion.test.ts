@@ -71,11 +71,20 @@ describe('AMLL lyric filter budget', () => {
     assert.equal(amllLyricBlurRadius(-1, 12, true), 0);
   });
 
+  it('uses the existing Resonus strength for equally distant past and upcoming lines', () => {
+    for (const offset of [-4, -3, -2, -1, 0, 1, 2, 3, 4]) {
+      assert.equal(amllLyricBlurRadius(12 + offset, 12, true),
+        lyricBlurRadius(12 + offset, 12, true));
+    }
+    assert.equal(amllLyricBlurRadius(13, 12, true), 0.55);
+    assert.equal(amllLyricBlurRadius(11, 12, true), 0.6875);
+  });
+
   it('never allocates blur to more than eight neighbours regardless of song length or seek distance', () => {
     for (const active of [0, 4, 500, 9999]) {
       const filtered = Array.from({ length: 10000 }, (_, row) => amllLyricBlurRadius(row, active, true));
       assert.ok(filtered.filter((radius) => radius > 0).length <= 8);
-      assert.ok(filtered.every((radius) => radius >= 0 && radius <= 1.2));
+      assert.ok(filtered.every((radius) => radius >= 0 && radius <= 2.2));
       for (let row = 0; row < filtered.length; row++) {
         if (Math.abs(row - active) > 4) assert.equal(filtered[row], 0);
       }

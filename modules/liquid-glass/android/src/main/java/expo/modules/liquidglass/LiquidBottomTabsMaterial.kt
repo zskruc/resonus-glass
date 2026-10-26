@@ -3,8 +3,9 @@
  * https://github.com/Kyant0/AndroidLiquidGlass/blob/kmp/app/src/commonMain/kotlin/com/kyant/backdrop/catalog/components/LiquidBottomTabs.kt
  * Copyright Kyant0. Licensed under Apache-2.0; see ANDROID_LIQUID_GLASS_LICENSE.
  * RN owns navigation, labels, font settings, accessibility and pointer gestures.
- * AM++ preset adapts panel squeeze, clipped press light and collapsing light anchor
- * from Kifranei/AM-plus-plus commit 97fa2e4efc9ec7476daca383221f55b5d10f847c
+ * AM++ preset ports its refraction-content source row, velocity/press lens coupling,
+ * panel squeeze, clipped press light and collapsing light anchor from
+ * Zennmn/AM-plus-plus commit 36dd119950b001883d3e31e17586f545d404a7c1
  * (GPL-3.0); original Kyant shader and material remain Apache-2.0.
  */
 package expo.modules.liquidglass
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -114,6 +116,24 @@ private fun Modifier.recordTabsBackdrop(
   }
 }
 
+/** The real selected lens follows RN's visible row in drawing order. */
+@Composable
+private fun Modifier.recordSelectionOverlay(overlay: AmPlusSelectionOverlay?): Modifier {
+  if (overlay == null) return this
+  val layer = rememberGraphicsLayer()
+  DisposableEffect(overlay, layer) { onDispose { overlay.clear(layer) } }
+  return drawWithContent {
+    layer.record(density = this, layoutDirection = layoutDirection,
+      size = IntSize(size.width.roundToInt(), size.height.roundToInt())) {
+      this@drawWithContent.draw(density = drawContext.density, layoutDirection = drawContext.layoutDirection,
+        canvas = drawContext.canvas, size = drawContext.size, graphicsLayer = drawContext.graphicsLayer) {
+        this@drawWithContent.drawContent()
+      }
+    }
+    overlay.update(layer, this, layoutDirection, size)
+  }
+}
+
 private fun DrawScope.drawTabsInteractiveHighlight(progress: Float, center: Offset) {
   if (progress <= 0f) return
   drawRect(Color.White.copy(alpha = 0.08f * progress), blendMode = BlendMode.Plus)
@@ -168,6 +188,8 @@ half4 main(float2 coord) {
 @Composable
 internal fun LiquidBottomTabsMaterial(
   backdrop: Backdrop,
+  foregroundBackdrop: Backdrop?,
+  selectionOverlay: AmPlusSelectionOverlay?,
   tabsCount: Int,
   horizontalInset: Float,
   verticalInset: Float,
@@ -215,8 +237,10 @@ internal fun LiquidBottomTabsMaterial(
     val layer = rememberGraphicsLayer()
     remember(layer) {
       SinglePassTabsBackdrop(layer,
-        selectorScaleX = { pressedScaleX() / (1f - (velocity() / 10f * 0.75f).coerceIn(-0.2f, 0.2f)) },
-        selectorScaleY = { pressedScaleY() * (1f - (velocity() / 10f * 0.25f).coerceIn(-0.2f, 0.2f)) })
+        selectorScaleX = { if (amPlusMaterial) AmPlusSelectionMotion.scaleX(pressedScaleX(), velocity(), pressProgress())
+          else pressedScaleX() / (1f - (velocity() / 10f * 0.75f).coerceIn(-0.2f, 0.2f)) },
+        selectorScaleY = { if (amPlusMaterial) AmPlusSelectionMotion.scaleY(pressedScaleY(), velocity(), pressProgress())
+          else pressedScaleY() * (1f - (velocity() / 10f * 0.25f).coerceIn(-0.2f, 0.2f)) })
     }
   } else null
   // Positions below are physical canvas coordinates; RN mirrors semantic tabs.
@@ -337,6 +361,14 @@ internal fun LiquidBottomTabsMaterial(
               val center = tabCenter + (size.width / 2f - tabCenter) * collapse
               with(amPlusHighlight) { draw(pressProgress(), Offset(center, size.height / 2f)) }
             } else drawTabsInteractiveHighlight(pressProgress(), Offset(tabCenter, size.height / 2f))
+            // The source records real RN icons/text in the same place as the
+            // reference's accent-colored, semantically hidden refraction row.
+            if (amPlusMaterial && foregroundBackdrop != null) {
+              val foregroundShiftX = panelOffset().dp.toPx()
+              withTransform({ translate(-foregroundShiftX, -topPx) }) {
+                with(foregroundBackdrop) { drawBackdrop(density, null, null) }
+              }
+            }
           }
         )
       )
@@ -347,8 +379,10 @@ internal fun LiquidBottomTabsMaterial(
     // No second screen capture or per-frame bitmap allocation is introduced.
     val selectedScene = rememberCanvasBackdrop {
       val speed = velocity() / 10f
-      val actualScaleX = pressedScaleX() / (1f - (speed * 0.75f).coerceIn(-0.2f, 0.2f))
-      val actualScaleY = pressedScaleY() * (1f - (speed * 0.25f).coerceIn(-0.2f, 0.2f))
+      val actualScaleX = if (amPlusMaterial) AmPlusSelectionMotion.scaleX(pressedScaleX(), velocity(), pressProgress())
+        else pressedScaleX() / (1f - (speed * 0.75f).coerceIn(-0.2f, 0.2f))
+      val actualScaleY = if (amPlusMaterial) AmPlusSelectionMotion.scaleY(pressedScaleY(), velocity(), pressProgress())
+        else pressedScaleY() * (1f - (speed * 0.25f).coerceIn(-0.2f, 0.2f))
       val offsetPx = with(density) { panelOffset().dp.toPx() }
       val boundedPosition = position().coerceIn(0f, (tabsCount - 1).toFloat())
       withTransform({
@@ -359,6 +393,7 @@ internal fun LiquidBottomTabsMaterial(
       }
     }
     val selectedBackdrop = rememberCombinedBackdrop(selectedScene, materialBackdrop)
+    Box(Modifier.fillMaxSize().recordSelectionOverlay(if (amPlusMaterial) selectionOverlay else null)) {
     Box(
       Modifier.width(tabWidth).height(tabHeight).graphicsLayer {
         translationX = insetPx + position().coerceIn(0f, (tabsCount - 1).toFloat()) * tabWidthPx + panelOffset().dp.toPx()
@@ -389,8 +424,10 @@ internal fun LiquidBottomTabsMaterial(
         innerShadow = { InnerShadow(radius = 8f.dp * pressProgress(), alpha = pressProgress()) },
         layerBlock = {
           val speed = velocity() / 10f
-          scaleX = pressedScaleX() / (1f - (speed * 0.75f).coerceIn(-0.2f, 0.2f))
-          scaleY = pressedScaleY() * (1f - (speed * 0.25f).coerceIn(-0.2f, 0.2f))
+          scaleX = if (amPlusMaterial) AmPlusSelectionMotion.scaleX(pressedScaleX(), velocity(), pressProgress())
+            else pressedScaleX() / (1f - (speed * 0.75f).coerceIn(-0.2f, 0.2f))
+          scaleY = if (amPlusMaterial) AmPlusSelectionMotion.scaleY(pressedScaleY(), velocity(), pressProgress())
+            else pressedScaleY() * (1f - (speed * 0.25f).coerceIn(-0.2f, 0.2f))
         },
         onDrawSurface = {
           val progress = pressProgress()
@@ -399,5 +436,6 @@ internal fun LiquidBottomTabsMaterial(
         }
       )
     )
+    }
   }
 }

@@ -30,7 +30,8 @@ test('large accessibility text uses a scrollable column rather than shrinking or
   assert.ok(layout.contentHeight > layout.viewportHeight);
   assert.ok(layout.lyricsTop >= layout.smallCover.y + layout.compactMetadataHeight);
   assert.ok(layout.lyricsTop + layout.lyricsHeight <= layout.contentHeight);
-  assert.ok(layout.footerHeight >= 26 + 3 + 10 * 2.5);
+  assert.equal(layout.footerHeight, 0);
+  assert.ok(layout.controlLayout.volumeBottomPadding > 0);
 });
 
 test('portrait lyric view uses a small cover while the cover view can expand to its available slot', () => {

@@ -25,9 +25,15 @@ class LiquidGlassModule : Module() {
     Function("updateButtonMotion") { token: Int, progress: Double, x: Double, y: Double ->
       TabsMotionHosts.updateButton(token, progress, x, y)
     }
+    Function("readDockScrollIntent") { token: Int, scope: String -> TabsMotionHosts.readDockScrollIntent(token, scope) }
+    Function("expandDockScrollInput") { token: Int -> TabsMotionHosts.expandDockScrollInput(token) }
 
     View(LiquidGlassView::class) {
-      Events("onMotionHostReady")
+      Events("onMotionHostReady", "onDockCollapseIntent")
+      Prop("dockScrollEnabled") { view: LiquidGlassView, value: Boolean -> view.configureDockScrollInput(enabled = value) }
+      Prop("dockScrollScope") { view: LiquidGlassView, value: String -> view.configureDockScrollInput(scope = value) }
+      Prop("dockScrollCollapsed") { view: LiquidGlassView, value: Boolean -> view.configureDockScrollInput(collapsed = value) }
+      Prop("tabAccentColor") { view: LiquidGlassView, value: Int? -> view.tabAccentColor = value ?: 0xff0091ff.toInt() }
       Prop("materialPreset") { view: LiquidGlassView, value: String ->
         view.materialPreset = when (value) {
           "custom", "button", "tabs", "dialog", "amPlus", "mediaPopup", "mediaPopupBottom", "mediaMenu" -> value

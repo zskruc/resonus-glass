@@ -28,20 +28,44 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-## AM++ phone dock geometry and motion
+## AM++ phone dock input, geometry and selected material
 
 The optional AM++ reference appearance adapts phone mini-player/navigation
 geometry, spring rebound, content cross-fades and capsule material rules from
+[Zennmn/AM-plus-plus](https://github.com/Zennmn/AM-plus-plus), commit
+`36dd119950b001883d3e31e17586f545d404a7c1`. The earlier adaptation used
 [Kifranei/AM-plus-plus](https://github.com/Kifranei/AM-plus-plus), commit
-`97fa2e4efc9ec7476daca383221f55b5d10f847c`, forked from Zennmn/AM-plus-plus.
+`97fa2e4efc9ec7476daca383221f55b5d10f847c`.
 Those AM++ changes are licensed under GPL-3.0, compatible with this project's
 GPL-3.0-or-later distribution under GPLv3; see LICENSE. Original Kyant
 Backdrop/catalog code remains Apache-2.0, with its existing notices retained.
 
-Adapted files: AM++ GlassPolicy.kt, GlassBarCollapse.kt, GlassBarCollapseLayout.kt,
-NativeLiquidButton.kt and LiquidBottomTabs.kt; integration and control ownership
+Ported files include GlassBarCollapse.kt, GlassBarCollapseLayout.kt,
+GlassTabGeometry.kt, GlassScrollCollapse.kt and GlassTouchCollapseTracker.kt,
+with their source regression tests. GlassBarCollapseInput/Controller's page,
+boundary, velocity and fling ownership is adapted in AmPlusDockScrollInput.kt.
+NativeLiquidButton.kt, GlassNavigation.kt and LiquidBottomTabs.kt supply the
+native material/refraction-row adaptation; integration and control ownership
 are implemented for Resonus rather than Apple Music/Xposed. No Apple image
 resources or AMLL tablet-media implementation is included in this adaptation.
+
+Source-to-integration mapping at the pinned Zennmn commit:
+
+| Source | Integration in this repository |
+| --- | --- |
+| `app/.../GlassBarCollapseInput.kt` and `GlassBarCollapseController.kt` | `modules/liquid-glass/.../AmPlusDockScrollInput.kt` adapts window/page ownership, scroll boundaries and fling intent. `TabsMotionHosts.kt`, `LiquidGlassModule.kt`, `modules/liquid-glass/index.tsx` and `src/hooks/useLiquidDock.tsx` connect these decisions to Resonus's shared UI-thread spring through scalar JSI calls. |
+| `app/.../GlassScrollCollapse.kt` and `GlassTouchCollapseTracker.kt` | Native policies with the same file names retain the source's signed accumulator, axis/slop tracking, reversal and release-velocity behavior. |
+| `glass/.../GlassBarCollapse.kt`, `GlassBarCollapseLayout.kt` and `GlassTabGeometry.kt` | Native policies with the same file names and `AmPlusDockGeometry.kt` map the source's continuous capsule, mini-player, search and tab geometry onto Resonus views. |
+| `glass/.../LiquidBottomTabs.kt` | `LiquidBottomTabsMaterial.kt` and `AmPlusSelectionMotion.kt` adapt the independent refraction row and velocity × press deformation. `AmPlusTabForeground.kt` records real RN labels/glyphs; `AmPlusSelectionOverlay.kt` draws the selected lens after that visible row. |
+| `backdrop/.../ViewBackdrop.kt` | The hardware foreground bridge in `AmPlusTabForeground.kt` follows the source's `RenderNode` recording approach. The original Kyant/Backdrop portions remain Apache-2.0, including the upstream `65ab177e90e5c1d8c62e70cf7755841982da65f6` attribution retained by AM++. AM++ additions retain their GPL-3.0 attribution. See the retained [AndroidLiquidGlass license](./modules/liquid-glass/ANDROID_LIQUID_GLASS_LICENSE). |
+
+Native destination files above are under
+`modules/liquid-glass/android/src/main/java/expo/modules/liquidglass/`.
+Host playback, navigation, window observation and event ownership are adapted
+to Resonus. Existing Custom parameters and non-AM++ appearances remain in use.
+This is a source adaptation, not execution of the complete Xposed module,
+Apple Music host or Apple resource bundle. AM++ lyric blur was not ported;
+the existing Resonus/Primuse-derived lyric treatment remains in use.
 
 ## AM++ media companion and full-player palette
 

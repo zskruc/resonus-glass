@@ -1,6 +1,6 @@
 /**
- * Phone dock geometry adapted from AM++ (GPL-3.0), commit 97fa2e4.
- * Source: https://github.com/Kifranei/AM-plus-plus/tree/97fa2e4efc9ec7476daca383221f55b5d10f847c/glass
+ * Phone dock geometry ported from Zennmn/AM++ (GPL-3.0), commit 36dd1199.
+ * Source: https://github.com/Zennmn/AM-plus-plus/tree/36dd119950b001883d3e31e17586f545d404a7c1/glass
  * Material remains native; these worklets place the original React Native controls.
  */
 export const AMPP_DOCK = {

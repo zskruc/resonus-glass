@@ -2,37 +2,39 @@
  * A native, independently implemented player inspired by AMLL's two layouts.
  * The playback, lyrics, queue and output actions remain Resonus's own.
  */
-import { useIsFocused, useRouter } from 'expo-router';
+import { useIsFocused } from 'expo-router';
 import { NavigationBar } from 'expo-navigation-bar';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, AppState, Pressable, ScrollView, StyleSheet, Text, View,
-  useWindowDimensions, type StyleProp, type ViewStyle,
+  useWindowDimensions,
 } from 'react-native';
 import Animated, {
   cancelAnimation, interpolate, useAnimatedStyle, useSharedValue, withSpring,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GestureDetector } from 'react-native-gesture-handler';
 
 import { CACHED_COVER, COVER, songCoverUrl } from '@/api/data';
 import { AmllPlayerBackground } from '@/components/AmllPlayerBackground';
 import { AmllSlider } from '@/components/AmllSlider';
 import { AudioQualityBadge } from '@/components/AudioQualityBadge';
 import { Cover } from '@/components/Cover';
-import Icon from '@/components/Icon';
+import { AmllPlayerControls, AmllPlayerBottomActions, AmllPlayerMoreButton } from '@/components/AmllPlayerControls';
 import { SyncedLyricsView } from '@/components/LyricsCard';
 import { MarqueeText } from '@/components/MarqueeText';
 import { OutputSheet } from '@/components/OutputSheet';
 import { PlayerAudioQualitySheet } from '@/components/PlayerAudioQualitySheet';
-import { PlayerOutputDevice } from '@/components/PlayerOutputDevice';
 import { PlayerSystemVolume } from '@/components/PlayerSystemVolume';
 import { SeekBar } from '@/components/SeekBar';
 import { SpeedSheet } from '@/components/SpeedSheet';
+import { useAmllPlayerTransition } from '@/hooks/useAmllPlayerTransition';
 import { useCoverTint } from '@/hooks/useDominantColor';
 import { useLyrics } from '@/hooks/useLyrics';
 import { useT } from '@/i18n';
 import { amllPlayerLayout } from '@/lib/amllPlayerLayout';
+import { seekAndPlayAmllLyricLine } from '@/lib/amllLyricPlayback';
 import { formatGroupedDeviceLabel } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { buildPlayerPalette } from '@/lib/playerPalette';
@@ -49,29 +51,7 @@ const SECONDARY = 'rgba(255,255,255,0.65)';
 const TRACK = 'rgba(255,255,255,0.20)';
 const COVER_SPRING = { stiffness: 200, damping: 30, overshootClamping: true };
 
-function PlayerButton({ name, label, onPress, onLongPress, selected, size = 26, style, children }: {
-  name: keyof typeof Icon.glyphMap;
-  label: string;
-  onPress: () => void;
-  onLongPress?: () => void;
-  selected?: boolean;
-  size?: number;
-  style?: StyleProp<ViewStyle>;
-  children?: React.ReactNode;
-}) {
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label}
-      accessibilityState={selected == null ? undefined : { selected }}
-      onPress={onPress} onLongPress={onLongPress} hitSlop={4}
-      style={({ pressed }) => [styles.button, selected && styles.selectedButton, style, pressed && styles.pressed]}>
-      <Icon name={name} size={size} color={INK} />
-      {children}
-    </Pressable>
-  );
-}
-
 export function AmllPlayerScreen() {
-  const router = useRouter();
   const focused = useIsFocused();
   const insets = useSafeAreaInsets();
   const window = useWindowDimensions();
@@ -91,8 +71,6 @@ export function AmllPlayerScreen() {
   const openMenu = useSongMenu((state) => state.open);
   const showQuality = useSettings((state) => state.showAudioQuality);
   const showVolume = useSettings((state) => state.showSystemVolume);
-  const showOutput = useSettings((state) => state.showOutputDevice);
-  const paletteEnabled = useSettings((state) => state.playerArtworkPalette);
   const fitCover = useSettings((state) => state.fitCoverArt);
   const marquee = useSettings((state) => state.marqueeTitles);
   const upnpConnected = useUpnp((state) => state.connected);
@@ -108,20 +86,22 @@ export function AmllPlayerScreen() {
       && (device.groupId ?? device.id) === group).map((device) => device.name)) || upnpDevice.name;
   }, [upnpDevice, upnpDevices, jukebox, t]);
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
-  const [showLyrics, setShowLyrics] = useState(true);
+  const [showLyrics, setShowLyrics] = useState(false);
+  const [lyricsMounted, setLyricsMounted] = useState(false);
   const [outputOpen, setOutputOpen] = useState(false);
   const openQuality = useRef<() => void>(() => {});
   const openSpeed = useRef<() => void>(() => {});
   const columnScroll = useRef<ScrollView>(null);
   const active = focused && foreground;
+  const transition = useAmllPlayerTransition({ height: window.height, focused, enabled: active });
+  const interactive = active && !transition.closing;
   const cover = song ? songCoverUrl(song, COVER.card) : undefined;
   const coverTint = useCoverTint(cover);
   // Read the current artwork directly: a background crossfade must never hold
-  // the progress, volume or play-button color one song behind.
+  // the progress or volume color one song behind.
   const controlPalette = useMemo(() => cover && !cover.startsWith(CACHED_COVER) && coverTint.known
     ? buildPlayerPalette(coverTint.color, true) : null, [cover, coverTint.color, coverTint.known]);
   const trackTint = controlPalette?.accent ?? INK;
-  const buttonPalette = paletteEnabled ? controlPalette : null;
   const lyrics = useLyrics(song ?? undefined);
   const title = live?.title || song?.title || t('Now playing');
   const artist = live?.artist || song?.artist || t('Unknown artist');
@@ -130,20 +110,18 @@ export function AmllPlayerScreen() {
     height: Math.max(1, window.height - insets.top - insets.bottom - 8),
     fontScale: window.fontScale, showVolume, showQuality,
   });
-  const lyricProgress = useSharedValue(1);
+  const lyricProgress = useSharedValue(0);
   const horizontal = layout.horizontal;
+  const controlsActive = interactive && (!showLyrics || horizontal);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => setForeground(state === 'active'));
     return () => subscription.remove();
   }, []);
   useEffect(() => {
-    if (active) lyricProgress.set(withSpring(showLyrics ? 1 : 0, COVER_SPRING));
-    else {
-      cancelAnimation(lyricProgress);
-      lyricProgress.set(showLyrics ? 1 : 0);
-    }
-  }, [showLyrics, active, lyricProgress]);
+    if (active && !transition.closing) lyricProgress.set(withSpring(showLyrics ? 1 : 0, COVER_SPRING));
+    else cancelAnimation(lyricProgress);
+  }, [showLyrics, active, transition.closing, lyricProgress]);
   useEffect(() => () => cancelAnimation(lyricProgress), [lyricProgress]);
   useEffect(() => {
     columnScroll.current?.scrollTo({ y: 0, animated: false });
@@ -179,28 +157,40 @@ export function AmllPlayerScreen() {
     top: layout.controlsTop,
     opacity: horizontal ? 1 : 1 - lyricProgress.value,
   }));
-  const transportStyle = useAnimatedStyle(() => ({
-    height: horizontal ? 52 : interpolate(lyricProgress.value, [0, 1], [76, 52]),
-  }));
   const canSpeed = (!song?.url || song?.vod) && !upnpConnected && !jukebox;
   const showMenu = useCallback(() => {
-    if (!song) return;
+    if (!song || !interactive) return;
     openMenu(song, undefined, {
-      presentation: 'card', showLyrics: !song.url, queue: true,
+      lyrics: () => { setLyricsMounted(true); setShowLyrics(true); },
+      playbackModes: true, presentation: 'card', showLyrics: !song.url, queue: true,
       devices: () => setOutputOpen(true), speed: canSpeed ? () => openSpeed.current() : undefined,
     });
-  }, [song, openMenu, canSpeed]);
+  }, [song, interactive, openMenu, canSpeed]);
   const stop = useCallback(() => {
     haptic('medium');
     void usePlayerStore.getState().stopAndClear().then((undo) => {
       if (undo) useToast.getState().show(t('Playback stopped'), { label: t('Undo'), run: undo });
     });
-    router.back();
-  }, [router, t]);
+    transition.close();
+  }, [transition, t]);
   const switchLyrics = () => {
+    if (!interactive) return;
+    setLyricsMounted(true);
     haptic('light');
     setShowLyrics((shown) => !shown);
   };
+
+  const playFromLyric = useCallback((seconds: number) => {
+    seekAndPlayAmllLyricLine(song?.id, seconds, {
+      read: () => {
+        const state = usePlayerStore.getState();
+        return { songId: currentSong(state)?.id, isPlaying: state.isPlaying,
+          active: interactive, foreground: AppState.currentState === 'active' };
+      },
+      seekTo: (position) => usePlayerStore.getState().seekTo(position),
+      resume: () => usePlayerStore.getState().toggle(),
+    });
+  }, [song?.id, interactive]);
 
   const metadata = (compact: boolean) => (
     <View style={styles.metadataRow}>
@@ -209,14 +199,17 @@ export function AmllPlayerScreen() {
           style={compact ? styles.compactTitle : styles.title} />
         <Text numberOfLines={1} style={compact ? styles.compactArtist : styles.artist}>{artist}</Text>
       </View>
-      <PlayerButton name="ellipsis-horizontal" label={t('More options')} onPress={showMenu} size={24} />
+      <AmllPlayerMoreButton label={t('More options')} onPress={showMenu} active={interactive}
+        viewportWidth={window.width} viewportHeight={window.height} />
     </View>
   );
 
-  const lyricContent = active && showLyrics ? (
+  // Retain the last painted lyrics throughout dismissal and covered routes.
+  // Visibility pauses their clocks; removing the mask here exposes a blank patch.
+  const lyricContent = lyricsMounted ? (
     lyrics.data?.lines.length ? (lyrics.data.synced ? (
       <SyncedLyricsView key={song?.id} lines={lyrics.data.lines} large
-        nested={!horizontal && layout.scrollable} appearance="amll" focusAnchor={horizontal ? 0.42 : 0.1} />
+        nested={!horizontal && layout.scrollable} appearance="amll" active={interactive && showLyrics} onLinePress={playFromLyric} focusAnchor={horizontal ? 0.42 : 0.1} />
     ) : (
       <ScrollView key={song?.id} nestedScrollEnabled showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.plainLyricsContent}>
@@ -231,15 +224,19 @@ export function AmllPlayerScreen() {
   ) : null;
 
   return (
-    <View style={styles.screen}>
+    <Animated.View style={[styles.screen, transition.rootStyle]}>
       {focused ? <><StatusBar style="light" /><NavigationBar style="light" /></> : null}
-      <AmllPlayerBackground uri={cover} active={active && playing} />
+      <AmllPlayerBackground uri={cover} active={interactive && playing} />
       <View style={[styles.safe, { paddingTop: insets.top + 8, paddingBottom: insets.bottom,
         paddingLeft: insets.left + layout.padding, paddingRight: insets.right + layout.padding }]}>
-        <Pressable accessibilityRole="button" accessibilityLabel={t('Close')} onPress={() => router.back()}
-          style={[styles.handleButton, { height: layout.headerHeight }]} hitSlop={{ top: 8, bottom: 8 }}>
-          <View style={styles.handle} />
-        </Pressable>
+        <GestureDetector gesture={transition.handleGesture}>
+          <Animated.View>
+            <Pressable accessibilityRole="button" accessibilityLabel={t('Close')} onPress={transition.close}
+              style={[styles.handleButton, { height: layout.headerHeight }]} hitSlop={{ top: 8, bottom: 8 }}>
+              <View style={styles.handle} />
+            </Pressable>
+          </Animated.View>
+        </GestureDetector>
         <View style={{ width: layout.innerWidth, height: layout.viewportHeight }}>
           {horizontal ? (
             <Animated.View pointerEvents={showLyrics ? 'auto' : 'none'}
@@ -258,7 +255,7 @@ export function AmllPlayerScreen() {
                   <Pressable accessibilityRole="button" accessibilityLabel={showLyrics ? t('Show cover') : t('Lyrics')}
                     onPress={switchLyrics} onLongPress={showMenu} style={styles.coverPressable}>
                     <Cover uri={cover} size={layout.largeCover.size} transition={0}
-                      contentFit={fitCover ? 'contain' : 'cover'} autoplay={active && playing}
+                      contentFit={fitCover ? 'contain' : 'cover'} autoplay={interactive && playing}
                       style={{ width: '100%', height: '100%', borderRadius: 0 }} />
                   </Pressable>
                 </Animated.View>
@@ -287,48 +284,34 @@ export function AmllPlayerScreen() {
                   accessibilityElementsHidden={!horizontal && showLyrics}
                   importantForAccessibility={horizontal || !showLyrics ? 'auto' : 'no-hide-descendants'}
                   style={[styles.controls, controlsStyle]}>
-                  {showQuality && song ? (
-                    <View style={{ height: layout.qualityHeight, alignItems: 'center', justifyContent: 'center' }}>
-                      <AudioQualityBadge song={song} onPress={() => openQuality.current()} color={SECONDARY} />
-                    </View>
-                  ) : null}
-                  <SeekBar duration={durationSec || song?.duration || 0} active={active} tint={trackTint} textTint={SECONDARY}
-                    mutedTrackTint={TRACK} sliderComponent={AmllSlider} style={{ height: layout.seekHeight }} />
-                  <Animated.View style={[styles.transport, transportStyle]}>
-                    <PlayerButton name="shuffle" label={t('Shuffle')} onPress={toggleShuffle} selected={shuffle} size={22} />
-                    <PlayerButton name="play-skip-back" label={t('Previous')} onPress={previous} size={28} />
-                    <Pressable accessibilityRole="button" accessibilityLabel={playing ? t('Pause') : t('Play')}
-                      onPress={toggle} onLongPress={stop} hitSlop={6}
-                      style={({ pressed }) => [styles.playButton, buttonPalette && { backgroundColor: buttonPalette.accent }, pressed && styles.pressed]}>
-                      {buffering ? <ActivityIndicator size="small" color={buttonPalette?.onAccent ?? INK} />
-                        : <Icon name={playing ? 'pause' : 'play'} size={34} color={buttonPalette?.onAccent ?? INK}
-                          style={!playing ? { marginLeft: 3 } : undefined} />}
-                    </Pressable>
-                    <PlayerButton name="play-skip-forward" label={t('Next')} onPress={next} size={28} />
-                    <PlayerButton name="repeat" label={t('Repeat')} onPress={cycleRepeat} selected={repeat !== 'off'} size={23}>
-                      {repeat === 'one' ? <Text style={styles.repeatOne}>1</Text> : null}
-                    </PlayerButton>
-                  </Animated.View>
-                  {showVolume ? <PlayerSystemVolume tint={INK} trackTint={trackTint} active={active}
-                    mutedTrackTint={TRACK} sliderComponent={AmllSlider} style={{ height: layout.volumeHeight }} /> : null}
+                  <AmllPlayerControls width={layout.leftWidth} viewportHeight={layout.referenceHeight}
+                    horizontal={horizontal} fontScale={window.fontScale} playing={playing} buffering={buffering}
+                    shuffle={shuffle} repeat={repeat} onPrevious={previous} onToggle={toggle} onNext={next}
+                    onShuffle={toggleShuffle} onRepeat={cycleRepeat} onLongPressPlay={stop}
+                    showLyrics={showLyrics} onLyrics={switchLyrics} onOutput={() => setOutputOpen(true)}
+                    onQueue={() => pushOnce('/queue')} outputLabel={remoteName ? `${t('Devices')}: ${remoteName}` : t('Devices')}
+                    active={controlsActive}
+                    progress={<SeekBar duration={durationSec || song?.duration || 0} active={controlsActive} tint={trackTint}
+                      textTint={SECONDARY} mutedTrackTint={TRACK} sliderComponent={AmllSlider}
+                      centerAccessory={showQuality && song
+                        ? <AudioQualityBadge song={song} compact onPress={() => openQuality.current()} color={SECONDARY} /> : undefined}
+                      style={{ height: layout.seekHeight }} />}
+                    volume={showVolume ? <PlayerSystemVolume tint={INK} trackTint={trackTint} active={controlsActive}
+                      mutedTrackTint={TRACK} sliderComponent={AmllSlider} showLabel={false}
+                      style={{ height: layout.volumeHeight }} /> : undefined} />
                 </Animated.View>
               </View>
             </ScrollView>
           </Animated.View>
         </View>
-        <View style={[styles.footer, { height: layout.footerHeight }]}>
-          <PlayerButton name="chatbubble-outline" label={showLyrics ? t('Show cover') : t('Lyrics')}
-            onPress={switchLyrics} selected={showLyrics} size={24} />
-          {showOutput ? <PlayerOutputDevice tint={INK} activeTint={INK} remoteName={remoteName}
-            active={active} onPress={() => setOutputOpen(true)} style={styles.output} />
-            : <PlayerButton name="radio-outline" label={t('Devices')} onPress={() => setOutputOpen(true)} />}
-          <PlayerButton name="list-outline" label={t('View queue')} onPress={() => pushOnce('/queue')} />
-        </View>
+        {horizontal ? <AmllPlayerBottomActions horizontal width={layout.innerWidth} showLyrics={showLyrics}
+          onLyrics={switchLyrics} onOutput={() => setOutputOpen(true)} onQueue={() => pushOnce('/queue')}
+          outputLabel={remoteName ? `${t('Devices')}: ${remoteName}` : t('Devices')} active={interactive} /> : null}
       </View>
       <OutputSheet visible={outputOpen && focused} onClose={() => setOutputOpen(false)} />
       <SpeedSheet openRef={openSpeed} />
       <PlayerAudioQualitySheet openRef={openQuality} />
-    </View>
+    </Animated.View>
   );
 }
 
@@ -353,13 +336,5 @@ const styles = StyleSheet.create({
   emptyText: { color: SECONDARY, fontSize: 25, fontWeight: '600', lineHeight: 34 },
   plainLyricsContent: { paddingTop: 24, paddingBottom: 48, paddingHorizontal: 4 },
   plainLyrics: { color: INK, fontSize: 34, fontWeight: '600', lineHeight: 46 },
-  controls: { position: 'absolute', left: 0, right: 0, paddingBottom: 8 },
-  transport: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  button: { width: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
-  selectedButton: { backgroundColor: 'rgba(255,255,255,0.14)' },
-  pressed: { opacity: 0.55 },
-  playButton: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
-  repeatOne: { position: 'absolute', color: INK, fontSize: 9, fontWeight: '700', top: 17, left: 20 },
-  footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  output: { minWidth: 44, maxWidth: '55%', flexShrink: 1 },
+  controls: { position: 'absolute', left: 0, right: 0 },
 });

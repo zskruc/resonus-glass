@@ -26,6 +26,18 @@ internal object TabsMotionHosts {
 
   fun detach(token: Int) { hosts.remove(token) }
 
+  fun readDockScrollIntent(token: Int, scope: String): Double {
+    if (Looper.myLooper() !== Looper.getMainLooper()) return 0.0
+    val view = hosts[token]?.get() ?: return 0.0
+    if (!view.isAttachedToWindow || view.materialPreset != "amPlus") return 0.0
+    return AmPlusDockScrollInput.read(view, scope)
+  }
+
+  fun expandDockScrollInput(token: Int) {
+    if (Looper.myLooper() !== Looper.getMainLooper()) return
+    hosts[token]?.get()?.let { AmPlusDockScrollInput.expand(it) }
+  }
+
   fun diagnostics(): Map<String, Any> = mapOf(
     "registeredMotionHosts" to hosts.size,
     "directMotionCalls" to motionCalls,

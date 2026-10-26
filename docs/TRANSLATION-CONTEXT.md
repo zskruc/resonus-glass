@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 895 of them.
+Every string the app can show, under the screen it shows up on. 897 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -75,6 +75,7 @@ you are actually typing into, which is easier than reading it here.
 | `Moods` | Mood tags the server has on the song: mellow, energetic… |
 | `Navigation bar` | Settings screen: which tabs are on the bar at the bottom, and in what order |
 | `New features` | Heading in the update prompt over the new things a release brings. The lines under it stay in English |
+| `On` | An enabled switch, shown in the readable summary of glass parameters |
 | `Open settings` | Its confirm button: goes to Android's own settings, not the app's |
 | `Pick a date…` | Opens the calendar to choose the day the link stops working |
 | `Pin to top` | Keep this at the top of its list, above everything else. `Unpin` undoes it |
@@ -87,6 +88,9 @@ you are actually typing into, which is easier than reading it here.
 | `Recents` | Library section and its sort order: recently opened items |
 | `Remove from playlist` | Menu action: take this song out of the playlist it was opened from |
 | `Removed from playlist` | Toast, with an undo button next to it |
+| `Repeat` | Start again at the end |
+| `Repeat all songs` |  |
+| `Repeat one song` |  |
 | `Sample rate` | A property of the audio, in kHz |
 | `Save to a folder` | A value of `Export`: write the file somewhere on the phone |
 | `Saved as “{name}”` | Where the exported file ended up. `{name}` is the file's name |
@@ -850,7 +854,6 @@ you are actually typing into, which is easier than reading it here.
 | `Lower values show more of the background.` |  |
 | `Move background` |  |
 | `Native liquid glass is unavailable on this device. This preview uses a solid fallback.` |  |
-| `On` | An enabled switch, shown in the readable summary of glass parameters |
 | `Other surfaces` |  |
 | `Pause motion` |  |
 | `Refraction strength` |  |

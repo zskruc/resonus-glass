@@ -274,12 +274,16 @@ describe('background image lifecycle', () => {
 });
 
 describe('background dock lifecycle', () => {
-  function dockHarness() {
+  function dockHarness(nativeAvailable = false) {
     let focused = true;
     let segments = ['(tabs)'];
     let pathname = '/';
     let hasSong = true;
     let withBar = true;
+    let keyboardVisible = false;
+    const keyboardListeners = new Map<string, () => void>();
+    let nativeOwner: { host: number; scope: string; serial: number } | null = null;
+    const nativeExpansions: number[] = [];
     let springs = 0;
     const springSpecs: { target: number; stiffness: number; damping: number }[] = [];
     const glass = { mode: 'kyantDefault' };
@@ -293,7 +297,20 @@ describe('background dock lifecycle', () => {
     const dependencies = {
       'react/jsx-runtime': { jsx: (type: (props: unknown) => unknown, props: unknown) => type(props) },
       'expo-router': { useIsFocused: () => focused, useSegments: () => segments, usePathname: () => pathname },
-      'react-native': { Keyboard: { isVisible: () => false, addListener: () => ({ remove() {} }) } },
+      'react-native': { Keyboard: { isVisible: () => keyboardVisible,
+        addListener: (event: string, callback: () => void) => {
+          keyboardListeners.set(event, callback);
+          return { remove() { keyboardListeners.delete(event); } };
+        } } },
+      '../../modules/liquid-glass': {
+        isLiquidGlassAvailable: nativeAvailable,
+        readNativeDockScrollIntent: (host: number, scope: string) =>
+          nativeOwner?.host === host && nativeOwner.scope === scope ? nativeOwner.serial : 0,
+        expandNativeDockScrollInput: (host: number) => {
+          nativeExpansions.push(host);
+          if (nativeOwner?.host === host) nativeOwner.serial = 0;
+        },
+      },
       'react-native-reanimated': {
         makeMutable: mutable, ReduceMotion: { System: 0 },
         useSharedValue: <T,>(initial: T) => hooks.react.useRef(mutable(initial)).current,
@@ -322,6 +339,10 @@ describe('background dock lifecycle', () => {
       generation: ReturnType<typeof mutable<number>>;
       enabled: boolean;
       amPlus: boolean;
+      scope: string;
+      nativeInput: boolean;
+      nativeInputHost: ReturnType<typeof mutable<number>>;
+      requestNativeCompact: (compact: boolean, scope: string) => void;
       notifyCompact: (compact: boolean, generation: number) => void;
       expand: () => void;
     }
@@ -339,7 +360,12 @@ describe('background dock lifecycle', () => {
       dock.notifyCompact(true, dock.generation.get());
       return render();
     };
-    return { hooks, render, fold, read, springs: () => springs, springSpecs,
+    return { hooks, render, fold, read, springs: () => springs, springSpecs, nativeExpansions,
+      nativeIntent(host: number, scope: string, serial: number) { nativeOwner = { host, scope, serial }; },
+      keyboard(value: boolean) {
+        keyboardVisible = value;
+        keyboardListeners.get(value ? 'keyboardDidShow' : 'keyboardDidHide')?.();
+      },
       mode(value: string) { glass.mode = value; },
       scroll: (name: string, y: number, context: unknown) => scrollHandlers[name]({
         contentOffset: { y }, layoutMeasurement: { height: 500 }, contentSize: { height: 2000 },
@@ -486,5 +512,85 @@ describe('background dock lifecycle', () => {
     assert.equal(dock.compact, false);
     assert.equal(h.springSpecs.at(-1)?.target, 0);
     assert.equal(h.springSpecs.at(-1)?.damping, amppDock.amppSpringDamping(false));
+  });
+
+  it('consumes a valid native signed intent once on the UI scroll path and preserves source springs', () => {
+    const h = dockHarness(true);
+    h.mode('amPlus');
+    let dock = h.render();
+    assert.equal(dock.nativeInput, true);
+    dock.nativeInputHost.set(41);
+    h.nativeIntent(41, dock.scope, 1);
+    const context = {};
+    h.scroll('onBeginDrag', 100, context);
+    dock = h.render();
+    assert.equal(dock.compact, true);
+    assert.equal(h.springs(), 1);
+    assert.equal(h.springSpecs.at(-1)?.damping, amppDock.amppSpringDamping(true));
+    h.scroll('onScroll', 900, context);
+    dock.requestNativeCompact(true, dock.scope);
+    h.render();
+    assert.equal(h.springs(), 1, 'the bridge fallback cannot restart an already consumed UI intent');
+    h.nativeIntent(41, dock.scope, -2);
+    h.scroll('onEndDrag', 880, context);
+    dock = h.render();
+    assert.equal(dock.compact, false);
+    assert.equal(h.springs(), 2);
+    assert.equal(h.springSpecs.at(-1)?.damping, amppDock.amppSpringDamping(false));
+  });
+
+  it('rejects stale native hosts/scopes and clears page ownership for keyboard or player handoffs', () => {
+    const h = dockHarness(true);
+    h.mode('amPlus');
+    let dock = h.render();
+    dock.nativeInputHost.set(41);
+    const oldScope = dock.scope;
+    const context = {};
+    h.nativeIntent(42, oldScope, 1);
+    h.scroll('onScroll', 300, context);
+    assert.equal(h.springs(), 0, 'another native host cannot drive this dock');
+    h.nativeIntent(41, 'previous-page', 1);
+    h.scroll('onScroll', 400, context);
+    assert.equal(h.springs(), 0);
+    h.navigate('/artist/new', ['artist', '[id]']);
+    dock = h.render();
+    h.nativeIntent(41, oldScope, 2);
+    dock.requestNativeCompact(true, oldScope);
+    h.scroll('onScroll', 500, context);
+    assert.equal(h.springs(), 0, 'an outgoing scope cannot fold the new route');
+    h.keyboard(true);
+    dock = h.render();
+    assert.equal(dock.enabled, false);
+    h.nativeIntent(41, dock.scope, 3);
+    h.scroll('onScroll', 600, context);
+    assert.equal(h.springs(), 0);
+    h.keyboard(false);
+    h.bar(false);
+    h.navigate('/player', ['player']);
+    dock = h.render();
+    assert.equal(dock.enabled, false);
+    assert.equal(dock.compact, false);
+    assert.ok(h.nativeExpansions.includes(41), 'handoffs synchronously reset native touch/fling ownership');
+  });
+
+  it('manual expansion clears native inertia so a delayed collapse event cannot fold it again', () => {
+    const h = dockHarness(true);
+    h.mode('amPlus');
+    let dock = h.render();
+    dock.nativeInputHost.set(41);
+    h.nativeIntent(41, dock.scope, 1);
+    h.scroll('onScroll', 100, {});
+    dock = h.render();
+    assert.equal(dock.compact, true);
+    const scope = dock.scope;
+    dock.expand();
+    dock = h.render();
+    assert.equal(dock.compact, false);
+    assert.equal(h.nativeExpansions.at(-1), 41);
+    dock.requestNativeCompact(true, scope);
+    h.scroll('onScroll', 1000, {});
+    dock = h.render();
+    assert.equal(dock.compact, false);
+    assert.equal(h.springs(), 2, 'one collapse plus one explicit expand, with no stale restart');
   });
 });

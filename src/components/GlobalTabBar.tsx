@@ -114,7 +114,8 @@ export function GlobalTabBar() {
   const reduceMotion = useReducedMotion();
   const { width: screenWidth } = useScreenSize();
   const { progress: sourceDockProgress, compact: targetCompact, uiCompact: dockCompactTarget,
-    expand, hasSearch: dockHasSearch } = useLiquidDock();
+    expand, hasSearch: dockHasSearch, enabled: dockEnabled, scope: dockScope,
+    nativeInput, nativeInputHost, requestNativeCompact } = useLiquidDock();
   const navigationOverrides = useGlassTuning((s) => s.mode === 'amPlus' ? s.amPlusOverrides.navigation : s.overrides.navigation);
   const glassMode = useGlassTuning((s) => s.mode);
   const amPlus = glassMode === 'amPlus';
@@ -503,11 +504,18 @@ export function GlobalTabBar() {
             <LiquidGlassTabsView style={StyleSheet.absoluteFill} radius={navHeight / 2}
               materialPreset={amPlus ? 'amPlus' : glassMode === 'kyantDefault' ? 'tabs' : 'custom'}
               materialTuningMask={amPlus ? glassMaterialTuningMask(navigationOverrides) : 0}
+              tabAccentColor={amPlus ? colors.accent : undefined}
+              dockScrollEnabled={shown && dockEnabled && nativeInput}
+              dockScrollScope={dockScope} dockScrollCollapsed={compact}
+              onDockCollapseIntent={(event) => requestNativeCompact(event.nativeEvent.collapsed, event.nativeEvent.scope)}
               dockRole={amPlus ? 'navigation' : undefined} dockRowWidth={amPlus ? fullWidth : undefined}
               tabsCount={tabs.length} tabHorizontalInset={horizontalInset} tabVerticalInset={INNER_GAP}
               dockCompactWidth={compactSize} dockCompactHeight={compactSize}
               dockCompactOffsetX={geometry.compactNavigationOffsetX}
-              onMotionHostReady={(event) => nativeMotionHost.set(event.nativeEvent.hostId)}
+              onMotionHostReady={(event) => {
+                nativeMotionHost.set(event.nativeEvent.hostId);
+                nativeInputHost.set(event.nativeEvent.hostId);
+              }}
               blur={blur ? glass.blur : 0} refraction={blur ? glass.refraction : 0}
               refractionHeight={blur ? glass.refractionHeight : 0}
               highlightWidth={glass.highlightWidth} highlightOpacity={glass.highlightOpacity}

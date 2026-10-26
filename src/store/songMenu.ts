@@ -26,6 +26,10 @@ export interface SongMenuOptions {
   queue?: boolean;
   devices?: () => void;
   speed?: () => void;
+  /** A player may show lyrics inline; omitted keeps the existing lyrics route. */
+  lyrics?: () => void;
+  /** AMLL's portrait transport has only three glyphs; keep its modes in More. */
+  playbackModes?: boolean;
 }
 
 /** What the player hands over of its own buttons; empty from anywhere else. */
@@ -33,6 +37,8 @@ export interface PlayerExtras {
   queue: boolean;
   devices?: () => void;
   speed?: () => void;
+  lyrics?: () => void;
+  playbackModes?: boolean;
 }
 
 const NO_EXTRAS: PlayerExtras = { queue: false };
@@ -65,7 +71,8 @@ export const useSongMenu = create<SongMenuState>((set) => ({
       context: context ?? null,
       showLyrics: !!opts?.showLyrics,
       sleep: !!opts?.sleep,
-      extras: { queue: !!opts?.queue, devices: opts?.devices, speed: opts?.speed },
+      extras: { queue: !!opts?.queue, devices: opts?.devices, speed: opts?.speed,
+        lyrics: opts?.lyrics, playbackModes: !!opts?.playbackModes },
     })),
   close: () => set((state) => ({ song: null, session: state.session + 1, presentation: 'card', context: null, showLyrics: false, sleep: false, extras: NO_EXTRAS })),
 }));

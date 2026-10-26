@@ -9,7 +9,7 @@ import Icon from '@/components/Icon';
 import { GlassSurface, GlassPressable } from '@/components/glass';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, View, type TextStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -31,7 +31,8 @@ import { type LyricLine, type LyricWord } from '@/api/subsonic';
 import { useDominantColor } from '@/hooks/useDominantColor';
 import { useLyrics } from '@/hooks/useLyrics';
 import { useT } from '@/i18n';
-import { amllLyricBlurRadius, lyricBlurRadius, WORD_SWEEP_LEAD_MS } from '@/lib/lyricMotion';
+import { amllLyricBlurRadius, lyricBlurRadius } from '@/lib/lyricMotion';
+import { retainedLyricFocus } from '@/lib/lyricLifecycle';
 import { pushOnce } from '@/lib/pushOnce';
 import { currentSong, usePlayerStore } from '@/store/player';
 import {
@@ -158,6 +159,8 @@ export function SyncedLyricsView({
   fadeColor,
   appearance = 'default',
   focusAnchor,
+  active = true,
+  onLinePress,
 }: {
   lines: LyricLine[];
   /** Large typography (full screen). */
@@ -170,17 +173,20 @@ export function SyncedLyricsView({
   appearance?: 'default' | 'amll';
   /** Active-line top as a fraction of this viewport, independent of layout orientation. */
   focusAnchor?: number;
+  /** Keep the last lyric frame mounted, but stop scrolling, highlighting and seeking. */
+  active?: boolean;
+  /** Optional player action; without it, every existing lyric surface only seeks. */
+  onLinePress?: (seconds: number) => void;
 }) {
   const amll = appearance === 'amll';
   // The line, not the position: the position moves twice a second and the
   // line every few, and only a new line has anything to redraw.
   const wordTimed = lines.some((line) => line.words && line.words.length > 0);
+  const currentRef = useRef(-1);
+  const activeRef = useRef(active);
   const current = usePlayerStore((s) => {
     // Retain the upstream line-only subscription and the PR's word pre-roll.
-    const posMs = s.positionSec * 1000 + (wordTimed ? WORD_SWEEP_LEAD_MS : 250);
-    let at = -1;
-    for (let i = 0; i < lines.length && (lines[i].start ?? 0) <= posMs; i++) at = i;
-    return at;
+    return retainedLyricFocus(lines, s.positionSec, wordTimed, active, currentRef.current);
   });
   const seekTo = usePlayerStore((s) => s.seekTo);
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
@@ -196,6 +202,16 @@ export function SyncedLyricsView({
   const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [viewH, setViewH] = useState(0);
   const [browsing, setBrowsing] = useState(false);
+  useLayoutEffect(() => {
+    if (active) {
+      if (!activeRef.current) {
+        // Resume an externally retained screen, releasing its old manual-scroll timeout.
+        setBrowsing(false);
+      }
+      currentRef.current = current;
+    }
+    activeRef.current = active;
+  }, [active, current]);
   /**
    * Bumped when the line being aimed at finally reports where it is.
    *
@@ -209,12 +225,6 @@ export function SyncedLyricsView({
   const [placed, setPlaced] = useState(0);
   /** The line already positioned for, so a measurement only speaks up once. */
   const placedFor = useRef(-1);
-  /** What `onMeasure` needs to know without being rebuilt on every line. */
-  const currentRef = useRef(-1);
-
-
-  currentRef.current = current;
-
   // In full screen we anchor the active line near the center (and pad
   // top/bottom) so that when the song starts, the lyrics begin centered and
   // readable, not stuck to the top edge. On the small card, higher up.
@@ -235,7 +245,7 @@ export function SyncedLyricsView({
     // immediately after the listener changes the font size without turning
     // every ordinary layout pass into another render.
     const changed = previous === undefined || previous.y !== y || previous.h !== h;
-    if (index === currentRef.current && (placedFor.current !== index || changed)) {
+    if (activeRef.current && index === currentRef.current && (placedFor.current !== index || changed)) {
       setPlaced((n) => n + 1);
     }
   }, []);
@@ -244,7 +254,7 @@ export function SyncedLyricsView({
   useAnimatedReaction(
     () => targetY.value,
     (y, prev) => {
-      if (prev !== null && y !== prev) scrollTo(scrollRef, 0, y, false);
+      if (active && prev !== null && y !== prev) scrollTo(scrollRef, 0, y, false);
     },
   );
 
@@ -253,12 +263,14 @@ export function SyncedLyricsView({
   // line), so the focus recenters on the chosen line instantly.
   const onLineTap = useCallback(
     (sec: number) => {
+      if (!activeRef.current) return;
       if (resumeTimer.current) clearTimeout(resumeTimer.current);
       userScroll.current = false;
       setBrowsing(false);
-      seekTo(sec);
+      if (onLinePress) onLinePress(sec);
+      else seekTo(sec);
     },
-    [seekTo],
+    [seekTo, onLinePress],
   );
 
   // Taps are detected with a separate gesture (not each line's onPress): the
@@ -279,12 +291,21 @@ export function SyncedLyricsView({
   );
 
   const tapGesture = Gesture.Tap()
+    .enabled(active)
     .maxDuration(300)
-    .onEnd((e) => {
-      scheduleOnRN(handleTap, e.y);
+    // eslint-disable-next-line react-hooks/refs -- RNGH invokes this after a native gesture; the callback reads the committed activity gate then.
+    .onEnd((e, success) => {
+      if (success) scheduleOnRN(handleTap, e.y);
     });
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!active) {
+      cancelAnimation(targetY);
+      if (resumeTimer.current) clearTimeout(resumeTimer.current);
+      resumeTimer.current = null;
+      userScroll.current = false;
+      return;
+    }
     if (current < 0 || viewH === 0 || userScroll.current) return;
     const m = offsets.current[current];
     if (m === undefined) return;
@@ -296,13 +317,14 @@ export function SyncedLyricsView({
     // ignores animations. Opening part way through a song is the same journey
     // as any other, taken as soon as there is somewhere to go rather than at
     // the next line.
-    targetY.value = liveY.value;
-    targetY.value = withTiming(dest, {
+    targetY.set(liveY.get());
+    targetY.set(withTiming(dest, {
       duration: motion.duration.scroll,
       easing: motion.easing.move,
       reduceMotion: motion.reduceMotion.essential,
-    });
-  }, [current, viewH, anchor, targetY, liveY, placed]);
+    }));
+    return () => cancelAnimation(targetY);
+  }, [current, viewH, anchor, targetY, liveY, placed, active]);
 
   useEffect(
     () => () => {
@@ -317,16 +339,20 @@ export function SyncedLyricsView({
     <GestureDetector gesture={tapGesture}>
       <Animated.ScrollView
         ref={scrollRef}
+        scrollEnabled={active}
         nestedScrollEnabled={nested}
         onLayout={(e) => setViewH(e.nativeEvent.layout.height)}
         onScrollBeginDrag={() => {
+          if (!activeRef.current) return;
           userScroll.current = true;
           setBrowsing(true);
           cancelAnimation(targetY);
           if (resumeTimer.current) clearTimeout(resumeTimer.current);
         }}
         onScrollEndDrag={() => {
+          if (!activeRef.current) return;
           resumeTimer.current = setTimeout(() => {
+            if (!activeRef.current) return;
             userScroll.current = false;
             setBrowsing(false);
           }, 3000);
@@ -347,7 +373,8 @@ export function SyncedLyricsView({
             index={i}
             text={line.value.trim() || '♪'}
             words={line.words}
-            active={i === current}
+            highlighted={i === current}
+            active={active}
             past={current >= 0 && i < current}
             blurRadius={amll ? amllLyricBlurRadius(i, current, blurEnabled) : lyricBlurRadius(i, current, blurEnabled)}
             large={large}
@@ -402,7 +429,8 @@ const LyricRow = memo(({
   index,
   text,
   words,
-  active,
+  highlighted,
+  active = true,
   past,
   blurRadius,
   large,
@@ -415,7 +443,8 @@ const LyricRow = memo(({
   index: number;
   text: string;
   words?: LyricWord[];
-  active: boolean;
+  highlighted: boolean;
+  active?: boolean;
   /** Lines before the current one: same colour as active, slightly dimmer. */
   past: boolean;
   /** Primuse-style depth blur; zero keeps the row's filter layer disabled. */
@@ -433,31 +462,40 @@ const LyricRow = memo(({
   // Primuse's line takeover coordinates scale and opacity with auto-scroll.
   // Blur takes a gentler path because Android's filter is visually stronger
   // and a fast change reads as the completed line suddenly losing focus.
-  const focus = useSharedValue(active ? 1 : 0);
+  const focus = useSharedValue(highlighted ? 1 : 0);
   const inactiveOpacity = amll ? past ? 0.32 : 0.42 : past ? 0.36 : 0.46;
-  const dim = useSharedValue(active ? 1 : inactiveOpacity);
+  const dim = useSharedValue(highlighted ? 1 : inactiveOpacity);
   const blur = useSharedValue(blurRadius);
-  useEffect(() => {
-    focus.value = withTiming(active ? 1 : 0, {
+  useLayoutEffect(() => {
+    cancelAnimation(focus);
+    if (!active) return;
+    focus.value = withTiming(highlighted ? 1 : 0, {
       duration: motion.duration.scroll,
       easing: motion.easing.move,
       reduceMotion: motion.reduceMotion.essential,
     });
-  }, [active, focus]);
-  useEffect(() => {
-    dim.value = withTiming(active ? 1 : inactiveOpacity, {
+    return () => cancelAnimation(focus);
+  }, [active, highlighted, focus]);
+  useLayoutEffect(() => {
+    cancelAnimation(dim);
+    if (!active) return;
+    dim.value = withTiming(highlighted ? 1 : inactiveOpacity, {
       duration: motion.duration.scroll,
       easing: motion.easing.move,
       reduceMotion: motion.reduceMotion.essential,
     });
-  }, [active, inactiveOpacity, dim]);
-  useEffect(() => {
+    return () => cancelAnimation(dim);
+  }, [active, highlighted, inactiveOpacity, dim]);
+  useLayoutEffect(() => {
+    cancelAnimation(blur);
+    if (!active) return;
     blur.value = withTiming(blurRadius, {
       duration: motion.duration.depth,
       easing: motion.easing.depth,
       reduceMotion: motion.reduceMotion.essential,
     });
-  }, [blur, blurRadius]);
+    return () => cancelAnimation(blur);
+  }, [active, blur, blurRadius]);
   // The growth (8%) is compensated by the right margin of `content` so the
   // active line, scaling from the left, doesn't overflow the edge.
   const anim = useAnimatedStyle(() => {
@@ -493,6 +531,7 @@ const LyricRow = memo(({
         {words && words.length > 0 ? (
           <KaraokeWords
             words={words}
+            highlighted={highlighted}
             active={active}
             centered={centered}
             textStyle={wordTextStyle}

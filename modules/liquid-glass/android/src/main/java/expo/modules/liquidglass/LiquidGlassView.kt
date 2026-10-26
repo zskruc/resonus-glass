@@ -104,6 +104,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
   internal var tabVelocity by mutableFloatStateOf(0f)
   internal var tabPanelOffset by mutableFloatStateOf(0f)
   internal var tabSelectionOpacity by mutableFloatStateOf(1f)
+  internal var tabAccentColor by mutableIntStateOf(AndroidColor.rgb(0, 145, 255))
   internal var dockCompactWidth by mutableFloatStateOf(0f)
     private set
   internal var dockRole by mutableStateOf("mini")
@@ -124,6 +125,12 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
   private var needsDisplayListRestore = true
   private var motionHostToken = 0
   private val onMotionHostReady by EventDispatcher()
+  private val onDockCollapseIntent by EventDispatcher()
+  private var dockScrollInputEnabled = false
+  private var dockScrollInputScope = ""
+  private var dockScrollInputCollapsed = false
+  private val amPlusTabForeground = if (Build.VERSION.SDK_INT >= 33) AmPlusTabForeground(this) else null
+  private val amPlusSelectionOverlay = AmPlusSelectionOverlay(this)
   private val samplePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
   private val sampleLocation = IntArray(2)
   private val sampleRootLocation = IntArray(2)
@@ -136,7 +143,31 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
   private var materialOffsetY = 0
   private var materialWidth = 0
   private var materialHeight = 0
+  internal val opticalMaterialOffsetX get() = materialOffsetX
+  internal val opticalMaterialOffsetY get() = materialOffsetY
   internal val progressiveMaterialId = System.identityHashCode(this)
+
+  internal fun configureDockScrollInput(enabled: Boolean? = null, scope: String? = null, collapsed: Boolean? = null) {
+    if (enabled != null) dockScrollInputEnabled = enabled
+    if (scope != null) dockScrollInputScope = scope
+    if (collapsed != null) dockScrollInputCollapsed = collapsed
+    AmPlusDockScrollInput.observe(this, dockScrollInputEnabled && isAttachedToWindow,
+      dockScrollInputScope, dockScrollInputCollapsed, progress = { dockProgress }) { target, page ->
+      onDockCollapseIntent(mapOf("collapsed" to target, "scope" to page))
+    }
+  }
+
+  /** Exclude only the visible optical bounds, never the full expanded RN host. */
+  internal fun containsDockChromePoint(rawX: Float, rawY: Float): Boolean {
+    if (!isAttachedToWindow || !isShown || !glassEnabled || materialPreset != "amPlus" || dockCompactWidth <= 0f) return false
+    if (dockRole == "search" && !GlassBarCollapsePolicy.searchInteractive(dockProgress)) return false
+    getLocationOnScreen(sampleRootLocation)
+    val left = sampleRootLocation[0] + materialOffsetX
+    val top = sampleRootLocation[1] + materialOffsetY
+    val width = if (materialWidth > 0) materialWidth else this.width
+    val height = if (materialHeight > 0) materialHeight else this.height
+    return rawX >= left && rawX < left + width && rawY >= top && rawY < top + height
+  }
 
   internal fun setProgressiveBlurEnabled(enabled: Boolean) {
     if (progressiveBlur == enabled) return
@@ -344,11 +375,18 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
       if (isAttachedToWindow && composeView.isAttachedToWindow) {
         measureAndLayout()
         syncMotionHost()
+        amPlusSelectionOverlay.attach()
       }
     }
+    amPlusTabForeground?.attach()
+    AmPlusDockScrollInput.attachSurface(this)
+    configureDockScrollInput()
   }
 
   override fun onDetachedFromWindow() {
+    AmPlusDockScrollInput.detachSurface(this)
+    amPlusTabForeground?.detach()
+    amPlusSelectionOverlay.detach()
     if (motionHostToken != 0) TabsMotionHosts.detach(motionHostToken)
     motionHostToken = 0
     detachBackdrop()
@@ -371,6 +409,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
     if (!composeView.isAttachedToWindow) return
     super.onLayout(changed, left, top, right, bottom)
     composeView.layout(0, 0, width, height)
+    amPlusSelectionOverlay.layout()
   }
 
   override open fun dispatchTouchEvent(event: MotionEvent): Boolean = false
@@ -474,6 +513,15 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
         }
       }
     }
+    // Zennmn's hidden refraction row includes its own accent-tinted foreground.
+    // RN retains the real labels/actions; a separate small RenderNode supplies
+    // their current visual layout to this AM++-only optical source.
+    val foregroundBackdrop = if (amPlusMaterial && tabsCount > 0 && amPlusTabForeground != null) rememberCanvasBackdrop {
+      @Suppress("UNUSED_VARIABLE") val version = amPlusTabForeground.version
+      drawIntoCanvas { canvas ->
+        amPlusTabForeground.draw(canvas.nativeCanvas, materialOffsetX.toFloat(), materialOffsetY.toFloat(), tabAccentColor)
+      }
+    } else null
     if (RenderInteractiveControl(backdrop)) return
     DockMaterialLayout {
       if (isProgressiveBlur) {
@@ -509,6 +557,8 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
       } else if (tabsCount > 0) {
         LiquidBottomTabsMaterial(
           backdrop = backdrop,
+          foregroundBackdrop = foregroundBackdrop,
+          selectionOverlay = if (amPlusMaterial) amPlusSelectionOverlay else null,
           tabsCount = tabsCount,
           horizontalInset = tabHorizontalInset,
           verticalInset = tabVerticalInset,
@@ -645,7 +695,8 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
       val rowWidth = if (dockRowWidth > 0f) dockRowWidth.dp.toPx() else fullWidth.toFloat()
       val materialWidth = (if (amPlus && enabled) {
         if (role == "mini") AmPlusDockGeometry.miniWidth(fullWidth.toFloat(), targetWidth.toFloat(), progress)
-        else AmPlusDockGeometry.sideWidth(fullWidth.toFloat(), targetWidth.toFloat(), rowWidth, progress, 8f.dp.toPx())
+        else AmPlusDockGeometry.sideWidth(fullWidth.toFloat(), targetWidth.toFloat(), rowWidth, progress, 8f.dp.toPx(),
+          navigation = role == "navigation")
       } else fullWidth + (targetWidth - fullWidth) * progress).roundToInt().coerceAtLeast(0)
       val materialHeight = (if (amPlus && enabled)
         AmPlusDockGeometry.height(expandedHeight.toFloat(), targetHeight.toFloat(), progress)
