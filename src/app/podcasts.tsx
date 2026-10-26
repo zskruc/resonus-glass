@@ -12,13 +12,12 @@ import {
   Modal,
   Pressable,
   RefreshControl,
-  StyleSheet,
+  ScrollView,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import Animated from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   listChannels,
@@ -35,6 +34,7 @@ import { Dialog } from '@/components/Dialog';
 import { EmptyState } from '@/components/EmptyState';
 import Icon from '@/components/Icon';
 import { Message } from '@/components/Message';
+import { MenuGlassCardFrame, MenuGlassCardHeader } from '@/components/MenuGlassCard';
 import { PodcastAddSheet } from '@/components/PodcastAddSheet';
 import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
@@ -49,7 +49,6 @@ import {
   colors,
   fontSize,
   radius,
-  SHEET_MAX_WIDTH,
   spacing,
   themed,
   tracking,
@@ -82,7 +81,6 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
   const bottomPad = useScreenBottomPadding();
   const listPad = useListPadding(spacing.lg);
   const t = useT();
-  const insets = useSafeAreaInsets();
   const lang = useSettings((s) => s.language);
   const toast = useToast((s) => s.show);
 
@@ -261,18 +259,15 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
 
       <Modal
         transparent
+        statusBarTranslucent
         visible={!!menu || !!removing}
         animationType="fade"
         onRequestClose={() => removing ? setRemoving(null) : setMenu(null)}
       >
         {!removing ? (
-          <>
-            <Pressable style={styles.backdrop} onPress={() => setMenu(null)} />
-            <View collapsable={false} style={[styles.sheet, { paddingBottom: insets.bottom + spacing.md }]}>
-              <GlassBackdrop radius={0} radiusTopLeft={radius.xxl} radiusTopRight={radius.xxl} tint={colors.surface} variant="prominent" />
-              <Text style={styles.sheetTitle} numberOfLines={1}>
-                {menu?.title}
-              </Text>
+          <MenuGlassCardFrame onClose={() => setMenu(null)}>
+            <MenuGlassCardHeader title={menu?.title ?? ''} onClose={() => setMenu(null)} />
+            <ScrollView style={{ flexShrink: 1, minHeight: 0 }} keyboardShouldPersistTaps="handled">
               <Pressable
                 style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
                 onPress={() => {
@@ -313,8 +308,8 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
                   {t('Unsubscribe')}
                 </Text>
               </Pressable>
-            </View>
-          </>
+            </ScrollView>
+          </MenuGlassCardFrame>
         ) : null}
 
         <Dialog
@@ -364,26 +359,6 @@ const styles = themed((colors) => ({
     backgroundColor: 'transparent',
   },
   searchInput: { flex: 1, color: colors.text, fontSize: fontSize.md, padding: 0 },
-  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: colors.backdrop },
-  sheet: {
-    position: 'absolute',
-    bottom: 0,
-    // Centred and no wider than a sheet wants to be (#131).
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: SHEET_MAX_WIDTH,
-    backgroundColor: 'transparent',
-    borderTopLeftRadius: radius.xxl,
-    borderTopRightRadius: radius.xxl,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-  },
-  sheetTitle: {
-    color: colors.text,
-    fontSize: fontSize.md,
-    fontWeight: '500',
-    marginBottom: spacing.sm,
-  },
   action: {
     flexDirection: 'row',
     alignItems: 'center',

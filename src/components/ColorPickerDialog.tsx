@@ -7,11 +7,11 @@
  * so dragging does not repaint the whole app behind it frame by frame.
  */
 import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Modal, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import ColorPicker, { HueSlider, Panel1 } from 'reanimated-color-picker';
 
-import { GlassPressable, GlassSurface, GlassTextInput } from '@/components/glass';
+import { GlassPressable } from '@/components/glass';
+import { MenuGlassCardFrame, MenuGlassCardHeader } from './MenuGlassCard';
 import { useT } from '@/i18n';
 import { colors, fontSize, radius, spacing, themed, tracking } from '@/theme';
 
@@ -35,12 +35,10 @@ export function ColorPickerDialog({
 
   return (
     <Modal transparent visible animationType="fade" onRequestClose={onCancel}>
-      {/* A modal renders outside the app's gesture root. */}
-      <GestureHandlerRootView style={StyleSheet.absoluteFill}>
-        <Pressable style={styles.backdrop} onPress={onCancel} />
-        <View style={styles.center} pointerEvents="box-none">
-          <GlassSurface radius={radius.lg} variant="prominent" style={styles.card}>
-            <Text style={styles.title}>{t('Custom color')}</Text>
+      <MenuGlassCardFrame onClose={onCancel} maxWidth={384}>
+        <ScrollView style={{ flexShrink: 1, minHeight: 0 }} keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: spacing.md }}>
+            <MenuGlassCardHeader title={t('Custom color')} onClose={onCancel} />
             <ColorPicker
               value={pickerValue}
               thumbSize={24}
@@ -58,7 +56,7 @@ export function ColorPickerDialog({
             </ColorPicker>
             <View style={styles.row}>
               <View style={[styles.preview, { backgroundColor: hex }]} />
-              <GlassTextInput
+              <TextInput
                 style={styles.input}
                 value={text}
                 onChangeText={(v) => {
@@ -83,9 +81,8 @@ export function ColorPickerDialog({
                 <Text style={[styles.confirm, { color: colors.accent }]}>{t('Save')}</Text>
               </GlassPressable>
             </View>
-          </GlassSurface>
-        </View>
-      </GestureHandlerRootView>
+        </ScrollView>
+      </MenuGlassCardFrame>
     </Modal>
   );
 }

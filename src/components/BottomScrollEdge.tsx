@@ -8,7 +8,8 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { useBarBlur } from '@/components/BarBlur';
 import { COMPACT_DOCK_SIZE, useLiquidDock } from '@/hooks/useLiquidDock';
 import { useScreenSize } from '@/hooks/useScreenSize';
-import { useMiniPlayerShown, useTabBarShown } from '@/hooks/useTabBar';
+import { useMiniPlayerShown, usePlayerDockUnderlay, useTabBarShown } from '@/hooks/useTabBar';
+import { PlayerDockUnderlay, usePlayerDockMaterialReady } from './PlayerDockUnderlay';
 import { MINI_PLAYER_HEIGHT, TAB_BAR_BOTTOM_GAP, TAB_BAR_HEIGHT, useTheme, useThemeMode } from '@/theme';
 import { motion } from '@/theme/motion';
 import { useGlassTuning } from '@/store/glassTuning';
@@ -34,6 +35,8 @@ export function BottomScrollEdge() {
   const blurMini = useBarBlur('miniPlayer');
   const { progress, uiEnabled, enabled } = useLiquidDock();
   const shown = bar || mini;
+  const underlay = usePlayerDockUnderlay(shown);
+  const underlayMaterial = usePlayerDockMaterialReady(underlay.reveal);
   // With tabs, the expanded edge starts at their top, leaving the mini and
   // its surrounding page on the same raw background. Keep mini-only screens.
   const expandedHeight = bar
@@ -75,16 +78,16 @@ export function BottomScrollEdge() {
       reduceMotion: motion.reduceMotion.decorative,
     }, (finished) => { if (finished) scheduleOnRN(setMaterialOn, false); }));
   }, [shown, opacity]);
-  const fade = useAnimatedStyle(() => ({ opacity: opacity.get() }));
-  const useNativeMaterial = !kyantDefaults && isLiquidGlassAvailable && geometry.blurred && materialOn;
+  const fade = useAnimatedStyle(() => ({ opacity: underlay.reveal || underlay.returning ? 1 : opacity.get() }));
+  const useNativeMaterial = !kyantDefaults && isLiquidGlassAvailable && geometry.blurred && (materialOn || underlay.reveal);
   const nativeHost = useSharedValue(0);
   const motionActive = useSharedValue(useNativeMaterial);
   const lastNativeMotion = useSharedValue<number[]>([]);
   useLayoutEffect(() => {
-    motionActive.set(useNativeMaterial);
+    motionActive.set(useNativeMaterial && (!underlay.reveal || underlayMaterial));
     if (!useNativeMaterial) nativeHost.set(0);
     return () => { motionActive.set(false); };
-  }, [useNativeMaterial, motionActive, nativeHost]);
+  }, [useNativeMaterial, underlay.reveal, underlayMaterial, motionActive, nativeHost]);
   useAnimatedReaction(
     () => motionActive.get() ? [nativeHost.get(), Math.max(0, Math.min(1, visualProgress.get()))] : null,
     (state) => {
@@ -107,6 +110,7 @@ export function BottomScrollEdge() {
   if (kyantDefaults) return null;
 
   return (
+    <PlayerDockUnderlay active={underlay.reveal}>
     <Animated.View pointerEvents="none" accessible={false} collapsable={false}
       style={[styles.frame, { height: hostHeight }, fade]}>
       {useNativeMaterial ? (
@@ -116,7 +120,7 @@ export function BottomScrollEdge() {
           tintColor={colors.background} tintOpacity={0.46} dark={dark}
           dockExpandedHeight={geometry.expandedHeight}
           dockCompactWidth={geometry.width} dockCompactHeight={geometry.compactHeight} dockCompactOffsetX={0}
-          onMotionHostReady={(event) => nativeHost.set(event.nativeEvent.hostId)} enabled />
+          onMotionHostReady={(event) => nativeHost.set(event.nativeEvent.hostId)} enabled={!underlay.reveal || underlayMaterial} />
       ) : (
         <Animated.View pointerEvents="none" style={[styles.fallback, fallbackMorph]}>
           <LinearGradient pointerEvents="none"
@@ -125,6 +129,7 @@ export function BottomScrollEdge() {
         </Animated.View>
       )}
     </Animated.View>
+    </PlayerDockUnderlay>
   );
 }
 

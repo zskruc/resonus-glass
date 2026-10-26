@@ -1,0 +1,115 @@
+{
+  "repository": "https://github.com/amll-dev/applemusic-like-lyrics",
+  "commit": "5fee356362353dbb24ce9bea3a62536478040de7",
+  "declaredLicense": "AGPL-3.0-only",
+  "license": "../../licenses/AMLL-AGPL-3.0.txt",
+  "svgProvenance": "SVG paths as published by AMLL, with currentColor replaced by explicit #FFFFFF for native decoding; no separate icon license/attribution or Apple/SF export metadata was found in this package. Upstream authoring origin is not independently established; this is not an Apple authorization claim.",
+  "files": [
+    {
+      "asset": "play.svg",
+      "source": "packages/react-full/src/components/PrebuiltLyricPlayer/icon_play.svg",
+      "originalSha256": "be0013f8ef4e2ae3dd1c4633139df35ff9a3947489787eed0b63050d47eb32d7",
+      "currentColorReplacements": 1,
+      "adaptedSha256": "bc4b1c4daaabebe6333591704e6857c960a126db7153166a09fc6dbbdf546669"
+    },
+    {
+      "asset": "pause.svg",
+      "source": "packages/react-full/src/components/PrebuiltLyricPlayer/icon_pause.svg",
+      "originalSha256": "8cf13e2889f4fa9eac8b5cce1eb8847c55f55fb7f33e5fea824ea9da09f4ed33",
+      "currentColorReplacements": 1,
+      "adaptedSha256": "fe77253e958d7305512166bc03918e7dced79fd74ea4a3f5946acaa9bed38552"
+    },
+    {
+      "asset": "previous.svg",
+      "source": "packages/react-full/src/components/PrebuiltLyricPlayer/icon_rewind.svg",
+      "originalSha256": "1332979e5e0554ac933e1fecd5ee9483fa79c5c5788f3dcbc5f218b1c634f22c",
+      "currentColorReplacements": 1,
+      "adaptedSha256": "a3383486577dc422eae3273831532325aae0b617cd76791abd6571fdfee2b1ed"
+    },
+    {
+      "asset": "next.svg",
+      "source": "packages/react-full/src/components/PrebuiltLyricPlayer/icon_forward.svg",
+      "originalSha256": "6f093b9fb5a0c5487c43d534416f02136a9330fea8e413cdb4cb7d4452d04b1f",
+      "currentColorReplacements": 1,
+      "adaptedSha256": "b4d93a05f2c24efd2b6f96a9ac2191a9c3b2dbf9e263f9633b59998e62f48b72"
+    },
+    {
+      "asset": "shuffle.svg",
+      "source": "packages/react-full/src/components/PrebuiltLyricPlayer/shuffle.svg",
+      "originalSha256": "e2280bc965929faeb602b23e0554779f009b53b917b7e8137e67ede408bfad46",
+      "currentColorReplacements": 0,
+      "adaptedSha256": "e2280bc965929faeb602b23e0554779f009b53b917b7e8137e67ede408bfad46"
+    },
+    {
+      "asset": "shuffle-active.svg",
+      "source": "packages/react-full/src/components/PrebuiltLyricPlayer/shuffle-active.svg",
+      "originalSha256": "1978a04f0b71690a29377a1c7272ab4b258093220d17f0bfc91f6bf9c965868e",
+      "currentColorReplacements": 0,
+      "adaptedSha256": "1978a04f0b71690a29377a1c7272ab4b258093220d17f0bfc91f6bf9c965868e"
+    },
+    {
+      "asset": "repeat.svg",
+      "source": "packages/react-full/src/components/PrebuiltLyricPlayer/repeat.svg",
+      "originalSha256": "f942ca714533583c65294ed3b4d44c612e024623dd7728e4c8865bcb4f2cacc1",
+      "currentColorReplacements": 0,
+      "adaptedSha256": "f942ca714533583c65294ed3b4d44c612e024623dd7728e4c8865bcb4f2cacc1"
+    },
+    {
+      "asset": "repeat-active.svg",
+      "source": "packages/react-full/src/components/PrebuiltLyricPlayer/repeat-active.svg",
+      "originalSha256": "aca9fb7664d81af81eaf4db0e494696a707cf915b4a23b8a29a734d83e618a9e",
+      "currentColorReplacements": 0,
+      "adaptedSha256": "aca9fb7664d81af81eaf4db0e494696a707cf915b4a23b8a29a734d83e618a9e"
+    },
+    {
+      "asset": "repeat-one-active.svg",
+      "source": "packages/react-full/src/components/PrebuiltLyricPlayer/repeat-one-active.svg",
+      "originalSha256": "df8286685fb437cdf8c8244ef14e5745239523459eb6357512d57922f8018f29",
+      "currentColorReplacements": 0,
+      "adaptedSha256": "df8286685fb437cdf8c8244ef14e5745239523459eb6357512d57922f8018f29"
+    },
+    {
+      "asset": "lyrics-off.svg",
+      "source": "packages/react-full/src/components/ToggleIconButton/lyrics_off.svg",
+      "originalSha256": "9be0e2b34fa97d9d8d59c26a98b8d9b94ff016a506e8346619ad8bd504e8e8a5",
+      "currentColorReplacements": 1,
+      "adaptedSha256": "710e3b00d8553a72dd330186b0fa672ed45f69708eeb4de8eadc2ddd5d775cb2"
+    },
+    {
+      "asset": "lyrics-on.svg",
+      "source": "packages/react-full/src/components/ToggleIconButton/lyrics_on.svg",
+      "originalSha256": "c8beadb344785216a04d61bd3918f868f5ff15e2440f678d1700e71127aa8b97",
+      "currentColorReplacements": 2,
+      "adaptedSha256": "f8b79713e8fe7507d86490b13b715ccf7538889aec4a6f984f54bf9721a84ff0"
+    },
+    {
+      "asset": "queue-off.svg",
+      "source": "packages/react-full/src/components/ToggleIconButton/playlist_off.svg",
+      "originalSha256": "028777adc8fff08bba4af470637e943318df63b496bb5e9ed805d4be3568f22b",
+      "currentColorReplacements": 1,
+      "adaptedSha256": "2bac50528e4132c40ed820f6428301f8ebe831b7b07111c4285da9415600ee05"
+    },
+    {
+      "asset": "queue-on.svg",
+      "source": "packages/react-full/src/components/ToggleIconButton/playlist_on.svg",
+      "originalSha256": "f96cb35e5759c474b7e1e1e009f34fe36cce5064cdf146ef7ed4e4f1f2356c55",
+      "currentColorReplacements": 1,
+      "adaptedSha256": "8945e5c6f6cc1691a31c4aa716a3a5a341eaed7528544a725f37dd94f21791c7"
+    },
+    {
+      "asset": "output.svg",
+      "source": "packages/react-full/src/components/IconButton/airplay.svg",
+      "originalSha256": "0e4739b331be4be9c856988cd819817960a17e73d598efa9b4c047a16d381e73",
+      "currentColorReplacements": 1,
+      "adaptedSha256": "e4ca56ef704df45b78b4057a253d3dee7fa4381c03b1d52b5e96b9cc1d2e4ba0"
+    },
+    {
+      "asset": "more.svg",
+      "source": "packages/react-full/src/components/MenuButton/icon_more.svg",
+      "originalSha256": "651c6a8cf2231dc563e29619926e9e23cde20d60ea27f01769a72b547e2ac04b",
+      "currentColorReplacements": 1,
+      "adaptedSha256": "246ca56e18c41e15ad39f1bc86f4fb8ce8b2c5b7dbb5b5117013efba4ab6fca2"
+    }
+  ],
+  "colorAdaptation": "Only currentColor paint values become #FFFFFF. Path geometry, viewBox, fill/clip rules and all other bytes are preserved; files already using white are unchanged."
+}

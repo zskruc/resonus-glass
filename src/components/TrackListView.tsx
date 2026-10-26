@@ -306,6 +306,11 @@ export function TrackListView({
   // gesture when the list is at the very top reveals it, and scrolling back
   // collapses it. Like Spotify's "Find in playlist".
   const listRef = useRef<FlashListRef<TrackListOccurrence>>(null);
+  // Reanimated forwards this ref as a prop. An object ref lets FlashList's
+  // internal RN Animated scroller traverse ref.current.props.data on render.
+  const bindListRef = useCallback((instance: FlashListRef<TrackListOccurrence> | null) => {
+    listRef.current = instance;
+  }, []);
   const listScope = useId();
   const ownerScope = JSON.stringify([listScope, playlistId, title]);
   const onPlayRef = useRef(onPlay);
@@ -570,7 +575,7 @@ export function TrackListView({
 
       <GestureDetector gesture={revealPan}>
       <AnimatedList
-        ref={listRef}
+        ref={bindListRef}
         renderScrollComponent={renderScrollComponent}
         // Search and description change the header height intentionally. The
         // default anchor compensation would counteract those changes.

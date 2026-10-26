@@ -6,15 +6,16 @@
  */
 import { useSegments } from 'expo-router';
 import { useEffect, useLayoutEffect, useState } from 'react';
-import Animated, { useAnimatedReaction, useAnimatedStyle, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { cancelAnimation, useAnimatedReaction, useAnimatedStyle, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AMPP_DOCK, amppMiniSink, amppProgress } from '@/lib/amppDock';
-import { NO_MINI_PLAYER, useTabBarShown } from '@/hooks/useTabBar';
+import { NO_MINI_PLAYER, usePlayerDockUnderlay, useTabBarShown } from '@/hooks/useTabBar';
 import { COMPACT_DOCK_SIZE, useLiquidDock } from '@/hooks/useLiquidDock';
 import { motion } from '@/theme/motion';
 import { MINI_PLAYER_GAP, MINI_PLAYER_HEIGHT, spacing, TAB_BAR_BOTTOM_GAP, TAB_BAR_HEIGHT } from '@/theme';
 import { MiniPlayer } from './MiniPlayer';
+import { PlayerDockUnderlay } from './PlayerDockUnderlay';
 
 export function GlobalMiniPlayer() {
   const insets = useSafeAreaInsets();
@@ -35,6 +36,7 @@ export function GlobalMiniPlayer() {
   // cover it. The list is shared because whatever floats at the bottom (the
   // toast, the multi-select bar) has to know where the mini is not.
   const visible = !NO_MINI_PLAYER.includes(root as string);
+  const underlay = usePlayerDockUnderlay(visible);
   const bottom = withBar ? bottomGap + navHeight + miniGap + insets.bottom : insets.bottom + spacing.sm;
 
   // Keep the last visible position so it doesn't jump while fading out
@@ -59,26 +61,31 @@ export function GlobalMiniPlayer() {
     ? (uiEnabled.get() ? progress.get() : 0) : frozenProgress.get());
   const opacity = useSharedValue(1);
   useEffect(() => {
-    opacity.set(withTiming(visible ? 1 : 0, {
+    cancelAnimation(opacity);
+    opacity.set(underlay.reveal || underlay.returning ? 1 : withTiming(visible ? 1 : 0, {
       duration: motion.duration.fade,
       reduceMotion: motion.reduceMotion.decorative,
     }));
-  }, [visible, opacity]);
+  }, [visible, underlay.reveal, underlay.returning, opacity]);
   const expandedBottom = visible ? bottom : lastDock.bottom;
   const compactBottom = insets.bottom + bottomGap + (compactSize - miniHeight) / 2;
   const style = useAnimatedStyle(() => ({
     transform: [{ translateY: (expandedBottom - compactBottom) * amppProgress(visualProgress.get())
       + (amPlus ? amppMiniSink(visualProgress.get()) : 0) }],
-    opacity: opacity.get(),
-  }), [expandedBottom, compactBottom, amPlus]);
+    opacity: underlay.reveal || underlay.returning ? 1 : opacity.get(),
+  }), [expandedBottom, compactBottom, amPlus, underlay.reveal, underlay.returning]);
 
   return (
+    <PlayerDockUnderlay active={underlay.reveal}>
     <Animated.View
       style={[{ position: 'absolute', left: 0, right: 0, bottom: expandedBottom }, style]}
       pointerEvents={visible ? 'box-none' : 'none'}
+      accessibilityElementsHidden={!visible}
+      importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
     >
       <MiniPlayer active={visible} dockProgress={visualProgress} compact={visible ? dock.compact : lastDock.compact}
         hasSearch={visible ? dock.hasSearch : lastDock.hasSearch} dockEnabled={visible ? dock.enabled : lastDock.enabled} />
     </Animated.View>
+    </PlayerDockUnderlay>
   );
 }

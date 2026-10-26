@@ -1,5 +1,6 @@
 /** Sheet to subscribe to a podcast: search the iTunes directory, or paste a feed. */
-import { GlassBackdrop, GlassPressable, GlassTextInput } from '@/components/glass';
+import { GlassPressable } from '@/components/glass';
+import { MenuGlassCardFrame, MenuGlassCardHeader } from '@/components/MenuGlassCard';
 import Icon from '@/components/Icon';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -15,7 +16,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { search as searchPodcasts, subscribe, type PodcastSearchResult } from '@/api/podcasts';
 import { Cover } from '@/components/Cover';
@@ -78,167 +78,143 @@ export function PodcastAddSheet({ visible, subscribed, onCancel, onSubscribed }:
   return (
     <Modal
       visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
+      transparent
+      animationType="fade"
+      presentationStyle="overFullScreen"
       onRequestClose={onCancel}
     >
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.header}>
-          <GlassPressable variant="subtle" hitSlop={12} onPress={onCancel}>
-            <Text style={[styles.headerAction, { color: colors.accent }]}>{t('Cancel')}</Text>
-          </GlassPressable>
-          <Text style={styles.title}>{t('Add podcast')}</Text>
-          <View style={styles.headerSpacer} />
-        </View>
-
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <View collapsable={false} style={styles.searchBar}>
-            <GlassBackdrop radius={radius.pill} tint={colors.surfaceHighlight} variant="regular" />
-            <Icon name="search" size={18} color={colors.textMuted} />
-            <TextInput
-              style={styles.searchInput}
-              value={term}
-              onChangeText={setTerm}
-              placeholder={t('Search for a podcast')}
-              placeholderTextColor={colors.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoFocus
-            />
-            {term ? (
-              <GlassPressable variant="subtle" hitSlop={8} onPress={() => setTerm('')} accessibilityLabel={t('Clear')}>
-                <Icon name="close-circle" size={18} color={colors.textMuted} />
-              </GlassPressable>
-            ) : null}
-          </View>
-
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-
-          {debounced.trim().length > 1 ? (
-            isFetching && !data ? (
-              <ActivityIndicator style={{ marginTop: spacing.xl }} color={colors.accent} />
-            ) : isError ? (
-              <Message text={t("Couldn't search for podcasts.")} onRetry={() => refetch()} />
-            ) : (
-              <FlatList
-                {...listPerf}
-                keyboardShouldPersistTaps="handled"
-                data={data ?? []}
-                keyExtractor={(item) => item.feedUrl}
-                contentContainerStyle={styles.results}
-                renderItem={({ item }: { item: PodcastSearchResult }) => {
-                  const taken = subscribed.includes(item.feedUrl);
-                  const working = busy === item.feedUrl;
-                  return (
-                    <Pressable
-                      style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
-                      disabled={taken || busy !== null}
-                      onPress={() => void run(item.feedUrl, item.feedUrl)}
-                    >
-                      <Cover
-                        uri={item.imageUrl}
-                        size={44}
-                        rounded
-                        placeholderIcon="headset-outline"
-                      />
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.rowTitle} numberOfLines={1}>
-                          {item.title}
-                        </Text>
-                        {item.author ? (
-                          <Text style={styles.rowSub} numberOfLines={1}>
-                            {item.author}
-                          </Text>
-                        ) : null}
-                      </View>
-                      {working ? (
-                        <ActivityIndicator color={colors.accent} />
-                      ) : taken ? (
-                        <Icon name="checkmark-circle" size={22} color={colors.accent} />
-                      ) : (
-                        <Icon name="add-circle-outline" size={22} color={colors.textSecondary} />
-                      )}
-                    </Pressable>
-                  );
-                }}
-                ListEmptyComponent={
-                  <Text style={styles.empty}>
-                    {t('No podcast found for “{term}”. Try pasting the feed address below.', {
-                      term: debounced.trim(),
-                    })}
-                  </Text>
-                }
-              />
-            )
-          ) : (
-            <Text style={styles.empty}>
-              {t('Search for a show, or paste the address of a feed below.')}
-            </Text>
-          )}
-
-          <View style={styles.pasteRow}>
-            <GlassTextInput
-              style={styles.pasteInput}
-              value={feedUrl}
-              onChangeText={setFeedUrl}
-              placeholder="https://…"
-              placeholderTextColor={colors.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-              inputMode="url"
-            />
-            <GlassPressable variant="prominent" tint={colors.accent}
-              disabled={!canPaste}
-              onPress={() => void run(pasted, pasted)}
-              accessibilityRole="button"
-              accessibilityLabel={t('Subscribe')}
-              style={({ pressed }) => [
-                styles.subscribe,
-                !canPaste && styles.subscribeOff,
-                pressed && canPaste ? { opacity: 0.7 } : null,
-              ]}
-            >
-              {busy === pasted ? (
-                <ActivityIndicator color={colors.onAccent} />
+      <KeyboardAvoidingView
+        style={styles.modal}
+        behavior={Platform.OS === 'ios' ? 'height' : undefined}
+      >
+        <MenuGlassCardFrame maxWidth={384} onClose={onCancel}>
+          <MenuGlassCardHeader title={t('Add podcast')} onClose={onCancel} />
+          {/* One bounded virtualized scroll includes both text fields, so a
+              keyboard or a short window cannot hide the feed subscription. */}
+          <FlatList
+            {...listPerf}
+            style={styles.scroll}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            data={debounced.trim().length > 1 && !isError ? (data ?? []) : []}
+            keyExtractor={(item) => item.feedUrl}
+            contentContainerStyle={styles.content}
+            ListHeaderComponent={
+              <View>
+                <View style={styles.searchBar}>
+                  <Icon name="search" size={18} color={colors.textMuted} />
+                  <TextInput
+                    style={styles.searchInput}
+                    value={term}
+                    onChangeText={setTerm}
+                    placeholder={t('Search for a podcast')}
+                    placeholderTextColor={colors.textMuted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoFocus
+                  />
+                  {term ? (
+                    <GlassPressable variant="subtle" hitSlop={8} onPress={() => setTerm('')}
+                      accessibilityRole="button" accessibilityLabel={t('Clear')}>
+                      <Icon name="close-circle" size={18} color={colors.textMuted} />
+                    </GlassPressable>
+                  ) : null}
+                </View>
+                {error ? <Text style={styles.error}>{error}</Text> : null}
+              </View>
+            }
+            renderItem={({ item }: { item: PodcastSearchResult }) => {
+              const taken = subscribed.includes(item.feedUrl);
+              const working = busy === item.feedUrl;
+              return (
+                <Pressable
+                  style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
+                  disabled={taken || busy !== null}
+                  onPress={() => void run(item.feedUrl, item.feedUrl)}
+                >
+                  <Cover uri={item.imageUrl} size={44} rounded placeholderIcon="headset-outline" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
+                    {item.author ? <Text style={styles.rowSub} numberOfLines={1}>{item.author}</Text> : null}
+                  </View>
+                  {working ? (
+                    <ActivityIndicator color={colors.accent} />
+                  ) : taken ? (
+                    <Icon name="checkmark-circle" size={22} color={colors.accent} />
+                  ) : (
+                    <Icon name="add-circle-outline" size={22} color={colors.textSecondary} />
+                  )}
+                </Pressable>
+              );
+            }}
+            ListEmptyComponent={debounced.trim().length > 1 ? (
+              isFetching && !data ? <ActivityIndicator color={colors.accent} /> : isError ? (
+                <Message text={t("Couldn't search for podcasts.")} onRetry={() => refetch()} />
               ) : (
-                <Text style={styles.subscribeText}>{t('Subscribe')}</Text>
-              )}
-            </GlassPressable>
-          </View>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
+                <Text style={styles.empty}>
+                  {t('No podcast found for “{term}”. Try pasting the feed address below.', {
+                    term: debounced.trim(),
+                  })}
+                </Text>
+              )
+            ) : (
+              <Text style={styles.empty}>{t('Search for a show, or paste the address of a feed below.')}</Text>
+            )}
+            ListFooterComponent={
+              <View>
+                <View style={styles.pasteRow}>
+                  <TextInput
+                    style={styles.pasteInput}
+                    value={feedUrl}
+                    onChangeText={setFeedUrl}
+                    placeholder="https://…"
+                    placeholderTextColor={colors.textMuted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                    inputMode="url"
+                  />
+                  <GlassPressable variant="prominent" tint={colors.accent}
+                    disabled={!canPaste}
+                    onPress={() => void run(pasted, pasted)}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('Subscribe')}
+                    style={({ pressed }) => [styles.subscribe,
+                      !canPaste && styles.subscribeOff, pressed && canPaste ? { opacity: 0.7 } : null]}
+                  >
+                    {busy === pasted ? <ActivityIndicator color={colors.onAccent} /> : (
+                      <Text style={styles.subscribeText}>{t('Subscribe')}</Text>
+                    )}
+                  </GlassPressable>
+                </View>
+                <GlassPressable onPress={onCancel} style={styles.cancel} accessibilityRole="button">
+                  <Text style={styles.cancelText}>{t('Cancel')}</Text>
+                </GlassPressable>
+              </View>
+            }
+          />
+        </MenuGlassCardFrame>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = themed((colors) => ({
-  safe: { flex: 1, backgroundColor: colors.background },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  title: { color: colors.text, fontSize: fontSize.md, fontWeight: '500' },
-  headerAction: { color: colors.accent, fontSize: fontSize.md, fontWeight: '600' },
-  headerSpacer: { width: 52 },
+  modal: { flex: 1 },
+  scroll: { flexShrink: 1, minHeight: 0 },
+  content: { paddingBottom: spacing.xs, gap: spacing.md },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    height: 44,
-    marginHorizontal: spacing.lg,
+    minHeight: 44,
     paddingHorizontal: spacing.lg,
     borderRadius: radius.pill,
-    backgroundColor: 'transparent',
+    backgroundColor: 'rgba(127,127,127,0.10)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
-  searchInput: { flex: 1, color: colors.text, fontSize: fontSize.md, padding: 0 },
-  results: { padding: spacing.lg, gap: spacing.md },
+  searchInput: { flex: 1, minWidth: 0, minHeight: 44, color: colors.text, fontSize: fontSize.md, padding: 0 },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   rowTitle: { color: colors.text, fontSize: fontSize.md, fontWeight: '500' },
   rowSub: { color: colors.textSecondary, fontSize: fontSize.xs, marginTop: 2 },
@@ -246,20 +222,23 @@ const styles = themed((colors) => ({
     color: colors.textMuted,
     fontSize: fontSize.sm,
     textAlign: 'center',
-    marginTop: spacing.xl,
-    marginHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
   },
-  error: { color: colors.danger, fontSize: fontSize.sm, marginTop: spacing.sm, marginHorizontal: spacing.lg },
+  error: { color: colors.danger, fontSize: fontSize.sm, marginTop: spacing.sm },
   pasteRow: {
     flexDirection: 'row',
     gap: spacing.sm,
-    padding: spacing.lg,
+    paddingTop: spacing.md,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
   },
   pasteInput: {
     flex: 1,
-    backgroundColor: colors.surfaceHighlight,
+    minWidth: 0,
+    minHeight: 44,
+    backgroundColor: 'rgba(127,127,127,0.10)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
     borderRadius: radius.md,
     color: colors.text,
     fontSize: fontSize.sm,
@@ -273,5 +252,7 @@ const styles = themed((colors) => ({
     backgroundColor: colors.accent,
   },
   subscribeOff: { opacity: 0.4 },
+  cancel: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: spacing.sm },
+  cancelText: { color: colors.accent, fontSize: fontSize.md, fontWeight: '600' },
   subscribeText: { color: colors.onAccent, fontSize: fontSize.sm, fontWeight: '600' },
 }));

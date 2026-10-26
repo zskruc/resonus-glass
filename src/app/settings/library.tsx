@@ -2,11 +2,11 @@
 import { DockScrollView } from '@/components/DockScrollView';
 import { GlassPressable, GlassSurface } from '@/components/glass';
 import Icon from '@/components/Icon';
+import { MenuGlassCardFrame, MenuGlassCardHeader } from '@/components/MenuGlassCard';
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Modal, ScrollView, Text, View } from 'react-native';
 
 import { rescanLocal } from '@/api/data';
 import { getScanStatus, startScan } from '@/api/backend';
@@ -18,7 +18,7 @@ import { queryClient } from '@/lib/query';
 import { useAuthStore } from '@/store/auth';
 import { profileKeyOf, useLibraries } from '@/store/libraries';
 import { useToast } from '@/store/toast';
-import { colors, fontSize, radius, SHEET_MAX_WIDTH, spacing, themed, useTheme, tracking } from '@/theme';
+import { colors, fontSize, radius, spacing, themed, useTheme } from '@/theme';
 
 export default function LibrarySettings() {
   // Repaints on a change of appearance or accent: a stack keeps this screen
@@ -31,7 +31,6 @@ export default function LibrarySettings() {
   const setSource = useAuthStore((s) => s.setOfflineSource);
   const setFolders = useAuthStore((s) => s.setOfflineFolders);
   const toast = useToast((s) => s.show);
-  const insets = useSafeAreaInsets();
   // Server libraries (Navidrome multi-library): one switch per folder.
   const foldersMap = useLibraries((s) => s.folders);
   const disabledMap = useLibraries((s) => s.disabled);
@@ -220,58 +219,37 @@ export default function LibrarySettings() {
 
       <Modal
         transparent
+        statusBarTranslucent
         animationType="fade"
         visible={changing}
         onRequestClose={() => setChanging(false)}
       >
-        <Pressable style={sheetStyles.backdrop} onPress={() => setChanging(false)} />
-        <GlassSurface radius={0} radiusTopLeft={radius.xxl} radiusTopRight={radius.xxl} variant="prominent" style={[sheetStyles.sheet, { paddingBottom: insets.bottom + spacing.md }]}>
-          <Text style={sheetStyles.title}>{t('Where should we get your music?')}</Text>
+        <MenuGlassCardFrame onClose={() => setChanging(false)}>
+          <MenuGlassCardHeader title={t('Where should we get your music?')} onClose={() => setChanging(false)} />
+          <ScrollView style={{ flexShrink: 1, minHeight: 0 }} contentContainerStyle={{ gap: spacing.md }} keyboardShouldPersistTaps="handled">
+            <GlassPressable buttonMaterial={false} radius={radius.md} variant="regular" style={sheetStyles.option} onPress={chooseFolder}>
+              <Icon name="folder-outline" size={26} color={colors.accent} />
+              <View style={{ flex: 1 }}>
+                <Text style={sheetStyles.optionTitle}>{t('Choose a folder (recommended)')}</Text>
+                <Text style={sheetStyles.optionSub}>{t('Only the music in the folder you choose.')}</Text>
+              </View>
+            </GlassPressable>
 
-          <GlassPressable buttonMaterial={false} radius={radius.md} variant="regular" style={sheetStyles.option} onPress={chooseFolder}>
-            <Icon name="folder-outline" size={26} color={colors.accent} />
-            <View style={{ flex: 1 }}>
-              <Text style={sheetStyles.optionTitle}>{t('Choose a folder (recommended)')}</Text>
-              <Text style={sheetStyles.optionSub}>{t('Only the music in the folder you choose.')}</Text>
-            </View>
-          </GlassPressable>
-
-          <GlassPressable buttonMaterial={false} radius={radius.md} variant="regular" style={sheetStyles.option} onPress={chooseDevice}>
-            <Icon name="phone-portrait-outline" size={26} color={colors.accent} />
-            <View style={{ flex: 1 }}>
-              <Text style={sheetStyles.optionTitle}>{t('Scan the whole phone')}</Text>
-              <Text style={sheetStyles.optionSub}>{t('All the music on your device.')}</Text>
-            </View>
-          </GlassPressable>
-        </GlassSurface>
+            <GlassPressable buttonMaterial={false} radius={radius.md} variant="regular" style={sheetStyles.option} onPress={chooseDevice}>
+              <Icon name="phone-portrait-outline" size={26} color={colors.accent} />
+              <View style={{ flex: 1 }}>
+                <Text style={sheetStyles.optionTitle}>{t('Scan the whole phone')}</Text>
+                <Text style={sheetStyles.optionSub}>{t('All the music on your device.')}</Text>
+              </View>
+            </GlassPressable>
+          </ScrollView>
+        </MenuGlassCardFrame>
       </Modal>
     </SettingsPage>
   );
 }
 
 const sheetStyles = themed((colors) => ({
-  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: colors.backdrop },
-  sheet: {
-    position: 'absolute',
-    bottom: 0,
-    // Centred and no wider than a sheet wants to be (#131).
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: SHEET_MAX_WIDTH,
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.xxl,
-    borderTopRightRadius: radius.xxl,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    gap: spacing.md,
-  },
-  title: {
-    color: colors.text,
-    fontSize: fontSize.lg,
-    letterSpacing: tracking.heading,
-    fontWeight: '500',
-    marginBottom: spacing.xs,
-  },
   option: {
     flexDirection: 'row',
     alignItems: 'center',

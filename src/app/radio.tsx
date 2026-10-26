@@ -12,13 +12,12 @@ import {
   Modal,
   Pressable,
   RefreshControl,
-  StyleSheet,
+  ScrollView,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import Animated from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   createRadioStation,
@@ -33,6 +32,7 @@ import { Cover } from '@/components/Cover';
 import { Dialog } from '@/components/Dialog';
 import { EmptyState } from '@/components/EmptyState';
 import { Message } from '@/components/Message';
+import { MenuGlassCardFrame, MenuGlassCardHeader } from '@/components/MenuGlassCard';
 import { RadioEditSheet, type RadioEdit } from '@/components/RadioEditSheet';
 import { useT } from '@/i18n';
 import { queryClient } from '@/lib/query';
@@ -40,7 +40,7 @@ import { useAuthStore } from '@/store/auth';
 import { MAX_PINS, usePins } from '@/store/pins';
 import { currentSong, usePlayerStore } from '@/store/player';
 import { useToast } from '@/store/toast';
-import { colors, fontSize, radius, SCREEN_BOTTOM_PADDING, SHEET_MAX_WIDTH, spacing, themed, useTheme, tracking } from '@/theme';
+import { colors, fontSize, radius, SCREEN_BOTTOM_PADDING, spacing, themed, useTheme, tracking } from '@/theme';
 import { BackChevron } from '@/components/BackChevron';
 import { BrowseFrame, useSearchBox, type BrowserProps } from '@/components/BrowseFrame';
 import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
@@ -66,7 +66,6 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
   // Rows stop growing at a reading measure and centre themselves (#131).
   const listPad = useListPadding(spacing.lg);
   const t = useT();
-  const insets = useSafeAreaInsets();
   const auth = useAuthStore((s) => s.auth);
   const offline = useAuthStore((s) => s.offline);
   const playQueue = usePlayerStore((s) => s.playQueue);
@@ -327,16 +326,15 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
 
       <Modal
         transparent
+        statusBarTranslucent
         visible={!!menu || !!deleting}
         animationType="fade"
         onRequestClose={() => deleting ? setDeleting(null) : setMenu(null)}
       >
         {!deleting ? (
-          <>
-            <Pressable style={styles.backdrop} onPress={() => setMenu(null)} />
-            <View collapsable={false} style={[styles.sheet, { paddingBottom: insets.bottom + spacing.md }]}>
-              <GlassBackdrop radius={0} radiusTopLeft={radius.xxl} radiusTopRight={radius.xxl} tint={colors.surface} variant="prominent" />
-              <Text style={styles.sheetTitle} numberOfLines={1}>{menu?.name}</Text>
+          <MenuGlassCardFrame onClose={() => setMenu(null)}>
+            <MenuGlassCardHeader title={menu?.name ?? ''} onClose={() => setMenu(null)} />
+            <ScrollView style={{ flexShrink: 1, minHeight: 0 }} keyboardShouldPersistTaps="handled">
               <Pressable
                 style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
                 onPress={() => {
@@ -385,8 +383,8 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
                   </Pressable>
                 </>
               ) : null}
-            </View>
-          </>
+            </ScrollView>
+          </MenuGlassCardFrame>
         ) : null}
 
         <Dialog
@@ -434,26 +432,6 @@ const styles = themed((colors) => ({
     backgroundColor: 'transparent',
   },
   searchInput: { flex: 1, color: colors.text, fontSize: fontSize.md, padding: 0 },
-  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: colors.backdrop },
-  sheet: {
-    position: 'absolute',
-    bottom: 0,
-    // Centred and no wider than a sheet wants to be (#131).
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: SHEET_MAX_WIDTH,
-    backgroundColor: 'transparent',
-    borderTopLeftRadius: radius.xxl,
-    borderTopRightRadius: radius.xxl,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-  },
-  sheetTitle: {
-    color: colors.text,
-    fontSize: fontSize.md,
-    fontWeight: '500',
-    marginBottom: spacing.sm,
-  },
   action: {
     flexDirection: 'row',
     alignItems: 'center',

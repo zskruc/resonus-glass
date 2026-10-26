@@ -6,7 +6,7 @@ import { useTheme, useThemeMode } from '@/theme';
 import { useGlassTuning } from '@/store/glassTuning';
 import { getKyantGlassProfile } from '@/theme/glassDefaults';
 import { usePlayerGlass } from '@/store/playerGlass';
-import { getPlayerGlassRecipe, getPlayerMoreMenuMaterial } from '@/theme/playerGlassRecipes';
+import { getPlayerGlassRecipe } from '@/theme/playerGlassRecipes';
 
 type MenuGlassBackdropProps = {
   radius?: number;
@@ -15,13 +15,13 @@ type MenuGlassBackdropProps = {
   radiusBottomLeft?: number;
   radiusBottomRight?: number;
   highContrast?: boolean;
-  /** More menus keep their own material; detail cards use the popup choice. */
+  /** Compatibility hints; all windows now share the artist picker's material. */
   kind?: 'popup' | 'menu';
 };
 
 /** Keep this directly inside the non-collapsible menu card, beside its text. */
 export function MenuGlassBackdrop({ radius = 28, radiusTopLeft, radiusTopRight,
-  radiusBottomLeft, radiusBottomRight, highContrast = false, kind = 'popup' }: MenuGlassBackdropProps) {
+  radiusBottomLeft, radiusBottomRight }: MenuGlassBackdropProps) {
   const colors = useTheme();
   const dark = useThemeMode() === 'dark';
   const kyantDefaults = useGlassTuning((state) => state.mode === 'kyantDefault' || state.mode === 'amPlus');
@@ -37,10 +37,9 @@ export function MenuGlassBackdrop({ radius = 28, radiusTopLeft, radiusTopRight,
     highlightWidth: 0.6,
     highlightOpacity: dark ? 0.45 : 0.7,
     tintColor: dark ? '#202026' : '#FFFFFF',
-    tintOpacity: highContrast ? (dark ? 0.78 : 0.64) : (dark ? 0.3 : 0.24),
+    tintOpacity: dark ? 0.3 : 0.24,
   };
-  const selected = recipe === 'original' ? null : kind === 'menu'
-    ? getPlayerMoreMenuMaterial(dark) : getPlayerGlassRecipe(recipe, dark);
+  const selected = recipe === 'original' ? null : getPlayerGlassRecipe(recipe, dark);
   const profile = selected?.profile ?? existingProfile;
 
   // Use the upstream dialog material in the defaults preview. Legacy modes

@@ -928,6 +928,10 @@ internal class WindowBackdrop(
       surface.getMaterialBoundsOnScreen(screenRect)
       captureRegion.include(screenRect.left - location[0], screenRect.top - location[1],
         screenRect.right - location[0], screenRect.bottom - location[1], padding)
+      if (surface.getSelectionBoundsOnScreen(screenRect)) {
+        captureRegion.include(screenRect.left - location[0], screenRect.top - location[1],
+          screenRect.right - location[0], screenRect.bottom - location[1], padding)
+      }
       val pressed = AmPlusSelectionMotion.isInteracting(surface.tabPressProgress, surface.tabScaleX,
         surface.tabScaleY, surface.tabVelocity, surface.tabPanelOffset) || surface.buttonPressProgress > .001f
       if (retainBackdropHostBounds(surface.dockCompactWidth > 0f, surface.dockProgress, pressed)) {

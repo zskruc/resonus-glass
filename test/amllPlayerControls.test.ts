@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { amllBottomActionLayout, amllMoreButtonSize, amllPlayerControlLayout } from '@/lib/amllPlayerControls';
 
-test('portrait preserves three transport actions and places utility actions before volume', () => {
+test('portrait exposes shuffle and repeat around transport by user choice and places utilities before volume', () => {
   const layout = amllPlayerControlLayout({ width: 348, viewportHeight: 840, horizontal: false, showVolume: true });
-  assert.deepEqual(layout.slots.map((slot) => slot.action), ['previous', 'toggle', 'next']);
+  assert.deepEqual(layout.slots.map((slot) => slot.action), ['shuffle', 'previous', 'toggle', 'next', 'repeat']);
   assert.deepEqual(layout.rows, ['progress', 'transport', 'auxiliary', 'volume']);
   assert.equal(layout.auxiliaryHeight, 48);
   assert.equal(layout.height, layout.progressHeight + layout.transportHeight + layout.auxiliaryHeight
@@ -56,4 +56,20 @@ test('large text reserves a full time-label row and small phone More keeps an ac
     assert.ok(Number.isFinite(layout.height));
     assert.ok(Number.isFinite(amllMoreButtonSize(value, value)));
   }
+});
+
+test('phone SVG whitespace yields compact visible glyphs without shrinking the five touch targets', () => {
+  const layout = amllPlayerControlLayout({ width: 348, viewportWidth: 384, viewportHeight: 840,
+    horizontal: false, showVolume: true });
+  const visibleSkip = layout.skipGlyphSize * 84 / 134;
+  const visiblePlay = layout.playGlyphSize * 34.1406 / 38;
+  assert.ok(visibleSkip >= 32 && visibleSkip <= 38);
+  assert.ok(visiblePlay >= 44 && visiblePlay <= 48);
+  assert.ok(layout.modeGlyphSize * 35 / 56 >= 22 && layout.modeGlyphSize * 35 / 56 <= 24);
+  assert.ok(layout.modeSelectedGlyphSize <= 28);
+  assert.equal(layout.utilitySelectedGlyphSize, 24);
+  assert.ok(layout.utilityGlyphSize * 44.3 / 64 < 26);
+  assert.equal(layout.auxiliaryHeight, 48);
+  assert.ok(layout.slots.every((slot) => slot.size >= 44));
+  assert.equal(amllBottomActionLayout(348, false).height, 48);
 });

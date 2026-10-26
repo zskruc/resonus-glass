@@ -123,14 +123,20 @@ private fun Modifier.recordSelectionOverlay(overlay: AmPlusSelectionOverlay?): M
   val layer = rememberGraphicsLayer()
   DisposableEffect(overlay, layer) { onDispose { overlay.clear(layer) } }
   return drawWithContent {
+    val logicalSize = size
+    val outset = overlay.recordOutset()
     layer.record(density = this, layoutDirection = layoutDirection,
-      size = IntSize(size.width.roundToInt(), size.height.roundToInt())) {
-      this@drawWithContent.draw(density = drawContext.density, layoutDirection = drawContext.layoutDirection,
-        canvas = drawContext.canvas, size = drawContext.size, graphicsLayer = drawContext.graphicsLayer) {
-        this@drawWithContent.drawContent()
+      size = IntSize(logicalSize.width.roundToInt() + outset * 2, logicalSize.height.roundToInt() + outset * 2)) {
+      // Only the retained parent has a padded capacity. Every child's layout,
+      // shader and scale still sees its original logical bar/tab dimensions.
+      withTransform({ translate(outset.toFloat(), outset.toFloat()) }) {
+        this@drawWithContent.draw(density = drawContext.density, layoutDirection = drawContext.layoutDirection,
+          canvas = drawContext.canvas, size = logicalSize, graphicsLayer = drawContext.graphicsLayer) {
+          this@drawWithContent.drawContent()
+        }
       }
     }
-    overlay.update(layer, this, layoutDirection, size)
+    overlay.update(layer, this, layoutDirection, logicalSize, outset)
   }
 }
 
@@ -237,10 +243,8 @@ internal fun LiquidBottomTabsMaterial(
     val layer = rememberGraphicsLayer()
     remember(layer) {
       SinglePassTabsBackdrop(layer,
-        selectorScaleX = { if (amPlusMaterial) AmPlusSelectionMotion.scaleX(pressedScaleX(), velocity(), pressProgress())
-          else pressedScaleX() / (1f - (velocity() / 10f * 0.75f).coerceIn(-0.2f, 0.2f)) },
-        selectorScaleY = { if (amPlusMaterial) AmPlusSelectionMotion.scaleY(pressedScaleY(), velocity(), pressProgress())
-          else pressedScaleY() * (1f - (velocity() / 10f * 0.25f).coerceIn(-0.2f, 0.2f)) })
+        selectorScaleX = { TabsSelectionGeometry.scaleX(amPlusMaterial, pressedScaleX(), velocity(), pressProgress()) },
+        selectorScaleY = { TabsSelectionGeometry.scaleY(amPlusMaterial, pressedScaleY(), velocity(), pressProgress()) })
     }
   } else null
   // Positions below are physical canvas coordinates; RN mirrors semantic tabs.
@@ -391,11 +395,8 @@ internal fun LiquidBottomTabsMaterial(
     // to the selected tab; the native recorded material layer aligns itself.
     // No second screen capture or per-frame bitmap allocation is introduced.
     val selectedScene = rememberCanvasBackdrop {
-      val speed = velocity() / 10f
-      val actualScaleX = if (amPlusMaterial) AmPlusSelectionMotion.scaleX(pressedScaleX(), velocity(), pressProgress())
-        else pressedScaleX() / (1f - (speed * 0.75f).coerceIn(-0.2f, 0.2f))
-      val actualScaleY = if (amPlusMaterial) AmPlusSelectionMotion.scaleY(pressedScaleY(), velocity(), pressProgress())
-        else pressedScaleY() * (1f - (speed * 0.25f).coerceIn(-0.2f, 0.2f))
+      val actualScaleX = TabsSelectionGeometry.scaleX(amPlusMaterial, pressedScaleX(), velocity(), pressProgress())
+      val actualScaleY = TabsSelectionGeometry.scaleY(amPlusMaterial, pressedScaleY(), velocity(), pressProgress())
       val offsetPx = with(density) { panelOffset().dp.toPx() }
       val boundedPosition = position().coerceIn(0f, (tabsCount - 1).toFloat())
       withTransform({
@@ -439,11 +440,8 @@ internal fun LiquidBottomTabsMaterial(
         shadow = { Shadow(alpha = pressProgress()) },
         innerShadow = { InnerShadow(radius = 8f.dp * pressProgress(), alpha = pressProgress()) },
         layerBlock = {
-          val speed = velocity() / 10f
-          scaleX = if (amPlusMaterial) AmPlusSelectionMotion.scaleX(pressedScaleX(), velocity(), pressProgress())
-            else pressedScaleX() / (1f - (speed * 0.75f).coerceIn(-0.2f, 0.2f))
-          scaleY = if (amPlusMaterial) AmPlusSelectionMotion.scaleY(pressedScaleY(), velocity(), pressProgress())
-            else pressedScaleY() * (1f - (speed * 0.25f).coerceIn(-0.2f, 0.2f))
+          scaleX = TabsSelectionGeometry.scaleX(amPlusMaterial, pressedScaleX(), velocity(), pressProgress())
+          scaleY = TabsSelectionGeometry.scaleY(amPlusMaterial, pressedScaleY(), velocity(), pressProgress())
         },
         onDrawSurface = {
           val progress = pressProgress()

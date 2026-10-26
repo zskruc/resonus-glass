@@ -1,75 +1,124 @@
-/** Independently drawn native controls for the reviewed AMLL arrangements. */
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { useEffect, type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+/**
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * React Native adaptation of AMLL react-full controls, commit 5fee356362353dbb24ce9bea3a62536478040de7.
+ * Original MediaButton/ToggleIconButton/MenuButton/PrebuiltLyricPlayer sources and
+ * modifications are listed in THIRD_PARTY_NOTICES.md; license: licenses/AMLL-AGPL-3.0.txt.
+ */
+import { Image, type ImageSource } from 'expo-image';
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import Animated, {
+  cancelAnimation, Easing, useAnimatedStyle, useSharedValue, withTiming,
+} from 'react-native-reanimated';
 
 import { useT } from '@/i18n';
 import {
   amllBottomActionLayout, amllMoreButtonSize, amllPlayerControlLayout,
-  type AmllBottomAction, type AmllTransportAction,
+  type AmllTransportAction,
 } from '@/lib/amllPlayerControls';
+import { motion } from '@/theme/motion';
 
 const WHITE = '#FFFFFF';
-const CUTOUT = '#25252D';
+const CSS_EASE = Easing.bezier(.25, .1, .25, 1);
+const PRESS_TIMING = { easing: CSS_EASE, reduceMotion: motion.reduceMotion.decorative };
 
-/** Original simple native shapes; no reference SVGs or path data are used. */
-function AuxiliaryGlyph({ action, selected }: { action: AmllBottomAction; selected: boolean }) {
-  if (action === 'output') return (
-    <View style={styles.glyph}>
-      {[26, 18, 10].map((size) => <View key={size} style={[styles.outputRing,
-        { width: size, height: size, borderRadius: size / 2, left: (32 - size) / 2, top: (26 - size) / 2 }]} />)}
-      <View style={styles.outputTriangle} />
-    </View>
-  );
-  const ink = selected ? CUTOUT : WHITE;
-  if (action === 'lyrics') return (
-    <View style={styles.glyph}>
-      <View style={[styles.lyricBox, selected && { backgroundColor: WHITE }]}>
-        <Text allowFontScaling={false} style={[styles.quotation, { color: ink }]}>”</Text>
-      </View>
-      <View style={styles.lyricTail} />
-    </View>
-  );
-  return (
-    <View style={[styles.glyph, selected && styles.queuePlate]}>
-      {[8, 15, 22].map((top) => <View key={top} style={[styles.queueLine, { top }]}>
-        <View style={[styles.queueDot, { backgroundColor: ink }]} />
-        <View style={[styles.queueRule, { backgroundColor: ink }]} />
-      </View>)}
-    </View>
-  );
+// Original SVG geometry with explicit white paint: AndroidSVG's Expo tint
+// adapter does not replace currentColor. Asset provenance records this change.
+const ICONS: Record<string, ImageSource> = {
+  previous: require('../../assets/amll-controls/previous.svg'),
+  next: require('../../assets/amll-controls/next.svg'),
+  play: require('../../assets/amll-controls/play.svg'),
+  pause: require('../../assets/amll-controls/pause.svg'),
+  shuffle: require('../../assets/amll-controls/shuffle.svg'),
+  'shuffle-active': require('../../assets/amll-controls/shuffle-active.svg'),
+  repeat: require('../../assets/amll-controls/repeat.svg'),
+  'repeat-active': require('../../assets/amll-controls/repeat-active.svg'),
+  'repeat-one-active': require('../../assets/amll-controls/repeat-one-active.svg'),
+  'lyrics-off': require('../../assets/amll-controls/lyrics-off.svg'),
+  'lyrics-on': require('../../assets/amll-controls/lyrics-on.svg'),
+  'queue-off': require('../../assets/amll-controls/queue-off.svg'),
+  'queue-on': require('../../assets/amll-controls/queue-on.svg'),
+  output: require('../../assets/amll-controls/output.svg'),
+  more: require('../../assets/amll-controls/more.svg'),
+};
+
+function Glyph({ name, size }: { name: string; size: number }) {
+  return <Image source={ICONS[name]} style={{ width: size, height: size }}
+    contentFit="contain" transition={0} recyclingKey={name} accessible={false} pointerEvents="none" />;
 }
 
-function MediaButton({ label, size, active, selected, onPress, onLongPress, children }: {
+function MediaButton({ label, size, visualSize = size, active, selected, onPress, onLongPress, children, kind = 'media' }: {
   label: string;
   size: number;
+  visualSize?: number;
   active: boolean;
   selected?: boolean;
   onPress: () => void;
   onLongPress?: () => void;
   children: ReactNode;
+  kind?: 'media' | 'toggle' | 'menu';
 }) {
   const scale = useSharedValue(1);
+  const highlight = useSharedValue(0);
+  const live = useRef({ active, mounted: true, hovered: false });
   const animated = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
+  const background = useAnimatedStyle(() => ({ backgroundColor: 'white', opacity: highlight.get() }));
+  useLayoutEffect(() => {
+    live.current.active = active;
+    if (!active) {
+      cancelAnimation(scale); cancelAnimation(highlight); scale.set(1); highlight.set(0);
+    }
+  }, [active, scale, highlight]);
   useEffect(() => {
-    if (!active) { cancelAnimation(scale); scale.set(1); }
-    return () => cancelAnimation(scale);
-  }, [active, scale]);
+    const lifetime = live.current;
+    lifetime.mounted = true;
+    return () => { lifetime.mounted = false; cancelAnimation(scale); cancelAnimation(highlight); };
+  }, [scale, highlight]);
+  const canAct = () => live.current.active && live.current.mounted;
   return (
     <Pressable disabled={!active} accessibilityRole="button" accessibilityLabel={label}
       accessibilityState={{ disabled: !active, ...(selected == null ? {} : { selected }) }}
-      onPress={onPress} onLongPress={onLongPress}
-      onPressIn={() => scale.set(withSpring(.88, { damping: 18, stiffness: 350 }))}
-      onPressOut={() => scale.set(withSpring(1, { damping: 12, stiffness: 260 }))}
+      onPress={() => {
+        if (!canAct()) return;
+        onPress();
+      }}
+      onLongPress={onLongPress ? () => { if (canAct()) onLongPress(); } : undefined}
+      onPressIn={() => {
+        if (!canAct()) return;
+        cancelAnimation(scale);
+        scale.set(withTiming(.9, { ...PRESS_TIMING, duration: 80 }));
+        highlight.set(withTiming(2 / 15, { ...PRESS_TIMING, duration: 80 }));
+      }}
+      onPressOut={() => {
+        if (!live.current.mounted) return;
+        if (!canAct()) { scale.set(1); highlight.set(0); return; }
+        scale.set(withTiming(1, { ...PRESS_TIMING, duration: 140 }));
+        highlight.set(withTiming(canAct() && live.current.hovered ? 2 / 15 : 0,
+          { ...PRESS_TIMING, duration: 140 }));
+      }}
+      onHoverIn={() => {
+        live.current.hovered = true;
+        if (canAct()) highlight.set(withTiming(2 / 15, { ...PRESS_TIMING, duration: 80 }));
+      }}
+      onHoverOut={() => {
+        live.current.hovered = false;
+        if (live.current.mounted) highlight.set(withTiming(0, { ...PRESS_TIMING, duration: 140 }));
+      }}
       style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      <Animated.View pointerEvents="none" style={[styles.glyphCenter, animated]}>{children}</Animated.View>
+      <View pointerEvents="none" style={[styles.buttonSurface,
+        { width: visualSize, height: visualSize, borderRadius: visualSize / 2 },
+        kind === 'menu' && { backgroundColor: '#FFFFFF15' }]}>
+        <Animated.View style={[StyleSheet.absoluteFill, { borderRadius: visualSize / 2 }, background]} />
+        <Animated.View style={[styles.glyphCenter, animated]}>{children}</Animated.View>
+      </View>
     </Pressable>
   );
 }
 
 export interface AmllPlayerBottomActionsProps {
   width: number;
+  viewportWidth?: number;
+  viewportHeight?: number;
   horizontal: boolean;
   showLyrics: boolean;
   queueOpen?: boolean;
@@ -80,11 +129,11 @@ export interface AmllPlayerBottomActionsProps {
   onQueue: () => void;
 }
 
-/** Portrait: lyrics/output/queue. Landscape: output left, lyrics/queue right. */
-export function AmllPlayerBottomActions({ width, horizontal, showLyrics, queueOpen = false,
-  outputLabel, active = true, onLyrics, onOutput, onQueue }: AmllPlayerBottomActionsProps) {
+/** Source row-reverse puts output at left and lyrics/queue at right in landscape. */
+export function AmllPlayerBottomActions({ width, viewportWidth = width, viewportHeight = 840, horizontal,
+  showLyrics, queueOpen = false, outputLabel, active = true, onLyrics, onOutput, onQueue }: AmllPlayerBottomActionsProps) {
   const t = useT();
-  const geometry = amllBottomActionLayout(width, horizontal);
+  const geometry = amllBottomActionLayout(width, horizontal, viewportWidth, viewportHeight);
   const labels = { lyrics: showLyrics ? t('Show cover') : t('Lyrics'), output: outputLabel || t('Devices'), queue: t('View queue') };
   const handlers = { lyrics: onLyrics, output: onOutput, queue: onQueue };
   const selected = { lyrics: showLyrics, output: false, queue: queueOpen };
@@ -94,10 +143,11 @@ export function AmllPlayerBottomActions({ width, horizontal, showLyrics, queueOp
       contentContainerStyle={{ width: geometry.contentWidth, height: geometry.height }}>
       <View style={{ width: geometry.contentWidth, height: geometry.height }}>
         {geometry.slots.map(({ action, left, size }) => (
-          <View key={action} style={{ position: 'absolute', left, top: 0, opacity: .45 }}>
-            <MediaButton label={labels[action]} size={size} active={active} selected={selected[action]}
+          <View key={action} style={{ position: 'absolute', left, top: 0, opacity: selected[action] ? 1 : .8 }}>
+            <MediaButton kind="toggle" label={labels[action]} size={size} active={active} selected={selected[action]}
               onPress={handlers[action]}>
-              <AuxiliaryGlyph action={action} selected={selected[action]} />
+              <Glyph name={action === 'output' ? 'output' : `${action === 'queue' ? 'queue' : 'lyrics'}-${selected[action] ? 'on' : 'off'}`}
+                size={selected[action] ? geometry.selectedGlyphSize : geometry.glyphSize} />
             </MediaButton>
           </View>
         ))}
@@ -113,9 +163,7 @@ export interface AmllPlayerControlsProps extends AmllPlayerBottomActionsProps {
   buffering?: boolean;
   shuffle: boolean;
   repeat: 'off' | 'all' | 'one';
-  /** Include the times and optional centered quality label in this slot. */
   progress: ReactNode;
-  /** Pass the existing system/remote volume row with its visual label hidden. */
   volume?: ReactNode;
   onPrevious: () => void;
   onToggle: () => void;
@@ -126,11 +174,11 @@ export interface AmllPlayerControlsProps extends AmllPlayerBottomActionsProps {
 }
 
 export function AmllPlayerControls(props: AmllPlayerControlsProps) {
-  const { width, viewportHeight, horizontal, fontScale = 1, active = true,
+  const { width, viewportWidth = width, viewportHeight, horizontal, fontScale = 1, active = true,
     playing, buffering = false, shuffle, repeat, progress, volume,
     onPrevious, onToggle, onNext, onShuffle, onRepeat, onLongPressPlay } = props;
   const t = useT();
-  const layout = amllPlayerControlLayout({ width, viewportHeight, horizontal, fontScale, showVolume: !!volume });
+  const layout = amllPlayerControlLayout({ width, viewportWidth, viewportHeight, horizontal, fontScale, showVolume: !!volume });
   const labels: Record<AmllTransportAction, string> = {
     previous: t('Previous'), toggle: playing ? t('Pause') : t('Play'), next: t('Next'),
     shuffle: t('Shuffle'), repeat: t('Repeat'),
@@ -138,15 +186,12 @@ export function AmllPlayerControls(props: AmllPlayerControlsProps) {
   const handlers = { previous: onPrevious, toggle: onToggle, next: onNext, shuffle: onShuffle, repeat: onRepeat };
   const glyph = (action: AmllTransportAction) => {
     if (action === 'toggle') return buffering ? <ActivityIndicator color={WHITE} />
-      : <Ionicons name={playing ? 'pause' : 'play'} size={layout.playGlyphSize} color={WHITE}
-        style={playing ? undefined : { marginLeft: 3 }} />;
-    if (action === 'previous' || action === 'next') return <Ionicons
-      name={action === 'previous' ? 'play-back' : 'play-forward'} size={layout.skipGlyphSize} color={WHITE} />;
-    const checked = action === 'shuffle' ? shuffle : repeat !== 'off';
-    return <View style={[styles.modeGlyph, checked && styles.modePlate]}>
-      <Ionicons name={action === 'shuffle' ? 'shuffle' : 'repeat'} size={22} color={checked ? CUTOUT : WHITE} />
-      {action === 'repeat' && repeat === 'one' ? <Text allowFontScaling={false} style={styles.repeatOne}>1</Text> : null}
-    </View>;
+      : <Glyph name={playing ? 'pause' : 'play'} size={layout.playGlyphSize} />;
+    if (action === 'previous' || action === 'next') return <Glyph name={action} size={layout.skipGlyphSize} />;
+    const selected = action === 'shuffle' ? shuffle : repeat !== 'off';
+    return <Glyph name={action === 'shuffle' ? shuffle ? 'shuffle-active' : 'shuffle'
+      : repeat === 'one' ? 'repeat-one-active' : repeat === 'all' ? 'repeat-active' : 'repeat'}
+    size={selected ? layout.modeSelectedGlyphSize : layout.modeGlyphSize} />;
   };
   return (
     <View style={{ width, height: layout.height }}>
@@ -172,48 +217,18 @@ export function AmllPlayerControls(props: AmllPlayerControlsProps) {
   );
 }
 
-/** The reference alone gives More a faint circular background. */
 export function AmllPlayerMoreButton({ onPress, viewportWidth, viewportHeight, label, active = true }: {
-  onPress: () => void;
-  viewportWidth: number;
-  viewportHeight: number;
-  label?: string;
-  active?: boolean;
+  onPress: () => void; viewportWidth: number; viewportHeight: number; label?: string; active?: boolean;
 }) {
   const t = useT();
   const size = amllMoreButtonSize(viewportWidth, viewportHeight);
-  return (
-    <Pressable onPress={onPress} disabled={!active} accessibilityRole="button"
-      accessibilityLabel={label || t('More options')} accessibilityState={{ disabled: !active }}
-      style={({ pressed }) => ({ width: Math.max(44, size), height: Math.max(44, size),
-        alignItems: 'center', justifyContent: 'center', opacity: pressed ? .6 : 1 })}>
-      <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: '#FFFFFF15',
-        alignItems: 'center', justifyContent: 'center' }}>
-        <Ionicons name="ellipsis-horizontal" size={size * .72} color={WHITE} />
-      </View>
-    </Pressable>
-  );
+  return <MediaButton kind="menu" onPress={onPress} active={active} label={label || t('More options')}
+    size={Math.max(44, size)} visualSize={size}>
+    <Glyph name="more" size={size * .72} />
+  </MediaButton>;
 }
 
 const styles = StyleSheet.create({
   glyphCenter: { alignItems: 'center', justifyContent: 'center' },
-  // Keep the 48dp button's touch area; only the three utility glyphs shrink.
-  glyph: { width: 32, height: 32, transform: [{ scale: .75 }] },
-  outputRing: { position: 'absolute', borderWidth: 1.7, borderColor: WHITE, borderBottomColor: 'transparent' },
-  outputTriangle: { position: 'absolute', left: 9, top: 17, width: 0, height: 0,
-    borderLeftWidth: 7, borderRightWidth: 7, borderBottomWidth: 10,
-    borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: WHITE },
-  lyricBox: { position: 'absolute', left: 3, top: 3, width: 26, height: 23,
-    borderWidth: 1.8, borderColor: WHITE, borderRadius: 5, alignItems: 'center' },
-  quotation: { position: 'absolute', top: -5, fontSize: 30, lineHeight: 33, fontWeight: '700' },
-  lyricTail: { position: 'absolute', left: 8, top: 24, width: 0, height: 0,
-    borderTopWidth: 5, borderRightWidth: 5, borderTopColor: WHITE, borderRightColor: 'transparent' },
-  queuePlate: { backgroundColor: WHITE, borderRadius: 6 },
-  queueLine: { position: 'absolute', left: 5, right: 5, height: 2.2, flexDirection: 'row', alignItems: 'center', gap: 3 },
-  queueDot: { width: 2.8, height: 2.8, borderRadius: 1.4 },
-  queueRule: { flex: 1, height: 2.2, borderRadius: 1.1 },
-  modeGlyph: { width: 29, height: 25, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
-  modePlate: { backgroundColor: WHITE },
-  repeatOne: { position: 'absolute', color: CUTOUT, backgroundColor: WHITE, fontSize: 8, lineHeight: 10,
-    fontWeight: '700', left: 12, top: 8 },
+  buttonSurface: { alignItems: 'center', justifyContent: 'center' },
 });

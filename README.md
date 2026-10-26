@@ -41,13 +41,13 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 | 渠道 | 版本 | Android 更新编号 | 获取方式 |
 | --- | --- | --- | --- |
 | 正式发布 | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest)，App 内检查更新 |
-| 开发预览 | `0.8.4.1-amll.9` | `91` | APK 已构建并校验；USB 断开，待安装及实机复测 |
+| 开发预览 | `0.8.4.1-amll.12` | `94` | ARM64 APK 已构建并校验原签名；尚未安装，实机测试待完成 |
 
-当前开发预览位于 `preview/amll-player` 分支。新增参考 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 的原生播放页：共享封面大小变形、整页歌词、横屏双栏，以及利用完整封面颜色分布的网格流动背景。「设置 → 播放器 → 播放器布局」可切回 Resonus 原有布局；下方「播放器背景」仅影响原有布局。实现范围、来源与验证状态见 [AMLL 播放器预览说明](./docs/AMLL-PLAYER-PREVIEW.md)。
+当前开发预览位于 `preview/amll-player` 分支。播放页结合 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 派生的原生控件与 SVG，以及独立实现的封面／歌词界面和网格流动背景。「设置 → 播放器 → 播放器布局」可切回 Resonus 原有布局；下方「播放器背景」仅影响原有布局。控件与 SVG 的 **AGPL-3.0-only** 来源、保留的原有许可证和实现范围见 [第三方声明](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) 与 [预览说明](./docs/AMLL-PLAYER-PREVIEW.md)。
 
-`.2` 默认进入大封面页；点击顶部横条、向下拖动或使用系统返回，均退出整个播放器。退出期间保留最后一帧歌词并停止后续动画。竖屏依次为三个播放按钮、歌词／输出／队列、音量条；随机与循环移至更多菜单的可选播放控制组。横屏保留五个播放按钮，底部左侧为输出，右侧为歌词与队列。AMLL 播放按钮去掉封面色圆底，进度条和音量条继续跟随封面主题色；Resonus 原有布局保持原样。
+早期 `.2` 默认进入大封面页；点击顶部横条、向下拖动或使用系统返回，均退出整个播放器。退出期间保留最后一帧歌词并停止后续动画。竖屏依次为三个播放按钮、歌词／输出／队列、音量条；随机与循环移至更多菜单的可选播放控制组。横屏保留五个播放按钮，底部左侧为输出，右侧为歌词与队列。AMLL 播放按钮去掉封面色圆底，进度条和音量条继续跟随封面主题色；Resonus 原有布局保持原样。
 
-`.3` 将歌词、输出与队列等辅助图标缩至 24dp，保留 48dp 点击区域；点击同步歌词会跳转到该位置并开始播放。歌词继续使用 Resonus 的来源与跳播功能；当前 `.4` 的共用模糊与视口预算见下文。
+`.3` 将歌词、输出与队列等辅助图标缩至 24dp，保留 48dp 点击区域；点击同步歌词会跳转到该位置并开始播放。歌词继续使用 Resonus 的来源与跳播功能；后续 `.4` 的共用模糊与视口预算见下文。
 
 全 App 开关统一缩小约 16%，布局为 54×44dp，保留 44dp 触摸高度，并为设置文字留出更多横向空间。
 
@@ -57,9 +57,11 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 
 `.4` 让全部播放页共用 Resonus 歌词模糊与过渡，按真实视口限制滤镜；恢复底栏点按的完整按压／移动／释放动画，并在设置的外观首页组加入首页标题自定义。共享玻璃记录与透镜只在交互期间运行，背景采样排除缓存透镜，页面导航查找跳过列表内容。歌曲缩略图使用静态首帧，磁盘预取只下载文件并清理请求，避免额外动画解码；播放器动画能力与暂停状态独立保留。
 
-当前 `.9` 扩大 AMLL 播放器的下拉返回区域：封面页为状态栏下方至大封面上沿，歌词页包含顶部小封面、歌曲名和创作者；子页面底栏保留来源选项卡的主题色与选中态。播放列表改为有界歌曲行复用，玻璃采样与图片释放减少重复工作；React Native 升至 0.86.3，包含与快滑原生崩溃堆栈高度吻合的官方事件引用竞态修复。完整证据和限制见[播放列表性能记录](./docs/PLAYLIST-SCROLL-PERFORMANCE.md)。
+当前 `.12` 恢复 `.10` 的播放器入场／退场动效，保留播放器与底栏的同步揭露和返回交接，撤销用户拒绝的 Primuse 卡片形变实验。保留 Tab 的 UI 线程即时点按反馈、列表稳定 callback ref 修复，以及统一浮动玻璃弹窗；弹窗覆盖范围见 [统一面板说明](./docs/UNIFIED-GLASS-PANELS.md)，转场研究状态见 [候选记录](./docs/PLAYER-MINI-TRANSITIONS.md)。
 
-`.9` ARM64 APK 已校验版本、包名和原签名；425 项应用测试、113 项玻璃模块测试及两组原生方法回归通过，静态检查无错误。当前手机 USB 已断开，`.9` 尚未安装，持续滚动和崩溃修复仍需重测。`.5` 至 `.7` 未通过用户体感验收；`.8` 的一轮采样离开了目标播放列表，已作废。不能把系统 120Hz 请求、绘制次数或单元测试等同于恒定 120 fps。背景保留独立最高约 60 fps 工作预算，预览尚未纳入正式 Release。
+播放器使用白色 SVG，按手机可见笔画控制尺寸；竖屏同时显示随机、上一首、播放／暂停、下一首和循环五个按钮，采用短按压／释放反馈。竖屏布局在底部预留最多 48dp，将封面、信息和控制区整体上移；次要文字使用 0.78 白色透明度。播放进度与音量轨道继续跟随封面主题色。
+
+当前 463 项应用测试、118 项玻璃模块原生测试、类型与翻译检查全部通过；lint 为 0 错误、117 项已有警告。`.12` ARM64 APK 已构建，版本、包名和原签名校验通过，尚未安装到手机；后续 USB 连接与持续滚动、崩溃、动效和全弹窗视觉验收待完成。`.10`、`.11` 曾安装测试，不代表本轮已验收。性能来源与边界见 [播放列表记录](./docs/PLAYLIST-SCROLL-PERFORMANCE.md)。系统 120Hz 请求、绘制次数和单元测试都不等同于恒定 120 fps；背景保留独立最高约 60 fps 工作预算，预览尚未纳入正式 Release。
 
 Resonus 原有布局开启封面配色时，播放／暂停按钮直接使用当前封面色，和进度条、音量条同步；其背景配色仍保留单独的稳定等待与过渡。AMLL 布局使用独立的原生封面背景和无常驻圆底的播放按钮，滑条主题色保留。
 
@@ -120,10 +122,10 @@ bash scripts/build-glass-preview.sh
 
 ## 许可证与致谢
 
-- [Resonus](https://github.com/juananzzz/resonus)：原作者 **juananzzz** 及原项目贡献者；本衍生项目继续采用 **GPL-3.0-or-later**，见 [LICENSE](./LICENSE)。支持原作者可前往其 [Ko-fi](https://ko-fi.com/juananzzz)。
+- [Resonus](https://github.com/juananzzz/resonus)：原作者 **juananzzz** 及原项目贡献者；原有源码保留 **GPL-3.0-or-later**，根 [LICENSE](./LICENSE) 不变；本预览新增的 AGPL 派生控件另见下项及第三方声明。支持原作者可前往其 [Ko-fi](https://ko-fi.com/juananzzz)。
 - [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)：**Apache-2.0**。原生材质依赖 Backdrop 1.0.0，并适配其 Bottom Tabs 示例；[许可证](./modules/liquid-glass/ANDROID_LIQUID_GLASS_LICENSE)。
 - [sdegenaar/liquid_glass_widgets](https://github.com/sdegenaar/liquid_glass_widgets)：**MIT**，Copyright © 2024–2026 Sebastian Degenaar。参考并适配其联动布局和最小化控制器；未引入 Flutter 引擎；[许可证](./modules/liquid-glass/LIQUID_GLASS_WIDGETS_LICENSE)。
 - Primuse：歌词动效的部分实现遵循 **MIT**，详见 [第三方声明](./THIRD_PARTY_NOTICES.md)。
-- [AMLL](https://github.com/amll-dev/applemusic-like-lyrics)：以固定版本的播放页布局和背景效果为视觉参考；本分支独立实现原生界面，未嵌入其 **AGPL-3.0-only** 运行库或复制代码、着色器和资源，见 [适配边界](./docs/AMLL-PLAYER-PREVIEW.md)。
+- [AMLL](https://github.com/amll-dev/applemusic-like-lyrics)：播放控件及选定 SVG 派生自固定版本，保留 **AGPL-3.0-only**、[完整许可证](./licenses/AMLL-AGPL-3.0.txt) 与 [文件来源／组合分发要求](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference)。封面网格背景独立实现，未嵌入其 Web 运行库、着色器或动画引擎；不将图标来源声明为 Apple 授权。
 
 原项目图标、其他依赖和原有第三方声明继续保留各自权利与许可。

@@ -4,11 +4,10 @@
  * destructive actions (without input).
  */
 import Icon from '@/components/Icon';
-import { GlassPressable, GlassSurface, GlassTextInput } from '@/components/glass';
+import { GlassPressable } from '@/components/glass';
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import {
   Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,7 +19,7 @@ import {
 import { useT } from '@/i18n';
 import { useBottomSheetAnim } from '@/hooks/useBottomSheetAnim';
 import { colors, fontSize, radius, spacing, themed, tracking } from '@/theme';
-import { MenuGlassCardFrame, MenuGlassCardHeader } from './MenuGlassCard';
+import { MENU_GLASS_RADIUS, MenuGlassCardFrame, MenuGlassCardHeader } from './MenuGlassCard';
 
 interface Props {
   visible: boolean;
@@ -100,15 +99,14 @@ export function Dialog({
   }
 
   const content = (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-      <Pressable style={styles.backdrop} onPress={onCancel} />
-      <View style={styles.center} pointerEvents="box-none">
-        <GlassSurface radius={radius.lg} variant="prominent" style={styles.card}>
-          <Text style={styles.title}>{title}</Text>
+    <MenuGlassCardFrame onClose={onCancel}>
+      <MenuGlassCardHeader title={title} onClose={onCancel} />
+      <ScrollView style={styles.menuBody} contentContainerStyle={{ gap: spacing.md }}
+        keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           {message ? <Text style={[styles.message, messageColor != null && { color: messageColor }]}>{message}</Text> : null}
           {children}
           {input ? (
-            <GlassTextInput
+            <TextInput
               ref={inputRef}
               style={styles.input}
               placeholder={input.placeholder}
@@ -156,9 +154,8 @@ export function Dialog({
               </Text>
             </GlassPressable>
           </View>
-        </GlassSurface>
-      </View>
-    </View>
+      </ScrollView>
+    </MenuGlassCardFrame>
   );
 
   if (inline) return visible ? content : null;
@@ -234,8 +231,8 @@ const styles = themed((colors) => ({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   card: {
     width: '100%',
-    backgroundColor: colors.surfaceHighlight,
-    borderRadius: radius.lg,
+    backgroundColor: 'transparent',
+    borderRadius: MENU_GLASS_RADIUS,
     padding: spacing.xl,
     gap: spacing.md,
   },

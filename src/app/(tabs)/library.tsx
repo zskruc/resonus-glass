@@ -17,7 +17,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { GestureDetector } from 'react-native-gesture-handler';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -38,6 +38,7 @@ import { Dialog } from '@/components/Dialog';
 import { EmptyState } from '@/components/EmptyState';
 import { FavoritesArt } from '@/components/FavoritesArt';
 import { Message } from '@/components/Message';
+import { MenuGlassCardFrame, MenuGlassCardHeader } from '@/components/MenuGlassCard';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { useBottomSheetAnim } from '@/hooks/useBottomSheetAnim';
 import { albumsLabel, songsLabel, useT } from '@/i18n';
@@ -49,7 +50,7 @@ import { SORT_LABELS, byCodepoint, matches, normQ, sortItems } from '@/lib/libra
 import { useSettings, type LibrarySort } from '@/store/settings';
 import { useAccent } from '@/hooks/useAccent';
 import { useToast } from '@/store/toast';
-import { colors, fontSize, lineHeight, radius, SHEET_MAX_WIDTH, spacing, themed, useTheme, tracking } from '@/theme';
+import { colors, fontSize, lineHeight, radius, spacing, themed, useTheme, tracking } from '@/theme';
 import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
 import { columnsFor, useListPadding, useScreenSize } from '@/hooks/useScreenSize';
@@ -149,35 +150,23 @@ function SortBar({ onPress }: { onPress: () => void }) {
 
 function SortSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const t = useT();
-  const insets = useSafeAreaInsets();
   const sort = useSettings((s) => s.librarySort);
   const setSort = useSettings((s) => s.setLibrarySort);
   const { dismiss, pan, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
     visible,
     onClose,
+    'card',
   );
   const close = () => dismiss(onClose);
   if (!visible) return null;
   return (
-    <Modal transparent animationType="none" visible onRequestClose={close}>
-      {/* Gestures inside an RN Modal need a root view of their own: the
-          Modal renders in a native hierarchy outside the app's. */}
-      <GestureHandlerRootView style={StyleSheet.absoluteFill}>
-        <Animated.View style={[styles.backdrop, backdropStyle]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={close} />
-        </Animated.View>
+    <Modal transparent statusBarTranslucent animationType="none" visible onRequestClose={close}>
+      <MenuGlassCardFrame onClose={close} backdropStyle={backdropStyle} cardStyle={sheetStyle} onLayout={onSheetLayout}>
         {/* One drag around the whole sheet: what's in here never scrolls,
             so nothing else competes for the gesture. */}
         <GestureDetector gesture={pan}>
-          <Animated.View collapsable={false}
-            style={[styles.sheet, { paddingBottom: insets.bottom + spacing.md }, sheetStyle]}
-            onLayout={onSheetLayout}
-          >
-            <GlassBackdrop radius={0} radiusTopLeft={radius.xxl} radiusTopRight={radius.xxl} tint={colors.surface} variant="prominent" />
-            {/* Spotify-style grabber: the visual cue that the sheet can be
-                dragged down to dismiss. */}
-            <View style={styles.grabber} />
-            <Text style={styles.sheetTitle}>{t('Sort by')}</Text>
+          <View collapsable={false}>
+            <MenuGlassCardHeader title={t('Sort by')} onClose={close} />
             {(Object.keys(SORT_LABELS) as LibrarySort[]).map((key) => {
               const active = key === sort;
               return (
@@ -198,9 +187,9 @@ function SortSheet({ visible, onClose }: { visible: boolean; onClose: () => void
                 </Pressable>
               );
             })}
-          </Animated.View>
+          </View>
         </GestureDetector>
-      </GestureHandlerRootView>
+      </MenuGlassCardFrame>
     </Modal>
   );
 }
@@ -1274,39 +1263,6 @@ const styles = themed((colors) => ({
     gap: spacing.xs,
   },
   sortBarText: { color: colors.textSecondary, fontSize: fontSize.xs, fontWeight: '500' },
-  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: colors.backdrop },
-  sheet: {
-    position: 'absolute',
-    bottom: 0,
-    // Centred and no wider than a sheet wants to be (#131).
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: SHEET_MAX_WIDTH,
-    backgroundColor: 'transparent',
-    borderTopLeftRadius: radius.xxl,
-    borderTopRightRadius: radius.xxl,
-    paddingHorizontal: spacing.lg,
-    // Smaller than the old spacing.lg because the grabber below already brings
-    // its own margin: together they add up to the same top gap as before.
-    paddingTop: spacing.sm,
-  },
-  // Spotify's little handle. Its only job is to advertise the drag gesture, so
-  // it stays discreet: it must read as an affordance, not as a control.
-  grabber: {
-    alignSelf: 'center',
-    width: 36,
-    height: 4,
-    borderRadius: radius.pill,
-    backgroundColor: colors.textMuted,
-    opacity: 0.5,
-    marginBottom: spacing.md,
-  },
-  sheetTitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    fontWeight: '500',
-    marginBottom: spacing.sm,
-  },
   sheetRow: {
     flexDirection: 'row',
     alignItems: 'center',

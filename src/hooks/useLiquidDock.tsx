@@ -54,6 +54,15 @@ type LiquidDockScroll = Pick<LiquidDock, 'progress' | 'expand' | 'enabled' | 'ui
   | 'nativeInput' | 'nativeInputHost' | 'nativeIntent' | 'uiScope'>;
 // A target change redraws dock controls, but does not change a list's handler.
 const LiquidDockScrollContext = createContext<LiquidDockScroll>(defaultDock);
+interface DockTargetState {
+  scope: string;
+  root: string;
+  compact: boolean;
+  parked?: { scope: string; compact: boolean; token: number };
+  parkSerial: number;
+  handoff: 'none' | 'park' | 'restore';
+  restoredCompact: boolean;
+}
 
 export function LiquidDockProvider({ children }: PropsWithChildren) {
   const segments = useSegments() as string[];
@@ -61,6 +70,8 @@ export function LiquidDockProvider({ children }: PropsWithChildren) {
   // Include the resolved path so their shared dock still resets on navigation.
   const pathname = usePathname();
   const route = `${segments.join('/')}:${pathname}`;
+  const root = segments[0] ?? '';
+  const amll = useSettings((state) => state.playerPresentation === 'amll');
   const withBar = useTabBarShown();
   const hasSong = usePlayerStore((state) => currentSong(state) !== null);
   const entries = useSettings((state) => state.bottomTabs);
@@ -74,6 +85,8 @@ export function LiquidDockProvider({ children }: PropsWithChildren) {
   const nativeInputHost = useSharedValue(0);
   const nativeIntent = useSharedValue(0);
   const uiScope = useSharedValue('');
+  const parkedProgress = useSharedValue(0);
+  const parkedCompact = useSharedValue(false);
   // The same dock is drawn on detail and settings screens when tabs are
   // visible there. Its interaction follows that visibility, not a tab route.
   const enabled = withBar && hasSong && !keyboardVisible
@@ -82,12 +95,30 @@ export function LiquidDockProvider({ children }: PropsWithChildren) {
   // the previous appearance modes retain their independent Search control.
   const hasSearch = entries.some((entry) => entry.key === 'search' && entry.enabled);
   const scope = `${route}:${enabled}:${hasSearch}:${amPlus}`;
-  const [targetState, setTargetState] = useState({ scope, compact: false });
-  if (targetState.scope !== scope) setTargetState({ scope, compact: false });
-  const compact = targetState.scope === scope && targetState.compact;
+  const [targetState, setTargetState] = useState<DockTargetState>({ scope, root, compact: false,
+    handoff: 'none', restoredCompact: false, parkSerial: 0 });
+  let target = targetState;
+  if (targetState.scope !== scope) {
+    const parking = amll && root === 'player' && targetState.root !== 'player' && !targetState.parked;
+    const parkSerial = targetState.parkSerial + (parking ? 1 : 0);
+    const parked = parking ? { scope: targetState.scope, compact: targetState.compact, token: parkSerial } : targetState.parked;
+    const restoring = parked?.scope === scope;
+    target = { scope, root, compact: restoring ? parked.compact : false, parkSerial,
+      parked: ['player', 'queue', 'lyrics', 'favorites-add'].includes(root) ? parked : undefined,
+      handoff: restoring ? 'restore' : parking ? 'park' : 'none', restoredCompact: restoring && parked.compact };
+    setTargetState(target);
+  }
+  const compact = target.compact;
+  const handoff = target.handoff;
+  const restoredCompact = target.restoredCompact;
+  const parkedToken = target.parked?.token ?? 0;
   const enabledRef = useRef(enabled);
   const scopeRef = useRef(scope);
   const generationRef = useRef(0);
+  const captureParkedTarget = useCallback((actual: boolean, token: number) => {
+    setTargetState((previous) => previous.parked?.token === token && previous.parked.compact !== actual
+      ? { ...previous, parked: { ...previous.parked, compact: actual } } : previous);
+  }, []);
 
   useEffect(() => {
     const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
@@ -100,15 +131,26 @@ export function LiquidDockProvider({ children }: PropsWithChildren) {
     scopeRef.current = scope;
     const nextGeneration = ++generationRef.current;
     scheduleOnUI(() => {
+      if (handoff === 'park') {
+        parkedProgress.set(progress.get());
+        parkedCompact.set(uiCompact.get());
+        // A UI scroll decision can precede its React notification. Preserve
+        // that actual target, rather than reverting it when the player pops.
+        scheduleOnRN(captureParkedTarget, uiCompact.get(), parkedToken);
+      }
       generation.set(nextGeneration);
       uiScope.set(scope);
       nativeIntent.set(0);
       if (nativeInput) expandNativeDockScrollInput?.(nativeInputHost.get());
       uiEnabled.set(enabled);
-      uiCompact.set(false);
-      progress.set(0);
+      const targetCompact = handoff === 'restore' && parkedCompact.get();
+      uiCompact.set(targetCompact);
+      const start = handoff === 'restore' ? parkedProgress.get() : 0;
+      progress.set(start);
+      if (handoff === 'restore' && Math.abs(start - (targetCompact ? 1 : 0)) > 0.001)
+        progress.set(withSpring(targetCompact ? 1 : 0, dockSpring(targetCompact, amPlus)));
     });
-  }, [route, enabled, hasSearch, amPlus, scope, nativeInput, generation, progress, uiCompact, uiEnabled, uiScope, nativeIntent, nativeInputHost]);
+  }, [route, enabled, hasSearch, amPlus, scope, handoff, restoredCompact, parkedToken, captureParkedTarget, nativeInput, generation, progress, parkedProgress, parkedCompact, uiCompact, uiEnabled, uiScope, nativeIntent, nativeInputHost]);
 
   const notifyCompact = useCallback((target: boolean, eventGeneration: number) => {
     if (!enabledRef.current || eventGeneration !== generationRef.current) return;

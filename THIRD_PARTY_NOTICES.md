@@ -88,33 +88,78 @@ reuses its existing cover-color extraction; it does not duplicate the plugin's
 24×24 quantizer, resource hooks or global theme injection. These additions are
 distributed under GPLv3 with the rest of this GPL-3.0-or-later project; see LICENSE.
 
-## AMLL player and artwork-background visual reference
+## AMLL player controls and artwork-background reference
 
-The native player layout and artwork field were visually informed by
+The player control adaptation uses
 [amll-dev/applemusic-like-lyrics](https://github.com/amll-dev/applemusic-like-lyrics),
-commit [`5fee356362353dbb24ce9bea3a62536478040de7`](https://github.com/amll-dev/applemusic-like-lyrics/tree/5fee356362353dbb24ce9bea3a62536478040de7),
-particularly `packages/react-full`'s `PrebuiltLyricPlayer`, its portrait and
-landscape layouts, and the Mesh background's visual treatment. The reviewed
-AMLL packages declare AGPL-3.0-only.
+pinned commit [`5fee356362353dbb24ce9bea3a62536478040de7`](https://github.com/amll-dev/applemusic-like-lyrics/tree/5fee356362353dbb24ce9bea3a62536478040de7).
+`packages/react-full/package.json` declares **AGPL-3.0-only**. No separate
+MIT/Apache license for this package or its bundled control SVGs was found.
+The complete upstream license is retained in
+[licenses/AMLL-AGPL-3.0.txt](./licenses/AMLL-AGPL-3.0.txt).
 
-`src/components/AmllPlayerScreen.tsx`, `src/components/AmllSlider.tsx`, the AMLL
-appearance of Resonus's lyrics view, and `modules/amll-background` are independent
-native implementations under this repository's GPL-3.0-or-later license. AMLL's
-runtime is not imported or embedded. No AMLL AGPL source, shader, SVG, Bézier
-control-point preset array or animation engine is copied into these components.
-The artwork field uses an independently written sinusoidal mesh and standard
-color operations; it is not AMLL's WebGL renderer. Icons and music/playback data
-come from Resonus's existing components and sources.
+The following native portions are adaptations of that AGPL source:
 
-This reference does not imply AMLL endorsement, a pixel-identical port, or the
-use of Apple's private rendering implementation. The root LICENSE is unchanged.
+- `src/components/AmllPlayerControls.tsx` and `src/lib/amllPlayerControls.ts`:
+  `PrebuiltLyricPlayer/index.tsx`, `PrebuiltLyricPlayer/index.module.css`,
+  `MediaButton/index.tsx` and CSS,
+  `ToggleIconButton/index.tsx` and CSS, `MenuButton/index.tsx` and CSS, and the
+  horizontal layout's footer ordering. Original copyright remains with the
+  AMLL contributors.
+- `assets/amll-controls/`: the selected upstream transport, shuffle/repeat,
+  lyrics, queue, output and More SVGs. `PROVENANCE.json` records each exact
+  source path, fixed commit, original SHA-256 and adapted SHA-256.
+
+SVG provenance is limited to the files published by AMLL: its source and the
+original toggle-icon addition commit
+[`208ac5124022ff4c61348472bbeb158770919826`](https://github.com/amll-dev/applemusic-like-lyrics/commit/208ac5124022ff4c61348472bbeb158770919826)
+(Steve-xmh, 2024-09-11) contain no separate icon attribution/license or Apple/SF
+export metadata. Their original drawing/font source has not been independently
+established. The package's AGPL declaration is not represented as an Apple
+permission or a new license for Apple's SF Symbols. No Apple symbol package,
+font or private asset archive was imported.
+
+The AGPL-derived portions retain AGPL-3.0-only. Resonus's existing sources retain
+their GPL-3.0-or-later notices and the root LICENSE is preserved. Combining the
+GPLv3 and AGPLv3 portions uses their section 13 permission; the combination must
+satisfy the AGPL's source-availability requirements, including its network-use
+requirement where applicable. Distributions of this combined preview must
+provide the complete corresponding source and both applicable license texts;
+this notice does not relicense the remaining original Resonus code.
+
+Native adaptation boundaries:
+
+- Existing Resonus playback, queue, lyrics and output callbacks remain in use;
+  AMLL's web runtime and playback/state-management dependencies are not embedded.
+- Expo Image's existing AndroidSVG support draws the original SVG paths; no
+  WebView, icon-font substitution or full upstream asset/source tree is added.
+  The static native assets replace only `currentColor` paint values with
+  `#FFFFFF`, since Expo Image's Android SVG tint adapter does not replace that
+  paint type. Existing explicit white paint, path geometry, viewBox, transparent
+  areas and fill/clip rules remain unchanged; the controls need no runtime tint.
+- Control sizing and spacing retain the compact Resonus layout rather than the
+  upstream desktop CSS scales. SVG whitespace is accounted for so phone skip
+  arrows are about 36dp, play about 46dp, modes about 22–28dp and utility artwork
+  about 24dp. Selected plates retain the actual upstream cutout artwork.
+- Short native press/release feedback uses 80/140ms timing, with callbacks
+  dispatched immediately on the confirmed press. The source's long click bounce
+  and skip-arrow entrance animation are not included. Reduced-motion preferences
+  are respected and stale/inactive control callbacks are rejected.
+- Hit targets are at least 44dp and very narrow rows can scroll. The user
+  explicitly requested shuffle/repeat beside transport in **portrait** too;
+  that five-button portrait arrangement is a deliberate difference from the
+  upstream three-button portrait layout. Native seek/system-volume slots and
+  accessibility text sizing remain Resonus integrations.
+
+The artwork field and the other previously reviewed native player components
+were visually informed by the same project's layouts and Mesh treatment. Their
+independently written native implementation does not import AMLL's renderer,
+shader, control-point preset arrays or lyric animation engine. This paragraph
+does not apply to the newly adapted control files/assets listed above.
+
 Source boundaries and preview validation are documented in
-[AMLL player preview](./docs/AMLL-PLAYER-PREVIEW.md).
-
-上述固定版本的 AMLL 提供播放页与背景效果的视觉参考；本预览独立实现原生界面，
-没有嵌入其运行库或复制其源码、着色器、SVG、控制点预设数组及动画引擎。
-本仓库继续采用 GPL-3.0-or-later，未修改根许可证，也不声称像素级一致或获 AMLL／Apple 认可。
-
+[AMLL player preview](./docs/AMLL-PLAYER-PREVIEW.md). This adaptation does not imply
+AMLL or Apple endorsement, or use of Apple's private rendering implementation.
 
 ## Expo Image static artwork and disk prefetch patch
 

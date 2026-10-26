@@ -22,6 +22,7 @@ import {
   useAuthStore,
 } from '@/store/auth';
 import { Dialog } from '@/components/Dialog';
+import { MenuGlassCardFrame, MenuGlassCardHeader } from '@/components/MenuGlassCard';
 import { ensureAudioPermission, pickFolder } from '@/lib/localLibrary';
 import { useToast } from '@/store/toast';
 import { useT } from '@/i18n';
@@ -482,19 +483,15 @@ export default function LoginScreen() {
       </KeyboardAvoidingView>
 
       <Modal
+        transparent
+        statusBarTranslucent
         visible={showAll}
-        animationType="slide"
-        presentationStyle="pageSheet"
+        animationType="fade"
         onRequestClose={() => setShowAll(false)}
       >
-        <SafeAreaView style={styles.modalSafe} edges={['top']}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>{t('Saved profiles')}</Text>
-            <GlassPressable variant="subtle" hitSlop={12} onPress={() => setShowAll(false)}>
-              <Text style={styles.modalDone}>{t('Close')}</Text>
-            </GlassPressable>
-          </View>
-          <ScrollView contentContainerStyle={styles.modalList}>
+        <MenuGlassCardFrame onClose={() => setShowAll(false)} maxWidth={420}>
+          <MenuGlassCardHeader title={t('Saved profiles')} onClose={() => setShowAll(false)} />
+          <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalList} keyboardShouldPersistTaps="handled">
             {profiles.map((p, i) => (
               <ProfileRow
                 key={isOffline(p) ? `all-offline-${i}` : `all-${p.serverUrl}-${p.username}`}
@@ -507,23 +504,19 @@ export default function LoginScreen() {
               />
             ))}
           </ScrollView>
-        </SafeAreaView>
+        </MenuGlassCardFrame>
       </Modal>
 
       <Modal
+        transparent
+        statusBarTranslucent
         visible={showLanguages}
-        animationType="slide"
-        presentationStyle="pageSheet"
+        animationType="fade"
         onRequestClose={() => setShowLanguages(false)}
       >
-        <SafeAreaView style={styles.modalSafe} edges={['top']}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>{t('Language')}</Text>
-            <GlassPressable variant="subtle" hitSlop={12} onPress={() => setShowLanguages(false)}>
-              <Text style={styles.modalDone}>{t('Close')}</Text>
-            </GlassPressable>
-          </View>
-          <ScrollView contentContainerStyle={styles.modalList}>
+        <MenuGlassCardFrame onClose={() => setShowLanguages(false)}>
+          <MenuGlassCardHeader title={t('Language')} onClose={() => setShowLanguages(false)} />
+          <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalList} keyboardShouldPersistTaps="handled">
             {SORTED_LANGUAGES.map((l) => (
               <Pressable
                 key={l.code}
@@ -544,7 +537,7 @@ export default function LoginScreen() {
               </Pressable>
             ))}
           </ScrollView>
-        </SafeAreaView>
+        </MenuGlassCardFrame>
       </Modal>
 
       <Dialog
@@ -745,15 +738,6 @@ const styles = themed((colors) => ({
   },
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: colors.onAccent, fontSize: fontSize.md, fontWeight: '600' },
-  modalSafe: { flex: 1, backgroundColor: colors.background },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  modalTitle: { color: colors.text, fontSize: fontSize.lg, letterSpacing: tracking.heading, fontWeight: '500' },
-  modalDone: { color: colors.accent, fontSize: fontSize.md, fontWeight: '600' },
-  modalList: { paddingHorizontal: spacing.xl, gap: spacing.sm, paddingBottom: spacing.xl },
+  modalScroll: { flexShrink: 1, minHeight: 0 },
+  modalList: { gap: spacing.sm, paddingBottom: spacing.sm },
 }));

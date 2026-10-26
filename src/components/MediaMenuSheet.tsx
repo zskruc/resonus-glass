@@ -4,15 +4,11 @@
  * favorite, without entering the screen. Songs are fetched when the action
  * is chosen (same query the screen uses, so cache is shared).
  */
-import { MenuGlassBackdrop } from '@/components/MenuGlassBackdrop';
+import { MenuGlassCardFrame } from '@/components/MenuGlassCard';
 import Icon from '@/components/Icon';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { scheduleOnRN } from 'react-native-worklets';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { COVER, coverArtUrl, getAlbum, getPlaylist, star, unstar, type Song } from '@/api/data';
 import { useAlbumDownloads } from '@/hooks/useAlbumDownloads';
@@ -118,15 +114,14 @@ function MediaMenuContent({ item, session }: { item: MediaMenuItem; session: num
     closeNow();
   };
   const dark = useThemeMode() === 'dark';
-  const insets = useSafeAreaInsets();
   const t = useT();
   const lang = useSettings((s) => s.language);
   const toast = useToast((s) => s.show);
   const offline = useAuthStore((s) => s.offline);
-  const { dismiss: animateDismiss, dismissing, makePan, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
+  const { dismiss: animateDismiss, dismissing, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
     true,
     closeAfterGesture,
-    'sheet',
+    'card',
     session,
   );
   const dismiss = (after: () => void) => {
@@ -134,16 +129,6 @@ function MediaMenuContent({ item, session }: { item: MediaMenuItem; session: num
     animateDismiss(after);
   };
   const isOpenSession = () => ownsOpenSession() && !exiting.current && !dismissing.value;
-  const startGesture = () => {
-    // UI onStart accepted this gesture before queuing it. A normal fast
-    // swipe may already be dismissing when the JS queue gets to this call.
-    if (!ownsOpenSession() || exiting.current) return;
-    actionClosing.current = false;
-    gestureTicket.current = requests.begin();
-  };
-  // Gesture.onStart registers this callback; refs are read only after activation.
-  // eslint-disable-next-line react-hooks/refs
-  const pan = makePan().onStart(() => { if (!dismissing.value) scheduleOnRN(startGesture); });
   const pins = usePins((s) => s.pins);
   const togglePin = usePins((s) => s.toggle);
   const playQueue = usePlayerStore((s) => s.playQueue);
@@ -325,21 +310,10 @@ function MediaMenuContent({ item, session }: { item: MediaMenuItem; session: num
     }}>
       {/* Gestures inside an RN Modal need a root view of their own: the
           Modal renders in a native hierarchy outside the app's. */}
-      {!(pending || pendingExport || confirmDelete) && <GestureHandlerRootView style={StyleSheet.absoluteFill}>
-        <Animated.View nativeID="resonus-menu-scrim" collapsable={false} style={[styles.backdrop, backdropStyle]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={close} />
-        </Animated.View>
-        {/* One drag around the whole sheet: this list of actions never
-            scrolls, so nothing else competes for the gesture. */}
-        <GestureDetector gesture={pan}>
-          <Animated.View collapsable={false}
-            style={[styles.sheet, { paddingBottom: insets.bottom + spacing.md }, sheetStyle]}
-            onLayout={onSheetLayout}
-          >
-            <MenuGlassBackdrop kind="menu" radius={0} radiusTopLeft={radius.xxl} radiusTopRight={radius.xxl} highContrast />
-            {/* Spotify-style grabber: the visual cue that the sheet can be
-                dragged down to dismiss. */}
-            <View style={styles.grabber} />
+      {!(pending || pendingExport || confirmDelete) && <MenuGlassCardFrame onClose={close}
+        backdropStyle={backdropStyle} cardStyle={sheetStyle} onLayout={onSheetLayout}>
+        <ScrollView style={{ flexShrink: 1, minHeight: 0 }} showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled">
             <View style={styles.headerRow}>
               <Cover uri={coverArtUrl(coverId, COVER.thumb)} size={48} />
               <View style={{ flex: 1 }}>
@@ -352,6 +326,10 @@ function MediaMenuContent({ item, session }: { item: MediaMenuItem; session: num
                   </Text>
                 ) : null}
               </View>
+              <Pressable onPress={close} accessibilityRole="button" accessibilityLabel={t('Close')}
+                hitSlop={4} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="close" size={20} color={colors.textSecondary} />
+              </Pressable>
             </View>
             <View style={styles.divider} />
 
@@ -511,9 +489,8 @@ function MediaMenuContent({ item, session }: { item: MediaMenuItem; session: num
                 }}
               />
             ) : null}
-          </Animated.View>
-        </GestureDetector>
-      </GestureHandlerRootView>}
+        </ScrollView>
+      </MenuGlassCardFrame>}
 
       {/* Replace the menu inside this window, so its glass keeps sampling the
           same background instead of opening a second native Modal. */}

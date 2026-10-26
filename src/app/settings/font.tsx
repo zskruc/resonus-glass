@@ -1,9 +1,9 @@
 /** Font picker — list with radio on the active one, plus custom font. */
 import { DockScrollView } from '@/components/DockScrollView';
+import { Dialog } from '@/components/Dialog';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Font from 'expo-font';
 import { useState } from 'react';
-import { Alert } from 'react-native';
 
 import { SettingRow, SelectList, SettingsGroup, SettingsPage, settingsStyles } from '@/components/SettingsUI';
 import { useT } from '@/i18n';
@@ -20,6 +20,7 @@ export default function FontSettings() {
   const customFontUri = useSettings((s) => s.customFontUri);
   const setCustomFont = useSettings((s) => s.setCustomFont);
   const [picking, setPicking] = useState(false);
+  const [fontError, setFontError] = useState(false);
 
   const options: { value: AppFont; label: string }[] = (
     (Object.keys(APP_FONT_LABELS) as AppFont[]).filter((v) => v !== 'custom')
@@ -45,7 +46,7 @@ export default function FontSettings() {
       setCustomFont(family, file);
       setAppFont('custom');
     } catch {
-      Alert.alert(t("Couldn't load the font"), t('Make sure the file is a valid .ttf or .otf font.'));
+      setFontError(true);
     } finally {
       setPicking(false);
     }
@@ -86,6 +87,14 @@ export default function FontSettings() {
           ) : null}
         </SettingsGroup>
       </DockScrollView>
+      <Dialog
+        visible={fontError}
+        title={t("Couldn't load the font")}
+        message={t('Make sure the file is a valid .ttf or .otf font.')}
+        confirmLabel={t('Close')}
+        onCancel={() => setFontError(false)}
+        onConfirm={() => setFontError(false)}
+      />
     </SettingsPage>
   );
 }

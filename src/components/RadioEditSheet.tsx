@@ -1,6 +1,7 @@
 /** Sheet to create or edit a radio station: name, URL, and optional website. */
-import { GlassPressable, GlassTextInput } from '@/components/glass';
+import { GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
+import { MenuGlassCardFrame, MenuGlassCardHeader } from '@/components/MenuGlassCard';
 import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useState } from 'react';
 import {
@@ -12,9 +13,9 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Cover } from '@/components/Cover';
 import { Dialog } from '@/components/Dialog';
@@ -120,43 +121,19 @@ export function RadioEditSheet({
   return (
     <Modal
       visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
+      transparent
+      animationType="fade"
+      presentationStyle="overFullScreen"
       onRequestClose={cover.askPassword ? cover.cancelPassword : onCancel}
     >
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.header}>
-          <GlassPressable variant="subtle" hitSlop={12} onPress={onCancel}>
-            <Text style={[styles.headerAction, { color: colors.accent }]}>{t('Cancel')}</Text>
-          </GlassPressable>
-          <Text style={styles.title}>{editing ? t('Edit station') : t('Add station')}</Text>
-          <GlassPressable variant="subtle"
-            hitSlop={12}
-            disabled={!canSave}
-            onPress={() =>
-              onSave(
-                {
-                  name: name.trim(),
-                  streamUrl: streamUrl.trim(),
-                  homePageUrl: homePageUrl.trim(),
-                },
-                coverId ? undefined : (pendingCover ?? undefined),
-              )
-            }
-          >
-            <Text
-              style={[styles.headerAction, { color: colors.accent }, !canSave && styles.disabled]}
-            >
-              {t('Save')}
-            </Text>
-          </GlassPressable>
-        </View>
-
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView
+        style={styles.modal}
+        behavior={Platform.OS === 'ios' ? 'height' : undefined}
+      >
+        <MenuGlassCardFrame maxWidth={384} onClose={onCancel}>
+          <MenuGlassCardHeader title={editing ? t('Edit station') : t('Add station')} onClose={onCancel} />
+          <ScrollView style={styles.scroll} contentContainerStyle={styles.content}
+            keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             {/* Nothing to show and no way to add one: skip it entirely. */}
             {coverEditable || shownCover ? (
             <View style={styles.coverWrap}>
@@ -196,7 +173,7 @@ export function RadioEditSheet({
             ) : null}
 
             <Text style={styles.label}>{t('Name')}</Text>
-            <GlassTextInput
+            <TextInput
               style={styles.input}
               value={name}
               onChangeText={setName}
@@ -206,7 +183,7 @@ export function RadioEditSheet({
             />
 
             <Text style={styles.label}>{t('Stream URL')}</Text>
-            <GlassTextInput
+            <TextInput
               style={styles.input}
               value={streamUrl}
               onChangeText={setStreamUrl}
@@ -224,7 +201,7 @@ export function RadioEditSheet({
             ) : null}
 
             <Text style={styles.label}>{t('Website (optional)')}</Text>
-            <GlassTextInput
+            <TextInput
               style={styles.input}
               value={homePageUrl}
               onChangeText={setHomePageUrl}
@@ -235,9 +212,33 @@ export function RadioEditSheet({
               keyboardType="url"
               inputMode="url"
             />
+            <View style={styles.actions}>
+              <GlassPressable onPress={onCancel} style={styles.action} accessibilityRole="button">
+                <Text style={styles.headerAction}>{t('Cancel')}</Text>
+              </GlassPressable>
+              <GlassPressable variant="subtle" style={styles.action} accessibilityRole="button"
+                disabled={!canSave}
+                onPress={() =>
+                  onSave(
+                    {
+                      name: name.trim(),
+                      streamUrl: streamUrl.trim(),
+                      homePageUrl: homePageUrl.trim(),
+                    },
+                    coverId ? undefined : (pendingCover ?? undefined),
+                  )
+                }
+              >
+                <Text
+                  style={[styles.headerAction, { color: colors.accent }, !canSave && styles.disabled]}
+                >
+                  {t('Save')}
+                </Text>
+              </GlassPressable>
+            </View>
           </ScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
+        </MenuGlassCardFrame>
+      </KeyboardAvoidingView>
 
       {/* Profiles created before the password was stored: uploading needs
           Navidrome's own API, which asks for it. */}
@@ -256,18 +257,13 @@ export function RadioEditSheet({
 }
 
 const styles = themed((colors) => ({
-  safe: { flex: 1, backgroundColor: colors.background },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  title: { color: colors.text, fontSize: fontSize.md, fontWeight: '500' },
+  modal: { flex: 1 },
+  scroll: { flexShrink: 1, minHeight: 0 },
+  actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: spacing.sm, marginTop: spacing.lg },
+  action: { minHeight: 44, minWidth: 68, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.md },
   headerAction: { color: colors.accent, fontSize: fontSize.md, fontWeight: '600' },
   disabled: { color: colors.textMuted },
-  content: { padding: spacing.lg, gap: spacing.sm },
+  content: { paddingBottom: spacing.xs, gap: spacing.sm },
   coverWrap: { alignItems: 'center', marginBottom: spacing.sm },
   // Inline, not a toast: a toast would be hidden under this Modal.
   coverError: {
@@ -303,7 +299,9 @@ const styles = themed((colors) => ({
     marginTop: spacing.md,
   },
   input: {
-    backgroundColor: colors.surfaceHighlight,
+    backgroundColor: 'rgba(127,127,127,0.10)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
     borderRadius: radius.md,
     color: colors.text,
     fontSize: fontSize.md,

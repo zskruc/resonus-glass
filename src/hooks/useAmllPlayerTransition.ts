@@ -3,14 +3,14 @@ import { usePreventRemove, type NavigationAction } from 'expo-router/react-navig
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler } from 'react-native';
 import { Gesture } from 'react-native-gesture-handler';
-import { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring, withTiming, type SharedValue } from 'react-native-reanimated';
+import { cancelAnimation, useAnimatedReaction, useAnimatedStyle, useSharedValue, withSpring, withTiming, type SharedValue } from 'react-native-reanimated';
 import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 
 import {
   amllPlayerDragOffset, amllPlayerExitDuration, beginPlayerClose, commitPlayerClose, completePlayerClose,
   removePlayerTransition, shouldCloseAmllPlayer, type PlayerCloseSession, type PlayerCloseSource,
 } from '@/lib/amllPlayerTransition';
-import { revealOffset } from '@/lib/playerReveal';
+import { createPlayerSurfaceOwner, playerSurfaceHeight, playerSurfaceOffset, playerSurfaceOwner, revealOffset } from '@/lib/playerReveal';
 import { isAmllPlayerHeaderTouch, type AmllPlayerHeaderArea } from '@/lib/amllPlayerLayout';
 import { motion } from '@/theme/motion';
 
@@ -33,6 +33,7 @@ export function useAmllPlayerTransition({ height, focused, enabled = true, heade
   const navigation = useNavigation();
   const params = useLocalSearchParams<{ reveal?: string }>();
   const [entry] = useState(() => ({ height, revealing: !!params.reveal }));
+  const [surfaceOwner] = useState(createPlayerSurfaceOwner);
   const [allowRemoval, setAllowRemoval] = useState(false);
   const [closing, setClosing] = useState(false);
   const session = useRef<PlayerCloseSession>({ generation: 0, phase: 'open' });
@@ -43,6 +44,39 @@ export function useAmllPlayerTransition({ height, focused, enabled = true, heade
   const dragStart = useSharedValue(0);
   const dragging = useSharedValue(false);
   const closingUI = useSharedValue(false);
+
+  useLayoutEffect(() => {
+    scheduleOnUI(() => {
+      playerSurfaceOwner.set(surfaceOwner);
+      playerSurfaceHeight.set(entry.height);
+      const revealed = revealOffset.get();
+      playerSurfaceOffset.set(revealed >= 0 ? revealed : offset.get());
+    });
+    return () => {
+      scheduleOnUI(() => {
+        if (playerSurfaceOwner.get() !== surfaceOwner) return;
+        playerSurfaceOwner.set(0);
+        // Keep a completed exit at its endpoint through route-pop handoff.
+        // The next player owns its own value; an old cleanup cannot hide it.
+        if (playerSurfaceOffset.get() < playerSurfaceHeight.get() - 1) playerSurfaceOffset.set(-1);
+        revealOffset.set(-1);
+      });
+    };
+  }, [surfaceOwner, entry, offset]);
+  useLayoutEffect(() => {
+    scheduleOnUI(() => {
+      if (playerSurfaceOwner.get() === surfaceOwner) playerSurfaceHeight.set(height);
+    });
+  }, [surfaceOwner, height]);
+  useAnimatedReaction(
+    () => revealOffset.get() >= 0 ? revealOffset.get() : offset.get(),
+    (position) => {
+      if (playerSurfaceOwner.get() !== surfaceOwner) return;
+      playerSurfaceHeight.set(height);
+      playerSurfaceOffset.set(position);
+    },
+    [surfaceOwner, height, offset],
+  );
 
   useLayoutEffect(() => { focusedRef.current = focused; }, [focused]);
   const finish = useCallback((generation: number) => {
@@ -67,6 +101,7 @@ export function useAmllPlayerTransition({ height, focused, enabled = true, heade
     if (generation === undefined) return;
     setClosing(true);
     scheduleOnUI(() => {
+      if (playerSurfaceOwner.get() !== surfaceOwner) return;
       closingUI.set(true);
       dragging.set(false);
       // A mini-player pull may still own the root's position. Transfer it
@@ -85,7 +120,7 @@ export function useAmllPlayerTransition({ height, focused, enabled = true, heade
         if (finished) scheduleOnRN(finish, generation);
       }));
     });
-  }, [height, offset, closingUI, dragging, finish]);
+  }, [height, offset, closingUI, dragging, finish, surfaceOwner]);
   const close = useCallback(() => requestClose('button'), [requestClose]);
 
   // Native-stack removal must be prevented through its supported hook; a raw
@@ -128,8 +163,6 @@ export function useAmllPlayerTransition({ height, focused, enabled = true, heade
       mounted.current = false;
       removePlayerTransition(lifetime);
       cancelAnimation(offset);
-      // Only release a mini pull once this route is actually gone.
-      revealOffset.set(-1);
     };
   }, [entry, offset]);
 
@@ -147,7 +180,7 @@ export function useAmllPlayerTransition({ height, focused, enabled = true, heade
       if (!touch || !isAmllPlayerHeaderTouch(headerArea, touch.x, touch.y, headerScrollOffset.get())) manager.fail();
     })
     .onStart(() => {
-      if (closingUI.get()) return;
+      if (closingUI.get() || playerSurfaceOwner.get() !== surfaceOwner) return;
       cancelAnimation(offset);
       const revealed = revealOffset.get();
       dragStart.set(revealed >= 0 ? revealed : offset.get());
@@ -172,7 +205,7 @@ export function useAmllPlayerTransition({ height, focused, enabled = true, heade
       if (!dragging.get() || closingUI.get()) return;
       dragging.set(false);
       offset.set(withSpring(0, RETURN_SPRING));
-    }), [focused, enabled, allowRemoval, height, headerArea, headerScrollOffset, closingUI, dragging, offset, dragStart, requestClose]);
+    }), [focused, enabled, allowRemoval, height, headerArea, headerScrollOffset, closingUI, dragging, offset, dragStart, requestClose, surfaceOwner]);
   const rootStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: revealOffset.get() >= 0 ? revealOffset.get() : offset.get() }],
   }));

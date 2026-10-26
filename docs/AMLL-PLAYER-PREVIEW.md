@@ -1,10 +1,32 @@
 # AMLL 播放器预览 / AMLL player preview
 
+`0.8.4.1-amll.12` · Android `versionCode 94` · `preview/amll-player`
+
+## 当前 `.12` / Current `.12`
+
+ARM64 APK 已构建，版本、包名和原签名校验通过；463 项应用测试、118 项玻璃模块原生测试、类型检查和翻译检查通过，lint 为 0 错误、117 项已有警告。`.12` 尚未安装到手机，按用户要求等待后续连接后测试；不能以此前 `.10`／`.11` 安装推导本版已验收。
+
+The ARM64 APK is built and its version, package and original certificate are verified. All 463 app tests, 118 native glass-module tests, typechecking and translation checks pass; lint reports zero errors and 117 existing warnings. `.12` is not installed, awaiting the user's later connection and testing. Earlier `.10`/`.11` installations are not acceptance of this build.
+
+本版恢复 `.10` 的入场／退场动效，保留播放器与底栏的同步揭露及返回交接，撤销用户拒绝的 Primuse 形变实验。旋转时稳定 surface owner、独立更新高度的非视觉安全修复继续保留，避免清零 mini 上拉进度。Tab 的 UI 线程即时点按反馈、列表稳定 callback ref 及统一浮动玻璃弹窗仍保留。转场候选只作为[研究记录](./PLAYER-MINI-TRANSITIONS.md)，不再作为当前实现。
+
+Entry/dismissal motion returns to `.10`, retaining synchronized dock reveal and route-pop handoff. A separate nonvisual safety fix keeps the surface owner stable across rotation and publishes height independently, preserving an active mini pull. The rejected Primuse morph is removed. UI-thread tab feedback, the stable list callback ref and unified floating glass panels remain. The [transition candidates](./PLAYER-MINI-TRANSITIONS.md) are research records, not active implementations.
+
+控件使用 AMLL 派生的白色 SVG，并恢复适合手机的可见大小：上一首／下一首约 36dp、播放约 46dp，辅助图标约 24dp，触摸区至少 44dp。竖屏直接显示随机、上一首、播放／暂停、下一首和循环，采用 80／140ms 短按压／释放反馈，确认点击后立即调用原回调。竖屏根布局预留最多 48dp 底部空间，将封面、歌曲信息及控制区整体上移；次要文字为 0.78 白色透明度。滑条继续采用当前封面主题色。
+
+Controls use AMLL-derived white SVGs at compact phone sizes: approximately 36dp visible skip arrows, 46dp play artwork and 24dp utilities, with at least 44dp touch targets. Portrait exposes shuffle/previous/play-pause/next/repeat. Short 80/140ms press/release feedback keeps confirmed actions immediate. Up to 48dp of bottom breathing room lifts the portrait artwork, metadata and controls; secondary text uses white at 0.78 opacity. Tracks retain current-artwork colors.
+
+来源与许可见下节；长列表热点与未完成的持续实机验收见[性能记录](./PLAYLIST-SCROLL-PERFORMANCE.md)，全弹窗视觉验收见[统一面板说明](./UNIFIED-GLASS-PANELS.md)。不承诺恒定 120 fps。
+
+See the source/license boundaries below, [performance evidence](./PLAYLIST-SCROLL-PERFORMANCE.md) and [panel validation scope](./UNIFIED-GLASS-PANELS.md). Sustained device and complete-popup checks remain pending; constant 120 fps is not claimed.
+
+## `.9` 历史记录 / Historical `.9` record
+
 `0.8.4.1-amll.9` · Android `versionCode 91` · `preview/amll-player`
 
-当前 `.9` APK 已构建并核对原签名，425 项应用测试、113 项玻璃模块测试及两组原生方法回归通过。手机当前 USB 断开，尚未安装 `.9`；持续滚动与闪退修复仍未验收。源码、实测对照和无效采样的限制见[播放列表性能记录](./PLAYLIST-SCROLL-PERFORMANCE.md)。
+当时 `.9` APK 已构建并核对原签名，425 项应用测试、113 项玻璃模块测试及两组原生方法回归通过；该阶段尚未安装。这是历史状态，当前构建与实机范围以上方 `.12` 段落为准。
 
-The `.9` APK is built with the original certificate; 425 app tests, 113 glass-module tests and both native-method harnesses passed. USB is disconnected, so `.9` installation and sustained-scroll/crash acceptance remain pending. See the [playlist performance record](./PLAYLIST-SCROLL-PERFORMANCE.md) for the changes, valid comparisons and invalidated capture.
+At that stage the `.9` APK was built with the original certificate; 425 app tests, 113 glass-module tests and both native-method harnesses passed, with installation still pending. This is historical status; the `.12` section above describes the current build and validation boundary.
 
 `.9` 的 Player 页可在状态栏下方、大封面上方整片区域下拉退出；歌词页可从顶部小封面、歌曲名与创作者区域下拉，原有阈值保持不变。横屏与短屏按可见标题区域判断，歌词、滑条和控制按钮区域不作为返回手势入口。子页面底栏的来源选项卡继续显示主题色和选中态。
 
@@ -16,16 +38,16 @@ In `.9`, downward dismissal covers the full band between the status bar and larg
 
 视觉参考为 [amll-dev/applemusic-like-lyrics](https://github.com/amll-dev/applemusic-like-lyrics)，固定提交 [`5fee356362353dbb24ce9bea3a62536478040de7`](https://github.com/amll-dev/applemusic-like-lyrics/tree/5fee356362353dbb24ce9bea3a62536478040de7)。核对范围包括 `react-full` 的 [PrebuiltLyricPlayer](https://github.com/amll-dev/applemusic-like-lyrics/tree/5fee356362353dbb24ce9bea3a62536478040de7/packages/react-full/src/components/PrebuiltLyricPlayer)、[竖屏与横屏布局](https://github.com/amll-dev/applemusic-like-lyrics/tree/5fee356362353dbb24ce9bea3a62536478040de7/packages/react-full/src/layout)，以及 Mesh 背景的视觉处理。
 
-AMLL 对应包声明 **AGPL-3.0-only**。本预览以其布局、动效与颜色分布作为视觉参考，使用 React Native、Reanimated 和 Android Canvas 独立实现；没有导入或嵌入 AMLL 的 DOM/WebView 运行库，没有复制其 AGPL 源码、着色器、SVG、贝塞尔控制点预设数组或动画引擎。控件使用已有图标字体和独立绘制的原生简单图形。本实现不等于 AMLL 本体、像素级移植或 Apple 的私有 Liquid Glass；仓库根许可证继续为 **GPL-3.0-or-later**。
+AMLL 对应包声明 **AGPL-3.0-only**。当前 [播放控件](../src/components/AmllPlayerControls.tsx)、[控件布局](../src/lib/amllPlayerControls.ts) 与 [选定 SVG](../assets/amll-controls/PROVENANCE.json) 派生自该固定源码，保留 AGPL 来源、[完整许可证](../licenses/AMLL-AGPL-3.0.txt) 与 [第三方声明](../THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference)。封面／歌词视图及 Canvas 网格背景仍是独立原生实现；没有嵌入 AMLL DOM／WebView 运行库、Mesh shader、控制点数组或动画引擎。Resonus 原有 GPL-3.0-or-later 声明及根 LICENSE 保留；组合预览的对应源码与许可要求见上述声明。SVG 来源不代表 Apple／SF Symbols 授权，也不声称像素级一致。
 
-The visual reference is the pinned AMLL commit above, specifically `react-full`'s PrebuiltLyricPlayer, its portrait/landscape arrangements and its Mesh background treatment. The reviewed AMLL packages declare **AGPL-3.0-only**. This preview independently implements native views using React Native, Reanimated and Android Canvas. It does not import/embed AMLL's DOM or WebView runtime or copy its AGPL source, shaders, SVGs, Bézier control-point preset arrays or animation engine. Controls use existing icon fonts and independently drawn simple native shapes. This is neither the AMLL runtime, a pixel-identical port nor Apple's private Liquid Glass. The repository's root license remains **GPL-3.0-or-later**.
+The pinned AMLL package declares **AGPL-3.0-only**. Current [controls](../src/components/AmllPlayerControls.tsx), [control layout](../src/lib/amllPlayerControls.ts) and [selected SVGs](../assets/amll-controls/PROVENANCE.json) derive from that source and retain their provenance, [complete license](../licenses/AMLL-AGPL-3.0.txt) and [third-party notices](../THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference). Cover/lyric views and the Canvas artwork field remain independently implemented, without AMLL’s DOM/WebView runtime, Mesh shader, control-point arrays or animation engine. Original Resonus GPL-3.0-or-later notices and the root LICENSE remain; see the notices for the combined preview’s source/license requirements. SVG provenance is not Apple/SF Symbols permission or a claim of pixel identity.
 
 ## 播放页 / Player layout
 
 - 默认进入大封面布局，显示歌曲信息、进度与播放控制。点击封面或歌词按钮切换到歌词模式：小封面与歌曲信息置顶，歌词占满其余区域，隐藏进度、播放和音量控制；当前歌词的定位锚点为歌词区域高度的手机 10%、横屏 42%。
 - 同一个封面视图通过原生动画缩放、移动；没有以两张不同封面互相替换。小屏与大字体采用可滚动的内容列，避免封面、文字与控制区域重叠。
 - 点击顶部横条、向下拖动或系统返回，统一退出整个播放器。关闭过渡保留已绘制的歌词和原生背景；失焦时冻结当前高亮行、滚动位置、逐字进度与行效果，不再通过提前卸载歌词露出空白区域。恢复可见后再对齐最新播放时间。
-- 竖屏大封面页按三个播放按钮（上一首／播放暂停／下一首）→ 歌词／输出／队列 → 音量条排列。随机与循环放入更多菜单的可选播放控制组；普通歌曲菜单与 Resonus 原有布局不增加这组控件。
+- 竖屏大封面页直接显示随机／上一首／播放暂停／下一首／循环五个按钮，再排列歌词／输出／队列与音量条；底部预留最多 48dp，使信息组整体上移。次要文字使用 0.78 白色透明度，原有业务回调保留。
 - 横屏采用约 45% 的封面／控制列与 55% 的歌词列；隐藏歌词时，原来的封面／控制列移向中央。
 - 横屏保留随机／上一首／播放暂停／下一首／循环五个播放按钮，底部左侧为输出，右侧为歌词与队列。
 - 歌词、输出与队列等辅助图标显示为 24dp，点击区域仍为 48dp；不通过放大图形来填满触摸区域。
@@ -38,7 +60,7 @@ The player defaults to the large-cover view. The cover or lyric button switches 
 
 Tapping the top handle, dragging down and system Back dismiss the entire player consistently. The closing transition retains the last lyric frame and native background. Losing focus freezes the highlighted line, scroll offset, word clock and row effects rather than removing the lyrics early; returning to the page realigns them with current playback.
 
-Portrait orders previous/play-pause/next, then lyrics/output/queue, then volume. Shuffle/repeat move into an optional playback-control group in More options, without changing ordinary song menus or the previous Resonus layout. Landscape keeps five transport buttons, output at the lower left and lyrics/queue at the lower right. It uses approximately 45% for artwork/controls and 55% for lyrics, centering the same information column when lyrics are hidden. Existing Resonus lyric sources, timed-word rendering, seek behavior, playback, queue, output, volume, quality and song-menu actions remain in use; untimed lyrics receive their own text scroll view. The AMLL play button has no persistent artwork-colored circle, while progress and volume tracks retain current-artwork colors. The previous Resonus layout's buttons and palette preferences remain unchanged.
+Portrait shows shuffle/previous/play-pause/next/repeat, followed by lyrics/output/queue and volume. Up to 48dp of bottom breathing room lifts the information group, with secondary text at 0.78 white opacity. Landscape keeps five transport buttons, output at the lower left and lyrics/queue at the lower right. Its approximately 45% artwork/control and 55% lyric split remains. Existing Resonus lyric, seek, playback, queue, output, volume, quality and menu callbacks remain in use; the previous Resonus layout’s preferences are unchanged.
 
 Auxiliary glyphs such as lyrics, output and queue are 24dp within 48dp touch targets. Tapping a synchronized lyric in the AMLL player seeks to that time and resumes playback if paused; an already-playing song continues. Other lyric views keep seek-only behavior unless they opt into the callback. All player presentations share Resonus's `lyricBlurRadius`, past/future treatment and transitions. The AMLL-only four-row distance cutoff is removed: filters belong only to measured rows in the viewport plus a small margin, so visible lyrics remain blurred even far from the playing line. The disabled/manual-browsing/no-current-line clear states and frozen last frame remain. AM++ blur parameters and its algorithm are not ported.
 
@@ -116,7 +138,7 @@ All switches use a shared compact wrapper: 54×44dp instead of 64×48dp, approxi
 
 ## 验证状态 / Validation status
 
-### 当前 `.4` / Current `.4`
+### `.4` 检查历史 / `.4` validation history
 
 367 项 JavaScript 测试及 106 项原生测试（玻璃 93、背景 6、高刷 7）通过。ARM64 Release APK 构建成功，核对版本 `0.8.4.1-amll.4`、编号 `86`、原包名与原签名一致。Expo Image 原生源码重新编译成功，发布混淆映射确认新首帧解码器与磁盘预取路径已包含。静态检查无错误，保留 21 条既有代码警告，警告均不在本轮修改行。已覆盖安装到三星，版本核对为 `.4`/86，首次安装日期保持 2026-10-05 17:44:34；首页和封面正常显示，过滤的启动错误日志为空。安装前取得的系统日志来自旧版本，不能当作 `.4` 的帧率或长列表验证。历史日志确认过动态图片解码时的内存耗尽，但此次所有闪退原因及修复效果仍需实机复测。
 

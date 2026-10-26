@@ -1,5 +1,4 @@
 /** Shared floating card with actions for a song (⋯ menu). */
-import { GlassBackdrop } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
@@ -13,12 +12,10 @@ import {
   StyleSheet,
   Text,
   View,
-  useWindowDimensions,
   type ScrollViewProps,
 } from 'react-native';
 
-import { GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated from 'react-native-reanimated';
+import { GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scheduleOnRN } from 'react-native-worklets';
 
@@ -55,12 +52,12 @@ import { useSongInfo } from '@/store/songInfo';
 import { useSongMenu } from '@/store/songMenu';
 import { showUndoToast, useToast } from '@/store/toast';
 import { useT } from '@/i18n';
-import { colors, fontSize, radius, SHEET_MAX_WIDTH, spacing, themed, useThemeMode } from '@/theme';
+import { colors, fontSize, radius, SHEET_MAX_WIDTH, spacing, themed } from '@/theme';
 import { Cover } from './Cover';
 import { Dialog } from './Dialog';
 import { ExplicitBadge, useExplicitBadge } from './ExplicitBadge';
 import { StarRating } from './StarRating';
-import { MenuGlassBackdrop } from './MenuGlassBackdrop';
+import { MenuGlassCardFrame } from './MenuGlassCard';
 
 const MenuCardContext = createContext(false);
 
@@ -72,7 +69,7 @@ function MenuContent({ card, maxHeight, contentKey, children }: {
   children: ReactNode;
 }) {
   return card ? (
-    <ScrollView key={contentKey} style={{ maxHeight }} contentContainerStyle={styles.cardContent}
+    <ScrollView key={contentKey} style={{ maxHeight, flexShrink: 1, minHeight: 0 }} contentContainerStyle={styles.cardContent}
       keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
       {children}
     </ScrollView>
@@ -222,19 +219,14 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
     closeNow();
   };
   const insets = useSafeAreaInsets();
-  const { width: screenW, height: screenH } = useScreenSize();
-  const { fontScale } = useWindowDimensions();
-  const dark = useThemeMode() === 'dark';
+  const { height: screenH } = useScreenSize();
   const router = useRouter();
   const auth = useAuthStore((s) => s.auth);
   const offline = useAuthStore((s) => s.offline);
   const queryClient = useQueryClient();
-  const presentation = useSongMenu((s) => s.presentation);
-  const isCard = presentation === 'card';
-  const cardRight = 16 + insets.right;
-  const cardTop = Math.min(insets.top + 72, Math.max(insets.top + 12, screenH - insets.bottom - 180));
-  const cardWidth = Math.min(fontScale > 1.2 ? 248 : 232, Math.max(0, screenW - insets.left - insets.right - 32));
-  const cardMaxHeight = Math.min(540, Math.max(0, screenH - cardTop - insets.bottom - 16));
+  // Every song menu uses the same floating panel as the artist picker.
+  const isCard = true;
+  const cardMaxHeight = Math.min(640, Math.max(0, screenH - insets.top - insets.bottom - 88));
   const actionStyle = [styles.action, isCard && styles.cardAction];
   const actionTextStyle = [styles.actionText, isCard && styles.cardActionText];
   const rowIconSize = isCard ? 20 : 24;
@@ -245,7 +237,7 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
   const { dismiss: animateDismiss, dismissing, makePan, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
     true,
     closeAfterGesture,
-    presentation,
+    'card',
     session,
   );
   const dismiss = (after: () => void) => {
@@ -512,21 +504,8 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
     }}>
       {/* Gestures inside an RN Modal need a root view of their own: the
           Modal renders in a native hierarchy outside the app's. */}
-      {!(creating || confirmDelete || dupPrompt) && <GestureHandlerRootView style={StyleSheet.absoluteFill}>
-        <Animated.View nativeID={isCard ? 'resonus-menu-scrim' : undefined} collapsable={false}
-          style={[styles.backdrop, isCard && { backgroundColor: dark ? 'rgba(0,0,0,0.10)' : 'rgba(0,0,0,0.06)' }, backdropStyle]}>
-          <Pressable accessibilityRole="button" accessibilityLabel={t('Close')}
-            style={StyleSheet.absoluteFill} onPress={close} />
-        </Animated.View>
-        <Animated.View collapsable={false}
-          style={[isCard ? styles.card : styles.sheet,
-            isCard ? { top: cardTop, right: cardRight, width: cardWidth, maxHeight: cardMaxHeight }
-              : { paddingBottom: insets.bottom + spacing.md }, sheetStyle]}
-          onLayout={onSheetLayout}
-          accessibilityViewIsModal
-        >
-          {isCard ? <MenuGlassBackdrop kind="menu" radius={28} />
-            : <GlassBackdrop radius={0} radiusTopLeft={radius.xxl} radiusTopRight={radius.xxl} tint={colors.surface} variant="prominent" />}
+      {!(creating || confirmDelete || dupPrompt) && <MenuGlassCardFrame onClose={close}
+        backdropStyle={backdropStyle} cardStyle={[sheetStyle, { padding: 0 }]} onLayout={onSheetLayout}>
           <MenuCardContext.Provider value={isCard}>
           <MenuContent card={isCard} maxHeight={cardMaxHeight} contentKey={`${song.id}:${mode}`}>
           {/* The header has its own drag, always enabled: it's the way out
@@ -556,6 +535,10 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
                     </View>
                   ) : null}
                 </View>
+                <Pressable onPress={close} accessibilityRole="button" accessibilityLabel={t('Close')}
+                  hitSlop={4} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="close" size={20} color={colors.textSecondary} />
+                </Pressable>
               </View>
               <View style={styles.divider} />
             </View>
@@ -930,8 +913,7 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
           </GestureDetector>
           </MenuContent>
           </MenuCardContext.Provider>
-        </Animated.View>
-      </GestureHandlerRootView>}
+      </MenuGlassCardFrame>}
 
       <Dialog
         inlineMenu
@@ -997,7 +979,7 @@ const styles = themed((colors) => ({
     overflow: 'hidden',
     boxShadow: '0 12px 32px rgba(0, 0, 0, 0.22)',
   },
-  cardContent: { padding: 12 },
+  cardContent: { padding: 16 },
   cardHeaderRow: { gap: 10, paddingBottom: 12 },
   cardTitle: { fontSize: 17, fontWeight: '600' },
   cardArtist: { fontSize: 13 },

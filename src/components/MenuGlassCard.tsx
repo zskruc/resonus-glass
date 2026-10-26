@@ -1,5 +1,5 @@
-import { type ComponentProps, type ReactNode, useState } from 'react';
-import { type LayoutChangeEvent, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { forwardRef, type ComponentProps, type ReactNode, useState } from 'react';
+import { type LayoutChangeEvent, Pressable, StyleSheet, Text, View, type ViewProps, useWindowDimensions } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,6 +11,22 @@ import { useT } from '@/i18n';
 import { themed, useTheme, useThemeMode } from '@/theme';
 
 type AnimatedViewStyle = ComponentProps<typeof Animated.View>['style'];
+
+export const MENU_GLASS_RADIUS = 28;
+export const menuGlassScrimColor = (dark: boolean) => dark ? 'rgba(0,0,0,0.18)' : 'rgba(0,0,0,0.10)';
+
+/** The artist picker's single glass surface, also usable by anchored/inline dialogs. */
+export const MenuGlassPanel = forwardRef<View, ViewProps & { radius?: number }>(function MenuGlassPanel({
+  children, style, radius = MENU_GLASS_RADIUS, ...props
+}, ref) {
+  return (
+    <View {...props} ref={ref} collapsable={false}
+      style={[style, { backgroundColor: 'transparent', borderRadius: radius, overflow: 'hidden' }]}>
+      <MenuGlassBackdrop radius={radius} />
+      {children}
+    </View>
+  );
+});
 
 /** One bounded surface for a menu's details, with the same material and anchor. */
 export function MenuGlassCardFrame({ children, onClose, backdropStyle, cardStyle, onLayout, maxWidth = 312 }: {
@@ -40,12 +56,12 @@ export function MenuGlassCardFrame({ children, onClose, backdropStyle, cardStyle
       setBounds((old) => old?.width === nextWidth && old.height === nextHeight ? old : { width: nextWidth, height: nextHeight });
     }}>
       <Animated.View nativeID="resonus-menu-scrim" collapsable={false}
-        style={[StyleSheet.absoluteFill, { backgroundColor: dark ? 'rgba(0,0,0,0.18)' : 'rgba(0,0,0,0.10)' }, backdropStyle]}>
+        style={[StyleSheet.absoluteFill, { backgroundColor: menuGlassScrimColor(dark) }, backdropStyle]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel={t('Close')} />
       </Animated.View>
       <Animated.View collapsable={false} accessibilityViewIsModal onLayout={onLayout}
         style={[styles.card, { top, right: 16 + insets.right, width: cardWidth, maxHeight }, cardStyle]}>
-        <MenuGlassBackdrop radius={28} />
+        <MenuGlassBackdrop radius={MENU_GLASS_RADIUS} />
         {children}
       </Animated.View>
     </GestureHandlerRootView>
@@ -70,7 +86,7 @@ export function MenuGlassCardHeader({ title, subtitle, onClose }: { title: strin
 }
 
 const styles = themed((colors) => ({
-  card: { position: 'absolute', backgroundColor: 'transparent', borderRadius: 28, overflow: 'hidden', padding: 16 },
+  card: { position: 'absolute', backgroundColor: 'transparent', borderRadius: MENU_GLASS_RADIUS, overflow: 'hidden', padding: 16 },
   header: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 14, flexShrink: 0 },
   heading: { flex: 1, minWidth: 0 },
   title: { color: colors.text, fontSize: 17, fontWeight: '600', lineHeight: 24 },

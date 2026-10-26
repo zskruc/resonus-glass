@@ -6,6 +6,7 @@
 package expo.modules.liquidglass
 
 import android.graphics.Canvas as AndroidCanvas
+import android.graphics.Matrix
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
@@ -24,12 +25,18 @@ internal class AmPlusSelectionOverlay(private val owner: LiquidGlassView) : View
   private var density: Density = Density(1f)
   private var direction = LayoutDirection.Ltr
   private var size = Size.Zero
+  private var recordOutset = 0
   private var parent: ViewGroup? = null
   private var observer: ViewTreeObserver? = null
   private var attachmentGeneration = 0
   private var attachmentPosted = false
   private var captureSuppressed = false
   private val matrix = FloatArray(9)
+  private val ownerGlobalMatrix = Matrix()
+  private val hostGlobalMatrix = Matrix()
+  private val hostInverseMatrix = Matrix()
+  private val ownerToHostMatrix = Matrix()
+  private val mappedBounds = TabsOverlayBounds()
   private val previousMatrix = FloatArray(9) { Float.NaN }
   private var previousOpacity = Float.NaN
   private var previousOffsetX = Int.MIN_VALUE
@@ -54,8 +61,11 @@ internal class AmPlusSelectionOverlay(private val owner: LiquidGlassView) : View
         if (!visible()) return
         val checkpoint = canvas.save()
         try {
-          canvas.concat(owner.matrix)
-          canvas.translate(owner.opticalMaterialOffsetX.toFloat(), owner.opticalMaterialOffsetY.toFloat())
+          if (!updateTransform()) return
+          canvas.translate(-left.toFloat(), -top.toFloat())
+          canvas.concat(ownerToHostMatrix)
+          canvas.translate(owner.opticalMaterialOffsetX.toFloat() - recordOutset,
+            owner.opticalMaterialOffsetY.toFloat() - recordOutset)
           drawScope.draw(density, direction, Canvas(canvas), size) { drawLayer(selected) }
         } finally { canvas.restoreToCount(checkpoint) }
       }
@@ -75,7 +85,7 @@ internal class AmPlusSelectionOverlay(private val owner: LiquidGlassView) : View
     // There is no source lens at rest. Do not retain an overlay/listener for
     // the entire lifetime of this global bar, including hidden player routes.
     if (layer == null || !eligible() || owner.tabsCount <= 0) return
-    val nextParent = owner.parent as? ViewGroup ?: return
+    val nextParent = findOverlayHost() ?: return
     val overlayView = view ?: createView().also { view = it }
     if (nextParent !== parent) {
       parent?.overlay?.remove(overlayView)
@@ -95,9 +105,10 @@ internal class AmPlusSelectionOverlay(private val owner: LiquidGlassView) : View
     val view = view ?: return true
     val visibility = if (visible()) View.VISIBLE else View.INVISIBLE
     if (view.visibility != visibility) view.visibility = visibility
-    if (view.alpha != owner.alpha) view.alpha = owner.alpha
+    val alpha = relativeAlpha()
+    if (view.alpha != alpha) view.alpha = alpha
     layout()
-    owner.matrix.getValues(matrix)
+    ownerToHostMatrix.getValues(matrix)
     var changed = previousOpacity != owner.tabSelectionOpacity || previousOffsetX != owner.opticalMaterialOffsetX ||
       previousOffsetY != owner.opticalMaterialOffsetY
     for (index in matrix.indices) if (matrix[index] != previousMatrix[index]) changed = true
@@ -111,7 +122,8 @@ internal class AmPlusSelectionOverlay(private val owner: LiquidGlassView) : View
     return true
   }
 
-  fun update(selected: GraphicsLayer, sourceDensity: Density, sourceDirection: LayoutDirection, sourceSize: Size) {
+  fun update(selected: GraphicsLayer, sourceDensity: Density, sourceDirection: LayoutDirection, sourceSize: Size,
+    outset: Int) {
     if (WindowBackdrops.isCapturing || !owner.isAttachedToWindow) return
     // A stale Compose draw can outlive focus/visibility or the gesture by one
     // traversal. It must not recreate the overlay that preDraw just released.
@@ -123,6 +135,7 @@ internal class AmPlusSelectionOverlay(private val owner: LiquidGlassView) : View
     density = sourceDensity
     direction = sourceDirection
     size = sourceSize
+    recordOutset = outset
     if (parent == null && !attachmentPosted) {
       // First interaction after a live style change may occur during draw.
       // Keep overlay hierarchy changes outside that traversal.
@@ -142,8 +155,51 @@ internal class AmPlusSelectionOverlay(private val owner: LiquidGlassView) : View
 
   fun layout() {
     val view = view ?: return
-    if (view.left != owner.left || view.top != owner.top || view.right != owner.right || view.bottom != owner.bottom)
-      view.layout(owner.left, owner.top, owner.right, owner.bottom)
+    if (!updateTransform()) return
+    ownerToHostMatrix.getValues(matrix)
+    if (!TabsSelectionGeometry.mapRecordBounds(size.width, size.height, owner.opticalMaterialOffsetX.toFloat(),
+        owner.opticalMaterialOffsetY.toFloat(), recordOutset, matrix, mappedBounds)) return
+    val left = mappedBounds.left
+    val top = mappedBounds.top
+    val right = mappedBounds.right
+    val bottom = mappedBounds.bottom
+    if (view.left != left || view.top != top || view.right != right || view.bottom != bottom)
+      view.layout(left, top, right, bottom)
+  }
+
+  fun recordOutset(): Int = owner.selectionRecordOutset()
+
+  private fun findOverlayHost(): ViewGroup? {
+    var ancestor = owner.parent as? ViewGroup
+    while (ancestor != null) {
+      if (ancestor.getTag(com.facebook.react.R.id.view_tag_native_id) == TabsSelectionGeometry.OverlayHostNativeId)
+        return ancestor
+      ancestor = ancestor.parent as? ViewGroup
+    }
+    // Embedded/non-global hosts retain their existing local ordering.
+    return owner.parent as? ViewGroup
+  }
+
+  private fun updateTransform(): Boolean {
+    val host = parent ?: return false
+    ownerGlobalMatrix.reset()
+    hostGlobalMatrix.reset()
+    owner.transformMatrixToGlobal(ownerGlobalMatrix)
+    host.transformMatrixToGlobal(hostGlobalMatrix)
+    if (!hostGlobalMatrix.invert(hostInverseMatrix)) return false
+    ownerToHostMatrix.setConcat(hostInverseMatrix, ownerGlobalMatrix)
+    return true
+  }
+
+  /** The higher host must still respect opacity on every skipped bar ancestor. */
+  private fun relativeAlpha(): Float {
+    var alpha = 1f
+    var ancestor: View? = owner
+    while (ancestor != null && ancestor !== parent) {
+      alpha *= ancestor.alpha
+      ancestor = ancestor.parent as? View
+    }
+    return alpha
   }
 
   fun clear(selected: GraphicsLayer? = null) {

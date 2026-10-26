@@ -238,6 +238,35 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
       sampleLocation[1] + materialOffsetY + if (materialHeight > 0) materialHeight else height)
   }
 
+  /** The pressed lens is allowed beyond the bar, so its source ROI must follow it too. */
+  internal fun getSelectionBoundsOnScreen(bounds: Rect): Boolean {
+    if (tabsCount <= 0 || tabSelectionOpacity <= .001f ||
+      !AmPlusSelectionMotion.isInteracting(tabPressProgress, tabScaleX, tabScaleY, tabVelocity, tabPanelOffset)) return false
+    val density = resources.displayMetrics.density
+    val amPlus = materialPreset == "amPlus"
+    // Freeze the source's maximum press/velocity/spring envelope for the whole
+    // interaction. Dock folding already reserves the complete fixed RN host.
+    val hasAmPlusDock = amPlus && dockCompactWidth > 0f
+    val optical = TabsSelectionGeometry.interactionBounds(
+      width + if (hasAmPlusDock) GlassBarCollapsePolicy.GAP_DP * density else 0f,
+      height * if (hasAmPlusDock) 1f + AmPlusDockGeometry.OvershootLimit else 1f,
+      tabHorizontalInset * density, tabVerticalInset * density, tabsCount, amPlus, 4f * density)
+    getLocationOnScreen(sampleLocation)
+    val x = sampleLocation[0]
+    val y = sampleLocation[1]
+    bounds.set(kotlin.math.floor(x + optical.left).toInt(), kotlin.math.floor(y + optical.top).toInt(),
+      ceil(x + optical.right).toInt(), ceil(y + optical.bottom).toInt())
+    return true
+  }
+
+  internal fun selectionRecordOutset(): Int {
+    val density = resources.displayMetrics.density
+    return TabsSelectionGeometry.recordOutset(Shadow.Default.radius.value * density,
+      (width - tabHorizontalInset * density * 2f).coerceAtLeast(0f) / tabsCount.coerceAtLeast(1),
+      (height - tabVerticalInset * density * 2f).coerceAtLeast(0f), tabsCount,
+      materialPreset == "amPlus", 4f * density)
+  }
+
   private fun isProgressiveFrameCurrent(captured: BackdropFrame): Boolean {
     val stamp = captured.progressiveBlur ?: return false
     return stamp.materialId == progressiveMaterialId && stamp.blurRadius == blurRadius &&
@@ -309,6 +338,9 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
     layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
     isClickable = false
     isFocusable = false
+    // Direct catalog/custom selectors also grow outside their fixed RN host.
+    clipChildren = false
+    clipToPadding = false
     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
     setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
     setContent { GlassMaterial() }

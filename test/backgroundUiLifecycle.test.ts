@@ -293,7 +293,7 @@ describe('background dock lifecycle', () => {
       get: () => value,
       set(next: T) { this.writes.push(next); value = next; },
     });
-    const settings = { bottomTabs: [{ key: 'index', enabled: true }, { key: 'search', enabled: true }] };
+    const settings = { playerPresentation: 'amll', bottomTabs: [{ key: 'index', enabled: true }, { key: 'search', enabled: true }] };
     const dependencies = {
       'react/jsx-runtime': { jsx: (type: (props: unknown) => unknown, props: unknown) => type(props) },
       'expo-router': { useIsFocused: () => focused, useSegments: () => segments, usePathname: () => pathname },
@@ -452,6 +452,44 @@ describe('background dock lifecycle', () => {
     assert.equal(dock.uiCompact.get(), false);
     assert.equal(dock.progress.get(), 0);
     assert.equal(h.springs(), 1);
+  });
+
+  it('restores the underlying folded dock after an AMLL player while clearing native gesture ownership', () => {
+    const h = dockHarness(true);
+    h.mode('amPlus');
+    h.render();
+    let dock = h.fold();
+    dock.nativeInputHost.set(41);
+    const previousScope = dock.scope;
+    const previousGeneration = dock.generation.get();
+    h.bar(false); h.navigate('/player', ['player']);
+    dock = h.render();
+    assert.equal(dock.enabled, false);
+    assert.equal(dock.compact, false);
+    assert.equal(dock.progress.get(), 0);
+    h.bar(true); h.navigate('/', ['(tabs)']);
+    dock = h.render();
+    assert.equal(dock.scope, previousScope);
+    assert.equal(dock.compact, true);
+    assert.equal(dock.uiCompact.get(), true);
+    assert.equal(dock.progress.get(), 1);
+    assert.equal(h.springs(), 0, 'a settled underlying dock has no second entrance or expansion');
+    dock.notifyCompact(false, previousGeneration); h.render();
+    assert.equal(h.read().compact, true, 'the earlier page generation cannot change the restored target');
+    assert.ok(h.nativeExpansions.includes(41));
+  });
+
+  it('parks a UI collapse target even when its React notification has not arrived before the player opens', () => {
+    const h = dockHarness();
+    let dock = h.render();
+    dock.uiCompact.set(true); dock.progress.set(1);
+    assert.equal(dock.compact, false, 'React has not received the UI decision yet');
+    h.bar(false); h.navigate('/player', ['player']); h.render();
+    h.bar(true); h.navigate('/', ['(tabs)']); dock = h.render();
+    assert.equal(dock.compact, true);
+    assert.equal(dock.uiCompact.get(), true);
+    assert.equal(dock.progress.get(), 1);
+    assert.equal(h.springs(), 0);
   });
 
   it('resets once when appearance changes and rejects a previous mode scroll generation', () => {

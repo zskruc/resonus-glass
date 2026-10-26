@@ -20,8 +20,9 @@ import { useSafeAreaFrame, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { useAccent } from '@/hooks/useAccent';
 import { useGlassTuning } from '@/store/glassTuning';
 import { CONTENT_MAX_WIDTH } from '@/hooks/useScreenSize';
-import { colors, fontSize, radius, spacing, SCREEN_BOTTOM_PADDING, themed, tracking, useTheme } from '@/theme';
+import { colors, fontSize, radius, spacing, SCREEN_BOTTOM_PADDING, themed, tracking, useTheme, useThemeMode } from '@/theme';
 import { BackChevron } from './BackChevron';
+import { MenuGlassPanel, menuGlassScrimColor } from './MenuGlassCard';
 import { DynamicGlassBackdrop, StaticGlassBackdropProvider, useStaticGlassBackdropColor } from './glass/StaticGlassBackdropContext';
 
 /**
@@ -218,6 +219,7 @@ export function SelectList<T extends string | number | boolean>({
   disabledLabel?: string;
 }) {
   const accent = useAccent();
+  const dark = useThemeMode() === 'dark';
   const box = useCardBox();
   const frame = useSafeAreaFrame();
   const insets = useSafeAreaInsets();
@@ -342,11 +344,10 @@ export function SelectList<T extends string | number | boolean>({
         onRequestClose={() => setAnchor(null)}
       >
         <DynamicGlassBackdrop>
-        <Pressable style={StyleSheet.absoluteFill} onPress={() => setAnchor(null)} />
+        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: menuGlassScrimColor(dark) }]} onPress={() => setAnchor(null)} />
         {menu != null ? (
-          <GlassSurface
-            radius={radius.md}
-            variant="prominent"
+          <MenuGlassPanel
+            accessibilityViewIsModal
             // Invisible on the first frame (before height is measured): avoids
             // seeing it jump when it opens upward.
             style={[
@@ -392,7 +393,7 @@ export function SelectList<T extends string | number | boolean>({
                 );
               })}
             </ScrollView>
-          </GlassSurface>
+          </MenuGlassPanel>
         ) : null}
         </DynamicGlassBackdrop>
       </Modal>
@@ -545,6 +546,7 @@ function FineTunePad({
   onClose: () => void;
 }) {
   const accent = useAccent();
+  const dark = useThemeMode() === 'dark';
   const [draft, setDraft] = useState(value);
   /** The same value, readable from inside the repeat timer. */
   const draftRef = useRef(value);
@@ -647,9 +649,9 @@ function FineTunePad({
   return (
     <Modal transparent statusBarTranslucent visible={visible} animationType="fade" onRequestClose={close}>
       <DynamicGlassBackdrop>
-      <Pressable style={settingsStyles.padBackdrop} onPress={close} />
+      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: menuGlassScrimColor(dark) }]} onPress={close} />
       <View style={settingsStyles.padCenter} pointerEvents="box-none">
-        <GlassSurface radius={radius.lg} variant="prominent" style={settingsStyles.padCard}>
+        <MenuGlassPanel accessibilityViewIsModal style={settingsStyles.padCard}>
           <Text style={settingsStyles.padTitle}>{title}</Text>
           {arrow(1, 'chevron-up')}
           <Text style={settingsStyles.padValue}>{formatValue(draft)}</Text>
@@ -657,7 +659,7 @@ function FineTunePad({
           <GlassPressable variant="subtle" hitSlop={8} style={settingsStyles.padDone} onPress={close}>
             <Text style={[settingsStyles.padDoneLabel, { color: accent }]}>{doneLabel}</Text>
           </GlassPressable>
-        </GlassSurface>
+        </MenuGlassPanel>
       </View>
       </DynamicGlassBackdrop>
     </Modal>
@@ -903,21 +905,14 @@ export const settingsStyles = themed((colors) => ({
   tunableValue: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexShrink: 1 },
   tunableArrows: { alignItems: 'center' },
   // Pad that nudges a slider's value one step at a time.
-  padBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: colors.backdropStrong },
-  padCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  padCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
   padCard: {
     minWidth: 200,
+    maxWidth: '100%',
     alignItems: 'center',
-    backgroundColor: colors.surfaceHighlight,
-    borderRadius: radius.lg,
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.lg,
     paddingBottom: spacing.md,
-    elevation: 8,
-    shadowColor: colors.shadow,
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
   },
   padTitle: { color: colors.textSecondary, fontSize: fontSize.sm },
   // Wide enough for the whole range, so the arrows don't shift as digits and
@@ -937,14 +932,7 @@ export const settingsStyles = themed((colors) => ({
     position: 'absolute',
     right: spacing.lg,
     minWidth: 170,
-    backgroundColor: colors.surfaceHighlight,
-    borderRadius: radius.md,
     paddingVertical: spacing.sm,
-    elevation: 8,
-    shadowColor: colors.shadow,
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
   },
   menuItem: {
     flexDirection: 'row',

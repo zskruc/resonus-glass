@@ -7,7 +7,7 @@ import * as layoutRules from '@/lib/amllPlayerLayout';
 import * as transitionRules from '@/lib/amllPlayerTransition';
 
 type Event = { translationY: number; velocityY: number };
-type Animation = { kind: string; target: number; done?: (finished: boolean) => void };
+type Animation = { kind: string; target: number; options?: Record<string, unknown>; done?: (finished: boolean) => void };
 type Mutable = { value: any; animation?: Animation; get(): any; set(value: any): void };
 type Deps = readonly unknown[] | undefined;
 class Pan {
@@ -29,9 +29,15 @@ const source = readFileSync(new URL('../src/hooks/useAmllPlayerTransition.ts', i
 const compiled = ts.transpileModule(source, { compilerOptions: {
   module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
 } });
+const revealCompiled = ts.transpileModule(readFileSync(new URL('../src/lib/playerReveal.ts', import.meta.url), 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText;
 const mutable = (initial: unknown): Mutable => ({ value: initial,
   get() { return this.value; },
-  set(next) { if (typeof next === 'object') this.animation = next; else this.value = next; },
+  set(next) {
+    if (next?.kind) this.animation = next;
+    else { this.value = next; this.animation = undefined; }
+  },
 });
 
 // Execute the production transition hook and its actual native callbacks.
@@ -43,6 +49,19 @@ function harness(width = 412, height = 840, lyrics = false, fontScale = 1) {
   const effects: (() => void)[] = [];
   const queued: (() => void)[] = [];
   const values: Mutable[] = [];
+  const reactions = new Set<{ prepare: () => any; react: (value: any, previous: any) => void; previous: any }>();
+  const flushUI = () => {
+    for (let turn = 0; turn < 10; turn++) {
+      let changed = false;
+      for (const reaction of reactions) {
+        const value = reaction.prepare();
+        if (Object.is(value, reaction.previous) || JSON.stringify(value) === JSON.stringify(reaction.previous)) continue;
+        const previous = reaction.previous; reaction.previous = value;
+        reaction.react(value, previous); changed = true;
+      }
+      if (!changed) break;
+    }
+  };
   let navigations = 0;
   const slot = <T,>(create: () => T): T => {
     const index = cursor++;
@@ -72,7 +91,8 @@ function harness(width = 412, height = 840, lyrics = false, fontScale = 1) {
     useEffect: effect, useLayoutEffect: effect,
   };
   const navigation = { canGoBack: () => true, goBack: () => { navigations++; }, dispatch: () => { navigations++; } };
-  const reveal = mutable(-1);
+  const bus: Record<string, any> = {};
+  runInNewContext(revealCompiled, { exports: bus, require: () => ({ makeMutable: mutable }) });
   const headerScrollOffset = mutable(0);
   const layout = layoutRules.amllPlayerLayout({ width, height, fontScale, showVolume: true, showQuality: true });
   const headerArea = layoutRules.amllPlayerHeaderArea(layout, lyrics, 30, 0);
@@ -86,8 +106,10 @@ function harness(width = 412, height = 840, lyrics = false, fontScale = 1) {
         useNavigation: () => navigation, useLocalSearchParams: () => ({ reveal: '1' }),
         useFocusEffect: (callback: () => (() => void) | void) => effect(callback, [callback]),
       };
-      if (name === 'expo-router/react-navigation') return { usePreventRemove() {} };
-      if (name === 'react-native') return { BackHandler: { addEventListener: () => ({ remove() {} }) } };
+      if (name === 'expo-router/react-navigation') return { usePreventRemove(_prevent: boolean, callback: (event: unknown) => void) { preventRemove = callback; } };
+      if (name === 'react-native') return { BackHandler: { addEventListener: (_name: string, callback: () => boolean) => {
+        back = callback; return { remove() {} };
+      } } };
       if (name === 'react-native-gesture-handler') return { Gesture: { Pan: () => new Pan() } };
       if (name === 'react-native-worklets') return {
         scheduleOnRN: (callback: (...args: any[]) => void, ...args: any[]) => queued.push(() => callback(...args)),
@@ -96,21 +118,28 @@ function harness(width = 412, height = 840, lyrics = false, fontScale = 1) {
       if (name === 'react-native-reanimated') return {
         useSharedValue: (initial: unknown) => slot(() => { const value = mutable(initial); values.push(value); return value; }),
         useAnimatedStyle: (updater: () => unknown) => ({ updater }),
+        useAnimatedReaction: (prepare: () => any, react: (value: any, previous: any) => void) => {
+          const reaction = slot(() => { const value = { prepare, react, previous: undefined as any }; reactions.add(value); return value; });
+          reaction.prepare = prepare; reaction.react = react;
+        },
         cancelAnimation: (value: Mutable) => { value.animation = undefined; },
-        withTiming: (target: number, _options: unknown, done: (finished: boolean) => void) => ({ kind: 'timing', target, done }),
-        withSpring: (target: number) => ({ kind: 'spring', target }),
+        withTiming: (target: number, options: unknown, done: (finished: boolean) => void) => ({ kind: 'timing', target, options, done }),
+        withSpring: (target: number, options: unknown, done: (finished: boolean) => void) => ({ kind: 'spring', target, options, done }),
       };
       if (name === '@/lib/amllPlayerLayout') return layoutRules;
       if (name === '@/lib/amllPlayerTransition') return transitionRules;
-      if (name === '@/lib/playerReveal') return { revealOffset: reveal };
+      if (name === '@/lib/playerReveal') return bus;
       if (name === '@/theme/motion') return { motion: { reduceMotion: { essential: 'system' }, duration: { move: 220 }, easing: {} } };
       throw new Error(`Unexpected transition import ${name}`);
     },
   });
   let result: any;
+  let back: () => boolean;
+  let preventRemove: (event: unknown) => void;
   const render = (next: Partial<typeof props> = {}) => {
     Object.assign(props, next); cursor = 0; result = exports.useAmllPlayerTransition(props);
     while (effects.length) effects.shift()!();
+    flushUI();
     return result;
   };
   render();
@@ -124,15 +153,20 @@ function harness(width = 412, height = 840, lyrics = false, fontScale = 1) {
   const drag = (x: number, y: number, translationY = 140, velocityY = 0) => {
     if (!accepts(x, y)) return false;
     const event: Event = { translationY, velocityY };
-    pan().callbacks.start(); pan().callbacks.update(event); pan().callbacks.end(event, true); pan().callbacks.finalize(event, true);
+    pan().callbacks.start(); pan().callbacks.update(event); flushUI();
+    pan().callbacks.end(event, true); pan().callbacks.finalize(event, true); flushUI();
     return true;
   };
-  return { layout, headerArea, headerScrollOffset, accepts, drag, pan, render,
+  return { layout, headerArea, headerScrollOffset, accepts, drag, pan, render, bus, flushUI,
+    close: () => result.close(), back: () => back(),
+    navigateBack: () => preventRemove({ data: { action: { type: 'GO_BACK' } } }),
+    unmount() { for (const value of slots) value?.cleanup?.(); reactions.clear(); },
     root: () => values[0], queued: () => queued.length, navigations: () => navigations,
-    drain() { while (queued.length) queued.shift()!(); },
+    drain() { while (queued.length) queued.shift()!(); flushUI(); },
     finish() {
       const value = values[0]; const animation = value.animation; value.animation = undefined;
       if (animation) { value.value = animation.target; animation.done?.(true); }
+      flushUI();
     },
   };
 }
@@ -227,5 +261,58 @@ describe('AMLL visible header dismissal gesture', () => {
     h.render({ focused: true, enabled: false });
     assert.equal(h.drag(100, 31), false);
     assert.equal(h.queued(), 0);
+  });
+
+  it('publishes the exact dragged surface offset and follows a cancelled pull back to a covered dock', () => {
+    const h = harness(412, 840, true);
+    h.pan().callbacks.start();
+    h.pan().callbacks.update({ translationY: 600, velocityY: 0 }); h.flushUI();
+    assert.equal(h.bus.playerSurfaceOffset.get(), 600);
+    assert.equal(h.bus.playerSurfaceHeight.get(), 840);
+    assert.equal(h.bus.playerDockClipOffset(600, 840, 840), -240);
+    h.pan().callbacks.finalize({ translationY: 600, velocityY: 0 }, false);
+    h.finish();
+    assert.equal(h.bus.playerSurfaceOffset.get(), 0);
+    assert.equal(h.bus.playerDockClipOffset(0, 840, 840), -840);
+    assert.equal(h.navigations(), 0);
+  });
+
+  it('uses the same dock progress for button, hardware Back and navigation close, retaining the full endpoint through pop', () => {
+    for (const source of ['close', 'back', 'navigateBack'] as const) {
+      const h = harness(412, 840, true);
+      h[source]();
+      h.root().value = 420; h.flushUI();
+      assert.equal(h.bus.playerSurfaceOffset.get(), 420, source);
+      assert.equal(h.navigations(), 0, source);
+      h.finish(); h.drain(); h.render();
+      assert.equal(h.bus.playerSurfaceOffset.get(), 840, source);
+      assert.equal(h.navigations(), 1, source);
+      h.unmount();
+      assert.equal(h.bus.playerSurfaceOffset.get(), 840, `${source}: no disappearing dock before globals receive route pop`);
+    }
+  });
+
+  it('does not let an old player cleanup clear a newer player or mini reveal owner', () => {
+    const h = harness();
+    const owner = h.bus.playerSurfaceOwner.get();
+    h.bus.playerSurfaceOwner.set(owner + 1);
+    h.bus.playerSurfaceOffset.set(320);
+    h.bus.revealOffset.set(125);
+    h.unmount();
+    assert.equal(h.bus.playerSurfaceOwner.get(), owner + 1);
+    assert.equal(h.bus.playerSurfaceOffset.get(), 320);
+    assert.equal(h.bus.revealOffset.get(), 125);
+  });
+
+  it('keeps a live mini-player pull owned across a viewport height change', () => {
+    const h = harness();
+    const owner = h.bus.playerSurfaceOwner.get();
+    h.bus.revealOffset.set(420); h.flushUI();
+    h.render({ height: 412 });
+    assert.equal(h.bus.playerSurfaceOwner.get(), owner);
+    assert.equal(h.bus.revealOffset.get(), 420);
+    assert.equal(h.bus.playerSurfaceOffset.get(), 420);
+    assert.equal(h.bus.playerSurfaceHeight.get(), 412);
+    assert.equal(h.navigations(), 0);
   });
 });

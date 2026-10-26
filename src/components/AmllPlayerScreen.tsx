@@ -47,7 +47,7 @@ import { useToast } from '@/store/toast';
 import { useUpnp } from '@/store/upnp';
 
 const INK = '#FFFFFF';
-const SECONDARY = 'rgba(255,255,255,0.65)';
+const SECONDARY = 'rgba(255,255,255,0.78)';
 const TRACK = 'rgba(255,255,255,0.20)';
 const COVER_SPRING = { stiffness: 200, damping: 30, overshootClamping: true };
 
@@ -95,6 +95,7 @@ export function AmllPlayerScreen() {
   const active = focused && foreground;
   const layout = useMemo(() => amllPlayerLayout({
     width: Math.max(1, window.width - insets.left - insets.right),
+    viewportWidth: window.width,
     height: Math.max(1, window.height - insets.top - insets.bottom - AMLL_TOP_PADDING),
     fontScale: window.fontScale, showVolume, showQuality,
   }), [window.width, window.height, window.fontScale, insets.left, insets.right, insets.top, insets.bottom, showVolume, showQuality]);
@@ -292,7 +293,7 @@ export function AmllPlayerScreen() {
                   accessibilityElementsHidden={!horizontal && showLyrics}
                   importantForAccessibility={horizontal || !showLyrics ? 'auto' : 'no-hide-descendants'}
                   style={[styles.controls, controlsStyle]}>
-                  <AmllPlayerControls width={layout.leftWidth} viewportHeight={layout.referenceHeight}
+                  <AmllPlayerControls width={layout.leftWidth} viewportWidth={window.width} viewportHeight={layout.referenceHeight}
                     horizontal={horizontal} fontScale={window.fontScale} playing={playing} buffering={buffering}
                     shuffle={shuffle} repeat={repeat} onPrevious={previous} onToggle={toggle} onNext={next}
                     onShuffle={toggleShuffle} onRepeat={cycleRepeat} onLongPressPlay={stop}
@@ -312,7 +313,8 @@ export function AmllPlayerScreen() {
             </Animated.ScrollView>
           </Animated.View>
         </View>
-        {horizontal ? <AmllPlayerBottomActions horizontal width={layout.innerWidth} showLyrics={showLyrics}
+        {horizontal ? <AmllPlayerBottomActions horizontal width={layout.innerWidth} viewportWidth={window.width}
+          viewportHeight={layout.referenceHeight} showLyrics={showLyrics}
           onLyrics={switchLyrics} onOutput={() => setOutputOpen(true)} onQueue={() => pushOnce('/queue')}
           outputLabel={remoteName ? `${t('Devices')}: ${remoteName}` : t('Devices')} active={interactive} /> : null}
       </View>

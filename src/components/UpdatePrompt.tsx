@@ -28,7 +28,8 @@
  * The download has its own window rather than living in the dialog: 57 MB needs
  * a progress bar and a way out, and `Dialog` is built for a question.
  */
-import { GlassBackdrop, GlassPressable } from '@/components/glass';
+import { GlassPressable } from '@/components/glass';
+import { MenuGlassCardFrame } from '@/components/MenuGlassCard';
 import { useEffect } from 'react';
 import {
   ActivityIndicator,
@@ -178,9 +179,7 @@ export function UpdatePrompt() {
         animationType="fade"
         onRequestClose={close}
       >
-        <View style={styles.backdrop}>
-          <View collapsable={false} style={[styles.card, { backgroundColor: 'transparent' }]}>
-            <GlassBackdrop radius={radius.lg} tint={colors.surface} variant="prominent" />
+        <MenuGlassCardFrame onClose={close}>
             <Text style={styles.title}>
               {t('Downloading {app} {version}', { app: PROJECT_NAME, version: version ?? '' })}
             </Text>
@@ -208,8 +207,7 @@ export function UpdatePrompt() {
             >
               <Text style={styles.cancelLabel}>{t('Cancel')}</Text>
             </GlassPressable>
-          </View>
-        </View>
+        </MenuGlassCardFrame>
       </Modal>
     </>
   );

@@ -37,7 +37,8 @@ import { useBarBlur } from '@/components/BarBlur';
 import { FloatingGlassBackdrop } from '@/components/glass';
 import { isLiquidGlassAvailable, LiquidGlassTabsView, updateNativeDockProgress, updateNativeTabsMotion } from '../../modules/liquid-glass';
 
-import { useTabBarShown } from '@/hooks/useTabBar';
+import { usePlayerDockUnderlay, useTabBarShown } from '@/hooks/useTabBar';
+import { PlayerDockUnderlay, usePlayerDockMaterialReady } from './PlayerDockUnderlay';
 import { COMPACT_DOCK_GAP, COMPACT_DOCK_SIZE, useLiquidDock } from '@/hooks/useLiquidDock';
 import { useScreenSize } from '@/hooks/useScreenSize';
 import { motion } from '@/theme/motion';
@@ -126,6 +127,8 @@ export function GlobalTabBar() {
   const t = useT();
   const segments = useSegments() as string[];
   const shown = useTabBarShown();
+  const underlay = usePlayerDockUnderlay(shown);
+  const underlayMaterial = usePlayerDockMaterialReady(underlay.reveal);
   // Opening the player resets the provider for its new route. Keep the last
   // visible dock geometry during this bar's existing fade-out transition.
   const [lastDockTarget, setLastDockTarget] = useState({ compact: targetCompact, hasSearch: dockHasSearch });
@@ -141,20 +144,19 @@ export function GlobalTabBar() {
     if (value !== null) frozenDockProgress.set(value);
   });
   const dockProgress = useDerivedValue(() => uiShown.value ? sourceDockProgress.value : frozenDockProgress.value);
-  // Mirror only the transition boundary. JS taps must not synchronously wait
-  // for a UI-thread shared-value read while the glass is being rendered.
+  // Mirror the collapse intent. A row that is visible and interactive during
+  // expansion can navigate without waiting for the spring to reach exactly 0.
+  // JS taps must not synchronously read a UI-thread shared value.
   const dockNavigationBlocked = useRef(compact);
   const updateDockNavigationBlocked = useCallback((blocked: boolean) => {
     dockNavigationBlocked.current = blocked;
   }, []);
   useLayoutEffect(() => {
     if (compact) dockNavigationBlocked.current = true;
-  }, [compact, amPlus]);
-  // Moving slots retain fixed text layers. Until the row reaches its expanded
-  // endpoint, any tab tap restores that row rather than navigating through an
-  // overlapping moving hit rectangle. Accessibility activation uses this gate too.
-  useAnimatedReaction(() => amPlus ? amppProgress(dockProgress.get()) > 0
-    : dockCompactTarget.get() || dockProgress.value > 0.001, (blocked, previous) => {
+  }, [compact]);
+  // A collapse intent still makes the first tap expand the dock. Once that
+  // intent is cleared, expandedInteractive owns the row's hit eligibility.
+  useAnimatedReaction(() => dockCompactTarget.get(), (blocked, previous) => {
     if (blocked !== previous) scheduleOnRN(updateDockNavigationBlocked, blocked);
   });
   // It is also the bar of the tab screens (the tabs navigator draws none):
@@ -222,9 +224,18 @@ export function GlobalTabBar() {
   const routeSelection = useSharedValue(0);
   const dragFinished = useSharedValue(false);
   const dragging = useSharedValue(false);
+  const panOwnsPress = useSharedValue(false);
   const geometryGeneration = useSharedValue(0);
   const geometryGenerationRef = useRef(0);
   const dragGeneration = useSharedValue(0);
+  const tapGeneration = useSharedValue(0);
+  const selectionRequest = useSharedValue(0);
+  const deliveredRequest = useRef(0);
+  const selectTabRef = useRef<(index: number, allowReselect?: boolean) => void>(() => {});
+  useLayoutEffect(() => () => {
+    geometryGenerationRef.current++;
+    selectTabRef.current = () => {};
+  }, []);
   const positioned = useRef(false);
   const nativeMotionHost = useSharedValue(0);
   const lastNativeMotion = useSharedValue<number[]>([]);
@@ -233,13 +244,14 @@ export function GlobalTabBar() {
     count: tabCount, amPlus, reduceMotion, pressProgress, scaleX, scaleY, dragVelocity,
     panelOffset, selectionPosition, selectionDestination, dragging,
   });
-  useEffect(() => {
+  useLayoutEffect(() => {
     // A rotation, changed layout style, hidden bar, or reordered tabs invalidates a gesture that
     // started with different coordinates. It must not select an old index.
     const nextGeneration = ++geometryGenerationRef.current;
     scheduleOnUI(() => {
       geometryGeneration.set(nextGeneration);
       dragging.set(false);
+      panOwnsPress.set(false);
       dragFinished.set(false);
       pressProgress.set(0);
       scaleX.set(1);
@@ -250,7 +262,7 @@ export function GlobalTabBar() {
       releaseFrameReady.set(0);
       scheduleOnRN(setGlassPressed, false);
     });
-  }, [tabWidth, tabOrder, shown, compact, amPlus, geometryGeneration, dragging, dragFinished, pressProgress, scaleX, scaleY, dragVelocity, panelOffset, releasePending, releaseFrameReady]);
+  }, [tabWidth, tabOrder, shown, compact, amPlus, geometryGeneration, dragging, panOwnsPress, dragFinished, pressProgress, scaleX, scaleY, dragVelocity, panelOffset, releasePending, releaseFrameReady]);
   useLayoutEffect(() => {
     if (tabWidth <= 0 || selectedIndex < 0) {
       selectionOpacity.set(withTiming(0, { duration: motion.duration.exit }));
@@ -262,12 +274,12 @@ export function GlobalTabBar() {
     scheduleOnUI(() => {
       const routeChanged = routeSelection.get() !== target;
       routeSelection.set(target);
-      // A completed drag already started this same spring on the UI thread.
-      // Ordinary taps start it with the route commit, never ahead of the page.
+      // Pointer activation already starts this spring on the UI thread. Route
+      // commits remain authoritative for accessibility and external navigation.
       if (selectionDestination.get() !== target) {
-        // Source animateToValue includes press/shape even for a plain tap.
-        // Start it on route commit so page and material change together. A
-        // completed drag already owns both this destination and its release.
+        // Accessibility/external navigation and a corrected destination still
+        // receive the source press/shape. A matching pointer activation already
+        // owns both this destination and its release, so it does not pulse twice.
         if (animate && routeChanged && shown && expandedInteractive && dockProgress.get() <= .001) press();
         selectionDestination.set(target);
         selectionPosition.set(animate ? withSpring(target, SELECTION_SPRING) : target);
@@ -335,28 +347,29 @@ export function GlobalTabBar() {
   // The blur redraws every frame it is on screen, invisible or not, so it goes
   // once the bar has faded out.
   const [blurOn, setBlurOn] = useState(shown);
+  const materialOn = blurOn || underlay.reveal;
   useEffect(() => {
-    motionEnabled.set(shown && blurOn && isLiquidGlassAvailable);
+    motionEnabled.set((shown || underlayMaterial) && materialOn && isLiquidGlassAvailable);
     return () => { motionEnabled.set(false); };
-  }, [shown, blurOn, motionEnabled]);
+  }, [shown, underlayMaterial, materialOn, motionEnabled]);
   if (shown && !blurOn) setBlurOn(true);
   useEffect(() => {
     // Straight back on the way in: coming out of the player the bar was there
     // before and belongs there again, and until the modal finishes dismissing
     // nobody can see it anyway.
-    fade.value = shown
+    fade.value = shown || underlay.reveal
       ? 1
       : withTiming(0, { duration: motion.duration.exit }, (done) => {
           if (done) scheduleOnRN(setBlurOn, false);
         });
-  }, [shown, fade]);
-  const fadeStyle = useAnimatedStyle(() => ({ opacity: fade.value }));
+  }, [shown, underlay.reveal, fade]);
+  const fadeStyle = useAnimatedStyle(() => ({ opacity: underlay.reveal || underlay.returning ? 1 : fade.value }));
   const searchDockStyle = useAnimatedStyle(() => ({
     // One opacity owner: Reanimated applies animated styles by update order,
     // so a resumed fade must never reveal Search inside the expanded capsule.
-    opacity: fade.value * (amPlus ? amppSearchAlpha(dockProgress.value) : 1),
+    opacity: (underlay.reveal || underlay.returning ? 1 : fade.value) * (amPlus ? amppSearchAlpha(dockProgress.value) : 1),
     transform: [{ translateX: amPlus ? 0 : geometry.searchTranslationX * amppProgress(dockProgress.value) }],
-  }), [geometry.searchTranslationX, amPlus]);
+  }), [geometry.searchTranslationX, amPlus, underlay.reveal, underlay.returning]);
   const expandedContentStyle = useAnimatedStyle(() => ({
     opacity: amPlus ? amppExpandedAlpha(dockProgress.value) : 1 - amppProgress(dockProgress.value),
   }));
@@ -410,23 +423,37 @@ export function GlobalTabBar() {
     if (allowReselect && current === tab.segment) reselectTab(tab.segment);
     go(tab.href, tab.segment);
   };
+  useLayoutEffect(() => {
+    selectTabRef.current = (index, allowReselect) => {
+      if (index < 0) { if (shown) expand(); }
+      else selectTab(index, allowReselect);
+    };
+  });
+  const selectFromGesture = useCallback((index: number, allowReselect: boolean, generation: number, request: number) => {
+    // Geometry changes invalidate queued indices; a newer delivered activation
+    // cannot be undone by an old UI callback arriving after it.
+    if (generation !== geometryGenerationRef.current || request <= deliveredRequest.current) return;
+    deliveredRequest.current = request;
+    selectTabRef.current(index, allowReselect);
+  }, []);
   const tabsPan = Gesture.Pan()
     .enabled(shown && expandedInteractive && tabWidth > 0 && tabs.length > 1)
     .activeOffsetX([-6, 6])
     .failOffsetY([-8, 8])
     .onBegin(() => {
-      if (amPlus ? amppProgress(dockProgress.value) > 0 : dockCompactTarget.get() || dockProgress.value > 0.001) {
+      if (dockCompactTarget.get()) {
         dragGeneration.set(-1);
         return;
       }
       dragGeneration.set(geometryGeneration.value);
       dragFinished.set(false);
       dragging.set(false);
-      press(false);
+      panOwnsPress.set(false);
     })
     .onStart(() => {
       if (dragGeneration.value !== geometryGeneration.value) return;
       dragging.set(true);
+      panOwnsPress.set(true);
       scheduleOnRN(setGlassPressed, true);
       press(true);
     })
@@ -443,6 +470,7 @@ export function GlobalTabBar() {
         panelOffset.set(4 * Math.sign(fraction) * (1 - Math.pow(1 - Math.abs(fraction), 3)));
       }
     })
+    // eslint-disable-next-line react-hooks/refs -- RNGH invokes this after native release; the scheduled RN callback reads refs later.
     .onEnd((event, success) => {
       if (!success || dragGeneration.value !== geometryGeneration.value) return;
       const liveWidth = amPlus ? barWidth + (compactSize - barWidth) * amppProgress(dockProgress.get()) : barWidth;
@@ -452,7 +480,9 @@ export function GlobalTabBar() {
       selectionDestination.set(physicalIndex);
       selectionPosition.set(reduceMotion ? physicalIndex : withSpring(physicalIndex, SELECTION_SPRING));
       const logicalIndex = rtl ? tabs.length - 1 - physicalIndex : physicalIndex;
-      scheduleOnRN(selectTab, logicalIndex, false);
+      const request = selectionRequest.get() + 1;
+      selectionRequest.set(request);
+      scheduleOnRN(selectFromGesture, logicalIndex, false, dragGeneration.get(), request);
     })
     .onFinalize(() => {
       // Vertical pulls and system interruptions give the glass back to the
@@ -460,22 +490,59 @@ export function GlobalTabBar() {
       const wasDragging = dragging.get();
       dragging.set(false);
       if (wasDragging) scheduleOnRN(setGlassPressed, false);
-      if (dragGeneration.value !== geometryGeneration.value) return;
+      // A failed Pan is an ordinary tap's pending recognizer. Its Tap owns
+      // release, so it cannot shrink the lens before the tap retargets it.
+      if (!wasDragging || dragGeneration.value !== geometryGeneration.value) return;
       if (wasDragging && !dragFinished.value) {
         selectionDestination.set(routeSelection.value);
         selectionPosition.set(reduceMotion ? routeSelection.value : withSpring(routeSelection.value, SELECTION_SPRING));
       }
       release();
     });
+  const tabsTap = Gesture.Tap()
+    .enabled(shown && expandedInteractive && tabWidth > 0 && tabs.length > 0)
+    .maxDeltaX(6)
+    .maxDeltaY(8)
+    // Match Pressable's hold-to-release semantics instead of Tap's 500 ms cap.
+    .maxDuration(2_147_483_647)
+    .onBegin(() => {
+      tapGeneration.set(geometryGeneration.get());
+      panOwnsPress.set(false);
+      if (!dockCompactTarget.get()) press();
+    })
+    // eslint-disable-next-line react-hooks/refs -- RNGH invokes this after native release; the scheduled RN callback reads refs later.
+    .onEnd((event, success) => {
+      if (!success || tapGeneration.get() !== geometryGeneration.get()) return;
+      if (dockCompactTarget.get()) {
+        const request = selectionRequest.get() + 1;
+        selectionRequest.set(request);
+        scheduleOnRN(selectFromGesture, -1, false, tapGeneration.get(), request);
+        return;
+      }
+      const liveWidth = amPlus ? barWidth + (compactSize - barWidth) * amppProgress(dockProgress.get()) : barWidth;
+      const liveTabWidth = amPlus ? Math.max(1, (liveWidth - horizontalInset * 2) / tabs.length) : tabWidth;
+      const physicalIndex = Math.max(0, Math.min(tabs.length - 1, Math.round((event.x - horizontalInset) / liveTabWidth - 0.5)));
+      selectionDestination.set(physicalIndex);
+      selectionPosition.set(reduceMotion ? physicalIndex : withSpring(physicalIndex, SELECTION_SPRING));
+      const request = selectionRequest.get() + 1;
+      selectionRequest.set(request);
+      scheduleOnRN(selectFromGesture, rtl ? tabs.length - 1 - physicalIndex : physicalIndex,
+        true, tapGeneration.get(), request);
+    })
+    .onFinalize(() => {
+      if (!panOwnsPress.get() && tapGeneration.get() === geometryGeneration.get()) release();
+    });
 
   if (tabs.length === 0 && !searchTab) return null;
   return (
-    <>
+    <PlayerDockUnderlay active={underlay.reveal}>
     {tabs.length > 0 ? (
     <Animated.View
       // Nothing to press once it is on its way out, so a tap meant for the
       // screen taking over does not land on a bar that is no longer there.
       pointerEvents={shown ? 'box-none' : 'none'}
+      accessibilityElementsHidden={!shown}
+      importantForAccessibility={shown ? 'auto' : 'no-hide-descendants'}
       collapsable={false}
       style={[
         styles.frame,
@@ -486,9 +553,9 @@ export function GlobalTabBar() {
       ]}
     >
       <View style={[styles.shell, { borderRadius: navHeight / 2 }]} pointerEvents="box-none">
-        <GestureDetector gesture={tabsPan}>
+        <GestureDetector gesture={Gesture.Exclusive(tabsPan, tabsTap)}>
         <View collapsable={false} style={[styles.bar, { borderRadius: navHeight / 2 }]} pointerEvents={expandedInteractive ? 'auto' : 'box-none'}>
-          {blurOn ? isLiquidGlassAvailable && tabs.length > 0 ? (
+          {materialOn ? isLiquidGlassAvailable && tabs.length > 0 ? (
             <LiquidGlassTabsView style={StyleSheet.absoluteFill} radius={navHeight / 2}
               materialPreset={amPlus ? 'amPlus' : glassMode === 'kyantDefault' ? 'tabs' : 'custom'}
               materialTuningMask={amPlus ? glassMaterialTuningMask(navigationOverrides) : 0}
@@ -509,13 +576,13 @@ export function GlobalTabBar() {
               highlightWidth={glass.highlightWidth} highlightOpacity={glass.highlightOpacity}
               depthEffect={glass.depthEffect} chromaticAberration={glass.chromaticAberration}
               tintColor={glass.tintColor ?? colors.surface} tintOpacity={blur ? glass.tintOpacity : 1}
-              dark={dark} enabled />
+              dark={dark} enabled={!underlay.reveal || underlayMaterial} />
           ) : <View pointerEvents="none" style={[styles.fallbackMaterial,
             { width: compact ? compactSize : barWidth, height: compact ? compactSize : navHeight,
               start: rtl && compact ? barWidth - compactSize : 0 }]}>
               <FloatingGlassBackdrop radius={navHeight / 2} tint={colors.surface} blurred={blur} />
             </View> : null}
-          {blurOn && !isLiquidGlassAvailable && tabWidth > 0 && selectedIndex >= 0 ? (
+          {materialOn && !isLiquidGlassAvailable && tabWidth > 0 && selectedIndex >= 0 ? (
             <Animated.View pointerEvents="none" collapsable={false} style={[styles.selection, { start: horizontalInset, borderRadius: navHeight / 2 - INNER_GAP }, selectionStyle]}>
               <FloatingGlassBackdrop appearance="selection" radius={navHeight / 2 - INNER_GAP} tint={colors.surface} blurred={blur} />
             </Animated.View>
@@ -539,19 +606,16 @@ export function GlobalTabBar() {
                   showLabels={showLabels}
                   amPlus={amPlus}
                   glassPressed={glassPressed && index === selectedIndex}
-                  // Multi-tab pointer feedback belongs to the Pan's full
-                  // touch session. Activating it cancels RN Pressability and
-                  // its onPressOut must not shrink a lens still being dragged.
-                  onPressedChange={tabs.length === 1 ? (pressed) => {
-                    if (!expandedInteractive || dockNavigationBlocked.current) return;
-                    setGlassPressed(pressed);
-                    if (pressed) press();
-                    else release();
-                  } : undefined}
+                  // Pointer feedback belongs to the UI Pan/Tap session;
+                  // Pressability below remains the accessibility/keyboard path.
                   accessibilityRole="tab"
                   accessibilityState={{ selected: here }}
                   accessibilityLabel={t(tab.label)}
-                  onPress={() => {
+                  onPress={(event) => {
+                    // Physical taps belong to the UI recognizer. Android's
+                    // accessibility click has no touch identifier and keeps
+                    // this ordinary Pressable activation path.
+                    if (event?.nativeEvent?.identifier !== undefined) return;
                     if (!expandedInteractive || dockNavigationBlocked.current) {
                       expand();
                       return;
@@ -595,18 +659,18 @@ export function GlobalTabBar() {
       </View>
     </Animated.View>
     ) : null}
-    {hasSearch && searchTab && blurOn ? (
+    {hasSearch && searchTab && materialOn ? (
       <Animated.View pointerEvents={shown && searchInteractive ? 'box-none' : 'none'} collapsable={false}
         accessibilityElementsHidden={!shown || !searchInteractive} importantForAccessibility={shown && searchInteractive ? 'auto' : 'no-hide-descendants'}
         style={[styles.searchFrame, { bottom: insets.bottom + bottomGap,
           start: rtl ? screenWidth - baseMargin - geometry.searchOffsetX - searchExpandedWidth
             : baseMargin + geometry.searchOffsetX, width: searchExpandedWidth, height: navHeight }, searchDockStyle]}>
         <View pointerEvents="box-none" collapsable={false} style={styles.searchCircle}>
-          <FloatingGlassBackdrop radius={navHeight / 2} tint={colors.surface} blurred={blur}
+          {(!underlay.reveal || underlayMaterial) ? <FloatingGlassBackdrop radius={navHeight / 2} tint={colors.surface} blurred={blur}
             dockProgress={dockProgress} dockExpandedWidth={searchExpandedWidth}
             dockRole={amPlus ? 'search' : undefined} dockRowWidth={amPlus ? fullWidth : undefined}
             dockCompactWidth={compactSize} dockCompactHeight={compactSize}
-            dockCompactOffsetX={amPlus ? searchExpandedWidth - compactSize : undefined} />
+            dockCompactOffsetX={amPlus ? searchExpandedWidth - compactSize : undefined} /> : null}
           <Pressable style={[styles.searchButton, { width: amPlus ? compactSize : compact ? compactSize : navHeight,
             height: amPlus ? compactSize : compact ? compactSize : navHeight,
             start: amPlus ? undefined : rtl && compact ? navHeight - compactSize : 0,
@@ -631,18 +695,20 @@ export function GlobalTabBar() {
         </View>
       </Animated.View>
     ) : null}
-    </>
+    </PlayerDockUnderlay>
   );
 }
 
 const styles = StyleSheet.create({
   frame: {
     position: 'absolute',
+    overflow: 'visible',
   },
   shell: {
     width: '100%',
     height: '100%',
     borderRadius: TAB_BAR_HEIGHT / 2,
+    overflow: 'visible',
   },
   bar: {
     height: '100%',
@@ -678,10 +744,12 @@ const styles = StyleSheet.create({
     width: TAB_BAR_HEIGHT,
     height: TAB_BAR_HEIGHT,
     borderRadius: TAB_BAR_HEIGHT / 2,
+    overflow: 'visible',
   },
   searchCircle: {
     width: '100%',
     height: '100%',
+    overflow: 'visible',
   },
   searchButton: { position: 'absolute', bottom: 0, borderRadius: TAB_BAR_HEIGHT / 2 },
   searchIcon: { position: 'absolute', left: (TAB_BAR_HEIGHT - 30) / 2, width: 30, height: 30 },

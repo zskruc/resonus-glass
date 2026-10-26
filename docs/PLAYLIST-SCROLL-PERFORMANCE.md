@@ -1,6 +1,6 @@
 # 播放列表滚动修复 / Playlist scrolling work
 
-`0.8.4.1-amll.9` · Android `versionCode 91` · `preview/amll-player`
+`0.8.4.1-amll.12` · Android `versionCode 94` · `preview/amll-player`
 
 ## 现场与对照 / Observations
 
@@ -24,6 +24,24 @@ The comparison below uses eight-second traces fully covered by forty scroll gest
 绘制次数是应用侧观测，不能直接等同于屏幕最终呈现次数；SurfaceFlinger 的 Buffer Stuffing 也不能全部算作丢帧。`.6` 减少了外层 View，但 JS 和整行创建开销仍大，未满足用户要求。
 
 Draw counts are app-side observations rather than final display presents; Buffer Stuffing is not uniformly a missed frame. `.6` reduced wrapper creation but retained substantial JS and row-creation cost and did not satisfy user testing.
+
+## `.10` 有效热点与 `.11`／`.12` 修复 / Valid hotspot and retained correction
+
+`.10` 的一轮有效播放列表操作同时记录了 Hermes 热点与 Perfetto；前后画面确认了真实列表偏移。Hermes 约 10 秒、100Hz 的记录共 992 个样本，其中 103 个位于 RN Animated 对象遍历及其子调用，约为**全样本的 10.38%**。这不是 103 次函数调用，也不是精确的墙钟耗时比例。该轮仅有少量预热、同时开启 JS profiler，不能拿它与此前无 profiler 的版本作严格平均 FPS 对比。
+
+A valid `.10` playlist workload recorded overlapping Hermes and Perfetto captures, with real list displacement verified. The approximately ten-second, 100Hz Hermes recording contains 992 samples; 103 fall within RN Animated object traversal and its callees, **10.38% of all samples**. These are sample counts, not invocation counts or exact wall-clock proportions. Short warm-up and concurrent JS profiling prevent a strict average-FPS comparison with earlier unprofiled builds.
+
+实际栈包含 `RN AnimatedComponent → createAnimatedProps → AnimatedObject.from → flatAnimatedNodes`。同一构建的源码显示，FlashList 的内部滚动宿主也会被 RN Animated 包装；外层 Reanimated 传下的对象 ref 可经 `forwardedRef.current.props.data` 到达整份歌曲数据。`flatAnimatedNodes` 的深度上限不能阻止这一层级内的完整数组遍历，因此列表即使只渲染少量回收行，构造 AnimatedProps 时仍可能扫描所有歌曲。采样本身未给出运行时属性名；具体 ref 路径由同版本源码与下述实际模块回归支持。
+
+The sampled stack includes `RN AnimatedComponent → createAnimatedProps → AnimatedObject.from → flatAnimatedNodes`. Same-build sources show that FlashList also wraps its internal scroller in RN Animated. An object ref passed through the outer Reanimated wrapper exposes the entire song array through `forwardedRef.current.props.data`. The traversal depth limit does not bound the length of an array within that depth, so recycled visible rows do not prevent a full-data scan while constructing AnimatedProps. Sampling alone does not name the runtime prop; the source path and actual-module regression provide that attribution.
+
+`.11` 改用稳定的函数 ref，只在回调中维护原有 `listRef.current`，`.12` 保留此修复。绑定、解绑、重新绑定和命令式滚动行为保持不变。[回收列表回归](../test/trackListRecycling.test.ts) 编译并执行实际安装的 RN AnimatedObject 模块：20,000 首的旧对象路径枚举 20,000 项，生产 callback ref 路径枚举 0 项；不是另写一份遍历算法来证明自身。生产入口见 [TrackListView](../src/components/TrackListView.tsx)。
+
+`.11` replaces the object with a stable function ref, maintaining the same internal `listRef.current`; `.12` retains it. Attachment, detachment, rebinding and imperative scrolling remain covered. The [recycler regression](../test/trackListRecycling.test.ts) compiles and executes the installed RN AnimatedObject module: the old 20,000-song object path enumerates all 20,000 items, while the production callback-ref path enumerates zero. It does not duplicate the traversal algorithm. See [TrackListView](../src/components/TrackListView.tsx) for the actual binding.
+
+这证明移除了一个随全列表长度增长的 JS 扫描路径，不证明所有卡顿只有这一个原因，也不是 `.12` 的长期实机帧率验收。原始 profile、截图、设备日志与 trace 仅保存在本机忽略目录；公开文档只记录上述汇总与源码入口。
+
+This establishes removal of one JS scan whose cost grows with the full data array. It does not make it the sole cause of jank or establish sustained `.12` device frame rates. Raw profiles, screenshots, device logs and traces remain in ignored local storage; only aggregate findings and source entry points are published here.
 
 ## 修改 / Changes
 
@@ -56,10 +74,14 @@ The native-method harness compiles the installed production methods. Component r
 
 ## 当前验证 / Current validation
 
-`.9` ARM64 APK 已构建并核对版本、包名、原签名及 RN 二进制 Build ID；425 项应用测试、113 项玻璃模块测试、两组实际源码方法回归通过。官方 0.86.3 AAR 的 SHA256 与 Maven 发布元数据一致；反汇编确认两处事件派发都在复制目标前加锁，`.9` APK 也包含同一二进制。
+`.12` ARM64 APK 已构建，版本 `0.8.4.1-amll.12`、更新编号 `94`、包名与原签名已核对；463 项应用测试、118 项玻璃模块原生测试、类型检查与翻译检查通过，lint 为 0 错误、117 项已有警告。此前已核验 RN 0.86.3 官方 AAR 与事件目标加锁路径；本版保留该升级、列表 ref 修复和既有玻璃／图片生命周期优化。
 
-`.8` 的临时 Release 热点采样成功导出并符号化，但画面离开了目标播放列表，已作废，不能用其 JS 空栈比例或帧时间宣称列表改善。`.9` 不含临时性能记录入口。手机 USB 当前断开，尚未安装 `.9`；原生手势仲裁、连续长列表滚动、崩溃恢复和内存复测仍待完成，不承诺恒定 120 fps。
+The `.12` ARM64 APK is built; version `0.8.4.1-amll.12`, code `94`, package and original certificate are verified. All 463 app tests, 118 native glass-module tests, typechecking and translation checks pass; lint reports zero errors and 117 existing warnings. The official RN 0.86.3 AAR and locked event-target path were verified earlier. This build retains that upgrade, the list-ref correction and prior glass/image lifecycle work.
 
-The `.9` ARM64 APK’s version, package, original certificate and RN binary Build ID were verified. All 425 app tests, 113 glass-module tests and both actual-source native-method harnesses passed. The official RN 0.86.3 AAR matches its Maven SHA256; disassembly confirms both locked event-target snapshots, and `.9` embeds the same binary.
+`.12` 恢复 `.10` 的播放器进出场，保留同步底栏，不再使用 `.11` 的 Primuse 实验。`.10` 和 `.11` 曾安装测试；`.12` 尚未安装，按用户要求先完成安装包，等待后续连接。连续长列表、退出恢复、温度／内存及完整视觉验收仍待完成，没有新的 `.12` 长期实机帧率结论。
 
-The temporary `.8` Release profiler exported and symbolicated successfully, but the screen left the target playlist. That capture is invalid for list performance, including its root-only sample ratio and frame times. `.9` excludes the diagnostic receiver. USB is disconnected and `.9` is not installed; native gesture arbitration, sustained long-list scrolling, crash recovery and memory acceptance remain pending. Constant 120 fps is not claimed.
+`.12` restores `.10` player entry/dismissal with its synchronized dock and removes the `.11` Primuse experiment. `.10` and `.11` were installed earlier; `.12` is not installed, following the user's request to prepare the package before a later connection. Sustained lists, exit recovery, temperature/memory and full visual acceptance remain pending. No new sustained-device frame-rate result is claimed for `.12`.
+
+`.8` 的一次热点采样离开了目标播放列表，已作废；不能用其 JS 空栈比例或帧时间宣称列表改善。上面的 `.10` 有效采样也不等于无 profiler 的帧率验收。系统刷新请求、单次绘制次数、操作计数回归或全部测试通过均不能推导恒定 120 fps。
+
+One `.8` recording left the target playlist and remains invalid for list conclusions. The valid `.10` profile above is also not an unprofiled frame-rate acceptance test. Display requests, draw counts, operation-count regressions and passing tests do not establish constant 120 fps.

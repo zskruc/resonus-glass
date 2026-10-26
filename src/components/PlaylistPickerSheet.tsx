@@ -7,16 +7,12 @@
  * than a list it belongs to, and this sheet could never take one off. It is in
  * the ⋯ menu of the selection now (#164).
  */
-import { GlassBackdrop } from '@/components/glass';
+import { MenuGlassCardFrame, MenuGlassCardHeader } from '@/components/MenuGlassCard';
 import Icon from '@/components/Icon';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 
-import Animated from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { scheduleOnRN } from 'react-native-worklets';
 
 import { addToPlaylist, COVER, coverArtUrl, createPlaylist, getPlaylist, getPlaylists } from '@/api/data';
 import { useScreenSize } from '@/hooks/useScreenSize';
@@ -102,7 +98,6 @@ function PlaylistPickerSession({ songs, excludeId, onClose, request, canNotifyAf
   request: MenuRequestScope;
   canNotifyAfterClose: () => boolean;
 }) {
-  const insets = useSafeAreaInsets();
   const { height: screenH } = useScreenSize();
   const queryClient = useQueryClient();
   const toast = useToast((s) => s.show);
@@ -127,24 +122,12 @@ function PlaylistPickerSession({ songs, excludeId, onClose, request, canNotifyAf
     onClose();
   };
   const visible = !!songs && songs.length > 0;
-  const { dismiss, dismissing, makePan, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
+  const { dismiss, dismissing, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
     visible,
     closeAfterGesture,
+    'card',
   );
   const canAct = () => mounted.current && !closing.current && !dismissing.value && request.isActive();
-  const startGesture = () => {
-    // UI onStart already accepted this gesture. Its queued JS callback may
-    // arrive after a normal swipe's UI onEnd has started dismissing.
-    if (mounted.current && !closing.current && request.isActive()) {
-      gestureTicket.current = request.begin();
-    }
-  };
-  const pan = makePan().onStart(() => { if (!dismissing.value) scheduleOnRN(startGesture); });
-  // Second drag, for the grabber and the title (see the JSX below).
-  const headerPan = makePan().onStart(() => { if (!dismissing.value) scheduleOnRN(startGesture); });
-  // The list is scrolled to the top: only then does a downward drag belong to
-  // the sheet, so pulling down mid-list scrolls instead of dismissing.
-  const [atTop, setAtTop] = useState(true);
   const close = () => {
     if (!canAct()) return;
     closing.current = true;
@@ -251,7 +234,6 @@ function PlaylistPickerSession({ songs, excludeId, onClose, request, canNotifyAf
       const have = new Set(existing.map((s) => s.id));
       const fresh = songs.filter((s) => !have.has(s.id));
       if (fresh.length < songs.length) {
-        setAtTop(true);
         setCreating(null);
         setDupPrompt({ ticket, playlistId, name, fresh });
         return;
@@ -294,36 +276,15 @@ function PlaylistPickerSession({ songs, excludeId, onClose, request, canNotifyAf
     }}>
       {/* Gestures inside an RN Modal need a root view of their own: the Modal
           renders in a native hierarchy outside the app's. */}
-      {creating === null && !dupPrompt && <GestureHandlerRootView style={StyleSheet.absoluteFill}>
-        <Animated.View style={[styles.backdrop, backdropStyle]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={close} />
-        </Animated.View>
-        <Animated.View collapsable={false}
-          style={[styles.sheet, { paddingBottom: insets.bottom + spacing.md }, sheetStyle]}
-          onLayout={onSheetLayout}
-        >
-            <GlassBackdrop radius={0} radiusTopLeft={radius.xxl} radiusTopRight={radius.xxl} tint={colors.surface} variant="prominent" />
-          {/* The header has its own drag, always enabled: it's the way out when
-              the list below is scrolled and keeps the gesture for itself. Two
-              detectors instead of one around everything so both can never fire
-              at once. */}
-          <GestureDetector gesture={headerPan}>
-            <View>
-              {/* Spotify-style grabber: the visual cue that the sheet can be
-                  dragged down to dismiss. */}
-              <View style={styles.grabber} />
-              <Text style={styles.title}>{t('Add to a playlist')}</Text>
-              <View style={styles.divider} />
-            </View>
-          </GestureDetector>
-          <GestureDetector gesture={pan.enabled(atTop)}>
-            <View style={{ maxHeight: playlistsMaxH(screenH) }}>
+      {creating === null && !dupPrompt && <MenuGlassCardFrame onClose={close}
+        backdropStyle={backdropStyle} cardStyle={sheetStyle} onLayout={onSheetLayout}>
+          <MenuGlassCardHeader title={t('Add to a playlist')} onClose={close} />
+          <View style={{ maxHeight: playlistsMaxH(screenH), flexShrink: 1, minHeight: 0 }}>
               <Pressable
                 style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
                 onPress={() => {
                   const ticket = beginAction();
                   if (ticket === null) return;
-                  setAtTop(true);
                   setCreating(ticket);
                 }}
               >
@@ -336,8 +297,8 @@ function PlaylistPickerSession({ songs, excludeId, onClose, request, canNotifyAf
                 <ActivityIndicator style={{ marginVertical: spacing.lg }} color={colors.accent} />
               ) : (
                 <ScrollView
-                  scrollEventThrottle={16}
-                  onScroll={(e) => setAtTop(e.nativeEvent.contentOffset.y <= 0)}
+                  style={{ flexShrink: 1, minHeight: 0 }}
+                  keyboardShouldPersistTaps="handled"
                 >
                   {(playlists ?? [])
                     .filter((p) => p.id !== excludeId)
@@ -355,10 +316,8 @@ function PlaylistPickerSession({ songs, excludeId, onClose, request, canNotifyAf
                     ))}
                 </ScrollView>
               )}
-            </View>
-          </GestureDetector>
-        </Animated.View>
-      </GestureHandlerRootView>}
+          </View>
+      </MenuGlassCardFrame>}
 
       <Dialog
         inlineMenu

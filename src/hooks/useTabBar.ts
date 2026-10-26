@@ -10,6 +10,7 @@
  * cover everything, and the song picker keeps its own search bar down there.
  */
 import { useSegments } from 'expo-router';
+import { useState } from 'react';
 
 import { currentSong, usePlayerStore } from '@/store/player';
 import { useSettings } from '@/store/settings';
@@ -40,4 +41,21 @@ export function useMiniPlayerShown(): boolean {
   const segments = useSegments();
   const hasSong = usePlayerStore((s) => currentSong(s) !== null);
   return hasSong && !NO_MINI_PLAYER.includes(segments[0] as string);
+}
+
+/** Visual underlay eligibility is independent of route interaction visibility. */
+export function usePlayerDockUnderlay(shown: boolean): { reveal: boolean; returning: boolean } {
+  const root = useSegments()[0] as string | undefined;
+  const amll = useSettings((state) => state.playerPresentation === 'amll');
+  const player = amll && root === 'player';
+  const [previous, setPrevious] = useState({ root, shown, covered: player, underlay: false, returning: false });
+  let state = previous;
+  if (previous.root !== root || previous.shown !== shown) {
+    const covered = player || (previous.covered && NO_MINI_PLAYER.includes(root as string));
+    state = { root, shown, covered,
+      underlay: player && !previous.covered ? previous.shown : covered && previous.underlay,
+      returning: shown && previous.covered && !covered };
+    setPrevious(state);
+  }
+  return { reveal: player && state.underlay, returning: state.returning };
 }

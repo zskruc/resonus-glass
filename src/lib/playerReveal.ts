@@ -9,3 +9,18 @@
 import { makeMutable } from 'react-native-reanimated';
 
 export const revealOffset = makeMutable(-1);
+
+/** The opaque AMLL surface and its dock underlay share this exact UI position. */
+export const playerSurfaceOffset = makeMutable(-1);
+export const playerSurfaceHeight = makeMutable(1);
+export const playerSurfaceOwner = makeMutable(0);
+let nextSurfaceOwner = 0;
+export function createPlayerSurfaceOwner(): number { return ++nextSurfaceOwner; }
+
+/** Fixed clipping bounds move; the counter-translated content stays anchored. */
+export function playerDockClipOffset(offset: number, sourceHeight: number, viewportHeight: number): number {
+  'worklet';
+  const height = Math.max(1, viewportHeight);
+  const progress = Number.isFinite(offset) && sourceHeight > 0 ? Math.max(0, Math.min(1, offset / sourceHeight)) : 0;
+  return (progress - 1) * height;
+}

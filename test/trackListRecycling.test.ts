@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { describe, it } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
+import { isValidElement } from 'react';
+
+const { transformSync } = createRequire(import.meta.url)('@babel/core') as {
+  transformSync(source: string, options: Record<string, unknown>): { code?: string | null } | null;
+};
 
 type Element = { type: any; props: Record<string, any> };
 type Deps = readonly unknown[] | undefined;
@@ -170,6 +176,8 @@ function list() {
     './SelectionBar': { SelectionBar: 'SelectionBar' }, './TrackRow': { TrackRow: 'TrackRow' },
   });
   let tree: Element;
+  const nativeList = { scrollToOffset: (options: unknown) => scrolls.push(options) };
+  let mountedRef: any;
   let props: Record<string, any> = { title: 'Playlist', songs: [songA, songB, songA],
     playlistId: 'p1', playlistIndices: [4, 8, 12], searchable: true, showArtwork: true,
     onPlay: (index: number) => played.push(index), selection: { onRemove: (_songs: unknown, indices: number[]) => removed.push(indices) },
@@ -177,7 +185,13 @@ function list() {
   function render(next: Record<string, unknown> = {}) {
     props = { ...props, ...next }; runtime.begin(); tree = module.TrackListView(props); runtime.commit();
     const ref = recycler().props.ref;
-    if (ref && !ref.current) ref.current = { scrollToOffset: (options: unknown) => scrolls.push(options) };
+    if (ref !== mountedRef) {
+      if (typeof mountedRef === 'function') mountedRef(null);
+      else if (mountedRef) mountedRef.current = null;
+      if (typeof ref === 'function') ref(nativeList);
+      else if (ref) ref.current = nativeList;
+      mountedRef = ref;
+    }
     return tree;
   }
   const recycler = () => find(tree, (node) => node.type === 'Animated:FlashList')!;
@@ -185,6 +199,8 @@ function list() {
   const search = () => find(recycler().props.ListHeaderComponent, (node) => node.type === 'TextInput')!;
   render();
   return { render, recycler, row, search, played, removed, gestures, scrolls, dock,
+    detach() { if (typeof mountedRef === 'function') mountedRef(null); else if (mountedRef) mountedRef.current = null; },
+    attach(instance: unknown) { if (typeof mountedRef === 'function') mountedRef(instance); else if (mountedRef) mountedRef.current = instance; },
     selectionBar: () => find(tree, (node) => node.type === 'SelectionBar')!,
     tree: () => tree };
 }
@@ -214,6 +230,23 @@ function flashListCell(listProps: Record<string, any>) {
     return find(tree, (node) => node.type === 'TrackRow')!;
   };
   return { render, calls };
+}
+
+function nativeAnimatedObject() {
+  // Compile the installed RN implementation, including its real depth limit,
+  // ReactElement checks and recursive traversal. Stub only native base classes.
+  const source = readFileSync(new URL('../node_modules/react-native/Libraries/Animated/nodes/AnimatedObject.js', import.meta.url), 'utf8');
+  const compiled = transformSync(source, { configFile: false, babelrc: false, plugins: [
+    'babel-plugin-syntax-hermes-parser', '@babel/plugin-transform-flow-strip-types', '@babel/plugin-transform-modules-commonjs',
+  ] });
+  const exports: Record<string, any> = {};
+  class Node {}
+  runInNewContext(compiled!.code!, { exports, Object, require(name: string) {
+    if (name === './AnimatedNode' || name === './AnimatedWithChildren') return { __esModule: true, default: Node };
+    if (name === 'react') return { isValidElement };
+    throw new Error(`Unexpected RN AnimatedObject dependency ${name}`);
+  } });
+  return exports.default as { from(value: unknown): unknown };
 }
 
 function row() {
@@ -264,6 +297,52 @@ function row() {
 }
 
 describe('recycled shared playlist rendering and positions', () => {
+  it('passes a stable function ref so installed RN Animated cannot traverse twenty thousand playlist occurrences', () => {
+    const h = list();
+    h.render({ songs: Array.from({ length: 20_000 }, (_, index) => ({ ...songA, id: String(index) })) });
+    const first = h.recycler().props;
+    let inspectedRows = 0;
+    // Normalize VM-created occurrence prototypes into the dependency's realm.
+    const data = first.data.map((item: object) => new Proxy({ ...item }, {
+      ownKeys(target) { inspectedRows++; return Reflect.ownKeys(target); },
+    }));
+    const imperativeApi = {};
+    // FlashList's actual imperative API exposes this enumerable props getter.
+    Object.defineProperty(imperativeApi, 'props', { enumerable: true, get: () => ({ ...first, data }) });
+    const animatedObject = nativeAnimatedObject();
+    animatedObject.from({ current: imperativeApi });
+    assert.equal(inspectedRows, 20_000, 'the old forwarded object ref reaches every occurrence before MAX_DEPTH');
+    inspectedRows = 0;
+    h.attach(imperativeApi);
+    assert.equal(typeof first.ref, 'function');
+    assert.equal(animatedObject.from(first.ref), null);
+    assert.equal(inspectedRows, 0, 'the real RN traversal must stop at the production function ref');
+    h.render({ currentId: '1' });
+    assert.equal(h.recycler().props.ref, first.ref);
+    assert.equal(h.recycler().props.renderScrollComponent, first.renderScrollComponent);
+    assert.equal(h.recycler().props.onScroll.handlers[1], h.dock);
+  });
+
+  it('keeps imperative scrolling on the current native instance and clears it on ref detach', () => {
+    const h = list();
+    const cancelSearch = () => {
+      h.search().props.onFocus(); h.render();
+      const cancel = find(h.recycler().props.ListHeaderComponent, (node) => node.type === 'GlassPressable'
+        && node.props.children?.props.children === 'Cancel')!;
+      cancel.props.onPress(); h.render();
+    };
+    cancelSearch();
+    assert.equal(h.scrolls.length, 1);
+    h.detach();
+    cancelSearch();
+    assert.equal(h.scrolls.length, 1, 'detached list cannot receive an old scroll command');
+    const replacement: unknown[] = [];
+    h.attach({ scrollToOffset: (options: unknown) => replacement.push(options) });
+    cancelSearch();
+    assert.equal(h.scrolls.length, 1);
+    assert.equal(JSON.stringify(replacement), '[{"offset":0,"animated":false}]');
+  });
+
   it('keeps the GH scroll host stable and both scroll animations wired while recycling two bounded row types', () => {
     const h = list();
     const first = h.recycler().props;
