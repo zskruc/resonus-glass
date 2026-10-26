@@ -7,6 +7,8 @@ export type LiquidGlassMaterialPreset = 'custom' | 'button' | 'tabs' | 'dialog' 
 export type LiquidGlassViewProps = Omit<ViewProps, 'children'> & {
   /** Official catalog material or the previous user-tuned rendering. Defaults to button. */
   materialPreset?: LiquidGlassMaterialPreset;
+  /** Explicit AM++ edits; zero preserves the preset's size-bounded optics. */
+  materialTuningMask?: number;
   /** Corner radius, in density-independent pixels. */
   radius?: number;
   /** Physical corner radii; omitted/null corners inherit radius. */

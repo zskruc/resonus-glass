@@ -45,10 +45,11 @@ import { motion } from '@/theme/motion';
 import { useT } from '@/i18n';
 import { rememberTab, requestSearchFocus, reselectTab, tabOrigin, TABS, type TabSegment } from '@/lib/tabOrigin';
 import { getActiveTabJumpAction } from '@/lib/tabNavigation';
-import { getLiquidDockGeometry } from '@/lib/liquidDock';
-import { AMPP_DOCK, amppCompactAlpha, amppExpandedAlpha, amppProgress, amppSearchAlpha, amppSprungProgress, getAmppControls, getAmppDockGeometry, getAmppSlotTranslation } from '@/lib/amppDock';
+import { getCompactNavigationContentStyle, getLiquidDockGeometry } from '@/lib/liquidDock';
+import { AMPP_DOCK, amppExpandedAlpha, amppProgress, amppSearchAlpha, amppSprungProgress, getAmppControls, getAmppDockGeometry, getAmppSlotTranslation } from '@/lib/amppDock';
 import { useSettings } from '@/store/settings';
 import { resolveGlassProfile, useGlassTuning } from '@/store/glassTuning';
+import { glassMaterialTuningMask } from '@/lib/glassMaterialTuning';
 import { BOTTOM_BAR_HORIZONTAL_MARGIN, BOTTOM_BAR_MAX_WIDTH, TAB_BAR_BOTTOM_GAP, TAB_BAR_HEIGHT, useTheme, useThemeMode } from '@/theme';
 
 const ICONS: Record<string, 'home' | 'search' | 'library' | 'albums' | 'settings'> = {
@@ -114,7 +115,7 @@ export function GlobalTabBar() {
   const { width: screenWidth } = useScreenSize();
   const { progress: sourceDockProgress, compact: targetCompact, uiCompact: dockCompactTarget,
     expand, hasSearch: dockHasSearch } = useLiquidDock();
-  const navigationOverrides = useGlassTuning((s) => s.overrides.navigation);
+  const navigationOverrides = useGlassTuning((s) => s.mode === 'amPlus' ? s.amPlusOverrides.navigation : s.overrides.navigation);
   const glassMode = useGlassTuning((s) => s.mode);
   const amPlus = glassMode === 'amPlus';
   const navHeight = amPlus ? AMPP_DOCK.navigationHeight : TAB_BAR_HEIGHT;
@@ -229,7 +230,7 @@ export function GlobalTabBar() {
   const lastNativeMotion = useSharedValue<number[]>([]);
   const motionEnabled = useSharedValue(false);
   useEffect(() => {
-    // A rotation, hidden bar, or reordered tabs invalidates a gesture that
+    // A rotation, changed layout style, hidden bar, or reordered tabs invalidates a gesture that
     // started with different coordinates. It must not select an old index.
     const nextGeneration = ++geometryGenerationRef.current;
     scheduleOnUI(() => {
@@ -243,7 +244,7 @@ export function GlobalTabBar() {
       panelOffset.set(0);
       scheduleOnRN(setGlassPressed, false);
     });
-  }, [tabWidth, tabOrder, shown, compact, geometryGeneration, dragging, dragFinished, pressProgress, scaleX, scaleY, dragVelocity, panelOffset]);
+  }, [tabWidth, tabOrder, shown, compact, amPlus, geometryGeneration, dragging, dragFinished, pressProgress, scaleX, scaleY, dragVelocity, panelOffset]);
   useLayoutEffect(() => {
     if (tabWidth <= 0 || selectedIndex < 0) {
       selectionOpacity.set(withTiming(0, { duration: motion.duration.exit }));
@@ -370,14 +371,9 @@ export function GlobalTabBar() {
   const expandedContentStyle = useAnimatedStyle(() => ({
     opacity: amPlus ? amppExpandedAlpha(dockProgress.value) : 1 - amppProgress(dockProgress.value),
   }));
-  const compactContentStyle = useAnimatedStyle(() => {
-    if (!amPlus) return { opacity: amppProgress(dockProgress.value) };
-    const controls = getAmppControls(fullWidth, searchExpandedWidth, dockProgress.value);
-    return { opacity: amppCompactAlpha(dockProgress.value), transform: [
-      { translateX: (controls.capsuleWidth - compactSize) / 2 },
-      { translateY: controls.top + (controls.height - compactSize) / 2 - (navHeight - compactSize) },
-    ] };
-  });
+  const compactContentStyle = useAnimatedStyle(() => getCompactNavigationContentStyle(
+    amPlus, dockProgress.value, fullWidth, searchExpandedWidth, navHeight, compactSize,
+  ));
   const expandedSearchIconTop = amPlus ? (navHeight - iconSize) / 2 : showLabels ? 10 : (navHeight - iconSize) / 2;
   const searchIconStyle = useAnimatedStyle(() => {
     const progress = amppProgress(dockProgress.value);
@@ -506,6 +502,7 @@ export function GlobalTabBar() {
           {blurOn ? isLiquidGlassAvailable && tabs.length > 0 ? (
             <LiquidGlassTabsView style={StyleSheet.absoluteFill} radius={navHeight / 2}
               materialPreset={amPlus ? 'amPlus' : glassMode === 'kyantDefault' ? 'tabs' : 'custom'}
+              materialTuningMask={amPlus ? glassMaterialTuningMask(navigationOverrides) : 0}
               dockRole={amPlus ? 'navigation' : undefined} dockRowWidth={amPlus ? fullWidth : undefined}
               tabsCount={tabs.length} tabHorizontalInset={horizontalInset} tabVerticalInset={INNER_GAP}
               dockCompactWidth={compactSize} dockCompactHeight={compactSize}

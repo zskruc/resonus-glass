@@ -263,6 +263,8 @@ export type AppFont = 'system' | 'condensed' | 'serif' | 'monospace' | 'casual' 
  * `playerColorBackground` / `lyricsColorBackground` booleans.
  */
 export type ScreenBackground = 'none' | 'color' | 'cover';
+/** Presentation only; both layouts use the same audio engine and queue. */
+export type PlayerPresentation = 'amll' | 'resonus';
 
 /**
  * Backdrop for the lyrics card under the player controls. No 'cover' here: its
@@ -1008,6 +1010,7 @@ interface SettingsState extends Omit<AutoSetters, CustomSetter> {
   batteryWarning: boolean;
   /** Player background: flat, cover color, or blurred cover art. */
   playerBackground: ScreenBackground;
+  playerPresentation: PlayerPresentation;
   /**
    * When the cover art is animated (GIF, animated WebP, APNG), use it as
    * the fullscreen player background and show a small static copy beside
@@ -1284,6 +1287,7 @@ const DEFAULTS = {
   showGenreChips: false,
   batteryWarning: true,
   playerBackground: 'cover' as ScreenBackground,
+  playerPresentation: 'amll' as PlayerPresentation,
   animatedCoverBackground: false,
   fitCoverArt: false,
   miniPlayerColorBackground: true,
@@ -1566,6 +1570,9 @@ function applySaved(raw: unknown, set: (partial: Partial<SettingsState>) => void
     parsed.preferDownloads === 'never'
   ) {
     set({ preferDownloads: parsed.preferDownloads });
+  }
+  if (parsed.playerPresentation === 'amll' || parsed.playerPresentation === 'resonus') {
+    set({ playerPresentation: parsed.playerPresentation });
   }
   if (parsed.playerBackground === 'none' || parsed.playerBackground === 'color' || parsed.playerBackground === 'cover') {
     set({ playerBackground: parsed.playerBackground });

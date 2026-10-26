@@ -856,7 +856,6 @@
   "Pop": "Pop",
   "Rock": "Rock",
   "AM++ reference": "AM++ reference",
-  "AM++ reference uses matching mini player and navigation glass, with a shared spring collapse. Search joins the expanded bar and separates on the right when collapsed. Other controls keep Kyant defaults.": "AM++ reference uses matching mini player and navigation glass, with a shared spring collapse. Search joins the expanded bar and separates on the right when collapsed. Other controls keep Kyant defaults.",
   "AM++ player features": "AM++ player features",
   "Same as bottom bar": "Same as bottom bar",
   "Same as More menu": "Same as More menu",
@@ -884,5 +883,15 @@
   "Controls the connected playback device": "Controls the connected playback device",
   "Synchronized with the phone volume buttons": "Synchronized with the phone volume buttons",
   "Volume is controlled by the output device": "Volume is controlled by the output device",
-  "Floating popup glass": "Floating popup glass"
+  "Floating popup glass": "Floating popup glass",
+  "AM++ defaults restored and saved": "AM++ defaults restored and saved",
+  "Defaults restored, but could not save them.": "Defaults restored, but could not save them.",
+  "Restore AM++ defaults": "Restore AM++ defaults",
+  "AM++ keeps its dock layout and motion while you tune its glass. Save changes separately, or restore and save all AM++ defaults with one tap. Your Custom parameters stay unchanged.": "AM++ keeps its dock layout and motion while you tune its glass. Save changes separately, or restore and save all AM++ defaults with one tap. Your Custom parameters stay unchanged.",
+  "Export includes the active AM++ parameters for all three surfaces, separately from Custom parameters.": "Export includes the active AM++ parameters for all three surfaces, separately from Custom parameters.",
+  "Player appearance": "Player appearance",
+  "Player layout": "Player layout",
+  "AMLL reference": "AMLL reference",
+  "Resonus layout": "Resonus layout",
+  "AMLL uses a shared cover transition, full-page lyrics and an artwork mesh background. Your previous player remains available.": "AMLL uses a shared cover transition, full-page lyrics and an artwork mesh background. Your previous player remains available. The Player background setting below applies only to the Resonus layout; AMLL uses its own mesh background."
 }

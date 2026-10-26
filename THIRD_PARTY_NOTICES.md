@@ -63,3 +63,30 @@ Oklab conversion credits Björn Ottosson's public-domain reference. Resonus
 reuses its existing cover-color extraction; it does not duplicate the plugin's
 24×24 quantizer, resource hooks or global theme injection. These additions are
 distributed under GPLv3 with the rest of this GPL-3.0-or-later project; see LICENSE.
+
+## AMLL player and artwork-background visual reference
+
+The native player layout and artwork field were visually informed by
+[amll-dev/applemusic-like-lyrics](https://github.com/amll-dev/applemusic-like-lyrics),
+commit [`5fee356362353dbb24ce9bea3a62536478040de7`](https://github.com/amll-dev/applemusic-like-lyrics/tree/5fee356362353dbb24ce9bea3a62536478040de7),
+particularly `packages/react-full`'s `PrebuiltLyricPlayer`, its portrait and
+landscape layouts, and the Mesh background's visual treatment. The reviewed
+AMLL packages declare AGPL-3.0-only.
+
+`src/components/AmllPlayerScreen.tsx`, `src/components/AmllSlider.tsx`, the AMLL
+appearance of Resonus's lyrics view, and `modules/amll-background` are independent
+native implementations under this repository's GPL-3.0-or-later license. AMLL's
+runtime is not imported or embedded. No AMLL AGPL source, shader, SVG, Bézier
+control-point preset array or animation engine is copied into these components.
+The artwork field uses an independently written sinusoidal mesh and standard
+color operations; it is not AMLL's WebGL renderer. Icons and music/playback data
+come from Resonus's existing components and sources.
+
+This reference does not imply AMLL endorsement, a pixel-identical port, or the
+use of Apple's private rendering implementation. The root LICENSE is unchanged.
+Source boundaries and preview validation are documented in
+[AMLL player preview](./docs/AMLL-PLAYER-PREVIEW.md).
+
+上述固定版本的 AMLL 提供播放页与背景效果的视觉参考；本预览独立实现原生界面，
+没有嵌入其运行库或复制其源码、着色器、SVG、控制点预设数组及动画引擎。
+本仓库继续采用 GPL-3.0-or-later，未修改根许可证，也不声称像素级一致或获 AMLL／Apple 认可。

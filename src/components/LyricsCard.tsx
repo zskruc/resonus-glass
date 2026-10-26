@@ -7,6 +7,7 @@
  */
 import Icon from '@/components/Icon';
 import { GlassSurface, GlassPressable } from '@/components/glass';
+import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, View, type TextStyle } from 'react-native';
@@ -30,7 +31,7 @@ import { type LyricLine, type LyricWord } from '@/api/subsonic';
 import { useDominantColor } from '@/hooks/useDominantColor';
 import { useLyrics } from '@/hooks/useLyrics';
 import { useT } from '@/i18n';
-import { lyricBlurRadius, WORD_SWEEP_LEAD_MS } from '@/lib/lyricMotion';
+import { amllLyricBlurRadius, lyricBlurRadius, WORD_SWEEP_LEAD_MS } from '@/lib/lyricMotion';
 import { pushOnce } from '@/lib/pushOnce';
 import { currentSong, usePlayerStore } from '@/store/player';
 import {
@@ -155,6 +156,8 @@ export function SyncedLyricsView({
   large,
   nested,
   fadeColor,
+  appearance = 'default',
+  focusAnchor,
 }: {
   lines: LyricLine[];
   /** Large typography (full screen). */
@@ -163,7 +166,12 @@ export function SyncedLyricsView({
   nested?: boolean;
   /** Color to which the top/bottom edges fade (the background). */
   fadeColor?: string;
+  /** White, left-aligned lyrics for the player's animated dark backdrop. */
+  appearance?: 'default' | 'amll';
+  /** Active-line top as a fraction of this viewport, independent of layout orientation. */
+  focusAnchor?: number;
 }) {
+  const amll = appearance === 'amll';
   // The line, not the position: the position moves twice a second and the
   // line every few, and only a new line has anything to redraw.
   const wordTimed = lines.some((line) => line.words && line.words.length > 0);
@@ -210,10 +218,12 @@ export function SyncedLyricsView({
   // In full screen we anchor the active line near the center (and pad
   // top/bottom) so that when the song starts, the lyrics begin centered and
   // readable, not stuck to the top edge. On the small card, higher up.
-  const anchor = large ? 0.42 : 0.3;
+  const anchor = focusAnchor !== undefined && Number.isFinite(focusAnchor)
+    ? Math.max(0, Math.min(1, focusAnchor)) : amll ? 0.1 : large ? 0.42 : 0.3;
   const size = useSettings((s) => s.lyricsSize);
   const weight = useSettings((s) => s.lyricsWeight);
-  const centered = useSettings((s) => s.lyricsAlign) === 'center';
+  const alignment = useSettings((s) => s.lyricsAlign);
+  const centered = !amll && alignment === 'center';
   const blurInactiveLyrics = useSettings((s) => s.blurInactiveLyrics);
   const blurEnabled = Platform.OS === 'android' && blurInactiveLyrics && !browsing;
 
@@ -301,11 +311,10 @@ export function SyncedLyricsView({
     [],
   );
 
-  const fadeH = large ? 56 : 36;
+  const fadeH = amll ? Math.min(64, viewH > 0 ? viewH * 0.18 : 64) : large ? 56 : 36;
 
-  return (
-    <View style={styles.wrap}>
-      <GestureDetector gesture={tapGesture}>
+  const lyrics = (
+    <GestureDetector gesture={tapGesture}>
       <Animated.ScrollView
         ref={scrollRef}
         nestedScrollEnabled={nested}
@@ -324,10 +333,11 @@ export function SyncedLyricsView({
         }}
         contentContainerStyle={[
           styles.content,
+          amll && styles.amllContent,
           centered && styles.contentCentered,
           // Padding so the first/last line can rest at the anchor (center)
           // instead of being stuck at the top/bottom. Full screen only.
-          large && viewH > 0 ? { paddingTop: viewH * anchor, paddingBottom: viewH * (1 - anchor) } : null,
+          (large || amll) && viewH > 0 ? { paddingTop: viewH * anchor, paddingBottom: viewH * (1 - anchor) } : null,
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -339,17 +349,37 @@ export function SyncedLyricsView({
             words={line.words}
             active={i === current}
             past={current >= 0 && i < current}
-            blurRadius={lyricBlurRadius(i, current, blurEnabled)}
+            blurRadius={amll ? amllLyricBlurRadius(i, current, blurEnabled) : lyricBlurRadius(i, current, blurEnabled)}
             large={large}
             size={size}
             weight={weight}
             centered={centered}
+            appearance={appearance}
             onMeasure={onMeasure}
           />
         ))}
       </Animated.ScrollView>
-      </GestureDetector>
-      {fadeColor ? (
+    </GestureDetector>
+  );
+
+  return (
+    <View style={styles.wrap}>
+      {amll && Platform.OS !== 'web' ? (
+        <MaskedView
+          style={styles.wrap}
+          androidRenderingMode="hardware"
+          maskElement={(
+            <View pointerEvents="none" style={styles.wrap}>
+              <LinearGradient colors={['transparent', '#000000']} style={{ height: fadeH }} />
+              <View style={styles.maskSolid} />
+              <LinearGradient colors={['#000000', 'transparent']} style={{ height: fadeH }} />
+            </View>
+          )}
+        >
+          {lyrics}
+        </MaskedView>
+      ) : lyrics}
+      {!amll && fadeColor ? (
         <>
           <LinearGradient
             pointerEvents="none"
@@ -379,6 +409,7 @@ const LyricRow = memo(({
   size,
   weight,
   centered,
+  appearance = 'default',
   onMeasure,
 }: {
   index: number;
@@ -393,15 +424,18 @@ const LyricRow = memo(({
   size: LyricsSize;
   weight: LyricsWeight;
   centered: boolean;
+  appearance?: 'default' | 'amll';
   onMeasure: (index: number, y: number, h: number) => void;
 }) => {
   // Memoized, so the screen repainting is not enough to bring this one along.
   useTheme();
+  const amll = appearance === 'amll';
   // Primuse's line takeover coordinates scale and opacity with auto-scroll.
   // Blur takes a gentler path because Android's filter is visually stronger
   // and a fast change reads as the completed line suddenly losing focus.
   const focus = useSharedValue(active ? 1 : 0);
-  const dim = useSharedValue(active ? 1 : past ? 0.36 : 0.46);
+  const inactiveOpacity = amll ? past ? 0.32 : 0.42 : past ? 0.36 : 0.46;
+  const dim = useSharedValue(active ? 1 : inactiveOpacity);
   const blur = useSharedValue(blurRadius);
   useEffect(() => {
     focus.value = withTiming(active ? 1 : 0, {
@@ -411,12 +445,12 @@ const LyricRow = memo(({
     });
   }, [active, focus]);
   useEffect(() => {
-    dim.value = withTiming(active ? 1 : past ? 0.36 : 0.46, {
+    dim.value = withTiming(active ? 1 : inactiveOpacity, {
       duration: motion.duration.scroll,
       easing: motion.easing.move,
       reduceMotion: motion.reduceMotion.essential,
     });
-  }, [active, past, dim]);
+  }, [active, inactiveOpacity, dim]);
   useEffect(() => {
     blur.value = withTiming(blurRadius, {
       duration: motion.duration.depth,
@@ -430,14 +464,15 @@ const LyricRow = memo(({
     const radius = blur.value;
     return {
       opacity: dim.value,
-      transform: [{ scale: 1 + focus.value * 0.08 }],
-      // RN's Android filter clips descendants. Omitting it entirely at zero
-      // keeps the active word bounce free to rise outside its glyph box.
-      filter: radius > 0.01 ? [{ blur: radius }] : undefined,
+      transform: [{ scale: 1 + focus.value * (amll ? 0.04 : 0.08) }],
+      // RN's Android filter clips descendants. AMLL also releases a filter
+      // immediately outside its focus window, rather than keeping an old
+      // offscreen layer alive while its blur value animates back to zero.
+      filter: radius > 0.01 && (!amll || blurRadius > 0) ? [{ blur: radius }] : [],
     };
   });
-  const lineStyle = lyricsLineStyle(large, size, weight, centered);
-  const flattened = StyleSheet.flatten(lineStyle) as TextStyle;
+  const lineStyle = amll ? amllLyricsLineStyle(size, weight) : lyricsLineStyle(large, size, weight, centered);
+  const flattened = StyleSheet.flatten<TextStyle>(lineStyle);
   const wordTextStyle: TextStyle = {
     fontFamily: flattened.fontFamily,
     fontSize: flattened.fontSize,
@@ -461,8 +496,8 @@ const LyricRow = memo(({
             active={active}
             centered={centered}
             textStyle={wordTextStyle}
-            activeColor={colors.text}
-            inactiveColor={`${colors.text}6B`}
+            activeColor={amll ? '#FFFFFF' : colors.text}
+            inactiveColor={amll ? '#FFFFFF66' : `${colors.text}6B`}
             paddingVertical={paddingVertical}
           />
         ) : (
@@ -517,6 +552,20 @@ function lyricsLineStyle(
   ];
 }
 
+function amllLyricsLineStyle(size: LyricsSize, weight: LyricsWeight): TextStyle {
+  // Retain relative size/weight choices while giving this full-player style
+  // its own 34dp/semibold baseline. The other lyrics surfaces stay unchanged.
+  const textSize = Math.round(size * 34 / LYRICS_SIZE_DEFAULT);
+  return {
+    color: '#FFFFFF',
+    fontSize: textSize,
+    lineHeight: Math.round(textSize * 1.25),
+    fontWeight: weight === '500' ? '600' : weight,
+    paddingVertical: Math.round(textSize * 0.35),
+    textAlign: 'left',
+  };
+}
+
 const CARD_BODY_H = 280;
 
 const styles = themed((colors) => ({
@@ -539,6 +588,8 @@ const styles = themed((colors) => ({
   // Right margin so the active line (which grows 8% from the left) doesn't get
   // clipped against the edge.
   content: { paddingBottom: spacing.xl, paddingRight: '10%' },
+  amllContent: { paddingRight: '5%' },
+  maskSolid: { flex: 1, backgroundColor: '#000000' },
   leftOrigin: { transformOrigin: 'left center' },
   centerOrigin: { transformOrigin: 'center center' },
   // Centred, the 8% growth spills to both sides, so the margin is split.

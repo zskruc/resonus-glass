@@ -32,6 +32,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { CACHED_COVER, COVER, songCoverUrl, star, unstar, type Song } from '@/api/data';
 import { ArtistPlayerCard } from '@/components/ArtistPlayerCard';
 import { AudioQualityBadge } from '@/components/AudioQualityBadge';
+import { AmllPlayerScreen } from '@/components/AmllPlayerScreen';
 import { PlayerAudioQualitySheet } from '@/components/PlayerAudioQualitySheet';
 import { PlayerOutputDevice } from '@/components/PlayerOutputDevice';
 import { PlayerSystemVolume } from '@/components/PlayerSystemVolume';
@@ -231,6 +232,12 @@ function usePaneStyle(offset: SharedValue<number>, k: number, step: SharedValue<
 }
 
 export default function PlayerScreen() {
+  const presentation = useSettings((state) => state.playerPresentation);
+  return presentation === 'amll' ? <AmllPlayerScreen /> : <ResonusPlayerScreen />;
+}
+
+/** The previous presentation remains selectable with all its existing options. */
+function ResonusPlayerScreen() {
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();

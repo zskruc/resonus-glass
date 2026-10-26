@@ -10,9 +10,10 @@ import {
 import { SafeAreaView, type SafeAreaViewProps } from 'react-native-safe-area-context';
 
 import { LiquidGlassView, LiquidGlassToggle, LiquidGlassSlider, isLiquidGlassAvailable, updateNativeDockProgress, updateNativeButtonMotion } from '../../../modules/liquid-glass';
-import { resolveGlassProfile, useGlassTuning, type GlassTarget } from '@/store/glassTuning';
+import { resolveGlassProfile, sanitizeGlassOverrides, useGlassTuning, type GlassTarget } from '@/store/glassTuning';
 import { useTheme, useThemeMode } from '@/theme';
 import { getKyantGlassProfile } from '@/theme/glassDefaults';
+import { glassMaterialTuningMask } from '@/lib/glassMaterialTuning';
 import { DynamicGlassBackdrop } from './StaticGlassBackdropContext';
 
 export type GlassVariant = 'regular' | 'prominent' | 'subtle' | 'button';
@@ -53,20 +54,28 @@ export function GlassBackdrop({
 }: GlassMaterial) {
   const colors = useTheme();
   const dark = useThemeMode() === 'dark';
-  const overrides = useGlassTuning((s) => s.overrides.controls);
+  const overrides = useGlassTuning((s) => s.mode === 'amPlus' ? s.amPlusOverrides.controls : s.overrides.controls);
   const mode = useGlassTuning((s) => s.mode);
   if (!enabled) return null;
   const kyantDefaults = mode === 'kyantDefault' || mode === 'amPlus';
   const materialPreset = kyantDefaults ? (variant === 'prominent' ? 'dialog' : 'button') : 'custom';
-  const profile = kyantDefaults
-    ? getKyantGlassProfile(variant === 'prominent' ? 'dialog' : 'button', dark)
-    : resolveGlassProfile('controls', dark, overrides, mode);
-  const buttonTint = kyantDefaults && variant === 'button' ? tint : undefined;
+  const baseProfile = getKyantGlassProfile(variant === 'prominent' ? 'dialog' : 'button', dark);
+  const amPlusOverrides = mode === 'amPlus' ? sanitizeGlassOverrides(overrides) : {};
+  const tuningMask = mode === 'amPlus' ? glassMaterialTuningMask(amPlusOverrides) : 0;
+  const profile = mode === 'amPlus'
+    ? { ...baseProfile, ...amPlusOverrides, tintColor: amPlusOverrides.tintColor ?? baseProfile.tintColor }
+    : kyantDefaults ? baseProfile : resolveGlassProfile('controls', dark, overrides, mode);
+  const buttonTint = kyantDefaults && variant === 'button' && !('tintColor' in amPlusOverrides) ? tint : undefined;
+  // An untinted stock surface has a transparent default. Once its opacity is
+  // explicitly raised, Automatic tint uses the existing control/page color.
+  const automaticTunedTint = mode === 'amPlus' && 'tintOpacity' in amPlusOverrides
+    && (profile.tintColor == null || profile.tintColor === 'transparent')
+    ? tint ?? colors.surface : profile.tintColor;
   const shape = { borderRadius: radius, borderTopLeftRadius: radiusTopLeft, borderTopRightRadius: radiusTopRight,
     borderBottomLeftRadius: radiusBottomLeft, borderBottomRightRadius: radiusBottomRight };
   return isLiquidGlassAvailable ? (
     <LiquidGlassView pointerEvents="none" style={StyleSheet.absoluteFill}
-      materialPreset={materialPreset}
+      materialPreset={materialPreset} materialTuningMask={tuningMask}
       staticBackdropColor={variant === 'regular' ? staticBackdropColor : null}
       radius={radius} radiusTopLeft={radiusTopLeft} radiusTopRight={radiusTopRight}
       radiusBottomLeft={radiusBottomLeft} radiusBottomRight={radiusBottomRight}
@@ -74,8 +83,8 @@ export function GlassBackdrop({
       refraction={profile.refraction} refractionHeight={profile.refractionHeight}
       highlightWidth={profile.highlightWidth} highlightOpacity={profile.highlightOpacity}
       depthEffect={profile.depthEffect} chromaticAberration={profile.chromaticAberration}
-      tintColor={buttonTint ?? (kyantDefaults ? profile.tintColor ?? 'transparent' : profile.tintColor ?? tint ?? colors.surface)}
-      tintOpacity={buttonTint ? 0.75 : profile.tintOpacity} dark={dark} enabled />
+      tintColor={buttonTint ?? (kyantDefaults ? automaticTunedTint ?? 'transparent' : profile.tintColor ?? tint ?? colors.surface)}
+      tintOpacity={buttonTint && !(tuningMask & 32) ? 0.75 : profile.tintOpacity} dark={dark} enabled />
   ) : (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, shape, { backgroundColor: tint ?? colors.surface }]} />
   );
@@ -129,7 +138,7 @@ export function FloatingGlassBackdrop({ radius, tint, blurred = true, appearance
   }, [dockProgress, dockExpandedWidth, dockCompactWidth, dockCompactOffsetX]);
   const colors = useTheme();
   const dark = useThemeMode() === 'dark';
-  const overrides = useGlassTuning((s) => s.overrides[target]);
+  const overrides = useGlassTuning((s) => s.mode === 'amPlus' ? s.amPlusOverrides[target] : s.overrides[target]);
   const kyantDefaults = mode === 'kyantDefault' || amPlus;
   const profile = resolveGlassProfile(target, dark, overrides, mode);
   // The mini's transparent RGBA also prevents the native no-frame fallback
@@ -144,6 +153,7 @@ export function FloatingGlassBackdrop({ radius, tint, blurred = true, appearance
     isLiquidGlassAvailable ? (
         <LiquidGlassView pointerEvents="none" style={StyleSheet.absoluteFill}
           materialPreset={amPlus ? 'amPlus' : kyantDefaults ? (target === 'miniPlayer' ? 'button' : 'tabs') : 'custom'}
+          materialTuningMask={amPlus ? glassMaterialTuningMask(overrides) : 0}
           preferUnblurredBackdrop={!kyantDefaults && target === 'miniPlayer' && blurred}
           dockCompactWidth={dockCompactWidth} dockCompactHeight={dockCompactHeight} dockCompactOffsetX={dockCompactOffsetX}
           dockRole={dockRole ?? (target === 'miniPlayer' ? 'mini' : 'navigation')} dockRowWidth={dockRowWidth}

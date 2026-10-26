@@ -41,11 +41,15 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 | 渠道 | 版本 | Android 更新编号 | 获取方式 |
 | --- | --- | --- | --- |
 | 正式发布 | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest)，App 内检查更新 |
-| 开发预览 | `0.8.4.1-ampp.9` | `82` | 本地测试 APK，尚未发布为正式 Release |
+| 开发预览 | `0.8.4.1-amll.1` | `83` | 本地测试构建，尚未发布为正式 Release |
 
-当前开发预览在 `preview/ampp-player-features` 分支上适配 AM++ 的 mini player、底部导航材质和折叠动画；「设置 → 玻璃调节」可在 AM++ 参考、开源默认参数和旧参数之间切换。对应范围及其他候选功能见 [AM++ 适配说明](./docs/AMPP-ADAPTATION.md)。之前的 Kyant 默认材质预览保留在 `preview/kyant-defaults` 分支。预览版不代表正式版已经具备相同改动，也不构成所有页面持续达到 120 fps 的保证；具体内容以对应源码、APK 版本和验证记录为准。
+当前开发预览位于 `preview/amll-player` 分支。新增参考 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 的原生播放页：共享封面大小变形、整页歌词、横屏双栏，以及利用完整封面颜色分布的网格流动背景。「设置 → 播放器 → 播放器布局」可切回 Resonus 原有布局；下方「播放器背景」仅影响原有布局。实现范围、来源与验证状态见 [AMLL 播放器预览说明](./docs/AMLL-PLAYER-PREVIEW.md)。
 
-开启封面配色时，播放／暂停按钮现在也直接使用当前封面色，和进度条、音量条同步；背景配色的稳定等待与过渡保持原样。
+「设置 → 玻璃调节」现可独立修改 mini player、导航和其他控件的 AM++ 参数，也可一键恢复并保存全部 AM++ 默认参数；原有自定义配置单独保留。另修复切换玻璃风格后折叠图标继承旧位移的问题，覆盖 AM++、开源默认、iPhone 参考与自定义四种模式。原有 AM++ 适配范围见 [AM++ 说明](./docs/AMPP-ADAPTATION.md)。
+
+此版本尚待连接三星完成实机安装和滚动验证。背景动画有独立的最高 60 fps 工作预算，不修改现有界面与窗口的 120Hz 请求；这不代表新版本已实测达到 120 fps，也不保证所有页面始终维持该帧率。预览改动尚未纳入正式 Release。
+
+开启封面配色时，播放／暂停按钮直接使用当前封面色，和进度条、音量条同步。Resonus 原有布局的背景配色仍保留单独的稳定等待与过渡；AMLL 布局使用其独立的原生封面背景。
 
 播放轨道颜色取消渐变，并在前台预取相邻歌曲的小封面颜色；缓存命中时随切歌直接更新。首次未读取的封面仍需等待图片读取，期间使用中性色，不继续显示上一首的颜色。
 
@@ -92,6 +96,7 @@ bash scripts/build-glass-preview.sh
 | --- | --- |
 | 版本变化与 APK | [更新日志](./CHANGELOG.md) · [Releases](https://github.com/zskruc/resonus-glass/releases) |
 | 功能与验证范围 | [Glass 说明](./docs/LIQUID-GLASS-PREVIEW.md) |
+| AMLL 播放器预览 | [布局、背景与验证边界](./docs/AMLL-PLAYER-PREVIEW.md) |
 | 原生材质实现 | [Liquid Glass 模块](./modules/liquid-glass/README.md) |
 | 上游更新流程 | [上游维护说明](./docs/UPSTREAM.md) |
 | 签名与发布 | [发布说明](./RELEASING.md) |
@@ -106,5 +111,6 @@ bash scripts/build-glass-preview.sh
 - [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)：**Apache-2.0**。原生材质依赖 Backdrop 1.0.0，并适配其 Bottom Tabs 示例；[许可证](./modules/liquid-glass/ANDROID_LIQUID_GLASS_LICENSE)。
 - [sdegenaar/liquid_glass_widgets](https://github.com/sdegenaar/liquid_glass_widgets)：**MIT**，Copyright © 2024–2026 Sebastian Degenaar。参考并适配其联动布局和最小化控制器；未引入 Flutter 引擎；[许可证](./modules/liquid-glass/LIQUID_GLASS_WIDGETS_LICENSE)。
 - Primuse：歌词动效的部分实现遵循 **MIT**，详见 [第三方声明](./THIRD_PARTY_NOTICES.md)。
+- [AMLL](https://github.com/amll-dev/applemusic-like-lyrics)：以固定版本的播放页布局和背景效果为视觉参考；本分支独立实现原生界面，未嵌入其 **AGPL-3.0-only** 运行库或复制代码、着色器和资源，见 [适配边界](./docs/AMLL-PLAYER-PREVIEW.md)。
 
 原项目图标、其他依赖和原有第三方声明继续保留各自权利与许可。

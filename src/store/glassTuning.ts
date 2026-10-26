@@ -24,6 +24,8 @@ export type GlassOverrides = Partial<GlassProfile>;
 type OverridesByTarget = Record<GlassTarget, GlassOverrides>;
 
 const STORAGE_KEY = 'resonus.glass-tuning.v1';
+// AM++ edits never reuse the legacy custom parameter store.
+const AM_PLUS_STORAGE_KEY = 'resonus.glass-amplus-tuning.v1';
 // A separate preview selection keeps previous APK appearance choices intact.
 // Custom optical profiles stay in v1; only explicit Save persists this mode.
 const MODE_STORAGE_KEY = 'resonus.glass-appearance.v3';
@@ -75,7 +77,10 @@ export function getGlassDefaults(target: GlassTarget, dark: boolean, mode: Glass
 
 export function resolveGlassProfile(target: GlassTarget, dark: boolean, overrides: GlassOverrides, mode: GlassAppearanceMode = 'custom'): GlassProfile {
   const defaults = getGlassDefaults(target, dark, mode);
-  const profile = mode === 'custom' ? { ...defaults, ...sanitizeGlassOverrides(overrides) } : defaults;
+  const profile = mode === 'custom' || mode === 'amPlus'
+    ? { ...defaults, ...sanitizeGlassOverrides(overrides) } : defaults;
+  // Automatic AM++ tint follows its theme-specific reference fill.
+  if (mode === 'amPlus' && profile.tintColor === null) profile.tintColor = defaults.tintColor;
   // Legacy saved colors remain in storage, but the mini's live material is
   // always untinted. Keep every saved optical value and other target intact.
   return target === 'miniPlayer' && mode !== 'kyantDefault' && mode !== 'amPlus' ? { ...profile, tintOpacity: 0, tintColor: null } : profile;
@@ -83,6 +88,7 @@ export function resolveGlassProfile(target: GlassTarget, dark: boolean, override
 
 interface GlassTuningState {
   overrides: OverridesByTarget;
+  amPlusOverrides: OverridesByTarget;
   mode: GlassAppearanceMode;
   hydrated: boolean;
   hydrate(): Promise<void>;
@@ -92,16 +98,19 @@ interface GlassTuningState {
   save(): Promise<void>;
   /** Restores only this live preview; Save persists the completed selection. */
   reset(target: GlassTarget): void;
+  /** Resets all AM++ targets in the live preview; explicit Save persists it. */
+  resetAmPlusDefaults(): void;
 }
 
 let hydration: Promise<void> | null = null;
 let saveQueue: Promise<void> = Promise.resolve();
-const resetBeforeHydration = new Set<GlassTarget>();
+const resetBeforeHydration = { custom: new Set<GlassTarget>(), amPlus: new Set<GlassTarget>() };
 let modeChangedBeforeHydration = false;
 let hydrationReadFailed = false;
 
 export const useGlassTuning = create<GlassTuningState>((set, get) => ({
   overrides: emptyOverrides(),
+  amPlusOverrides: emptyOverrides(),
   mode: 'amPlus',
   hydrated: false,
   hydrate: () => {
@@ -109,8 +118,9 @@ export const useGlassTuning = create<GlassTuningState>((set, get) => ({
     if (hydration) return hydration;
     hydration = (async () => {
       try {
-        const reads = await Promise.allSettled([getItem(STORAGE_KEY), getItem(MODE_STORAGE_KEY)]);
+        const reads = await Promise.allSettled([getItem(STORAGE_KEY), getItem(MODE_STORAGE_KEY), getItem(AM_PLUS_STORAGE_KEY)]);
         const loaded = emptyOverrides();
+        const loadedAmPlus = emptyOverrides();
         let loadedMode: GlassAppearanceMode = 'amPlus';
         let modeReadFailed = reads[1].status === 'rejected';
         let failed = reads.some((read) => read.status === 'rejected');
@@ -119,6 +129,14 @@ export const useGlassTuning = create<GlassTuningState>((set, get) => ({
             const stored: unknown = reads[0].value ? JSON.parse(reads[0].value) : null;
             if (isRecord(stored) && stored.schemaVersion === 1 && isRecord(stored.overrides)) {
               for (const target of TARGETS) loaded[target] = sanitizeGlassOverrides(stored.overrides[target]);
+            }
+          } catch { failed = true; }
+        }
+        if (reads[2].status === 'fulfilled') {
+          try {
+            const stored: unknown = reads[2].value ? JSON.parse(reads[2].value) : null;
+            if (isRecord(stored) && stored.schemaVersion === 1 && isRecord(stored.overrides)) {
+              for (const target of TARGETS) loadedAmPlus[target] = sanitizeGlassOverrides(stored.overrides[target]);
             }
           } catch { failed = true; }
         }
@@ -135,9 +153,14 @@ export const useGlassTuning = create<GlassTuningState>((set, get) => ({
         set((state) => ({
           mode: modeChangedBeforeHydration || modeReadFailed ? state.mode : loadedMode,
           overrides: Object.fromEntries(TARGETS.map((target) => [target,
-            resetBeforeHydration.has(target)
+            resetBeforeHydration.custom.has(target)
               ? state.overrides[target]
               : { ...loaded[target], ...state.overrides[target] },
+          ])) as OverridesByTarget,
+          amPlusOverrides: Object.fromEntries(TARGETS.map((target) => [target,
+            resetBeforeHydration.amPlus.has(target)
+              ? state.amPlusOverrides[target]
+              : { ...loadedAmPlus[target], ...state.amPlusOverrides[target] },
           ])) as OverridesByTarget,
         }));
         if (failed && __DEV__) console.warn('[glass tuning] saved appearance could not be loaded');
@@ -148,7 +171,8 @@ export const useGlassTuning = create<GlassTuningState>((set, get) => ({
       } finally {
         set({ hydrated: true });
         if (!hydrationReadFailed) {
-          resetBeforeHydration.clear();
+          resetBeforeHydration.custom.clear();
+          resetBeforeHydration.amPlus.clear();
           modeChangedBeforeHydration = false;
         }
         hydration = null;
@@ -162,43 +186,67 @@ export const useGlassTuning = create<GlassTuningState>((set, get) => ({
     set({ mode });
   },
   update: (target, patch) => {
-    if (get().mode !== 'custom') return;
+    const mode = get().mode;
+    if (mode !== 'custom' && mode !== 'amPlus') return;
     const clean = sanitizeGlassOverrides(patch);
     if (Object.keys(clean).length === 0) return;
-    set((state) => ({ overrides: {
-      ...state.overrides,
-      [target]: { ...state.overrides[target], ...clean },
+    const field = mode === 'amPlus' ? 'amPlusOverrides' : 'overrides';
+    set((state) => ({ [field]: {
+      ...state[field],
+      [target]: { ...state[field][target], ...clean },
     } }));
   },
   save: async () => {
     await get().hydrate();
     if (hydrationReadFailed) throw new Error('Saved glass appearance could not be read');
-    const serialized = exportGlassTuning();
+    const serialized = serializeOverrides(get().overrides);
+    const serializedAmPlus = serializeOverrides(get().amPlusOverrides);
     const serializedMode = JSON.stringify({ schemaVersion: 1, mode: get().mode });
     // Serialize explicit saves so a slow older write cannot replace a newer one.
     const persist = async () => {
       // Reference values are never written into the user's three custom profiles.
       await setItemStrict(STORAGE_KEY, serialized);
+      await setItemStrict(AM_PLUS_STORAGE_KEY, serializedAmPlus);
       await setItemStrict(MODE_STORAGE_KEY, serializedMode);
     };
     saveQueue = saveQueue.then(persist, persist);
     await saveQueue;
   },
   reset: (target) => {
-    if (get().mode !== 'custom') return;
-    if (!get().hydrated || hydrationReadFailed) resetBeforeHydration.add(target);
-    set((state) => ({ overrides: { ...state.overrides, [target]: {} } }));
+    const mode = get().mode;
+    if (mode !== 'custom' && mode !== 'amPlus') return;
+    if (!get().hydrated || hydrationReadFailed) resetBeforeHydration[mode].add(target);
+    const field = mode === 'amPlus' ? 'amPlusOverrides' : 'overrides';
+    set((state) => ({ [field]: { ...state[field], [target]: {} } }));
+  },
+  resetAmPlusDefaults: () => {
+    if (!get().hydrated || hydrationReadFailed) {
+      for (const target of TARGETS) resetBeforeHydration.amPlus.add(target);
+    }
+    set({ amPlusOverrides: emptyOverrides() });
   },
 }));
 
 export function getGlassProfile(target: GlassTarget, dark: boolean): GlassProfile {
-  const { overrides, mode } = useGlassTuning.getState();
-  return resolveGlassProfile(target, dark, overrides[target], mode);
+  const { overrides, amPlusOverrides, mode } = useGlassTuning.getState();
+  return resolveGlassProfile(target, dark, (mode === 'amPlus' ? amPlusOverrides : overrides)[target], mode);
 }
 
-/** Export contains only glass appearance, never account, playback or server settings. */
+function cleanOverrides(source: OverridesByTarget): OverridesByTarget {
+  return Object.fromEntries(TARGETS.map((target) => [target, sanitizeGlassOverrides(source[target])])) as OverridesByTarget;
+}
+
+function serializeOverrides(source: OverridesByTarget): string {
+  return JSON.stringify({ schemaVersion: 1, overrides: cleanOverrides(source) }, null, 2);
+}
+
+/** Export contains only the selected appearance, never account/playback settings. */
 export function exportGlassTuning(): string {
-  const source = useGlassTuning.getState().overrides;
-  const overrides = Object.fromEntries(TARGETS.map((target) => [target, sanitizeGlassOverrides(source[target])]));
-  return JSON.stringify({ schemaVersion: 1, overrides }, null, 2);
+  const state = useGlassTuning.getState();
+  if (state.mode !== 'amPlus') return serializeOverrides(state.overrides);
+  const overrides = cleanOverrides(state.amPlusOverrides);
+  const profiles = Object.fromEntries(([false, true] as const).map((dark) => [dark ? 'dark' : 'light',
+    Object.fromEntries(TARGETS.map((target) => [target, resolveGlassProfile(target, dark, overrides[target], 'amPlus')])),
+  ]));
+  return JSON.stringify({ schemaVersion: 2, mode: 'amPlus', overrides, profiles }, null, 2);
 }

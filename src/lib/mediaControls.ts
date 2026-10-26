@@ -26,8 +26,8 @@ export function mediaVolumeFraction(level: number, minimum: number, maximum: num
 }
 
 /** A drag belongs to the output that existed at touch-down, never the next one. */
-export function canApplyMediaVolumeDrag(startOutput: string, currentOutput: string): boolean {
-  return startOutput === currentOutput;
+export function canApplyMediaVolumeDrag(startOutput: string | null, currentOutput: string): boolean {
+  return startOutput !== null && startOutput === currentOutput;
 }
 
 /** The active route identity also cancels a drag when headphones are unplugged. */

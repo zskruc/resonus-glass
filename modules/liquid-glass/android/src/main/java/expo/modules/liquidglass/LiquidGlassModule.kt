@@ -34,6 +34,7 @@ class LiquidGlassModule : Module() {
           else -> "button"
         }
       }
+      Prop("materialTuningMask") { view: LiquidGlassView, value: Int -> view.materialTuningMask = value.coerceIn(0, 63) }
       Prop("radius") { view: LiquidGlassView, value: Double -> view.radius = value.toFloat().coerceIn(0f, 200f) }
       Prop("radiusTopLeft") { view: LiquidGlassView, value: Double? -> view.radiusTopLeft = value?.toFloat()?.coerceIn(0f, 200f) }
       Prop("radiusTopRight") { view: LiquidGlassView, value: Double? -> view.radiusTopRight = value?.toFloat()?.coerceIn(0f, 200f) }

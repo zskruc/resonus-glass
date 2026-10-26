@@ -14,12 +14,14 @@
  * the lyrics screen is following the song word by word.
  */
 import { GlassSlider as Slider } from '@/components/glass';
-import { useState } from 'react';
-import { Platform, Pressable, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import type { PlayerSliderComponent } from '@/components/AmllSlider';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { AppState, Platform, Pressable, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { useT } from '@/i18n';
 import { formatDuration } from '@/lib/format';
-import { usePlayerStore } from '@/store/player';
+import { canApplyPlayerSeek } from '@/lib/playerSeek';
+import { currentSong, usePlayerStore } from '@/store/player';
 import { useSettings } from '@/store/settings';
 import { colors, fontSize, themed, useTheme } from '@/theme';
 
@@ -27,21 +29,47 @@ export function SeekBar({
   duration,
   style,
   tint,
+  textTint,
+  mutedTrackTint,
+  sliderComponent,
+  active = true,
 }: {
   duration: number;
   style?: StyleProp<ViewStyle>;
   /** The played part and the thumb, the text colour if not given. */
   tint?: string;
+  textTint?: string;
+  mutedTrackTint?: string;
+  /** Player-only visual; settings and ordinary player bars retain GlassSlider. */
+  sliderComponent?: PlayerSliderComponent;
+  /** False while a retained player is hidden or the app is in the background. */
+  active?: boolean;
 }) {
   // Its own subscription to the theme: the screens around it have one, but a
   // component that reads a colour is the one that has to be told to paint again.
   useTheme();
   const t = useT();
   const positionSec = usePlayerStore((s) => s.positionSec);
-  const seekTo = usePlayerStore((s) => s.seekTo);
+  const songKey = usePlayerStore((s) => currentSong(s)?.id);
+  const PlayerSlider = sliderComponent ?? Slider;
   // Null while nobody is touching it, which is when the song is in charge.
-  const [held, setHeld] = useState<number | null>(null);
-  const shown = held ?? positionSec;
+  const [held, setHeld] = useState<{ song: string; value: number } | null>(null);
+  const dragSong = useRef<string | undefined>(undefined);
+  const shown = active && held !== null && held.song === songKey ? held.value : positionSec;
+  useLayoutEffect(() => {
+    dragSong.current = undefined;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- A source/visibility handoff cancels a held position before the next frame.
+    setHeld(null);
+  }, [songKey, active]);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') {
+        dragSong.current = undefined;
+        setHeld(null);
+      }
+    });
+    return () => subscription.remove();
+  }, []);
   // Tapping the right-hand time switches it between the length and what is
   // left, and the choice is kept.
   const remaining = useSettings((s) => s.showRemainingTime);
@@ -49,30 +77,46 @@ export function SeekBar({
 
   return (
     <View style={style}>
-      <Slider
+      <PlayerSlider
+        {...(sliderComponent ? { interactionKey: JSON.stringify([songKey, active]) } : {})}
         style={[styles.slider, Platform.OS === 'ios' && styles.sliderIos]}
         thumbSize={Platform.OS === 'ios' ? 12 : undefined}
         minimumValue={0}
         maximumValue={duration}
         value={shown}
+        disabled={!active}
         // Held down without moving yet: the thumb is already the finger's, so
         // the position stops being sent to it from here on.
-        onSlidingStart={() => setHeld(positionSec)}
-        onSlidingCancel={() => setHeld(null)}
-        onValueChange={setHeld}
+        onSlidingStart={() => {
+          const state = usePlayerStore.getState();
+          dragSong.current = canApplyPlayerSeek(songKey, currentSong(state)?.id, active, AppState.currentState === 'active')
+            ? songKey : undefined;
+          if (dragSong.current !== undefined) setHeld({ song: dragSong.current, value: state.positionSec });
+          else setHeld(null);
+        }}
+        onSlidingCancel={() => { dragSong.current = undefined; setHeld(null); }}
+        onValueChange={(value) => {
+          const key = dragSong.current;
+          if (key !== undefined && canApplyPlayerSeek(key, currentSong(usePlayerStore.getState())?.id, active, AppState.currentState === 'active')) {
+            setHeld({ song: key, value });
+          } else { dragSong.current = undefined; setHeld(null); }
+        }}
         onSlidingComplete={(value) => {
           // Let go before the store is told, since `seekTo` writes the new
           // position straight away: there is no moment showing the old one.
+          const key = dragSong.current;
+          dragSong.current = undefined;
           setHeld(null);
-          seekTo(value);
+          const state = usePlayerStore.getState();
+          if (canApplyPlayerSeek(key, currentSong(state)?.id, active, AppState.currentState === 'active')) state.seekTo(value);
         }}
         activeTrackTintColor={tint}
         minimumTrackTintColor={tint ?? colors.text}
-        maximumTrackTintColor={colors.mediaTrack}
+        maximumTrackTintColor={mutedTrackTint ?? colors.mediaTrack}
         thumbTintColor={tint ?? colors.text}
       />
       <View style={styles.times}>
-        <Text style={styles.time}>{formatDuration(shown)}</Text>
+        <Text style={[styles.time, textTint ? { color: textTint } : undefined]}>{formatDuration(shown)}</Text>
         <Pressable
           // Not upward: that is the end of the bar, which has to seek.
           hitSlop={{ top: 0, bottom: 12, left: 12, right: 12 }}
@@ -80,7 +124,7 @@ export function SeekBar({
           accessibilityLabel={remaining ? t('Show total time') : t('Show remaining time')}
           onPress={() => setRemaining(!remaining)}
         >
-          <Text style={styles.time}>
+          <Text style={[styles.time, textTint ? { color: textTint } : undefined]}>
             {remaining ? `-${formatDuration(Math.max(0, duration - shown))}` : formatDuration(duration)}
           </Text>
         </Pressable>

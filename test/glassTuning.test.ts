@@ -42,6 +42,7 @@ hook.deregister();
 
 const PARAMETERS_KEY = 'resonus.glass-tuning.v1';
 const MODE_KEY = 'resonus.glass-appearance.v3';
+const AM_PLUS_KEY = 'resonus.glass-amplus-tuning.v1';
 const saved = {
   schemaVersion: 1,
   overrides: {
@@ -64,7 +65,7 @@ beforeEach(async () => {
   storage.failedWrites.clear();
   storage.readGate = null;
   storage.writeGate = null;
-  useGlassTuning.setState({ overrides: { miniPlayer: {}, navigation: {}, controls: {} }, mode: 'amPlus', hydrated: false });
+  useGlassTuning.setState({ overrides: { miniPlayer: {}, navigation: {}, controls: {} }, amPlusOverrides: { miniPlayer: {}, navigation: {}, controls: {} }, mode: 'amPlus', hydrated: false });
   // Clear any failed-read/retry state from the preceding case.
   await useGlassTuning.getState().hydrate();
   useGlassTuning.setState({ hydrated: false });
@@ -133,7 +134,7 @@ describe('glass appearance modes and saved custom profiles', () => {
   it('matches AM++ theme tint for the dock while retaining Kyant controls and saved custom values', async () => {
     storage.items.set(PARAMETERS_KEY, JSON.stringify(saved));
     await useGlassTuning.getState().hydrate();
-    const original = exportGlassTuning();
+    const original = JSON.stringify(useGlassTuning.getState().overrides);
     for (const dark of [false, true]) {
       const mini = getGlassProfile('miniPlayer', dark);
       const navigation = getGlassProfile('navigation', dark);
@@ -148,7 +149,8 @@ describe('glass appearance modes and saved custom profiles', () => {
     }
     useGlassTuning.getState().update('miniPlayer', { blur: 40 });
     useGlassTuning.getState().reset('navigation');
-    assert.equal(exportGlassTuning(), original);
+    assert.equal(getGlassProfile('miniPlayer', false).blur, 40);
+    assert.equal(JSON.stringify(useGlassTuning.getState().overrides), original);
     useGlassTuning.getState().setMode('kyantDefault');
     assert.equal(getGlassProfile('miniPlayer', false).tintOpacity, 0);
     assert.equal(getGlassProfile('miniPlayer', false).blur, 2);
@@ -156,13 +158,14 @@ describe('glass appearance modes and saved custom profiles', () => {
     useGlassTuning.setState({ mode: 'amPlus', hydrated: false });
     await useGlassTuning.getState().hydrate();
     assert.equal(useGlassTuning.getState().mode, 'kyantDefault');
-    assert.equal(exportGlassTuning(), original);
+    assert.equal(JSON.stringify(useGlassTuning.getState().overrides), original);
   });
 
   it('blocks fixed-mode edits and reset, then restores custom values immediately on switching back', async () => {
     storage.items.set(PARAMETERS_KEY, JSON.stringify(saved));
     await useGlassTuning.getState().hydrate();
     const store = useGlassTuning.getState();
+    store.setMode('iphoneReference');
     store.update('miniPlayer', { refraction: 48 });
     store.reset('controls');
     assert.deepEqual(useGlassTuning.getState().overrides, saved.overrides);
@@ -204,13 +207,20 @@ describe('glass appearance modes and saved custom profiles', () => {
     assert.equal(useGlassTuning.getState().mode, 'iphoneReference');
   });
 
-  it('saves the mode separately and exports the untouched custom profiles in the legacy format', async () => {
+  it('saves AM++ separately and exports its resolved profiles without overwriting legacy custom data', async () => {
     storage.items.set(PARAMETERS_KEY, JSON.stringify(saved));
     await useGlassTuning.getState().hydrate();
     await useGlassTuning.getState().save();
     assert.deepEqual(JSON.parse(storage.items.get(PARAMETERS_KEY)!), saved);
-    assert.deepEqual(JSON.parse(exportGlassTuning()), saved);
+    const exported = JSON.parse(exportGlassTuning());
+    assert.equal(exported.schemaVersion, 2);
+    assert.equal(exported.mode, 'amPlus');
+    assert.equal(exported.profiles.light.miniPlayer.blur, 4);
+    assert.equal(exported.profiles.dark.navigation.tintColor, '#121212');
+    assert.deepEqual(JSON.parse(storage.items.get(AM_PLUS_KEY)!).overrides, { miniPlayer: {}, navigation: {}, controls: {} });
     assert.deepEqual(JSON.parse(storage.items.get(MODE_KEY)!), { schemaVersion: 1, mode: 'amPlus' });
+    useGlassTuning.getState().setMode('custom');
+    assert.deepEqual(JSON.parse(exportGlassTuning()), saved);
     useGlassTuning.setState({ mode: 'custom', overrides: { miniPlayer: {}, navigation: {}, controls: {} }, hydrated: false });
     await useGlassTuning.getState().hydrate();
     assert.equal(useGlassTuning.getState().mode, 'amPlus');
@@ -231,11 +241,11 @@ describe('glass appearance modes and saved custom profiles', () => {
     const second = useGlassTuning.getState().save();
     gate.release();
     await Promise.all([first, second]);
-    assert.deepEqual(storage.writes.map((write) => write.key), [PARAMETERS_KEY, MODE_KEY, PARAMETERS_KEY, MODE_KEY]);
+    assert.deepEqual(storage.writes.map((write) => write.key), [PARAMETERS_KEY, AM_PLUS_KEY, MODE_KEY, PARAMETERS_KEY, AM_PLUS_KEY, MODE_KEY]);
     assert.equal(JSON.parse(storage.writes[0].value).overrides.miniPlayer.refraction, 20);
-    assert.equal(JSON.parse(storage.writes[1].value).mode, 'custom');
-    assert.equal(JSON.parse(storage.writes[2].value).overrides.miniPlayer.refraction, 30);
-    assert.equal(JSON.parse(storage.writes[3].value).mode, 'iphoneReference');
+    assert.equal(JSON.parse(storage.writes[2].value).mode, 'custom');
+    assert.equal(JSON.parse(storage.writes[3].value).overrides.miniPlayer.refraction, 30);
+    assert.equal(JSON.parse(storage.writes[5].value).mode, 'iphoneReference');
   });
 
   it('does not overwrite unread custom data, retries the failed read and saves only after recovery', async () => {
@@ -273,6 +283,104 @@ describe('glass appearance modes and saved custom profiles', () => {
     const defaults = getGlassDefaults('navigation', false, 'iphoneReference');
     defaults.refractionHeight = 48;
     assert.equal(resolveGlassProfile('navigation', false, { refractionHeight: 40 }, 'iphoneReference').refractionHeight, 8);
+  });
+
+  it('persists AM++ edits independently and restores their exact theme-aware profile after reload', async () => {
+    storage.items.set(PARAMETERS_KEY, JSON.stringify(saved));
+    await useGlassTuning.getState().hydrate();
+    useGlassTuning.getState().update('miniPlayer', { blur: 7, refraction: 22, tintColor: '#12ABCD', tintOpacity: .25 });
+    useGlassTuning.getState().update('navigation', { highlightOpacity: .45, chromaticAberration: true });
+    useGlassTuning.getState().update('controls', { depthEffect: true });
+    const expected = useGlassTuning.getState().amPlusOverrides;
+    assert.equal(getGlassProfile('miniPlayer', false).blur, 7);
+    assert.equal(getGlassProfile('miniPlayer', true).tintColor, '#12ABCD');
+    useGlassTuning.getState().setMode('custom');
+    assert.deepEqual(useGlassTuning.getState().overrides, saved.overrides);
+    assert.equal(getGlassProfile('miniPlayer', false).refraction, 21);
+    useGlassTuning.getState().setMode('amPlus');
+    await useGlassTuning.getState().save();
+    assert.deepEqual(JSON.parse(storage.items.get(PARAMETERS_KEY)!), saved);
+    useGlassTuning.setState({ amPlusOverrides: { miniPlayer: {}, navigation: {}, controls: {} }, overrides: { miniPlayer: {}, navigation: {}, controls: {} }, hydrated: false });
+    await useGlassTuning.getState().hydrate();
+    assert.deepEqual(useGlassTuning.getState().amPlusOverrides, expected);
+    assert.deepEqual(useGlassTuning.getState().overrides, saved.overrides);
+    assert.equal(getGlassProfile('navigation', true).chromaticAberration, true);
+  });
+
+  it('resets all AM++ targets without changing another selected mode or any custom parameter', async () => {
+    storage.items.set(PARAMETERS_KEY, JSON.stringify(saved));
+    await useGlassTuning.getState().hydrate();
+    for (const target of ['miniPlayer', 'navigation', 'controls'] as const) useGlassTuning.getState().update(target, { blur: 18 });
+    await useGlassTuning.getState().save();
+    const storedBeforeReset = storage.items.get(AM_PLUS_KEY);
+    useGlassTuning.getState().setMode('custom');
+    useGlassTuning.getState().resetAmPlusDefaults();
+    assert.equal(useGlassTuning.getState().mode, 'custom');
+    assert.deepEqual(useGlassTuning.getState().overrides, saved.overrides);
+    assert.deepEqual(useGlassTuning.getState().amPlusOverrides, { miniPlayer: {}, navigation: {}, controls: {} });
+    assert.equal(storage.items.get(AM_PLUS_KEY), storedBeforeReset); // reset is live until Save.
+    useGlassTuning.getState().setMode('amPlus');
+    for (const target of ['miniPlayer', 'navigation', 'controls'] as const) for (const dark of [false, true]) {
+      assert.deepEqual(getGlassProfile(target, dark), getGlassDefaults(target, dark, 'amPlus'));
+    }
+    await useGlassTuning.getState().save();
+    assert.deepEqual(JSON.parse(storage.items.get(AM_PLUS_KEY)!).overrides, { miniPlayer: {}, navigation: {}, controls: {} });
+    assert.deepEqual(JSON.parse(storage.items.get(PARAMETERS_KEY)!), saved);
+  });
+
+  it('keeps AM++ edits and single/all-target resets made before delayed storage hydration', async () => {
+    storage.items.set(AM_PLUS_KEY, JSON.stringify({ schemaVersion: 1, overrides: {
+      miniPlayer: { blur: 12, refraction: 28 }, navigation: { blur: 9 }, controls: { tintOpacity: .5 },
+    } }));
+    const gate = deferred(); storage.readGate = gate.promise;
+    const hydration = useGlassTuning.getState().hydrate();
+    useGlassTuning.getState().update('miniPlayer', { refraction: 32 });
+    useGlassTuning.getState().reset('navigation');
+    gate.release(); await hydration;
+    assert.deepEqual(useGlassTuning.getState().amPlusOverrides.miniPlayer, { blur: 12, refraction: 32 });
+    assert.deepEqual(useGlassTuning.getState().amPlusOverrides.navigation, {});
+    assert.deepEqual(useGlassTuning.getState().amPlusOverrides.controls, { tintOpacity: .5 });
+    useGlassTuning.setState({ hydrated: false });
+    const gate2 = deferred(); storage.readGate = gate2.promise;
+    const hydration2 = useGlassTuning.getState().hydrate();
+    useGlassTuning.getState().resetAmPlusDefaults();
+    useGlassTuning.getState().update('controls', { blur: 3 });
+    gate2.release(); await hydration2;
+    assert.deepEqual(useGlassTuning.getState().amPlusOverrides, { miniPlayer: {}, navigation: {}, controls: { blur: 3 } });
+  });
+
+  it('blocks saves if AM++ data could not be read and recovers without deleting its stored values', async () => {
+    const amSaved = { schemaVersion: 1, overrides: { miniPlayer: { blur: 9 }, navigation: {}, controls: {} } };
+    storage.items.set(AM_PLUS_KEY, JSON.stringify(amSaved));
+    storage.failedReads.add(AM_PLUS_KEY);
+    await useGlassTuning.getState().hydrate();
+    useGlassTuning.getState().update('navigation', { refraction: 31 });
+    await assert.rejects(useGlassTuning.getState().save(), /could not be read/);
+    assert.deepEqual(storage.writes, []);
+    assert.deepEqual(JSON.parse(storage.items.get(AM_PLUS_KEY)!), amSaved);
+    storage.failedReads.clear();
+    await useGlassTuning.getState().save();
+    assert.deepEqual(JSON.parse(storage.items.get(AM_PLUS_KEY)!).overrides,
+      { miniPlayer: { blur: 9 }, navigation: { refraction: 31 }, controls: {} });
+  });
+
+  it('restores Automatic AM++ tint from the current theme without changing the stored override', () => {
+    useGlassTuning.getState().update('miniPlayer', { tintColor: null });
+    assert.equal(getGlassProfile('miniPlayer', false).tintColor, '#FAFAFA');
+    assert.equal(getGlassProfile('miniPlayer', true).tintColor, '#121212');
+    assert.deepEqual(useGlassTuning.getState().amPlusOverrides.miniPlayer, { tintColor: null });
+  });
+
+  it('reports AM++ save failures and retries the complete independent snapshot', async () => {
+    await useGlassTuning.getState().hydrate();
+    useGlassTuning.getState().update('navigation', { blur: 5 });
+    storage.failedWrites.add(AM_PLUS_KEY);
+    await assert.rejects(useGlassTuning.getState().save(), /Write failed/);
+    assert.equal(storage.items.has(MODE_KEY), false);
+    storage.failedWrites.clear();
+    await useGlassTuning.getState().save();
+    assert.equal(JSON.parse(storage.items.get(AM_PLUS_KEY)!).overrides.navigation.blur, 5);
+    assert.equal(JSON.parse(storage.items.get(MODE_KEY)!).mode, 'amPlus');
   });
 
   it('keeps reference profiles within the existing capture padding and avoids extra blur/dispersion work', () => {

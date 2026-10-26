@@ -1,4 +1,5 @@
 import { GlassSlider } from '@/components/glass';
+import type { PlayerSliderComponent } from '@/components/AmllSlider';
 import Icon from '@/components/Icon';
 import { getMediaControlsState, setSystemMusicVolume, systemMediaControlsAvailable, useMediaControls } from '@/hooks/useMediaControls';
 import { useT } from '@/i18n';
@@ -6,7 +7,7 @@ import { canApplyMediaVolumeDrag, mediaVolumeLevel, mediaVolumeOutputKey } from 
 import { useJukebox } from '@/store/jukebox';
 import { usePlayerStore } from '@/store/player';
 import { useUpnp } from '@/store/upnp';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AppState, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 function currentOutputKey(): string {
@@ -27,6 +28,8 @@ export function PlayerSystemVolume({
   trackTint = tint,
   style,
   active = true,
+  sliderComponent,
+  mutedTrackTint,
 }: {
   tint: string;
   /** Only the filled track follows artwork; device icons and labels stay neutral. */
@@ -34,6 +37,8 @@ export function PlayerSystemVolume({
   style?: StyleProp<ViewStyle>;
   /** False for a retained but hidden player screen: stop native observation. */
   active?: boolean;
+  sliderComponent?: PlayerSliderComponent;
+  mutedTrackTint?: string;
 }) {
   const t = useT();
   const state = useMediaControls(active);
@@ -50,6 +55,7 @@ export function PlayerSystemVolume({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSent = useRef<number | null>(null);
   const invalidatedDrag = useRef(false);
+  const activeRef = useRef(active);
 
   function cancelPending() {
     if (timer.current) clearTimeout(timer.current);
@@ -62,7 +68,8 @@ export function PlayerSystemVolume({
   // A drag from an unplugged headset or previous remote renderer must never
   // continue onto the newly selected output. In-flight OS writes read back
   // their applied values, but no queued drag is replayed after a handoff.
-  useEffect(() => {
+  useLayoutEffect(() => {
+    activeRef.current = active;
     if (dragOutput.current) invalidatedDrag.current = true;
     cancelPending();
     // A system route is an external source; cancelling here also prevents an
@@ -74,6 +81,12 @@ export function PlayerSystemVolume({
       cancelPending();
     };
   }, [outputKey, active]);
+
+  function rejectDrag() {
+    invalidatedDrag.current = true;
+    cancelPending();
+    setHeld(null);
+  }
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
@@ -91,7 +104,7 @@ export function PlayerSystemVolume({
     timer.current = null;
     const value = pending.current;
     pending.current = null;
-    if (value == null || !active || AppState.currentState !== 'active' || !dragOutput.current ||
+    if (value == null || !activeRef.current || AppState.currentState !== 'active' || !dragOutput.current ||
       !canApplyMediaVolumeDrag(dragOutput.current, currentOutputKey())) return;
     const currentUpnp = useUpnp.getState().connected;
     const currentJukebox = useJukebox.getState().active;
@@ -106,9 +119,12 @@ export function PlayerSystemVolume({
   }
 
   function change(value: number) {
-    if (invalidatedDrag.current || !active || AppState.currentState !== 'active') return;
+    if (invalidatedDrag.current || !activeRef.current || AppState.currentState !== 'active' || !dragOutput.current ||
+      !canApplyMediaVolumeDrag(dragOutput.current, currentOutputKey())) {
+      rejectDrag();
+      return;
+    }
     setHeld({ output: outputKey, value });
-    if (!dragOutput.current) dragOutput.current = currentOutputKey();
     pending.current = value;
     // The native slider animates independently; bound system/renderer calls to
     // 25 Hz and send only changed hardware steps. Always flush the final value.
@@ -121,11 +137,13 @@ export function PlayerSystemVolume({
   const maximum = remote ? 1 : Math.max(state.minimum + 1, state.maximum);
   const shown = active && held?.output === outputKey ? held.value : (remote ? remoteVolume : state.level);
   const label = remote ? t('Remote volume') : t('Media volume');
+  const Slider = sliderComponent ?? GlassSlider;
   return (
     <View style={style}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, opacity: disabled ? 0.45 : 1 }}>
         <Icon name="volume-low" size={18} color={tint} />
-        <GlassSlider
+        <Slider
+          {...(sliderComponent ? { interactionKey: JSON.stringify([outputKey, active]) } : {})}
           style={{ flex: 1, height: 44, minHeight: 44 }}
           accessibilityLabel={label}
           accessibilityHint={remote ? t('Controls the connected playback device') : t('Synchronized with the phone volume buttons')}
@@ -135,22 +153,25 @@ export function PlayerSystemVolume({
           value={shown}
           disabled={disabled}
           onSlidingStart={() => {
-            invalidatedDrag.current = false;
+            // Native callbacks from the preceding render cannot adopt a newly
+            // selected renderer with the old output's range/value.
+            if (!activeRef.current || AppState.currentState !== 'active' || !canApplyMediaVolumeDrag(outputKey, currentOutputKey())) {
+              rejectDrag();
+              return;
+            }
             cancelPending();
-            dragOutput.current = currentOutputKey();
+            invalidatedDrag.current = false;
+            dragOutput.current = outputKey;
             setHeld({ output: outputKey, value: remote ? usePlayerStore.getState().volume : getMediaControlsState().level });
           }}
           onValueChange={change}
-          onSlidingCancel={() => { invalidatedDrag.current = false; cancelPending(); setHeld(null); }}
+          onSlidingCancel={rejectDrag}
           onSlidingComplete={(value) => {
-            if (invalidatedDrag.current) {
-              invalidatedDrag.current = false;
-              cancelPending();
-              setHeld(null);
+            if (invalidatedDrag.current || !activeRef.current || AppState.currentState !== 'active' || !dragOutput.current ||
+              !canApplyMediaVolumeDrag(dragOutput.current, currentOutputKey())) {
+              rejectDrag();
               return;
             }
-            // A tap may complete without a separate start callback.
-            if (!dragOutput.current) dragOutput.current = currentOutputKey();
             pending.current = value;
             flush();
             cancelPending();
@@ -158,7 +179,7 @@ export function PlayerSystemVolume({
           }}
           activeTrackTintColor={trackTint}
           minimumTrackTintColor={trackTint}
-          maximumTrackTintColor={tint.startsWith('#') && tint.length === 7 ? `${tint}35` : 'rgba(128,128,128,0.22)'}
+          maximumTrackTintColor={mutedTrackTint ?? (tint.startsWith('#') && tint.length === 7 ? `${tint}35` : 'rgba(128,128,128,0.22)')}
           thumbTintColor={tint}
         />
         <Icon name="volume-high" size={20} color={tint} />

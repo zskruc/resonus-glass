@@ -41,11 +41,15 @@ These features describe the released Glass baseline. Development previews may ch
 | Channel | Version | Android version code | Availability |
 | --- | --- | --- | --- |
 | Stable | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest), in-app update checks |
-| Development preview | `0.8.4.1-ampp.9` | `82` | Local test APK; not published as a stable release |
+| Development preview | `0.8.4.1-amll.1` | `83` | Local test build; not published as a stable release |
 
-Development previews on `preview/ampp-player-features` adapt AM++ phone mini-player/navigation materials and collapse motion. Preview changes are not necessarily included in the stable release. They do not guarantee sustained 120 fps across every page; consult the corresponding source, APK version, and validation records for their actual scope.
+The current preview is on `preview/amll-player`. It adds an independently implemented native player visually informed by [AMLL](https://github.com/amll-dev/applemusic-like-lyrics): a shared cover transition, full-page lyrics, a landscape two-column layout and a moving mesh background that preserves the artwork's spatial color distribution. Settings → Player → Player layout can restore the previous Resonus layout. The Player background option below applies only to that previous layout. See the [AMLL player preview guide](./docs/AMLL-PLAYER-PREVIEW.md) for scope, provenance and validation status.
 
-When the artwork palette is enabled, the play/pause button now uses the same immediate current-artwork role as the progress and volume tracks. The background palette retains its separate stability wait and transition.
+Settings → Glass tuning now supports independent AM++ parameters for the mini player, navigation and other controls, plus one-tap restoration and saving of all AM++ defaults. Existing Custom profiles remain separate. A dock fix clears inherited compact-icon offsets when switching among AM++, Kyant defaults, iPhone reference and Custom appearances. Earlier integration details remain in the [AM++ adaptation guide](./docs/AMPP-ADAPTATION.md).
+
+Samsung installation and real scrolling checks are pending device connection. The background has its own maximum 60 fps work budget and does not change the existing 120Hz UI/window requests. This is not a new measurement of 120 fps or a guarantee of sustained frame rates on every page. These preview changes have not been included in a stable release.
+
+When the artwork palette is enabled, the play/pause button uses the same immediate current-artwork role as the progress and volume tracks. The Resonus layout retains its separate background-palette stability wait and transition; the AMLL layout uses its own native artwork field.
 
 Playback track colors now commit immediately, with bounded foreground warmup of adjacent artwork. Cached colors update on track change; unread artwork still requires image access and uses a neutral placeholder rather than the previous song's color.
 
@@ -59,7 +63,7 @@ Further Glass changes within the same upstream baseline can use a fourth version
 
 The `glass` branch preserves this project's customizations. [juananzzz/resonus](https://github.com/juananzzz/resonus) remains the upstream source; changes are compared and validated before suitable fixes are integrated. Automatically fetching upstream commits does not guarantee automatic conflict resolution or compatibility with custom glass interactions. See the [upstream maintenance guide](./docs/UPSTREAM.md) for the review and checking process.
 
-The current preview adapts AM++ phone mini-player/navigation materials and collapse motion. Settings → Glass tuning lets you compare AM++ reference, Kyant defaults and existing custom profiles. See [AM++ adaptation](./docs/AMPP-ADAPTATION.md) for its scope and further candidates. The previous defaults preview remains on `preview/kyant-defaults`.
+Settings → Glass tuning still lets you compare AM++ reference, Kyant defaults and existing custom profiles. The previous defaults preview remains on `preview/kyant-defaults`.
 
 ## Build Android from source
 
@@ -94,6 +98,7 @@ This project provides a complete [Chinese README](./README.md) and [English READ
 | --- | --- |
 | Changes and APKs | [Changelog](./CHANGELOG.md) · [Releases](https://github.com/zskruc/resonus-glass/releases) |
 | Features and validation scope | [Glass guide](./docs/LIQUID-GLASS-PREVIEW.md) |
+| AMLL player preview | [Layout, background and validation boundaries](./docs/AMLL-PLAYER-PREVIEW.md) |
 | Native material implementation | [Liquid Glass module](./modules/liquid-glass/README.md) |
 | Upstream update process | [Upstream maintenance](./docs/UPSTREAM.md) |
 | Signing and publishing | [Release guide](./RELEASING.md) |
@@ -108,5 +113,6 @@ Report issues and suggestions in [this repository's Issues](https://github.com/z
 - [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass): **Apache-2.0**. Native materials use Backdrop 1.0.0 and adapt its Bottom Tabs example; see the [license](./modules/liquid-glass/ANDROID_LIQUID_GLASS_LICENSE).
 - [sdegenaar/liquid_glass_widgets](https://github.com/sdegenaar/liquid_glass_widgets): **MIT**, Copyright © 2024–2026 Sebastian Degenaar. Its coordinated layout and minimize controller informed this adaptation. The Flutter engine is not included; see the [license](./modules/liquid-glass/LIQUID_GLASS_WIDGETS_LICENSE).
 - Primuse: parts of the lyrics animation implementation follow **MIT**; see [third-party notices](./THIRD_PARTY_NOTICES.md).
+- [AMLL](https://github.com/amll-dev/applemusic-like-lyrics): a pinned player layout and background provide visual references. This branch independently implements native views without embedding its **AGPL-3.0-only** runtime or copying its code, shaders or assets; see the [integration boundaries](./docs/AMLL-PLAYER-PREVIEW.md).
 
 The original project icons, other dependencies, and existing third-party notices retain their respective rights and licenses.

@@ -23,6 +23,7 @@ import { useAuthStore } from '@/store/auth';
 import { useTheme } from '@/theme';
 import {
   type CardBackground,
+  type PlayerPresentation,
   type CoverDoubleTapAction,
   type CoverTapAction,
   type LyricsAlign,
@@ -62,6 +63,8 @@ export default function PlayerSettings() {
   const glassRecipe = usePlayerGlass((state) => state.recipe);
   const setGlassRecipe = usePlayerGlass((state) => state.setRecipe);
   useEffect(() => { void usePlayerGlass.getState().hydrate(); }, []);
+  const playerPresentation = useSettings((state) => state.playerPresentation);
+  const setPlayerPresentation = useSettings((state) => state.setPlayerPresentation);
   const showSystemVolume = useSettings((state) => state.showSystemVolume);
   const setShowSystemVolume = useSettings((state) => state.setShowSystemVolume);
   const showOutputDevice = useSettings((state) => state.showOutputDevice);
@@ -130,7 +133,14 @@ export default function PlayerSettings() {
   return (
     <SettingsPage title={t('Player')}>
       <DockScrollView contentContainerStyle={settingsStyles.content}>
-        <Text style={[settingsStyles.sectionTitle, { marginTop: 0 }]}>{t('AM++ player features')}</Text>
+        <Text style={[settingsStyles.sectionTitle, { marginTop: 0 }]}>{t('Player appearance')}</Text>
+        <SelectList<PlayerPresentation> label={t('Player layout')}
+          options={[{ value: 'amll', label: t('AMLL reference') }, { value: 'resonus', label: t('Resonus layout') }]}
+          value={playerPresentation} onChange={setPlayerPresentation} />
+        <Text style={[settingsStyles.rowDescription, { marginHorizontal: 16, marginTop: 8 }]}>
+          {t('AMLL uses a shared cover transition, full-page lyrics and an artwork mesh background. Your previous player remains available.')}
+        </Text>
+        <Text style={settingsStyles.sectionTitle}>{t('AM++ player features')}</Text>
         <SettingsGroup>
           <SelectList<PlayerGlassRecipe>
             label={t('Floating popup glass')}

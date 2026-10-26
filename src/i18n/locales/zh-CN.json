@@ -859,7 +859,6 @@
   "Normal": "标准",
   "Flat": "平直",
   "AM++ reference": "AM++ 参考",
-  "AM++ reference uses matching mini player and navigation glass, with a shared spring collapse. Search joins the expanded bar and separates on the right when collapsed. Other controls keep Kyant defaults.": "AM++ 参考使用一致的迷你播放器和导航栏玻璃材质，并通过同一弹簧联动折叠。展开时搜索合入底栏，折叠后分离到右侧。其他控件保留开源默认材质。",
   "AM++ player features": "AM++ 播放器新特性",
   "Same as bottom bar": "与底栏一致",
   "Same as More menu": "与更多菜单一致",
@@ -887,5 +886,15 @@
   "Controls the connected playback device": "调节当前连接的播放设备音量",
   "Synchronized with the phone volume buttons": "与手机音量键同步",
   "Volume is controlled by the output device": "音量由输出设备控制",
-  "Floating popup glass": "悬浮弹窗玻璃"
+  "Floating popup glass": "悬浮弹窗玻璃",
+  "AM++ defaults restored and saved": "已恢复并保存 AM++ 默认参数",
+  "Defaults restored, but could not save them.": "已恢复默认参数，但保存失败，请重试。",
+  "Restore AM++ defaults": "恢复 AM++ 默认参数",
+  "AM++ keeps its dock layout and motion while you tune its glass. Save changes separately, or restore and save all AM++ defaults with one tap. Your Custom parameters stay unchanged.": "可在保留 AM++ 底栏布局和动画的同时调节玻璃效果。参数独立保存，也可一键恢复并保存全部 AM++ 默认参数，不影响之前的自定义参数。",
+  "Export includes the active AM++ parameters for all three surfaces, separately from Custom parameters.": "导出包含当前三个玻璃表面的 AM++ 参数，与原有自定义参数相互独立。",
+  "Player appearance": "播放器外观",
+  "Player layout": "播放器布局",
+  "AMLL reference": "AMLL 参考",
+  "Resonus layout": "Resonus 原有布局",
+  "AMLL uses a shared cover transition, full-page lyrics and an artwork mesh background. Your previous player remains available.": "AMLL 采用共享封面变形、整页歌词和封面网格流动背景，原有播放器仍可切换使用。下方「播放器背景」设置仅适用于 Resonus 原有布局；AMLL 使用自己的网格背景。"
 }

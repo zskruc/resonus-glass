@@ -180,6 +180,7 @@ internal fun LiquidBottomTabsMaterial(
   selectionOpacity: () -> Float,
   officialMaterial: Boolean,
   amPlusMaterial: Boolean,
+  tuningMask: Int,
   dockProgress: () -> Float,
   blurRadius: Float,
   refraction: Float,
@@ -252,7 +253,11 @@ internal fun LiquidBottomTabsMaterial(
           lens(refractionHeight.dp.toPx(), refraction.dp.toPx(),
             depthEffect = depthEffect, chromaticAberration = chromaticAberration)
         },
-        highlight = { if (officialMaterial) Highlight.Default else Highlight(width = highlightWidth.dp, alpha = highlightOpacity) },
+        highlight = {
+          if (officialMaterial && (tuningMask and (MaterialTuningMask.HIGHLIGHT_WIDTH or MaterialTuningMask.HIGHLIGHT_ALPHA)) == 0)
+            Highlight.Default
+          else Highlight(width = highlightWidth.dp, alpha = highlightOpacity)
+        },
         shadow = if (officialMaterial) ({ Shadow.Default }) else null,
         layerBlock = {
           val scale = 1f + (if (amPlusMaterial) 8f else 16f).dp.toPx() / size.width.coerceAtLeast(1f) * pressProgress()
@@ -312,10 +317,16 @@ internal fun LiquidBottomTabsMaterial(
             val progress = pressProgress()
             vibrancy()
             blur((if (amPlusMaterial) blurRadius else 8f).dp.toPx())
-            lens(24f.dp.toPx() * progress, 24f.dp.toPx() * progress,
-              depthEffect = false, chromaticAberration = false)
+            lens((if (amPlusMaterial) refractionHeight else 24f).dp.toPx() * progress,
+              (if (amPlusMaterial) refraction else 24f).dp.toPx() * progress,
+              depthEffect = amPlusMaterial && depthEffect,
+              chromaticAberration = amPlusMaterial && chromaticAberration)
           },
-          highlight = { Highlight.Default.copy(alpha = pressProgress()) },
+          highlight = {
+            if (amPlusMaterial && (tuningMask and (MaterialTuningMask.HIGHLIGHT_WIDTH or MaterialTuningMask.HIGHLIGHT_ALPHA)) != 0)
+              Highlight(width = highlightWidth.dp, alpha = highlightOpacity * pressProgress())
+            else Highlight.Default.copy(alpha = pressProgress())
+          },
           shadow = { Shadow.Default },
           onDrawSurface = { drawRect(tint.copy(alpha = tintOpacity() * tint.alpha)) },
           onDrawFront = {
@@ -359,8 +370,10 @@ internal fun LiquidBottomTabsMaterial(
         effects = {
           val progress = pressProgress()
           if (officialMaterial) {
-            lens(10f.dp.toPx() * progress, 14f.dp.toPx() * progress,
-              depthEffect = false, chromaticAberration = true)
+            lens((if (amPlusMaterial) refractionHeight * 10f / 24f else 10f).dp.toPx() * progress,
+              (if (amPlusMaterial) refraction * 14f / 24f else 14f).dp.toPx() * progress,
+              depthEffect = amPlusMaterial && depthEffect,
+              chromaticAberration = if (amPlusMaterial && MaterialTuningMask.has(tuningMask, MaterialTuningMask.CHROMATIC)) chromaticAberration else true)
           } else {
             lens((refractionHeight * 10f / 14f).dp.toPx() * progress,
               refraction.dp.toPx() * progress,
@@ -368,7 +381,8 @@ internal fun LiquidBottomTabsMaterial(
           }
         },
         highlight = {
-          if (officialMaterial) Highlight.Default.copy(alpha = pressProgress())
+          if (officialMaterial && (tuningMask and (MaterialTuningMask.HIGHLIGHT_WIDTH or MaterialTuningMask.HIGHLIGHT_ALPHA)) == 0)
+            Highlight.Default.copy(alpha = pressProgress())
           else Highlight(width = highlightWidth.dp, alpha = highlightOpacity * pressProgress())
         },
         shadow = { Shadow(alpha = pressProgress()) },

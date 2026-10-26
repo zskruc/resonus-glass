@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  amllLyricBlurRadius,
   lyricBlurRadius,
   lyricBounceProgress,
   lyricSweepProgress,
@@ -59,5 +60,28 @@ describe('lyric depth effect', () => {
   it('places passed rows only slightly behind upcoming rows', () => {
     assert.equal(lyricBlurRadius(7, 8, true), 0.6875);
     assert.equal(lyricBlurRadius(9, 8, true), 0.55);
+  });
+});
+
+describe('AMLL lyric filter budget', () => {
+  it('keeps active, unknown, browsing and disabled lyrics sharp', () => {
+    assert.equal(amllLyricBlurRadius(12, 12, true), 0);
+    assert.equal(amllLyricBlurRadius(13, -1, true), 0);
+    assert.equal(amllLyricBlurRadius(13, 12, false), 0);
+    assert.equal(amllLyricBlurRadius(-1, 12, true), 0);
+  });
+
+  it('never allocates blur to more than eight neighbours regardless of song length or seek distance', () => {
+    for (const active of [0, 4, 500, 9999]) {
+      const filtered = Array.from({ length: 10000 }, (_, row) => amllLyricBlurRadius(row, active, true));
+      assert.ok(filtered.filter((radius) => radius > 0).length <= 8);
+      assert.ok(filtered.every((radius) => radius >= 0 && radius <= 1.2));
+      for (let row = 0; row < filtered.length; row++) {
+        if (Math.abs(row - active) > 4) assert.equal(filtered[row], 0);
+      }
+    }
+    // Seeking to a distant chorus releases the old focus's filter surfaces.
+    assert.ok(amllLyricBlurRadius(501, 500, true) > 0);
+    assert.equal(amllLyricBlurRadius(501, 9000, true), 0);
   });
 });

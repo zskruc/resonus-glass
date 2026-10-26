@@ -93,21 +93,24 @@ export default function GlassTuningSettings() {
   const [target, setTarget] = useState<GlassTarget>('miniPlayer');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const overrides = useGlassTuning((state) => state.overrides);
+  const overrides = useGlassTuning((state) => state.mode === 'amPlus' ? state.amPlusOverrides : state.overrides);
   const mode = useGlassTuning((state) => state.mode);
   const setMode = useGlassTuning((state) => state.setMode);
   const hydrated = useGlassTuning((state) => state.hydrated);
   const update = useGlassTuning((state) => state.update);
   const save = useGlassTuning((state) => state.save);
   const reset = useGlassTuning((state) => state.reset);
+  const resetAmPlusDefaults = useGlassTuning((state) => state.resetAmPlusDefaults);
   const blurMiniPlayer = useSettings((state) => state.blurMiniPlayer);
   const blurBars = useSettings((state) => state.blurBars);
   const setBlurMiniPlayer = useSettings((state) => state.setBlurMiniPlayer);
   const setBlurBars = useSettings((state) => state.setBlurBars);
   const showToast = useToast((state) => state.show);
   const profile = resolveGlassProfile(target, dark, overrides[target], mode);
-  const parameters = target === 'miniPlayer' ? PARAMETERS.filter((parameter) => parameter.key !== 'tintOpacity') : PARAMETERS;
-  const editingDisabled = !hydrated || mode !== 'custom';
+  const allowsTint = target !== 'miniPlayer' || mode === 'amPlus';
+  const parameters = allowsTint ? PARAMETERS : PARAMETERS.filter((parameter) => parameter.key !== 'tintOpacity');
+  const editingDisabled = !hydrated || saving || (mode !== 'custom' && mode !== 'amPlus');
+  const automaticTint = mode === 'amPlus' ? overrides[target].tintColor == null : !profile.tintColor;
   const enabled = target === 'miniPlayer' ? blurMiniPlayer : target === 'navigation' ? blurBars : true;
 
   async function saveParameters() {
@@ -130,13 +133,27 @@ export default function GlassTuningSettings() {
     }
   }
 
+  async function restoreAmPlusDefaults() {
+    setSaving(true);
+    setPickerOpen(false);
+    try {
+      resetAmPlusDefaults();
+      await save();
+      showToast(t('AM++ defaults restored and saved'));
+    } catch {
+      showToast(t('Defaults restored, but could not save them.'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function resetParameters() {
     reset(target);
     showToast(t('Defaults restored. Save to keep them.'));
   }
 
   function preset(kind: 'clear' | 'strong' | 'soft') {
-    const defaults = getGlassDefaults(target, dark);
+    const defaults = getGlassDefaults(target, dark, mode);
     const profiles: Record<typeof kind, GlassProfile> = {
       clear: { ...defaults, blur: 1.5, refraction: 14, refractionHeight: 14, highlightWidth: 0.8, highlightOpacity: 0.7, tintOpacity: 0.1, tintColor: null, depthEffect: true, chromaticAberration: false },
       strong: { ...defaults, blur: 2, refraction: 32, refractionHeight: 28, highlightWidth: 1.2, highlightOpacity: 0.8, tintOpacity: 0.12, tintColor: null, depthEffect: true, chromaticAberration: true },
@@ -149,7 +166,7 @@ export default function GlassTuningSettings() {
     <SettingsPage title={t('Glass tuning')}>
       <View style={[styles.targets, styles.modes]}>
         {MODES.map((item) => (
-          <Pressable key={item.value} disabled={!hydrated}
+          <Pressable key={item.value} disabled={!hydrated || saving}
             onPress={() => { setMode(item.value); setPickerOpen(false); }}
             accessibilityRole="button" accessibilityState={{ selected: mode === item.value }}
             style={[styles.targetButton, mode === item.value && styles.targetActive, !hydrated && styles.disabled]}>
@@ -186,10 +203,18 @@ export default function GlassTuningSettings() {
           <Text style={styles.actionLabel}>{t('Export parameters')}</Text>
         </Pressable>
       </View>
+      {mode === 'amPlus' ? <View style={[styles.actions, { paddingTop: 0 }]}>
+        <Pressable onPress={() => void restoreAmPlusDefaults()} disabled={!hydrated || saving}
+          accessibilityRole="button" accessibilityLabel={t('Restore AM++ defaults')}
+          style={[styles.actionButton, styles.secondaryAction, (!hydrated || saving) && styles.disabled]}>
+          <Icon name="refresh-outline" size={18} color={colors.text} />
+          <Text style={styles.actionLabel}>{t('Restore AM++ defaults')}</Text>
+        </Pressable>
+      </View> : null}
       <DockScrollView style={styles.scroll} contentContainerStyle={styles.content}>
         <Text style={styles.introduction}>{t('Changes apply live. Save to keep them after restarting. Export your finished settings and send them to me.')}</Text>
         {mode === 'kyantDefault' ? <Text style={styles.notice}>{t('Uses AndroidLiquidGlass’s original button, bottom tabs, and dialog materials. Your saved custom parameters are kept.')}</Text> : null}
-        {mode === 'amPlus' ? <Text style={styles.notice}>{t('AM++ reference uses matching mini player and navigation glass, with a shared spring collapse. Search joins the expanded bar and separates on the right when collapsed. Other controls keep Kyant defaults.')}</Text> : null}
+        {mode === 'amPlus' ? <Text style={styles.notice}>{t('AM++ keeps its dock layout and motion while you tune its glass. Save changes separately, or restore and save all AM++ defaults with one tap. Your Custom parameters stay unchanged.')}</Text> : null}
         {mode === 'iphoneReference' ? <Text style={styles.notice}>{t('iPhone reference approximates the observed appearance; it does not copy Apple’s private parameters. Switch to Custom parameters to restore and edit your saved styles.')}</Text> : null}
         {!isLiquidGlassAvailable ? <Text style={styles.notice}>{t('Native liquid glass is unavailable on this device. This preview uses a solid fallback.')}</Text> : null}
         {!enabled ? (
@@ -202,7 +227,7 @@ export default function GlassTuningSettings() {
             ><Text style={styles.linkLabel}>{t('Enable glass')}</Text></Pressable>
           </View>
         ) : null}
-        {target === 'controls' && mode !== 'kyantDefault' && mode !== 'amPlus' ? <Text style={styles.description}>{t('These parameters apply to panels, dialogs, and fields. Buttons use their original styles.')}</Text> : null}
+        {target === 'controls' && mode !== 'kyantDefault' ? <Text style={styles.description}>{t('These parameters apply to panels, dialogs, and fields. Buttons use their original styles.')}</Text> : null}
         <Text style={styles.sectionTitle}>{t('Starting styles')}</Text>
         <View style={styles.presets}>
           {([{ kind: 'clear', label: 'Clear glass' }, { kind: 'strong', label: 'Strong lens' }, { kind: 'soft', label: 'Soft glass' }] as const).map((item) => (
@@ -217,13 +242,13 @@ export default function GlassTuningSettings() {
             <ParameterSlider key={parameter.key} parameter={parameter} value={profile[parameter.key]} disabled={editingDisabled} t={t} onChange={(value) => update(target, { [parameter.key]: value })} />
           ))}
         </View>
-        {target !== 'miniPlayer' ? (
+        {allowsTint ? (
           <>
             <Text style={styles.sectionTitle}>{t('Glass tint')}</Text>
             <Text style={styles.description}>{t('Choose a color; tint opacity controls how much it covers the background.')}</Text>
             <View style={styles.swatches}>
               {TINTS.map((swatch) => {
-                const selected = profile.tintColor?.toUpperCase() === swatch.color || (!profile.tintColor && swatch.color === null);
+                const selected = swatch.color === null ? automaticTint : !automaticTint && profile.tintColor?.toUpperCase() === swatch.color;
                 return (
                   <Pressable
                     buttonMaterial={false}
@@ -244,7 +269,7 @@ export default function GlassTuningSettings() {
                 <Icon name="color-palette-outline" size={22} color={profile.tintColor && !TINTS.some((tint) => tint.color === profile.tintColor?.toUpperCase()) ? contrastingInk(profile.tintColor) : colors.text} />
               </Pressable>
             </View>
-            <Text style={styles.tintValue}>{profile.tintColor ?? t('Automatic tint follows each control’s original color.')}</Text>
+            <Text style={styles.tintValue}>{automaticTint ? t('Automatic tint follows each control’s original color.') : profile.tintColor}</Text>
           </>
         ) : null}
         <View style={styles.card}>
@@ -272,7 +297,8 @@ export default function GlassTuningSettings() {
         <Text style={styles.sectionTitle}>{t('Current parameters')}</Text>
         <Text style={styles.description}>{t('You can copy or screenshot these values. Export includes all three control styles.')}</Text>
         {mode === 'iphoneReference' ? <Text style={styles.description}>{t('Export keeps your three custom styles; the reference style does not overwrite them.')}</Text> : null}
-        {mode === 'kyantDefault' || mode === 'amPlus' ? <Text style={styles.description}>{t('Export keeps your three custom styles; the default materials do not overwrite them.')}</Text> : null}
+        {mode === 'kyantDefault' ? <Text style={styles.description}>{t('Export keeps your three custom styles; the default materials do not overwrite them.')}</Text> : null}
+        {mode === 'amPlus' ? <Text style={styles.description}>{t('Export includes the active AM++ parameters for all three surfaces, separately from Custom parameters.')}</Text> : null}
         <Text selectable style={styles.summary}>{[
           `${t(MODES.find((item) => item.value === mode)!.label)} · ${t(TARGETS.find((item) => item.value === target)!.label)}`,
           ...parameters.map((parameter) => `${t(parameter.label)}: ${parameter.percent
@@ -283,7 +309,7 @@ export default function GlassTuningSettings() {
           `${t('Color dispersion')}: ${t(profile.chromaticAberration ? 'On' : 'Off')}`,
         ].join('\n')}</Text>
       </DockScrollView>
-      {target !== 'miniPlayer' && pickerOpen && !editingDisabled ? <ColorPickerDialog initialColor={profile.tintColor ?? (dark ? '#FFFFFF' : '#000000')} onCancel={() => setPickerOpen(false)} onSave={(color) => { update(target, { tintColor: color }); setPickerOpen(false); }} /> : null}
+      {allowsTint && pickerOpen && !editingDisabled ? <ColorPickerDialog initialColor={profile.tintColor ?? (dark ? '#FFFFFF' : '#000000')} onCancel={() => setPickerOpen(false)} onSave={(color) => { update(target, { tintColor: color }); setPickerOpen(false); }} /> : null}
     </SettingsPage>
   );
 }

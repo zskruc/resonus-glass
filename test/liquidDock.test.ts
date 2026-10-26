@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { createLiquidDockScrollState, getLiquidDockGeometry, updateLiquidDockScroll } from '@/lib/liquidDock';
+import { createLiquidDockScrollState, getCompactNavigationContentStyle, getLiquidDockGeometry, updateLiquidDockScroll } from '@/lib/liquidDock';
+import { AMPP_DOCK, getAmppControls } from '@/lib/amppDock';
 
 describe('liquid dock scroll direction', () => {
   it('uses real drag distance independently of display event step size', () => {
@@ -209,6 +210,61 @@ describe('liquid dock horizontal geometry', () => {
         assert.ok(geometry.miniWidth >= 0);
         assert.equal(geometry.miniLogicalLeadingSpace + geometry.miniWidth + geometry.miniLogicalTrailingSpace, width);
       }
+    }
+  });
+});
+
+describe('dock material changes', () => {
+  const modes = ['amPlus', 'kyantDefault', 'iphoneReference', 'custom'] as const;
+  const styleFor = (mode: typeof modes[number], progress: number) => mode === 'amPlus'
+    ? getCompactNavigationContentStyle(true, progress, 352, 86, AMPP_DOCK.navigationHeight, AMPP_DOCK.compactSize)
+    : getCompactNavigationContentStyle(false, progress, 344, 62, 62, 50);
+
+  it('clears inherited AM++ icon offsets when any other style folds after a live change', () => {
+    for (const source of modes) for (const target of modes) {
+      for (const previousProgress of [0, 0.65, 1, 1.09]) {
+        // Reanimated keeps an animated property until a later updater writes it.
+        // AM++ at rest leaves a hidden compact glyph translated into the row.
+        let appliedStyle = styleFor(source, previousProgress);
+        for (const progress of [0, 0.25, 0.65, 1, 0.5, 0, 1]) {
+          appliedStyle = { ...appliedStyle, ...styleFor(target, progress) };
+          if (target !== 'amPlus') {
+            assert.deepEqual(appliedStyle.transform, [{ translateX: 0 }, { translateY: 0 }], `${source} -> ${target} at ${progress}`);
+            assert.equal(appliedStyle.opacity, progress);
+          }
+        }
+      }
+    }
+  });
+
+  it('centres the compact glyph on the native left control after repeated style changes in either text direction', () => {
+    for (const rtl of [false, true]) {
+      let appliedStyle = styleFor('amPlus', 0);
+      for (const mode of [...modes, ...modes.toReversed()]) {
+        appliedStyle = { ...appliedStyle, ...styleFor(mode, 1) };
+        const amPlus = mode === 'amPlus';
+        const compactSize = amPlus ? 43 : 50;
+        const navigationHeight = amPlus ? 56 : 62;
+        const barWidth = amPlus ? 352 : getLiquidDockGeometry(344, 62, 50, 8, true, rtl).navigationWidth;
+        // This is the bottom/start anchor used by GlobalTabBar's compact view.
+        const logicalStart = rtl ? barWidth - compactSize : 0;
+        const physicalLeft = rtl ? barWidth - logicalStart - compactSize : logicalStart;
+        const x = physicalLeft + appliedStyle.transform[0].translateX! + compactSize / 2;
+        const y = navigationHeight - compactSize + appliedStyle.transform[1].translateY! + compactSize / 2;
+        assert.equal(x, compactSize / 2, `${mode} physical left control`);
+        assert.equal(y, navigationHeight - compactSize / 2, `${mode} compact control vertical centre`);
+        assert.equal(appliedStyle.opacity, 1);
+      }
+    }
+  });
+
+  it('preserves AM++ glyph tracking through collapse and its spring rebound', () => {
+    for (const progress of [-0.09, 0, 0.4, 0.65, 1, 1.09]) {
+      const style = styleFor('amPlus', progress);
+      const controls = getAmppControls(352, 86, progress);
+      // Foreground remains centred in the native capsule, including overshoot.
+      assert.equal(style.transform[0].translateX! + 43 / 2, controls.capsuleWidth / 2);
+      assert.equal(56 - 43 + style.transform[1].translateY! + 43 / 2, controls.top + controls.height / 2);
     }
   });
 });

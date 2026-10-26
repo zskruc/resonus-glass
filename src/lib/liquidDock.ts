@@ -4,6 +4,8 @@
  * Source: https://github.com/sdegenaar/liquid_glass_widgets/blob/6e7ffdacdabf5895c68569a3fb147fad694c299a/lib/widgets/surfaces/shared/tab_bar_minimize_controller.dart
  * Notice: modules/liquid-glass/LIQUID_GLASS_WIDGETS_LICENSE.
  */
+import { amppCompactAlpha, amppProgress, getAmppControls } from './amppDock';
+
 export interface LiquidDockScrollState {
   lastY: number | null;
   distance: number;
@@ -117,5 +119,27 @@ export function getLiquidDockGeometry(
     miniLogicalLeadingSpace: rtl ? miniRightSpace : miniPhysicalOffsetX,
     miniLogicalTrailingSpace: rtl ? miniPhysicalOffsetX : miniRightSpace,
     miniPhysicalOffsetX,
+  };
+}
+
+/** Complete animated style: changing material must clear the previous AM++ travel. */
+export function getCompactNavigationContentStyle(
+  amPlus: boolean,
+  value: number,
+  rowWidth: number,
+  searchWidth: number,
+  navigationHeight: number,
+  compactSize: number,
+) {
+  'worklet';
+  const controls = amPlus ? getAmppControls(rowWidth, searchWidth, value) : null;
+  // Reanimated retains properties omitted by a later updater. Always assign
+  // the transform so the separated styles cannot inherit AM++'s hidden offset.
+  return {
+    opacity: amPlus ? amppCompactAlpha(value) : amppProgress(value),
+    transform: [
+      { translateX: controls ? (controls.capsuleWidth - compactSize) / 2 : 0 },
+      { translateY: controls ? controls.top + (controls.height - compactSize) / 2 - (navigationHeight - compactSize) : 0 },
+    ],
   };
 }

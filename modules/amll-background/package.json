@@ -1,0 +1,7 @@
+{
+  "name": "amll-background",
+  "version": "0.1.0",
+  "description": "Small native artwork field for the AMLL-inspired player",
+  "main": "index.tsx",
+  "private": true
+}

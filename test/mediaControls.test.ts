@@ -44,3 +44,11 @@ test('same-named local headphones still invalidate a drag when the actual device
   const second = mediaVolumeOutputKey(null, null, 'headphones', 'USB Headset', 'device:43');
   assert.equal(canApplyMediaVolumeDrag(first, second), false);
 });
+
+test('a queued start from the old render and a cancelled completion cannot adopt the live output', () => {
+  const renderedOutput = mediaVolumeOutputKey(null, null, 'speaker', '', 'speaker:1');
+  const liveOutput = mediaVolumeOutputKey('upnp', 'new-room', 'speaker', '');
+  assert.equal(canApplyMediaVolumeDrag(renderedOutput, liveOutput), false);
+  assert.equal(canApplyMediaVolumeDrag(null, liveOutput), false);
+  assert.equal(canApplyMediaVolumeDrag(liveOutput, liveOutput), true);
+});

@@ -45,6 +45,21 @@ export function lyricBlurRadius(
 }
 
 /**
+ * AMLL's near-focus depth, with a fixed native filter budget. Distant rows
+ * already fade into the edge mask and must not allocate offscreen blur layers.
+ */
+export function amllLyricBlurRadius(
+  rowIndex: number,
+  activeRowIndex: number,
+  enabled: boolean,
+): number {
+  if (!enabled || rowIndex < 0 || activeRowIndex < 0) return 0;
+  const distance = Math.abs(rowIndex - activeRowIndex);
+  if (distance === 0 || distance > 4) return 0;
+  return Math.min(1.2, distance * 0.3);
+}
+
+/**
  * Start-only formats use the next word as this word's end. A long silence
  * before that next marker must not turn into a multi-second slow fill.
  */

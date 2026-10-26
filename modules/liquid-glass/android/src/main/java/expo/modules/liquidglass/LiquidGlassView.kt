@@ -71,6 +71,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
   internal var radiusBottomLeft: Float? by mutableStateOf(null)
   internal var radiusBottomRight: Float? by mutableStateOf(null)
   internal var materialPreset by mutableStateOf("button")
+  internal var materialTuningMask by mutableIntStateOf(0)
   internal var blurRadius by mutableFloatStateOf(2f)
   internal var progressiveBlur by mutableStateOf(false)
     private set
@@ -437,6 +438,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
     val enabled = glassEnabled
     val preset = materialPreset
     val amPlusMaterial = preset == "amPlus"
+    val tuningMask = materialTuningMask
     // Media popup recipes: AM-plus-plus-media-plugin b9e043c (GPL-3.0),
     // GlassPlayerDialog/GlassPlayerMoreMenu. Reuse this shared source; these
     // materials never create an independent capture or a press-animation job.
@@ -519,6 +521,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
           selectionOpacity = { tabSelectionOpacity },
           officialMaterial = officialMaterial,
           amPlusMaterial = amPlusMaterial,
+          tuningMask = tuningMask,
           dockProgress = { dockProgress },
           blurRadius = if (enabled) glassBlur else 0f,
           refraction = if (enabled) glassRefraction else 0f,
@@ -555,11 +558,15 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
                   val boundedLens = amPlusMaterial || mediaBottomPopup
                   val edge = if (boundedLens && glassRefraction > 0f && glassRefractionHeight > 0f)
                     AmPlusDockGeometry.edgeLens(size.height, size.width, 24f.dp.toPx()) else 0f
-                  lens(
-                    if (boundedLens) edge else glassRefractionHeight.dp.toPx(),
-                    if (boundedLens) edge else glassRefraction.dp.toPx(),
-                    depthEffect = !amPlusMaterial && glassDepthEffect,
-                    chromaticAberration = !amPlusMaterial && glassChromaticAberration
+                  val lensHeight = if (amPlusMaterial) MaterialTuningMask.lensHeight(edge,
+                    glassRefractionHeight.dp.toPx(), tuningMask)
+                    else if (boundedLens) edge else glassRefractionHeight.dp.toPx()
+                  val lensAmount = if (amPlusMaterial) MaterialTuningMask.lensAmount(edge,
+                    glassRefraction.dp.toPx(), tuningMask)
+                    else if (boundedLens) edge else glassRefraction.dp.toPx()
+                  lens(lensHeight, lensAmount,
+                    depthEffect = glassDepthEffect,
+                    chromaticAberration = glassChromaticAberration
                   )
                 }
               }
@@ -567,8 +574,13 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
             highlight = {
               when {
                 mediaMoreMenu -> null
-                dialogMaterial -> Highlight(style = HighlightStyle.Plain)
-                officialMaterial -> Highlight.Default
+                officialMaterial -> {
+                  val base = if (dialogMaterial) Highlight(style = HighlightStyle.Plain) else Highlight.Default
+                  if ((tuningMask and (MaterialTuningMask.HIGHLIGHT_WIDTH or MaterialTuningMask.HIGHLIGHT_ALPHA)) != 0)
+                    base.copy(width = glassHighlightWidth.dp, blurRadius = glassHighlightWidth.dp / 2f,
+                      alpha = glassHighlightOpacity)
+                  else base
+                }
                 else -> Highlight(width = glassHighlightWidth.dp, alpha = glassHighlightOpacity)
               }
             },
@@ -584,7 +596,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
                 // LiquidButton's optional tint: hue blend followed by its
                 // exact catalog .75 surface alpha. Untinted remains clear.
                 drawRect(tint, blendMode = BlendMode.Hue)
-                drawRect(tint.copy(alpha = 0.75f))
+                drawRect(tint.copy(alpha = if (MaterialTuningMask.has(tuningMask, MaterialTuningMask.TINT_ALPHA)) materialOpacity else 0.75f))
               } else {
                 // Other materials preserve their surface's own RGBA alpha.
                 drawRect(tint.copy(alpha = materialOpacity * tint.alpha))

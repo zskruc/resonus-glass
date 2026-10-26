@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 886 of them.
+Every string the app can show, under the screen it shows up on. 895 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -437,6 +437,7 @@ you are actually typing into, which is easier than reading it here.
 | `Mix of “{name}”` | What the player calls the queue once it has grown past its album into songs the app picked itself. `{name}` is the song it was grown from |
 | `No devices found` |  |
 | `No lyrics available for this song.` | Empty state on the lyrics screen |
+| `Now playing` | Heading on the queue screen over the song sounding right now. The player's own label is `NOW PLAYING`, a different string |
 | `NOW PLAYING` | Small label above the cover, in the same place and style as `PLAYING FROM`, when there is nothing to name |
 | `Output` |  |
 | `Playback speed` |  |
@@ -797,8 +798,9 @@ you are actually typing into, which is easier than reading it here.
 | --- | --- |
 | `Adds a rounded three-dimensional lens shape.` |  |
 | `Adds subtle colored edges to refracted details.` |  |
+| `AM++ defaults restored and saved` |  |
+| `AM++ keeps its dock layout and motion while you tune its glass. Save changes separately, or restore and save all AM++ defaults with one tap. Your Custom parameters stay unchanged.` |  |
 | `AM++ reference` |  |
-| `AM++ reference uses matching mini player and navigation glass, with a shared spring collapse. Search joins the expanded bar and separates on the right when collapsed. Other controls keep Kyant defaults.` |  |
 | `Applied to all glass controls` |  |
 | `Apply to all controls` |  |
 | `Auto` |  |
@@ -817,6 +819,7 @@ you are actually typing into, which is easier than reading it here.
 | `Current parameters` |  |
 | `Custom color` |  |
 | `Custom parameters` |  |
+| `Defaults restored, but could not save them.` |  |
 | `Defaults restored. Save to keep them.` |  |
 | `Depth effect` |  |
 | `Drag the background, or let it move slowly.` |  |
@@ -824,6 +827,7 @@ you are actually typing into, which is easier than reading it here.
 | `Enable glass` |  |
 | `Enable glass for this control to see your changes.` |  |
 | `Explore` | The tab holding everything the server has: all albums, artists, songs, genres, stations and folders |
+| `Export includes the active AM++ parameters for all three surfaces, separately from Custom parameters.` |  |
 | `Export keeps your three custom styles; the default materials do not overwrite them.` |  |
 | `Export keeps your three custom styles; the reference style does not overwrite them.` |  |
 | `Export parameters` |  |
@@ -851,6 +855,7 @@ you are actually typing into, which is easier than reading it here.
 | `Pause motion` |  |
 | `Refraction strength` |  |
 | `Reset this control` |  |
+| `Restore AM++ defaults` |  |
 | `Sample album` |  |
 | `Sample panel` |  |
 | `Save parameters` |  |
@@ -1068,6 +1073,8 @@ you are actually typing into, which is easier than reading it here.
 | --- | --- |
 | `Always previous track` | A value of `Previous button`: never restarts, always goes back a song |
 | `AM++ player features` |  |
+| `AMLL reference` | One of the values of “Player layout” |
+| `AMLL uses a shared cover transition, full-page lyrics and an artwork mesh background. Your previous player remains available.` |  |
 | `Animated cover background` | A setting: an animated cover (GIF, animated WebP) is shown full screen behind the player instead of inside the square |
 | `Artwork palette in full player` |  |
 | `Background` | Section header over what is drawn behind the player. Its two values are `Plain` and `Blurred cover` |
@@ -1107,7 +1114,9 @@ you are actually typing into, which is easier than reading it here.
 | `Plain` | A value of `Background`: a flat colour behind the player, no picture |
 | `Play or pause` | One of its options: the same as the play button |
 | `Player` |  |
+| `Player appearance` |  |
 | `Player background` | What is drawn behind the player: the blurred artwork, or a flat tint |
+| `Player layout` |  |
 | `Popup presets keep their reference blur. Artwork colors affect only the full player, never the mini player or tabs.` |  |
 | `Prefer local lyrics` | A value of `Lyrics source`: use the ones that came with the file first |
 | `Prefer online search` | A value of `Lyrics source`: look them up on the internet first |
@@ -1116,6 +1125,7 @@ you are actually typing into, which is easier than reading it here.
 | `Previous button` | What the previous button does when a song is already playing. Its values are the two lines below it |
 | `Queue` | The list of songs waiting to play. Not a playlist |
 | `Regular font weight` | One of the values of “Lyrics weight” |
+| `Resonus layout` |  |
 | `Restart, then previous track` | A value of `Previous button`: the first press goes back to the start of this song, the second to the one before |
 | `Same as bottom bar` | One of the values of “Floating popup glass” |
 | `Same as More menu` | One of the values of “Floating popup glass” |
