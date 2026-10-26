@@ -1,13 +1,8 @@
 /** Song row inside a list (album, playlist, search results). */
 import Icon from '@/components/Icon';
-import { memo, useRef } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { memo, useLayoutEffect, useMemo, useRef } from 'react';
+import { Pressable, Text, View, type GestureResponderEvent } from 'react-native';
 import Animated from 'react-native-reanimated';
-import ReanimatedSwipeable, {
-  SwipeDirection,
-  type SwipeableMethods,
-} from 'react-native-gesture-handler/ReanimatedSwipeable';
-import Reanimated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
 import { COVER, songCoverUrl, star } from '@/api/data';
 import { type Song } from '@/api/subsonic';
@@ -29,9 +24,15 @@ import { bump } from '@/lib/perfLog';
 import { PlayingBars } from './PlayingBars';
 import { ExplicitBadge, useExplicitBadge } from './ExplicitBadge';
 import { FavoriteButton } from './FavoriteButton';
+import { TrackSwipeable } from './TrackSwipeable';
 
 interface Props {
   song: Song;
+  /** Full recycled-cell binding, including duplicate occurrence and positions. */
+  rowOccurrenceKey?: string;
+  displayIndex?: number;
+  serverIndex?: number;
+  ownerScope?: string;
   /**
    * Optional number on the left (e.g. the track number on an album). Coexists
    * with the cover: number then cover (Spotify's "Popular" style).
@@ -80,26 +81,22 @@ const SWIPE_ICON: Record<Exclude<SwipeAction, 'off'>, keyof typeof Icon.glyphMap
  * so the strip can only exist while the gesture lasts.
  */
 function SwipeActionPanel({
-  progress,
   icon,
   side,
 }: {
-  progress: SharedValue<number>;
   icon: keyof typeof Icon.glyphMap;
   /** Side where the strip peeks out: the icon sticks to the edge it enters from. */
   side: 'left' | 'right';
 }) {
-  const visible = useAnimatedStyle(() => ({ opacity: progress.value > 0.01 ? 1 : 0 }));
   return (
-    <Reanimated.View
+    <View
       style={[
         styles.queueAction,
         { backgroundColor: colors.accent, alignItems: side === 'left' ? 'flex-start' : 'flex-end' },
-        visible,
       ]}
     >
       <Icon name={icon} size={22} color={colors.onAccent} />
-    </Reanimated.View>
+    </View>
   );
 }
 
@@ -107,6 +104,10 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 function TrackRowBase({
   song,
+  rowOccurrenceKey,
+  displayIndex,
+  serverIndex,
+  ownerScope,
   position,
   isCurrent,
   menuContext,
@@ -123,7 +124,39 @@ function TrackRowBase({
   bump('render · TrackRow');
   const openMenu = useSongMenu((s) => s.open);
   const t = useT();
-  const press = usePressFeedback();
+  const rowIdentity = JSON.stringify([ownerScope, rowOccurrenceKey ?? song.id, displayIndex, serverIndex]);
+  const binding = useMemo(() => ({ rowIdentity, song }), [rowIdentity, song]);
+  const currentBinding = useRef<object | null>(null);
+  const pointer = useRef<{ binding: object; timestamp?: number; touch: boolean } | null>(null);
+  const menuPointer = useRef<{ binding: object; timestamp?: number; touch: boolean } | null>(null);
+  useLayoutEffect(() => {
+    currentBinding.current = binding;
+    return () => { currentBinding.current = null; };
+  }, [binding]);
+  const press = usePressFeedback(rowIdentity);
+
+  function ownsPointer(pressed = pointer.current, event?: GestureResponderEvent) {
+    return currentBinding.current === binding && (!pressed || (pressed.binding === binding
+      && (pressed.timestamp === undefined || event?.nativeEvent.timestamp === undefined
+        || event.nativeEvent.timestamp >= pressed.timestamp)));
+  }
+
+  function releasePointer(ref: typeof pointer, event?: GestureResponderEvent) {
+    if (currentBinding.current !== binding) return;
+    const pressed = ref.current;
+    if (pressed?.timestamp !== undefined && event?.nativeEvent.timestamp !== undefined
+      && event.nativeEvent.timestamp < pressed.timestamp) return;
+    // RN sends PressOut before Press. Keep the start owner through that event,
+    // while allowing a later accessibility activation without a pointer.
+    queueMicrotask(() => { if (ref.current === pressed) ref.current = null; });
+  }
+
+  function touchStart(ref: typeof pointer, event: GestureResponderEvent) {
+    if (currentBinding.current !== binding) return;
+    const timestamp = event.nativeEvent.timestamp;
+    if (ref.current?.timestamp !== undefined && timestamp < ref.current.timestamp) return;
+    ref.current = { binding, timestamp, touch: true };
+  }
   // Memoized below, and with its own `propsEqual` at that: the list repainting
   // does not reach the rows, so each one asks for the appearance itself.
   useTheme();
@@ -134,7 +167,6 @@ function TrackRowBase({
   const addToQueue = usePlayerStore((s) => s.addToQueue);
   const playNext = usePlayerStore((s) => s.playNext);
   const toast = useToast((s) => s.show);
-  const swipeRef = useRef<SwipeableMethods>(null);
 
   // Favorite: the central favorites list (`favIds`) is the reliable source —
   // it reflects mark/unmark upon invalidation. The song's `starred` (which
@@ -186,7 +218,6 @@ function TrackRowBase({
 
   function runSwipeAction(action: SwipeAction) {
     haptic('light');
-    swipeRef.current?.close();
     switch (action) {
       case 'queue':
         addToQueue(song);
@@ -219,13 +250,30 @@ function TrackRowBase({
       // be added to a list even though it can't be played. One or the other:
       // the press style sets opacity too, and after `dimmed` it undid it.
       style={[styles.row, unavailable && !selecting ? styles.dimmed : press.style]}
-      onPressIn={() => {
+      // PressIn can fire again when the same finger re-enters the press rect.
+      // Native touch-down, rather than re-entry, owns a recycled row's press.
+      onTouchStart={(event) => touchStart(pointer, event)}
+      onTouchEnd={(event) => releasePointer(pointer, event)}
+      onTouchCancel={(event) => releasePointer(pointer, event)}
+      onPressIn={(event) => {
+        if (currentBinding.current !== binding) return;
+        if (!pointer.current) pointer.current = { binding, timestamp: event.nativeEvent.timestamp, touch: false };
+        if (!ownsPointer(pointer.current, event)) return;
         press.onPressIn();
         if (!(unavailable && !selecting)) onPressIn?.();
       }}
-      onPressOut={press.onPressOut}
-      onPress={unavailable && !selecting ? () => toast(t('Not available offline')) : onPress}
-      onLongPress={onLongPress ? () => {
+      onPressOut={(event) => {
+        if (ownsPointer(pointer.current, event)) press.onPressOut();
+        if (!pointer.current?.touch) releasePointer(pointer, event);
+      }}
+      onPress={(event) => {
+        if (!ownsPointer(pointer.current, event)) return;
+        pointer.current = null;
+        if (unavailable && !selecting) toast(t('Not available offline'));
+        else onPress();
+      }}
+      onLongPress={onLongPress ? (event) => {
+        if (!ownsPointer(pointer.current, event)) return;
         press.onPressOut();
         onLongPress();
       } : undefined}
@@ -258,7 +306,7 @@ function TrackRowBase({
         <View style={styles.artwork}>
           {/* Fast lists should not start two-image fades on every newly mounted
               row. Keep the decoded cache and render the thumbnail directly. */}
-          <Cover uri={songCoverUrl(song, COVER.thumb)} size={48} transition={0} />
+          <Cover uri={songCoverUrl(song, COVER.thumb)} resetKey={rowIdentity} size={48} transition={0} />
           {/* Over the picture where there is no number to give up, behind a
               scrim so the bars read on artwork of any colour. */}
           {isCurrent && position === undefined ? (
@@ -293,7 +341,7 @@ function TrackRowBase({
       </View>
 
       {favorited && !selecting && !unavailable ? (
-        <FavoriteButton id={song.id} starred undo size={20} />
+        <FavoriteButton id={song.id} resetKey={rowIdentity} starred undo size={20} />
       ) : null}
       {showRating && song.userRating ? (
         <View style={styles.rating} accessibilityLabel={t('Rate {n} stars', { n: song.userRating })}>
@@ -309,7 +357,19 @@ function TrackRowBase({
           style={styles.menuButton}
           accessibilityRole="button"
           accessibilityLabel={t('More options')}
-          onPress={() => openMenu(song, menuContext)}
+          onTouchStart={(event) => touchStart(menuPointer, event)}
+          onTouchEnd={(event) => releasePointer(menuPointer, event)}
+          onTouchCancel={(event) => releasePointer(menuPointer, event)}
+          onPressIn={(event) => {
+            if (currentBinding.current !== binding || menuPointer.current) return;
+            menuPointer.current = { binding, timestamp: event.nativeEvent.timestamp, touch: false };
+          }}
+          onPressOut={(event) => { if (!menuPointer.current?.touch) releasePointer(menuPointer, event); }}
+          onPress={(event) => {
+            if (!ownsPointer(menuPointer.current, event)) return;
+            menuPointer.current = null;
+            openMenu(song, menuContext);
+          }}
         >
           <Icon name="ellipsis-horizontal" size={18} color={colors.textSecondary} />
         </Pressable>
@@ -322,40 +382,23 @@ function TrackRowBase({
   if (!swipeEnabled) return row;
 
   return (
-    <ReanimatedSwipeable
-      ref={swipeRef}
-      // The left strip is opened by swiping RIGHT (and vice versa).
-      renderLeftActions={(progress) =>
-        swipeAction === 'off' ? null : (
-          <SwipeActionPanel progress={progress} icon={SWIPE_ICON[swipeAction]} side="left" />
-        )
-      }
-      renderRightActions={(progress) =>
-        swipeLeftAction === 'off' ? null : (
-          <SwipeActionPanel progress={progress} icon={SWIPE_ICON[swipeLeftAction]} side="right" />
-        )
-      }
-      // Intentionally less sensitive: `dragOffsetFrom…Edge` requires a clear
-      // horizontal path before activating (so a vertical scroll with some
-      // lateral movement no longer triggers it accidentally), and the
-      // `threshold` requires a substantial drag to confirm the action.
-      dragOffsetFromLeftEdge={30}
-      dragOffsetFromRightEdge={30}
-      leftThreshold={90}
-      rightThreshold={90}
-      friction={1}
-      overshootLeft={false}
-      overshootRight={false}
-      enabled={swipeEnabled}
-      onSwipeableWillOpen={(direction) => {
-        // `direction` is the GESTURE direction (not the panel side):
-        // swiping right (opens the left strip) arrives as RIGHT.
-        if (direction === SwipeDirection.RIGHT) runSwipeAction(swipeAction);
-        else if (direction === SwipeDirection.LEFT) runSwipeAction(swipeLeftAction);
+    <TrackSwipeable
+      rowIdentity={`${rowIdentity}:${swipeAction}:${swipeLeftAction}`}
+      allowRight={swipeAction !== 'off'}
+      allowLeft={swipeLeftAction !== 'off'}
+      actionWidth={22 + spacing.lg * 2}
+      renderAction={(direction) => {
+        const action = direction > 0 ? swipeAction : swipeLeftAction;
+        return action === 'off' ? null : (
+          <SwipeActionPanel icon={SWIPE_ICON[action]} side={direction > 0 ? 'left' : 'right'} />
+        );
+      }}
+      onSwipe={(direction) => {
+        runSwipeAction(direction > 0 ? swipeAction : swipeLeftAction);
       }}
     >
       {row}
-    </ReanimatedSwipeable>
+    </TrackSwipeable>
   );
 }
 
@@ -368,8 +411,9 @@ function sameMenuContext(a?: SongMenuContext, b?: SongMenuContext): boolean {
 /**
  * `memo` comparison: re-renders only if something the row paints or how it
  * behaves changes. Callbacks (`onPress`/`onPressIn`) are recreated on every
- * parent render, but their behavior depends only on `song` and on the state
- * already compared here (selecting/selected), not on their identity, so that
+ * parent render, but their behavior depends on the occurrence, playback/server
+ * positions, list scope and selection state compared here. TrackListView's
+ * playback dispatcher reads the latest list callback. Closure identity itself
  * is intentionally ignored; for `onLongPress` only whether it's active (allows
  * entering selection) matters. Without this, changing the current song would
  * re-render ALL visible rows (each receives new closures), not just the two
@@ -379,6 +423,10 @@ function sameMenuContext(a?: SongMenuContext, b?: SongMenuContext): boolean {
 function propsEqual(a: Props, b: Props): boolean {
   return (
     a.song === b.song &&
+    a.rowOccurrenceKey === b.rowOccurrenceKey &&
+    a.displayIndex === b.displayIndex &&
+    a.serverIndex === b.serverIndex &&
+    a.ownerScope === b.ownerScope &&
     a.position === b.position &&
     a.isCurrent === b.isCurrent &&
     a.showFavorite === b.showFavorite &&
@@ -415,6 +463,7 @@ const styles = themed((colors) => ({
     // covered: it hides on its own at rest (see QueueAction).
   },
   queueAction: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'flex-start',
     paddingHorizontal: spacing.lg,

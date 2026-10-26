@@ -1,7 +1,7 @@
 /** Square cover art with placeholder when no image. */
 import Icon from '@/components/Icon';
 import { Image, type ImageContentFit, type ImageStyle } from 'expo-image';
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { AppState, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { CACHED_COVER, COVER } from '@/api/data';
@@ -32,6 +32,8 @@ export function useCoverRadius(size: number): number {
 
 interface Props {
   uri?: string;
+  /** Recycled list binding; resets local image errors without remounting. */
+  resetKey?: string;
   size: number;
   /** A circle (artists). */
   rounded?: boolean;
@@ -312,6 +314,7 @@ export function useSettledSource(
 
 export function Cover({
   uri,
+  resetKey,
   size,
   rounded,
   transition = 200,
@@ -322,13 +325,17 @@ export function Cover({
   style,
   onAnimatedDetected,
 }: Props) {
-  // If the image fails to load (e.g. offline without cache or download), we fall
-  // back to the placeholder instead of leaving a gap. Reset on `uri` change
-  // because lists recycle the same instance with a different song.
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    setFailed(false);
-  }, [uri]);
+  // A recycled row must render the new artwork immediately, rather than keep
+  // the old error placeholder until a passive effect has reset a boolean.
+  // A fresh binding also rejects callbacks from an earlier A -> B -> A cycle.
+  const binding = useMemo(() => ({ uri, resetKey }), [uri, resetKey]);
+  const currentBinding = useRef<typeof binding | null>(binding);
+  useLayoutEffect(() => {
+    currentBinding.current = binding;
+    return () => { currentBinding.current = null; };
+  }, [binding]);
+  const [failedFor, setFailedFor] = useState<typeof binding | null>(null);
+  const failed = failedFor === binding;
   // Offline, a cover that is not downloaded arrives marked (see `CACHED_COVER`
   // in the data layer): it may be shown, but only if it is already in the image
   // cache from when it was seen online, and never fetched. This is the only
@@ -389,7 +396,11 @@ export function Cover({
   }
   return (
     <Image
-      key={redraw.nonce}
+      // Expo's error/display events have no source URI. Rebuild only the
+      // native image when a recycled slot changes source, so a delayed event
+      // cannot be delivered to another source's newest React callback. Covers
+      // from the same album keep the image; the row and its hooks still recycle.
+      key={resetKey === undefined ? redraw.nonce : `${shown}:${redraw.nonce}`}
       ref={imageRef}
       source={{ uri: shown }}
       style={[{ width: size, height: size, borderRadius }, style as StyleProp<ImageStyle>]}
@@ -402,10 +413,12 @@ export function Cover({
       // retains its animated resource across pause/focus changes.
       preferStatic={preferStatic ?? (!autoplay && !onAnimatedDetected)}
       onDisplay={() => {
+        if (currentBinding.current !== binding) return;
         redraw.onDisplay();
         animation.onDisplay();
       }}
       onLoad={(e) => {
+        if (currentBinding.current !== binding) return;
         if (onAnimatedDetected && uri) onAnimatedDetected(uri, !!e.source?.isAnimated);
       }}
       // expo-image defaults to 'disk', which keeps the file but not the decoded
@@ -413,7 +426,9 @@ export function Cover({
       // small and the same handful come round constantly, which is what a
       // memory cache is for.
       cachePolicy="memory-disk"
-      onError={() => setFailed(true)}
+      onError={() => {
+        if (currentBinding.current === binding) setFailedFor(binding);
+      }}
     />
   );
 }

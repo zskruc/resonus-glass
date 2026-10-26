@@ -10,11 +10,13 @@ import android.os.Build
 import android.view.MotionEvent
 import android.view.View
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas as ComposeCanvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -25,16 +27,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.IntSize
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistryOwner
@@ -537,6 +542,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
       }
     } else null
     if (RenderInteractiveControl(backdrop)) return
+    DockMaterialCapacity { expandedCapacity ->
     DockMaterialLayout {
       if (isProgressiveBlur) {
         // The producer's edge region is fully blurred; only this final alpha
@@ -587,6 +593,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
           amPlusMaterial = amPlusMaterial,
           tuningMask = tuningMask,
           dockProgress = { dockProgress },
+          expandedCapacity = expandedCapacity,
           blurRadius = if (enabled) glassBlur else 0f,
           refraction = if (enabled) glassRefraction else 0f,
           refractionHeight = if (enabled) glassRefractionHeight else 0f,
@@ -599,6 +606,11 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
           dark = isDark
         )
       } else {
+        val surfaceCapacity = with(LocalDensity.current) {
+          amPlusPaddedCapacity(amPlusSurfaceCapacity(dockRole, expandedCapacity,
+            dockCompactWidth.dp.toPx(), GlassBarCollapsePolicy.GAP_DP.dp.toPx()),
+            if (enabled) glassBlur.dp.toPx() else 0f)
+        }
         val glassShape = if (amPlusMaterial) RoundedCornerShape(50) else RoundedCornerShape(
           topStart = (if (isLtr) topLeft else topRight).dp,
           topEnd = (if (isLtr) topRight else topLeft).dp,
@@ -608,6 +620,9 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
         Box(
           Modifier.fillMaxSize().drawBackdrop(
             backdrop = backdrop,
+            minLayerSize = surfaceCapacity,
+            clipCompositingStrategy = if (surfaceCapacity != IntSize.Zero) CompositingStrategy.Auto
+              else CompositingStrategy.Offscreen,
             // Physical corners map to start/end for RTL, as with the RN card.
             shape = { glassShape },
             effects = {
@@ -679,6 +694,26 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
             Color.White.copy(alpha = .18f))), glassShape) else Modifier)
         )
       }
+    }
+    }
+  }
+
+  /** Fixed outer constraints supply capacity; the child still measures its live outline. */
+  @Composable
+  private fun DockMaterialCapacity(content: @Composable (IntSize) -> Unit) {
+    if (materialPreset != "amPlus" || dockCompactWidth <= 0f || progressiveBlur) {
+      content(IntSize.Zero)
+      return
+    }
+    // Compose observes only entering/leaving a transition, not every spring sample.
+    val reserve by remember { derivedStateOf {
+      reserveAmPlusMaterial(materialPreset == "amPlus", dockCompactWidth > 0f, dockProgress)
+    } }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+      val expandedHeight = if (dockExpandedHeight > 0f)
+        with(LocalDensity.current) { dockExpandedHeight.dp.roundToPx() }.coerceIn(0, constraints.maxHeight)
+        else constraints.maxHeight
+      content(if (reserve) IntSize(constraints.maxWidth, expandedHeight) else IntSize.Zero)
     }
   }
 

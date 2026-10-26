@@ -7,7 +7,8 @@ import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Link, useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -31,10 +32,10 @@ import Reanimated, {
   withTiming,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
-// The list must use gesture-handler so the row swipe-to-queue doesn't fight
-// the vertical scroll (with RN's FlatList the gesture is flaky).
+// The recycled list keeps a gesture-handler scroll host so horizontal row
+// actions and the pull-to-reveal observer coexist with native scrolling.
 import {
-  FlatList as GHFlatList,
+  ScrollView as GHScrollView,
   Gesture,
   GestureDetector,
   type GestureType,
@@ -50,7 +51,6 @@ import { useSelectionMenu } from '@/hooks/useSelectionMenu';
 import { useT } from '@/i18n';
 import { artistTargets } from '@/lib/artistNav';
 import { haptic } from '@/lib/haptics';
-import { listPerf } from '@/lib/listPerf';
 import { useArtistPicker } from '@/store/artistPicker';
 import { usePlayerStore } from '@/store/player';
 import { colors, fontSize, radius, spacing, themed, tracking } from '@/theme';
@@ -82,6 +82,14 @@ const SEARCH_H = 72;
 /** Lines of the description shown before "Show more". */
 const DESCRIPTION_LINES = 2;
 
+/** A playlist occurrence has its own identity even when Song is shared. */
+interface TrackListOccurrence {
+  song: Song;
+  origIndex: number;
+  rowKey: string;
+  serverIndex: number;
+}
+
 /**
  * The list, with its scroll wired straight to what the scroll animates.
  *
@@ -97,7 +105,8 @@ const DESCRIPTION_LINES = 2;
  * own rather than added to the scroll (mixing the two in one expression is what
  * would break both).
  */
-const AnimatedList = Reanimated.createAnimatedComponent(GHFlatList<Song>);
+const AnimatedList = Reanimated.createAnimatedComponent(FlashList<TrackListOccurrence>);
+const NO_SCROLL_ANCHOR = { disabled: true };
 
 /** Normalizes for searching: lowercase and without accents. */
 function normQ(s: string): string {
@@ -296,13 +305,18 @@ export function TrackListView({
   // The bar is rendered collapsed (height 0) above the header; a pull-down
   // gesture when the list is at the very top reveals it, and scrolling back
   // collapses it. Like Spotify's "Find in playlist".
-  const listRef = useRef<GHFlatList<Song>>(null);
+  const listRef = useRef<FlashListRef<TrackListOccurrence>>(null);
+  const listScope = useId();
+  const ownerScope = JSON.stringify([listScope, playlistId, title]);
+  const onPlayRef = useRef(onPlay);
+  useLayoutEffect(() => { onPlayRef.current = onPlay; }, [onPlay]);
+  const playAtIndex = useCallback((index: number) => { void onPlayRef.current(index); }, []);
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [descriptionHasMore, setDescriptionHasMore] = useState(false);
-  const searchH = useRef(new Animated.Value(0)).current;
+  const [searchH] = useState(() => new Animated.Value(0));
   const searchBar = !!searchable && songs.length > 0;
 
   // `setRevealed` is async: the gesture fires `onChange` many times per drag,
@@ -339,14 +353,21 @@ export function TrackListView({
   // simultaneity is declared on the list (simultaneousHandlers prop with the
   // gesture ref): without it, native scroll cancels this Pan before it starts.
   const revealPanRef = useRef<GestureType | undefined>(undefined);
+  // FlashList creates its native host when this function's identity changes.
+  // Keep it stable while the search gesture itself changes state.
+  const renderScrollComponent = useCallback((props: ComponentProps<typeof GHScrollView>) => (
+    <GHScrollView {...props} simultaneousHandlers={revealPanRef} />
+  ), []);
   const revealSent = useSharedValue(false);
   const revealPan = Gesture.Pan()
+    // eslint-disable-next-line react-hooks/refs -- RNGH registers this ref; it does not read the current gesture during React rendering.
     .withRef(revealPanRef)
     .enabled(searchBar && !searching && !revealed)
     // Only downward drags: upward ones (normal scroll) cancel it.
     .activeOffsetY(10)
     .failOffsetY(-10)
     .onBegin(() => { revealSent.set(false); })
+    // eslint-disable-next-line react-hooks/refs -- RNGH invokes the observer after a native gesture begins, outside rendering.
     .onChange((e) => {
       // Ordinary scrolling stays on the UI thread. Only one actual reveal
       // crosses to JS, without synchronously reading a shared value there.
@@ -365,19 +386,29 @@ export function TrackListView({
    * removing one removed them all, which left none (#132). The queue screen
    * already numbers its rows this way, and for the same reason.
    *
-   * Keyed rather than indexed because it survives what indices do not: sorting
-   * the list moves every position, and `id#0` is still the same song
-   * afterwards. Two rows of the same song do swap places with each other, and
-   * there is nothing to tell them apart by anyway.
+   * A server playlist index follows the particular occurrence through sorting;
+   * without one, count each occurrence of the song as the fallback identity.
    */
   const rowKeys = useMemo(() => {
     const seen = new Map<string, number>();
-    return songs.map((s) => {
+    return songs.map((s, index) => {
+      // A server position distinguishes duplicate playlist entries even when
+      // sorting changes the order of otherwise identical Song objects.
+      if (playlistIndices) return `${s.id}#server:${playlistIndices[index]}`;
       const n = seen.get(s.id) ?? 0;
       seen.set(s.id, n + 1);
       return `${s.id}#${n}`;
     });
-  }, [songs]);
+  }, [playlistIndices, songs]);
+  // FlashList 2.0.2 memoizes cell children by item, omitting index. Distinct
+  // descriptors make changing duplicate occurrences observable to that memo,
+  // while keeping the original Song object for playback and song actions.
+  const occurrences = useMemo<TrackListOccurrence[]>(() => songs.map((song, origIndex) => ({
+    song,
+    origIndex,
+    rowKey: rowKeys[origIndex],
+    serverIndex: playlistIndices ? playlistIndices[origIndex] : origIndex,
+  })), [playlistIndices, rowKeys, songs]);
 
   // null = normal mode; a Set (even empty) = selecting.
   const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null);
@@ -471,17 +502,11 @@ export function TrackListView({
   const filtered = useMemo(() => {
     const q = normQ(query.trim());
     if (!searchable || !q) return null;
-    const rows: { song: Song; index: number }[] = [];
-    songs.forEach((song, index) => {
-      if (normQ(song.title).includes(q) || (song.artist && normQ(song.artist).includes(q)))
-        rows.push({ song, index });
-    });
-    return rows;
-  }, [searchable, query, songs]);
-  const shownSongs = useMemo(
-    () => (filtered ? filtered.map((r) => r.song) : songs),
-    [filtered, songs],
-  );
+    return occurrences.filter(({ song }) =>
+      normQ(song.title).includes(q) || (song.artist && normQ(song.artist).includes(q)),
+    );
+  }, [searchable, query, occurrences]);
+  const shownRows = filtered ?? occurrences;
 
   function cancelSearch() {
     Keyboard.dismiss();
@@ -546,21 +571,19 @@ export function TrackListView({
       <GestureDetector gesture={revealPan}>
       <AnimatedList
         ref={listRef}
-        simultaneousHandlers={revealPanRef}
-        {...listPerf}
-        // Keep three screens of overscan on either side. These swipeable rows
-        // also belong to the glass capture tree, so retaining five screens in
-        // each direction adds native traversal work on every captured frame.
-        windowSize={7}
-        // Each row mounts a ReanimatedSwipeable (gestures + reanimated); with
-        // `removeClippedSubviews` (known Android bug) those heavy rows render
-        // blank and take a while to appear when scrolling large lists.
-        // Disabling it here keeps them mounted within the virtual window.
-        removeClippedSubviews={false}
-        data={shownSongs}
+        renderScrollComponent={renderScrollComponent}
+        // Search and description change the header height intentionally. The
+        // default anchor compensation would counteract those changes.
+        maintainVisibleContentPosition={NO_SCROLL_ANCHOR}
+        maxItemsInRecyclePool={32}
+        // Two bounded pools: ordinary rows and rows with a disc label. Keep
+        // FlashList's default draw distance; FlatList's window knobs do not
+        // describe a recycler and must not be carried over.
+        getItemType={(row) => !filtered && discHeaders?.[row.origIndex] ? 'disc' : 'track'}
+        data={shownRows}
         // The row's own key, not the song's: the same song can be in the list
         // twice and React was being handed the same key for both.
-        keyExtractor={(_, index) => rowKeys[filtered ? filtered[index].index : index]}
+        keyExtractor={(row) => row.rowKey}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         contentContainerStyle={[
@@ -825,24 +848,27 @@ export function TrackListView({
           </View>
         }
         extraData={selectedIds}
-        renderItem={({ item, index }) => {
-          // With an active filter, `index` is the position in results; everything
-          // else (play, remove, numbering) uses the original position.
-          const origIndex = filtered ? filtered[index].index : index;
-          const rowKey = rowKeys[origIndex];
+        renderItem={({ item }) => {
+          // The occurrence owns its positions; FlashList's result index is
+          // irrelevant to play, remove and numbering, including while filtered.
+          const { song, origIndex, rowKey, serverIndex } = item;
           // Disc header (only when not searching, where origIndex === index).
           const discLabel = filtered ? undefined : discHeaders?.[origIndex];
           const row = (
             <TrackRow
-              song={item}
+              song={song}
+              rowOccurrenceKey={rowKey}
+              displayIndex={origIndex}
+              serverIndex={serverIndex}
+              ownerScope={ownerScope}
               // With artwork visible the number is omitted: the album stays as
               // usual (only the artist's Popular shows number + cover).
-              position={numbered && !showArtwork ? item.track ?? origIndex + 1 : undefined}
-              isCurrent={currentId === item.id}
+              position={numbered && !showArtwork ? song.track ?? origIndex + 1 : undefined}
+              isCurrent={currentId === song.id}
               showArtwork={showArtwork}
               menuContext={
                 playlistId
-                  ? { playlistId, index: playlistIndices ? playlistIndices[origIndex] : origIndex }
+                  ? { playlistId, index: serverIndex }
                   : undefined
               }
               selecting={selecting}
@@ -864,7 +890,7 @@ export function TrackListView({
                 // otherwise it would deselect the song you entered selection with.
                 if (justLongPressed.current === rowKey) return;
                 if (selecting) toggleSelect(rowKey);
-                else onPlay(origIndex);
+                else playAtIndex(origIndex);
               }}
             />
           );

@@ -9,6 +9,7 @@ import android.graphics.PixelFormat
 import android.graphics.PorterDuff
 import android.graphics.Rect
 import android.graphics.RenderNode
+import android.graphics.drawable.ColorDrawable
 import android.hardware.HardwareBuffer
 import android.media.Image
 import android.media.ImageReader
@@ -23,10 +24,13 @@ import android.view.View
 import android.view.ViewTreeObserver
 import androidx.annotation.RequiresApi
 import androidx.compose.runtime.snapshots.Snapshot
+import com.facebook.react.uimanager.BackgroundStyleApplicator
 import com.facebook.react.uimanager.util.ReactFindViewUtil
 import java.time.Duration
 import java.lang.ref.WeakReference
 import java.util.ArrayDeque
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -120,10 +124,12 @@ internal object WindowBackdrops {
     // the actual scene before this capture or its temporary alpha mutations.
     windows.values.forEach { it.observeBackgroundScene(root) }
     val visibleRect = Rect()
-    val excluded = surfaces.mapNotNull { surface ->
-      if ((isDescendantOf(surface, captureSource) ||
-          (captureSource === root && activityDecor != null && isDescendantOf(surface, activityDecor))) &&
-        isMaterialVisible(surface, visibleRect)) {
+    val capturedSurfaces = surfaces.filter { surface ->
+      backdropSourceContainsSurface(captureSource === root, isDescendantOf(surface, captureSource),
+        activityDecor != null && isDescendantOf(surface, activityDecor))
+    }
+    val excluded = capturedSurfaces.mapNotNull { surface ->
+      if (isMaterialVisible(surface, visibleRect)) {
         (surface.parent as? View)?.takeUnless { it === captureSource || it === root || it === activityDecor }
       } else null
     }.distinct()
@@ -138,7 +144,7 @@ internal object WindowBackdrops {
       // ViewOverlay lives outside LiquidGlassView.dispatchDraw. Explicitly
       // exclude even its cached RenderNode; an onDraw guard alone cannot stop
       // replay of a previous selected layer into the backdrop it samples.
-      surfaces.forEach { it.suppressSelectionOverlayForCapture() }
+      capturedSurfaces.forEach { it.suppressSelectionOverlayForCapture() }
       return capture()
     } finally {
       try {
@@ -147,7 +153,7 @@ internal object WindowBackdrops {
         isCapturing = wasCapturing
         if (!isCapturing) {
           try {
-            surfaces.forEach { it.restoreSelectionOverlayAfterCapture() }
+            capturedSurfaces.forEach { it.restoreSelectionOverlayAfterCapture() }
           } finally {
             // Drawing an alpha-zero parent can still re-record dirty child nodes.
             // Restore suppressed hosts even if an overlay's restoration fails.
@@ -211,6 +217,7 @@ internal class WindowBackdrop(
   private val screenRect = Rect()
   private val surfaceLocation = IntArray(2)
   private val captureRect = Rect()
+  private val captureRegion = BackdropCaptureRegion()
   private val progressiveRect = Rect()
   private val rawRect = Rect()
   private val progressiveEffect = ProgressiveBlurEffectCache()
@@ -228,6 +235,20 @@ internal class WindowBackdrop(
   private val mainHandler = Handler(Looper.getMainLooper())
   private val imageThread = if (asynchronous) HandlerThread("Resonus backdrop images").apply { start() } else null
   private val imageHandler = imageThread?.let { Handler(it.looper) }
+  private val retiredImages = BoundedRetirementQueue<Image>(MAX_RETIRED_IMAGES)
+  private val retirementDrainPosted = AtomicBoolean(false)
+  private val retirementFallbackCount = AtomicInteger(0)
+  private val retirementCloseFailureCount = AtomicInteger(0)
+  private var retirementBackpressureCount = 0L
+  private var retirementPeak = 0
+  private val retirementDrain = Runnable {
+    try { drainRetiredImages() } finally {
+      retirementDrainPosted.set(false)
+      // A publisher can enqueue after the last poll but before this reset.
+      // Re-arm that race so an otherwise idle window never strands an Image.
+      if (retiredImages.size > 0) scheduleRetirementDrain()
+    }
+  }
   private var reader: ImageReader? = null
   private var renderer: HardwareRenderer? = null
   private var renderNode: RenderNode? = null
@@ -258,6 +279,7 @@ internal class WindowBackdrop(
   private var pageChangeCount = 0L
   private var stalePageFrameCount = 0L
   private var isolatedPageCaptureCount = 0L
+  private var contentCaptureCount = 0L
   private var ownRedrawsToSkip = 0
   private var captureFailed = false
   private var captureCount = 0L
@@ -535,6 +557,14 @@ internal class WindowBackdrop(
       return true
     }
     if (visible.isEmpty() || !root.isHardwareAccelerated || root.width == 0 || root.height == 0) return true
+    // Leave capacity for both already-submitted results and final displayed
+    // frames on teardown. Normally the image thread drains long before this.
+    if (asynchronous && retiredImages.size >= MAX_RETIRED_IMAGES - MAX_IN_FLIGHT - 2) {
+      retirementBackpressureCount++
+      scheduleRetirementDrain()
+      requestFrameClock()
+      return true
+    }
     if (inFlightTickets.size >= MAX_IN_FLIGHT) {
       inFlightSkipCount++
       return true
@@ -602,9 +632,18 @@ internal class WindowBackdrop(
       // native page prevents those covers entering a new-page capture. Keep the
       // original composition for animations, player reveals and dialog windows.
       val isolatedTop = if (activityWindow) nativePage.isolatedOpaqueSource() else null
-      val captureSource = isolatedTop ?: if (edge != null && activityWindow)
-        findContentSource() ?: root else root
+      // The Stack host deliberately excludes global dock/Compose consumers.
+      // Sampling DecorView and making them alpha-zero still lets Android prepare
+      // their cached GPU layers. Use the host for ordinary scrolling as well as
+      // the optional progressive edge, while retaining its complete fade stack.
+      val stackContent = if (activityWindow && isolatedTop == null) findContentSource() else null
+      // The host is transparent. Preserve the opaque theme underlay during a
+      // Stack fade; an unknown/custom ancestor retains the original root path.
+      val contentUnderlay = stackContent?.let { findContentUnderlayColor(it) }
+      val captureSource = selectBackdropCaptureSource(root, activityWindow, isolatedTop,
+        stackContent?.takeIf { contentUnderlay != null })
       if (isolatedTop != null) isolatedPageCaptureCount++
+      if (captureSource === stackContent) contentCaptureCount++
       // The edge's shader clamps atlas sampling on API 33+. Earlier releases
       // keep the original one-region path and their existing Gaussian fallback.
       val rawMaterial = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && edge != null)
@@ -739,6 +778,7 @@ internal class WindowBackdrop(
             canvas.scale(scale, scale)
             canvas.translate(-captureRect.left.toFloat(), -captureRect.top.toFloat())
             canvas.clipRect(captureRect)
+            if (captureSource === stackContent && contentUnderlay != null) canvas.drawColor(contentUnderlay)
             // A transparent React Native Modal lives in a second window. Include
             // the Activity's actual screen behind it before drawing the modal.
             if (activityDecor != null && activityDecor !== root && activityDecor.isAttachedToWindow) {
@@ -851,6 +891,20 @@ internal class WindowBackdrop(
     return found
   }
 
+  private fun findContentUnderlayColor(content: View): Int? {
+    var ancestor = content.parent as? View
+    while (ancestor != null) {
+      val background = ancestor.background
+      val color = (background as? ColorDrawable)?.color ?: BackgroundStyleApplicator.getBackgroundColor(ancestor)
+      if (color != null && Color.alpha(color) == 255) return color
+      // Do not flatten a gradient/image or translucent ancestor into an
+      // unrelated opaque color found farther up the window hierarchy.
+      if (background != null && !(background is ColorDrawable && background.alpha == 0)) return null
+      ancestor = ancestor.parent as? View
+    }
+    return null
+  }
+
   private fun recordSubmission(
     submittedScrollVersion: Long,
     submittedMaterialVersion: Long,
@@ -866,18 +920,27 @@ internal class WindowBackdrop(
   }
 
   private fun updateCaptureRect(visible: List<LiquidGlassView>) {
-    captureRect.setEmpty()
+    captureRegion.clear()
     val density = root.resources.displayMetrics.density
     visible.forEach { surface ->
-      surface.getLocationOnScreen(surfaceLocation)
       val padding = ceil((surface.blurRadius * 2f + abs(surface.refraction) +
         abs(surface.refractionHeight ?: (surface.refraction * 0.65f)) + 4f) * density).toInt()
-      val left = surfaceLocation[0] - location[0]
-      val top = surfaceLocation[1] - location[1]
-      screenRect.set(left - padding, top - padding,
-        left + surface.width + padding, top + surface.height + padding)
-      captureRect.union(screenRect)
+      surface.getMaterialBoundsOnScreen(screenRect)
+      captureRegion.include(screenRect.left - location[0], screenRect.top - location[1],
+        screenRect.right - location[0], screenRect.bottom - location[1], padding)
+      val pressed = AmPlusSelectionMotion.isInteracting(surface.tabPressProgress, surface.tabScaleX,
+        surface.tabScaleY, surface.tabVelocity, surface.tabPanelOffset) || surface.buttonPressProgress > .001f
+      if (retainBackdropHostBounds(surface.dockCompactWidth > 0f, surface.dockProgress, pressed)) {
+        // Never crop an enlarged pressed lens, moving outline, or shadow by
+        // tightening the source to an intermediate layout's optical rectangle.
+        surface.getLocationOnScreen(surfaceLocation)
+        val left = surfaceLocation[0] - location[0]
+        val top = surfaceLocation[1] - location[1]
+        captureRegion.include(left, top, left + surface.width, top + surface.height, padding)
+      }
     }
+    if (captureRegion.empty) captureRect.setEmpty() else
+      captureRect.set(captureRegion.left, captureRegion.top, captureRegion.right, captureRegion.bottom)
     clampCaptureRect()
   }
 
@@ -892,6 +955,10 @@ internal class WindowBackdrop(
   /** Only this Handler consumes/cleans up readers while a fence is pending. */
   private fun consumeAsyncImage(source: ImageReader, readerGeneration: Long) {
     while (true) {
+      // Closing on this same thread removes the ImageReader monitor race with
+      // nativeImageSetup. Drain first so deferred releases cannot exhaust the
+      // reader's maxImages=6 before the next acquire.
+      drainRetiredImages()
       // Next, not latest: discarding an image here would shift every subsequent
       // immutable ticket's source origin/scale onto the wrong GPU buffer.
       val image = try {
@@ -937,7 +1004,7 @@ internal class WindowBackdrop(
 
   private fun completeAsyncImage(ticket: PendingCapture, result: AsyncImageResult) {
     if (closed || generation != ticket.generation || !inFlightTickets.remove(ticket)) {
-      result.frame?.image?.close()
+      result.frame?.image?.let { retireImage(it) }
       return
     }
     updateCaptureWatchdog()
@@ -946,7 +1013,7 @@ internal class WindowBackdrop(
     observeNativePage()
     if (!nativePage.policy.accepts(ticket.pageEpoch)) {
       stalePageFrameCount++
-      result.frame?.image?.close()
+      result.frame?.image?.let { retireImage(it) }
       requestFrameClock()
       root.invalidate()
       return
@@ -997,10 +1064,49 @@ internal class WindowBackdrop(
     }
   }
 
+  private fun retireImage(image: Image) {
+    val handler = imageHandler
+    if (handler == null || Thread.currentThread() === imageThread) {
+      image.close()
+      return
+    }
+    if (!retiredImages.offer(image)) {
+      // A bounded safety valve for exceptional generation/shutdown races.
+      // Capture backpressure reserves four slots, so normal publication never
+      // reaches this branch. Ownership must not leak even if the worker stops.
+      retirementFallbackCount.incrementAndGet()
+      image.close()
+      return
+    }
+    retirementPeak = maxOf(retirementPeak, retiredImages.size)
+    scheduleRetirementDrain()
+  }
+
+  private fun scheduleRetirementDrain() {
+    val handler = imageHandler ?: return
+    if (!retirementDrainPosted.compareAndSet(false, true)) return
+    if (!handler.post(retirementDrain)) {
+      retirementDrainPosted.set(false)
+      // quitSafely has already drained its reader work. A late stale result
+      // still needs cleanup after the looper has rejected further messages.
+      retirementFallbackCount.incrementAndGet()
+      drainRetiredImages()
+    }
+  }
+
+  private fun drainRetiredImages() {
+    while (true) {
+      val image = retiredImages.poll() ?: return
+      try { image.close() } catch (_: Exception) {
+        retirementCloseFailureCount.incrementAndGet()
+      }
+    }
+  }
+
   private fun publishFrame(captured: BackdropFrame, targets: List<LiquidGlassView>) {
     if (!nativePage.policy.accepts(captured.pageEpoch)) {
       stalePageFrameCount++
-      captured.image.close()
+      retireImage(captured.image)
       return
     }
     val publishedAt = SystemClock.elapsedRealtimeNanos()
@@ -1018,7 +1124,7 @@ internal class WindowBackdrop(
     frames.addLast(captured)
     // Keep both sampled images alive; maxImages=6 also covers both pipeline
     // results that the worker has prepared but the UI has not published yet.
-    while (frames.size > 2) frames.removeFirst().image.close()
+    while (frames.size > 2) retireImage(frames.removeFirst().image)
     closeUnusedReaders()
     notifyBackdropDrawingChanged(targets.filter { isMaterialVisible(it, screenRect) })
   }
@@ -1050,7 +1156,7 @@ internal class WindowBackdrop(
     mainHandler.removeCallbacks(captureWatchdog)
     if (!keepDisplayedFrames) {
       frame = null
-      frames.forEach { it.image.close() }
+      frames.forEach { retireImage(it.image) }
       frames.clear()
     }
     renderer?.destroy()
@@ -1074,7 +1180,12 @@ internal class WindowBackdrop(
       retiredReaders.remove(source)
       // reader.close invalidates all its Images. Queue cleanup behind any
       // bounded fence wait, and only after displayed frames have been replaced.
-      if (imageHandler != null) imageHandler.post { source.close() } else source.close()
+      if (imageHandler != null) {
+        if (!imageHandler.post { drainRetiredImages(); source.close() }) {
+          drainRetiredImages()
+          source.close()
+        }
+      } else source.close()
     }
   }
 
@@ -1123,6 +1234,7 @@ internal class WindowBackdrop(
       "pageChangeCount" to pageChangeCount,
       "stalePageFrameCount" to stalePageFrameCount,
       "isolatedPageCaptureCount" to isolatedPageCaptureCount,
+      "contentCaptureCount" to contentCaptureCount,
       "pageEpoch" to nativePage.policy.epoch,
       "pageCaptureAllowed" to nativePage.policy.captureAllowed,
       "scrollTargetHz" to (root.display?.refreshRate ?: 60f),
@@ -1148,6 +1260,11 @@ internal class WindowBackdrop(
       "renderSyncAndDrawMaxNs" to renderSyncAndDrawStats.maxNanos,
       "inFlight" to inFlightTickets.isNotEmpty(),
       "inFlightCount" to inFlightTickets.size,
+      "retiredImageCount" to retiredImages.size,
+      "retiredImagePeak" to retirementPeak,
+      "imageRetirementBackpressureCount" to retirementBackpressureCount,
+      "imageRetirementFallbackCount" to retirementFallbackCount.get(),
+      "imageRetirementCloseFailureCount" to retirementCloseFailureCount.get(),
       "publishIntervalP50Ms" to publishIntervalStats[0],
       "publishIntervalP95Ms" to publishIntervalStats[1]
     )
@@ -1162,13 +1279,15 @@ internal class WindowBackdrop(
       "hostRestore=$hostRestoreCount failed=$captureFailed " +
       "async=$asyncCaptureCount dropped=$droppedFrameCount busy=$inFlightSkipCount " +
       "inFlightPeak=$inFlightPeak recreate=$captureRecreateCount shrink=$captureShrinkCount discarded=$discardedGenerationCount " +
+      "retiredImages=${retiredImages.size} retiredPeak=$retirementPeak retirementBusy=$retirementBackpressureCount " +
+      "retirementFallback=${retirementFallbackCount.get()} retirementFailures=${retirementCloseFailureCount.get()} " +
       "buffer=${pixelWidth}x${pixelHeight} source=${captureRect.width()}x${captureRect.height()} " +
       "fenceTimeout=$fenceTimeoutCount scrollEvents=$scrollVersion scrollFrames=$scrollCaptureCount " +
       "modalForegroundScrollIgnored=$modalForegroundScrollIgnoredCount modalStaticSkip=$modalStaticDrawSkipCount " +
       "backgroundPreDraw=$backgroundPreDrawCount backgroundChanges=$backgroundSceneChangeCount menuGeometryChanges=$menuGeometryChangeCount " +
       "menuGeometryRedraws=$menuGeometryRedrawCount " +
       "surfaceGeometryChanges=$surfaceGeometryChangeCount surfaceGeometryRedraws=$surfaceGeometryRedrawCount " +
-      "pageChanges=$pageChangeCount stalePageFrames=$stalePageFrameCount pageEpoch=${nativePage.policy.epoch} isolatedPageCaptures=$isolatedPageCaptureCount " +
+      "pageChanges=$pageChangeCount stalePageFrames=$stalePageFrameCount pageEpoch=${nativePage.policy.epoch} isolatedPageCaptures=$isolatedPageCaptureCount contentCaptures=$contentCaptureCount " +
       "scrollTargetHz=${root.display?.refreshRate ?: 60f} " +
       "captureAttemptCount=$captureAttemptCount captureCpuTotalNs=$captureCpuTotalNanos " +
       "cpuAvgMs=${captureCpuAverageMs()} cpuMaxMs=${captureCpuMaxNanos / 1_000_000.0} " +
@@ -1221,6 +1340,8 @@ internal class WindowBackdrop(
   companion object {
     private const val OWN_REDRAW_TRAVERSALS = 2
     private const val MAX_IN_FLIGHT = 2
+    // Four-slot capture/teardown reserve above the normal retirement backlog.
+    private const val MAX_RETIRED_IMAGES = 8
     private const val MIN_FRAME_MS = 42L
     private const val FENCE_WAIT_MS = 100L
     private const val IMAGE_DELIVERY_TIMEOUT_MS = 1_000L

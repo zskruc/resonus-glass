@@ -11,7 +11,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import Animated, {
-  cancelAnimation, interpolate, useAnimatedStyle, useSharedValue, withSpring,
+  cancelAnimation, interpolate, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue, withSpring,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureDetector } from 'react-native-gesture-handler';
@@ -33,7 +33,7 @@ import { useAmllPlayerTransition } from '@/hooks/useAmllPlayerTransition';
 import { useCoverTint } from '@/hooks/useDominantColor';
 import { useLyrics } from '@/hooks/useLyrics';
 import { useT } from '@/i18n';
-import { amllPlayerLayout } from '@/lib/amllPlayerLayout';
+import { AMLL_TOP_PADDING, amllPlayerHeaderArea, amllPlayerLayout } from '@/lib/amllPlayerLayout';
 import { seekAndPlayAmllLyricLine } from '@/lib/amllLyricPlayback';
 import { formatGroupedDeviceLabel } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
@@ -93,7 +93,19 @@ export function AmllPlayerScreen() {
   const openSpeed = useRef<() => void>(() => {});
   const columnScroll = useRef<ScrollView>(null);
   const active = focused && foreground;
-  const transition = useAmllPlayerTransition({ height: window.height, focused, enabled: active });
+  const layout = useMemo(() => amllPlayerLayout({
+    width: Math.max(1, window.width - insets.left - insets.right),
+    height: Math.max(1, window.height - insets.top - insets.bottom - AMLL_TOP_PADDING),
+    fontScale: window.fontScale, showVolume, showQuality,
+  }), [window.width, window.height, window.fontScale, insets.left, insets.right, insets.top, insets.bottom, showVolume, showQuality]);
+  const headerArea = useMemo(() => amllPlayerHeaderArea(layout, showLyrics, insets.top, insets.left),
+    [layout, showLyrics, insets.top, insets.left]);
+  const columnOffset = useSharedValue(0);
+  const onColumnScroll = useAnimatedScrollHandler({
+    onScroll: (event) => { columnOffset.set(event.contentOffset.y); },
+  });
+  const transition = useAmllPlayerTransition({ height: window.height, focused, enabled: active,
+    headerArea, headerScrollOffset: columnOffset });
   const interactive = active && !transition.closing;
   const cover = song ? songCoverUrl(song, COVER.card) : undefined;
   const coverTint = useCoverTint(cover);
@@ -105,11 +117,6 @@ export function AmllPlayerScreen() {
   const lyrics = useLyrics(song ?? undefined);
   const title = live?.title || song?.title || t('Now playing');
   const artist = live?.artist || song?.artist || t('Unknown artist');
-  const layout = amllPlayerLayout({
-    width: Math.max(1, window.width - insets.left - insets.right),
-    height: Math.max(1, window.height - insets.top - insets.bottom - 8),
-    fontScale: window.fontScale, showVolume, showQuality,
-  });
   const lyricProgress = useSharedValue(0);
   const horizontal = layout.horizontal;
   const controlsActive = interactive && (!showLyrics || horizontal);
@@ -124,8 +131,9 @@ export function AmllPlayerScreen() {
   }, [showLyrics, active, transition.closing, lyricProgress]);
   useEffect(() => () => cancelAnimation(lyricProgress), [lyricProgress]);
   useEffect(() => {
+    columnOffset.set(0);
     columnScroll.current?.scrollTo({ y: 0, animated: false });
-  }, [showLyrics, horizontal]);
+  }, [showLyrics, horizontal, columnOffset]);
 
   const coverStyle = useAnimatedStyle(() => {
     const progress = lyricProgress.value;
@@ -227,16 +235,15 @@ export function AmllPlayerScreen() {
     <Animated.View style={[styles.screen, transition.rootStyle]}>
       {focused ? <><StatusBar style="light" /><NavigationBar style="light" /></> : null}
       <AmllPlayerBackground uri={cover} active={interactive && playing} />
-      <View style={[styles.safe, { paddingTop: insets.top + 8, paddingBottom: insets.bottom,
+      <GestureDetector gesture={transition.handleGesture}>
+      <View style={[styles.safe, { paddingTop: insets.top + AMLL_TOP_PADDING, paddingBottom: insets.bottom,
         paddingLeft: insets.left + layout.padding, paddingRight: insets.right + layout.padding }]}>
-        <GestureDetector gesture={transition.handleGesture}>
           <Animated.View>
             <Pressable accessibilityRole="button" accessibilityLabel={t('Close')} onPress={transition.close}
               style={[styles.handleButton, { height: layout.headerHeight }]} hitSlop={{ top: 8, bottom: 8 }}>
               <View style={styles.handle} />
             </Pressable>
           </Animated.View>
-        </GestureDetector>
         <View style={{ width: layout.innerWidth, height: layout.viewportHeight }}>
           {horizontal ? (
             <Animated.View pointerEvents={showLyrics ? 'auto' : 'none'}
@@ -247,7 +254,8 @@ export function AmllPlayerScreen() {
             </Animated.View>
           ) : null}
           <Animated.View style={[styles.column, { width: layout.leftWidth, height: layout.viewportHeight }, leftStyle]}>
-            <ScrollView ref={columnScroll} scrollEnabled={layout.scrollable} showsVerticalScrollIndicator={false}
+            <Animated.ScrollView ref={columnScroll} scrollEnabled={layout.scrollable} showsVerticalScrollIndicator={false}
+              onScroll={onColumnScroll} scrollEventThrottle={16}
               bounces={false} overScrollMode="never"
               nestedScrollEnabled contentContainerStyle={{ height: layout.contentHeight }}>
               <View style={{ width: layout.leftWidth, height: layout.contentHeight }}>
@@ -301,13 +309,14 @@ export function AmllPlayerScreen() {
                       style={{ height: layout.volumeHeight }} /> : undefined} />
                 </Animated.View>
               </View>
-            </ScrollView>
+            </Animated.ScrollView>
           </Animated.View>
         </View>
         {horizontal ? <AmllPlayerBottomActions horizontal width={layout.innerWidth} showLyrics={showLyrics}
           onLyrics={switchLyrics} onOutput={() => setOutputOpen(true)} onQueue={() => pushOnce('/queue')}
           outputLabel={remoteName ? `${t('Devices')}: ${remoteName}` : t('Devices')} active={interactive} /> : null}
       </View>
+      </GestureDetector>
       <OutputSheet visible={outputOpen && focused} onClose={() => setOutputOpen(false)} />
       <SpeedSheet openRef={openSpeed} />
       <PlayerAudioQualitySheet openRef={openQuality} />

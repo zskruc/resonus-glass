@@ -8,6 +8,7 @@
     "@react-native-community/datetimepicker": "9.1.0",
     "@react-native-community/slider": "5.2.0",
     "@react-native-masked-view/masked-view": "0.3.2",
+    "@shopify/flash-list": "2.0.2",
     "@tanstack/react-query": "^5.101.1",
     "expo": "~57.0.15",
     "expo-asset": "~57.0.13",
@@ -38,7 +39,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-freeze": "^1.0.4",
-    "react-native": "0.86.2",
+    "react-native": "0.86.3",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-image-colors": "^2.6.0",
     "react-native-reanimated": "4.5.1",
@@ -72,7 +73,8 @@
     "i18n:docs": "node scripts/i18n-docs.mjs",
     "i18n:check": "node scripts/i18n-check.mjs",
     "i18n:rename": "node scripts/i18n-rename.mjs",
-    "harness:extractor": "bash scripts/native-harness/run.sh"
+    "harness:extractor": "bash scripts/native-harness/run.sh",
+    "harness:reanimated": "node scripts/native-harness/reanimated-mounted-props.mjs && node scripts/native-harness/reanimated-pending-props.mjs"
   },
   "private": true,
   "expo": {

@@ -36,3 +36,124 @@ index f917ce5a8586c02855f1d8d9ae73154592d22510..69cf272911f9f2a199f19309c2158166
      this.intervalId = setInterval(
        this.syncPropsBackToReact.bind(this),
        FLUSH_INTERVAL_MS
+diff --git a/android/src/main/java/com/swmansion/reanimated/NativeProxy.kt b/android/src/main/java/com/swmansion/reanimated/NativeProxy.kt
+--- a/android/src/main/java/com/swmansion/reanimated/NativeProxy.kt
++++ b/android/src/main/java/com/swmansion/reanimated/NativeProxy.kt
+@@ -253,7 +253,16 @@
+         SynchronousPropsBufferParser.parse(intBuffer, doubleBuffer) { viewTag, props ->
+             if (BuildConfig.IS_REACT_NATIVE_86_OR_NEWER) {
+                 try {
+-                    updatePropsSynchronouslyMethod.invoke(mountingManager, viewTag, props)
++                    // Scroll events can replay a settled update after React has already
++                    // removed its row. Unlike Fabric's public sync-update method, the
++                    // RN 0.86 reflection path throws for that missing tag. Resolve on
++                    // the same UI thread first, without retaining historical row tags.
++                    if (mFabricUIManager.resolveView(viewTag) != null) {
++                        updatePropsSynchronouslyMethod.invoke(mountingManager, viewTag, props)
++                    }
++                } catch (_: IllegalViewOperationException) {
++                    // A ViewState may be registered before its Android view exists
++                    // (the same preallocation case handled by preserveMountedTags).
+                 } catch (e: Exception) {
+                     Log.w("Reanimated", "synchronouslyUpdateUIProps failed for tag $viewTag", e)
+                 }
+diff --git a/Common/cpp/reanimated/Fabric/updates/UpdatesRegistry.cpp b/Common/cpp/reanimated/Fabric/updates/UpdatesRegistry.cpp
+--- a/Common/cpp/reanimated/Fabric/updates/UpdatesRegistry.cpp
++++ b/Common/cpp/reanimated/Fabric/updates/UpdatesRegistry.cpp
+@@ -166,12 +166,11 @@
+   react_native_assert(UpdatesRegistryManager::isLockedByCurrentThread());
+   flushUpdatesToRegistry(updatesBatch_);
+ 
+-  UpdatesBatch updatesBatch;
+-  for (const auto &[tag, pair] : updatesRegistry_) {
+-    const auto &[shadowNodeFamily, props] = pair;
+-    updatesBatch.emplace_back(shadowNodeFamily, props);
+-  }
+-  return updatesBatch;
++  // Draw-pass events may arrive repeatedly without a changed animated style.
++  // Only replay the pending changes here; collectProps still retains the full
++  // registry for React commits. Do not drain this batch: layout props must also
++  // reach the next regular flush, outside the draw pass.
++  return updatesBatch_;
+ }
+ 
+ void UpdatesRegistry::collectProps(PropsMap &propsMap) {
+diff --git a/src/createAnimatedComponent/AnimatedComponent.tsx b/src/createAnimatedComponent/AnimatedComponent.tsx
+--- a/src/createAnimatedComponent/AnimatedComponent.tsx
++++ b/src/createAnimatedComponent/AnimatedComponent.tsx
+@@ -41,6 +41,7 @@
+ import jsPropsUpdater from './JSPropsUpdater';
+ import { NativeEventsManager } from './NativeEventsManager';
+ import { PropsFilter } from './PropsFilter';
++import { haveSameSettledProps } from './settledProps';
+ import { filterStyles, flattenArray } from './utils';
+ 
+ let id = 0;
+@@ -217,9 +218,15 @@
+ 
+   _syncStylePropsBackToReact(props: StyleProps) {
+     if (FORCE_REACT_RENDER_FOR_SETTLED_ANIMATIONS) {
+-      this.setState((state) => ({
+-        settledProps: { ...state.settledProps, ...props },
+-      }));
++      this.setState((state) => {
++        // The cleanup timer may return the same settled style more than once.
++        // Check the queued React state, without suppressing a fresh mount or
++        // changing the native registry's one-second restoration grace period.
++        if (haveSameSettledProps(state.settledProps, props)) {
++          return null;
++        }
++        return { settledProps: { ...state.settledProps, ...props } };
++      });
+       // TODO(future): revert changes when animated styles are detached
+     }
+   }
+diff --git a/src/createAnimatedComponent/settledProps.ts b/src/createAnimatedComponent/settledProps.ts
+new file mode 100644
+--- /dev/null
++++ b/src/createAnimatedComponent/settledProps.ts
+@@ -0,0 +1,44 @@
++'use strict';
++
++import type { StyleProps } from '../commonTypes';
++import { deepEqual } from '../css/utils/equality';
++
++// Settled props are decoded from native folly.dynamic: primitives, arrays and
++// plain data records. Do not infer equality for opaque HostObjects, accessors,
++// custom prototypes or cyclic values that happen to expose the same keys.
++function isNativeStyleValue(value: unknown, visiting?: WeakSet<object>): boolean {
++  if (value === null || value === undefined) return true;
++  if (typeof value !== 'object') {
++    return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
++  }
++  const ancestors = visiting ?? new WeakSet<object>();
++  try {
++    const array = Array.isArray(value);
++    const prototype = Object.getPrototypeOf(value);
++    if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null) return false;
++    if (ancestors.has(value)) return false;
++    const keys = Reflect.ownKeys(value);
++    // Empty opaque objects may report Object.prototype. Treat them conservatively.
++    if (!array && keys.length === 0) return false;
++    ancestors.add(value);
++    const descriptors = Object.getOwnPropertyDescriptors(value);
++    for (const key of keys) {
++      if (array && key === 'length') continue;
++      if (typeof key !== 'string') return false;
++      const descriptor = descriptors[key];
++      if (!descriptor?.enumerable || !('value' in descriptor) || !isNativeStyleValue(descriptor.value, ancestors)) return false;
++    }
++    ancestors.delete(value);
++    return true;
++  } catch {
++    return false;
++  }
++}
++
++export function haveSameSettledProps(previous: StyleProps, incoming: StyleProps): boolean {
++  return Object.keys(incoming).every((key) =>
++    Object.prototype.hasOwnProperty.call(previous, key) &&
++    isNativeStyleValue(previous[key]) && isNativeStyleValue(incoming[key]) &&
++    deepEqual(previous[key], incoming[key])
++  );
++}

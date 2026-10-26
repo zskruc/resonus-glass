@@ -1,6 +1,6 @@
 # Resonus Liquid Glass (Android)
 
-Local Expo Modules API view using [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass), published as `io.github.kyant0:backdrop:1.0.0`.
+Local Expo Modules API view using [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass), pinned to Backdrop 1.0.0. Its original source is vendored in [`android/vendor/backdrop-1.0.0`](./android/vendor/backdrop-1.0.0/UPSTREAM.md) with the AM++ minimum-backing-capacity extension and Resonus's matching shadow/highlight capacity adaptation; all original shaders, optics and defaults are retained.
 
 ## Integration
 
@@ -131,7 +131,7 @@ account data, screen content, saved appearance, or device identity.
 
 ## License
 
-Resonus remains GPL-3.0-or-later. AndroidLiquidGlass / Backdrop is Apache-2.0, compatible with GPLv3. The dependency's original copyright and license apply; the Apache license is included as `ANDROID_LIQUID_GLASS_LICENSE`. The pinned library dependency is unchanged. `LiquidBottomTabsMaterial.kt` adapts the upstream sample component's interactive material, with source attribution and Apache-2.0 notice in the file; Resonus retains its own React Native navigation/gesture implementation.
+Resonus remains GPL-3.0-or-later. AndroidLiquidGlass / Backdrop is Apache-2.0, compatible with GPLv3. The original copyright and license apply; the Apache license is included as `ANDROID_LIQUID_GLASS_LICENSE` and beside the vendored 1.0.0 source. The vendored source replaces the same-version binary, backports Zennmn AM++'s minimum record capacity / clip-compositing extension, and extends that contract to the original shadow/highlight layers (GPL-3.0 additions), with complete provenance and both licenses in its `UPSTREAM.md`. AM++ motion reserves expanded backing while live logical lens/outline geometry remains unchanged; stable endpoints and other modes use the previous exact-size/offscreen path. `LiquidBottomTabsMaterial.kt` adapts the upstream sample component's interactive material, with source attribution and Apache-2.0 notice in the file; Resonus retains its own React Native navigation/gesture implementation.
 
 The coordinated dock layout and distance-based scroll controller adapt the Apple Music example and minimize-controller behavior in [liquid_glass_widgets](https://github.com/sdegenaar/liquid_glass_widgets/tree/6e7ffdacdabf5895c68569a3fb147fad694c299a). Its MIT copyright and license are preserved in [LIQUID_GLASS_WIDGETS_LICENSE](LIQUID_GLASS_WIDGETS_LICENSE) and the adapted controller. The Flutter engine and its shader pipeline are not dependencies: rendering remains the existing native AndroidLiquidGlass module with one shared screen capture.
 

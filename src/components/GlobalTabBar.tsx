@@ -170,6 +170,9 @@ export function GlobalTabBar() {
   if (inTabs) rememberTab(segments[1]);
   const origin = tabOrigin();
   const current = inTabs ? origin : null;
+  // A pushed page still belongs to the tab it opened from. Keep that tab's
+  // accent/selected state, while `current` only controls main-screen reselects.
+  const selectedSegment = current ?? origin;
   const enabledTabs = bottomTabs
     .filter((tab) => tab.enabled)
     .map(({ key }) => TABS.find((tab) => tab.segment === key))
@@ -191,7 +194,7 @@ export function GlobalTabBar() {
   const baseMargin = Math.max(outerMargin, (screenWidth - BOTTOM_BAR_MAX_WIDTH) / 2);
   const [glassPressed, setGlassPressed] = useState(false);
   const tabWidth = tabs.length > 0 ? Math.max(0, barWidth - horizontalInset * 2) / tabs.length : 0;
-  const selectedIndex = tabs.findIndex((tab) => tab.segment === (current ?? origin));
+  const selectedIndex = tabs.findIndex((tab) => tab.segment === selectedSegment);
   const [lastMainTab, setLastMainTab] = useState(tabs[selectedIndex]?.segment ?? tabs[0]?.segment);
   if (selectedIndex >= 0 && tabs[selectedIndex].segment !== lastMainTab) setLastMainTab(tabs[selectedIndex].segment);
   const selectedTab = tabs[selectedIndex] ?? tabs.find((tab) => tab.segment === lastMainTab) ?? tabs[0];
@@ -525,11 +528,7 @@ export function GlobalTabBar() {
               › Navigation bar). `TABS` stays the catalogue: it is what says where
               each one goes and what it is called. */}
           {tabs.map((tab, index) => {
-              // On a tab screen the bar says which one you are on. Off the tabs
-              // nothing is current, and the tab the stack came from is only marked
-              // enough to keep the bar from looking dead.
-              const here = current === tab.segment;
-              const from = !inTabs && origin === tab.segment;
+              const here = selectedSegment === tab.segment;
               const color = here ? colors.accent : colors.text;
               return (
                 <NavigationSlot key={tab.href} amPlus={amPlus} index={index} count={tabs.length}
@@ -565,7 +564,7 @@ export function GlobalTabBar() {
                 >
                   <View style={[styles.iconBox, { width: iconSize, height: iconSize }]}>
                     <Icon
-                      name={here || from ? ICONS[tab.segment] : `${ICONS[tab.segment]}-outline`}
+                      name={here ? ICONS[tab.segment] : `${ICONS[tab.segment]}-outline`}
                       size={iconSize}
                       color={color}
                       style={foregroundShadow}
@@ -588,7 +587,7 @@ export function GlobalTabBar() {
             <Pressable style={[styles.compactButton, { borderRadius: compactSize / 2 }]} accessibilityRole="button"
               accessibilityLabel={`${t(compactTab.label)}, ${t('Navigation bar')}`}
               onPress={expand}>
-              <Icon name={ICONS[compactTab.segment]} size={iconSize} color={amPlus && current === 'search' ? colors.text : colors.accent} style={foregroundShadow} />
+              <Icon name={ICONS[compactTab.segment]} size={iconSize} color={amPlus && selectedSegment === 'search' ? colors.text : colors.accent} style={foregroundShadow} />
             </Pressable>
           </Animated.View>
         </View>
@@ -612,7 +611,7 @@ export function GlobalTabBar() {
             height: amPlus ? compactSize : compact ? compactSize : navHeight,
             start: amPlus ? undefined : rtl && compact ? navHeight - compactSize : 0,
             right: amPlus ? 0 : undefined }]} accessibilityRole="tab"
-            accessibilityState={{ selected: current === 'search' }} accessibilityLabel={t('Search')}
+            accessibilityState={{ selected: selectedSegment === 'search' }} accessibilityLabel={t('Search')}
             onPress={() => {
               if (current === 'search') reselectTab('search');
               else requestSearchFocus();
@@ -621,11 +620,11 @@ export function GlobalTabBar() {
             }} />
           <Animated.View pointerEvents="none" style={[styles.searchIcon,
             { top: expandedSearchIconTop, left: (searchExpandedWidth - iconSize) / 2, width: iconSize, height: iconSize }, searchIconStyle]}>
-            <Icon name="search" size={iconSize} color={current === 'search' ? colors.accent : colors.text} style={foregroundShadow} />
+            <Icon name="search" size={iconSize} color={selectedSegment === 'search' ? colors.accent : colors.text} style={foregroundShadow} />
           </Animated.View>
           {showLabels && !amPlus ? <Animated.View pointerEvents="none" style={[styles.searchLabel, expandedContentStyle]}>
-            <Text style={[styles.label, current === 'search' && styles.selectedLabel,
-              { color: current === 'search' ? colors.accent : colors.text }, foregroundShadow]} numberOfLines={1}>
+            <Text style={[styles.label, selectedSegment === 'search' && styles.selectedLabel,
+              { color: selectedSegment === 'search' ? colors.accent : colors.text }, foregroundShadow]} numberOfLines={1}>
               {t('Search')}
             </Text>
           </Animated.View> : null}

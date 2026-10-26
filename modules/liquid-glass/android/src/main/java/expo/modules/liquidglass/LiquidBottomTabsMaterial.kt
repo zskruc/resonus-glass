@@ -36,6 +36,7 @@ import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.ShaderBrush
@@ -203,6 +204,7 @@ internal fun LiquidBottomTabsMaterial(
   amPlusMaterial: Boolean,
   tuningMask: Int,
   dockProgress: () -> Float,
+  expandedCapacity: IntSize,
   blurRadius: Float,
   refraction: Float,
   refractionHeight: Float,
@@ -252,6 +254,13 @@ internal fun LiquidBottomTabsMaterial(
     val tabHeightPx = (heightPx - topPx * 2f).coerceAtLeast(0f)
     val tabWidth = with(density) { tabWidthPx.toDp() }
     val tabHeight = with(density) { tabHeightPx.toDp() }
+    val expandedPanelCapacity = amPlusSurfaceCapacity("navigation", expandedCapacity, 0f,
+      with(density) { GlassBarCollapsePolicy.GAP_DP.dp.toPx() })
+    val blurPx = with(density) { blurRadius.dp.toPx() }
+    val panelLayerSize = amPlusPaddedCapacity(expandedPanelCapacity, blurPx)
+    val refractionLayerSize = amPlusPaddedCapacity(
+      amPlusRefractionCapacity(expandedPanelCapacity, topPx), blurPx)
+    val selectionLayerSize = amPlusSelectionCapacity(expandedCapacity, insetPx, topPx, tabsCount)
     val panelScene = rememberCanvasBackdrop {
       val panelScale = 1f + (if (amPlusMaterial) 8f else 16f).dp.toPx() / widthPx.coerceAtLeast(1f) * pressProgress()
       val offsetPx = with(density) { panelOffset().dp.toPx() }
@@ -268,6 +277,9 @@ internal fun LiquidBottomTabsMaterial(
         translationX = panelOffset().dp.toPx()
       }.recordTabsBackdrop(if (officialMaterial) null else materialBackdrop).drawBackdrop(
         backdrop = panelScene,
+        minLayerSize = panelLayerSize,
+        clipCompositingStrategy = if (panelLayerSize != IntSize.Zero) CompositingStrategy.Auto
+          else CompositingStrategy.Offscreen,
         shape = { RoundedCornerShape(50) },
         effects = {
           vibrancy()
@@ -334,6 +346,9 @@ internal fun LiquidBottomTabsMaterial(
           translationY = topPx
         }.recordTabsBackdrop(materialBackdrop, drawRecordedToScreen = false).drawBackdrop(
           backdrop = auxiliaryScene,
+          minLayerSize = refractionLayerSize,
+          clipCompositingStrategy = if (refractionLayerSize != IntSize.Zero) CompositingStrategy.Auto
+            else CompositingStrategy.Offscreen,
           shape = { RoundedCornerShape(50) },
           effects = {
             val progress = pressProgress()
@@ -399,6 +414,9 @@ internal fun LiquidBottomTabsMaterial(
         alpha = selectionOpacity()
       }.drawBackdrop(
         backdrop = selectedBackdrop,
+        minLayerSize = selectionLayerSize,
+        clipCompositingStrategy = if (selectionLayerSize != IntSize.Zero) CompositingStrategy.Auto
+          else CompositingStrategy.Offscreen,
         shape = { RoundedCornerShape(50) },
         effects = {
           val progress = pressProgress()

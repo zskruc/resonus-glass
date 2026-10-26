@@ -3,7 +3,7 @@ import { usePreventRemove, type NavigationAction } from 'expo-router/react-navig
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler } from 'react-native';
 import { Gesture } from 'react-native-gesture-handler';
-import { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring, withTiming, type SharedValue } from 'react-native-reanimated';
 import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 
 import {
@@ -11,19 +11,23 @@ import {
   removePlayerTransition, shouldCloseAmllPlayer, type PlayerCloseSession, type PlayerCloseSource,
 } from '@/lib/amllPlayerTransition';
 import { revealOffset } from '@/lib/playerReveal';
+import { isAmllPlayerHeaderTouch, type AmllPlayerHeaderArea } from '@/lib/amllPlayerLayout';
 import { motion } from '@/theme/motion';
 
 const RETURN_SPRING = { damping: 20, stiffness: 200, mass: 1, reduceMotion: motion.reduceMotion.essential };
 
 /**
- * Attach rootStyle to the entire opaque player, and handleGesture only to its
- * top handle. Keep lyrics/backdrop mounted while closing: this hook holds the
+ * Attach rootStyle to the entire opaque player and handleGesture to its safe
+ * content view. Only touches beginning in the visible header can dismiss it.
+ * Keep lyrics/backdrop mounted while closing: this hook holds the
  * route until the whole surface has left, then commits the original back action.
  */
-export function useAmllPlayerTransition({ height, focused, enabled = true }: {
+export function useAmllPlayerTransition({ height, focused, enabled = true, headerArea, headerScrollOffset }: {
   height: number;
   focused: boolean;
   enabled?: boolean;
+  headerArea: AmllPlayerHeaderArea;
+  headerScrollOffset: SharedValue<number>;
 }) {
   const router = useRouter();
   const navigation = useNavigation();
@@ -131,9 +135,17 @@ export function useAmllPlayerTransition({ height, focused, enabled = true }: {
 
   const handleGesture = useMemo(() => Gesture.Pan()
     .enabled(focused && enabled && !allowRemoval)
+    // Native bounds reject lyric/transport starts before the pan competes
+    // with their own scrolling, taps and sliders. Landscape needs an L-shaped
+    // refinement, and a short screen may already have scrolled its header.
+    .hitSlop({ top: -headerArea.top, height: headerArea.bottom - headerArea.top })
     .maxPointers(1)
     .activeOffsetY([-6, 6])
     .failOffsetX([-24, 24])
+    .onTouchesDown((event, manager) => {
+      const touch = event.allTouches[0];
+      if (!touch || !isAmllPlayerHeaderTouch(headerArea, touch.x, touch.y, headerScrollOffset.get())) manager.fail();
+    })
     .onStart(() => {
       if (closingUI.get()) return;
       cancelAnimation(offset);
@@ -160,7 +172,7 @@ export function useAmllPlayerTransition({ height, focused, enabled = true }: {
       if (!dragging.get() || closingUI.get()) return;
       dragging.set(false);
       offset.set(withSpring(0, RETURN_SPRING));
-    }), [focused, enabled, allowRemoval, height, closingUI, dragging, offset, dragStart, requestClose]);
+    }), [focused, enabled, allowRemoval, height, headerArea, headerScrollOffset, closingUI, dragging, offset, dragStart, requestClose]);
   const rootStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: revealOffset.get() >= 0 ? revealOffset.get() : offset.get() }],
   }));

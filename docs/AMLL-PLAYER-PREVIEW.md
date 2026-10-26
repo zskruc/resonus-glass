@@ -1,10 +1,16 @@
 # AMLL 播放器预览 / AMLL player preview
 
-`0.8.4.1-amll.4` · Android `versionCode 86` · `preview/amll-player`
+`0.8.4.1-amll.9` · Android `versionCode 91` · `preview/amll-player`
 
-本页记录开发预览。当前 `.4` 安装包已构建并校验，包含共用歌词模糊、底栏点按动效、首页标题设置及全局绘制／封面解码修复。APK 已在三星 SM_S9380 上覆盖安装，版本、首次安装日期及首页封面显示已检查，启动错误日志为空；持续滑动、长列表内存及闪退的实机复测尚未完成。下文保留 `.1` 至 `.3` 历史记录。正式下载仍以仓库 Releases 为准。
+当前 `.9` APK 已构建并核对原签名，425 项应用测试、113 项玻璃模块测试及两组原生方法回归通过。手机当前 USB 断开，尚未安装 `.9`；持续滚动与闪退修复仍未验收。源码、实测对照和无效采样的限制见[播放列表性能记录](./PLAYLIST-SCROLL-PERFORMANCE.md)。
 
-The `.4` preview APK has been built and verified. It unifies lyric blur, restores tab-tap motion, adds a custom Home heading and addresses shared rendering/artwork-decoding costs. The APK has been installed over the existing app on Samsung SM_S9380. Its version, unchanged first-install date and visible Home artwork were checked, with no filtered startup errors. Sustained scrolling, long-list memory and crash recovery remain unvalidated. Earlier `.1`–`.3` records remain below. Use repository Releases for stable downloads.
+The `.9` APK is built with the original certificate; 425 app tests, 113 glass-module tests and both native-method harnesses passed. USB is disconnected, so `.9` installation and sustained-scroll/crash acceptance remain pending. See the [playlist performance record](./PLAYLIST-SCROLL-PERFORMANCE.md) for the changes, valid comparisons and invalidated capture.
+
+`.9` 的 Player 页可在状态栏下方、大封面上方整片区域下拉退出；歌词页可从顶部小封面、歌曲名与创作者区域下拉，原有阈值保持不变。横屏与短屏按可见标题区域判断，歌词、滑条和控制按钮区域不作为返回手势入口。子页面底栏的来源选项卡继续显示主题色和选中态。
+
+In `.9`, downward dismissal covers the full band between the status bar and large artwork; lyric mode includes its header artwork/title/artist. Existing dismissal thresholds remain intact. Landscape and scrolled short-screen layouts use the visible header bounds without taking lyric, slider or transport input. Pushed pages retain their originating tab’s accent and selected state.
+
+下文保留 `.1`–`.4` 的来源与历史验证；正式下载仍以仓库 Releases 为准。The earlier provenance and `.1`–`.4` validation history remain below. Use repository Releases for stable downloads.
 
 ## 来源与实现边界 / Reference and implementation boundary
 

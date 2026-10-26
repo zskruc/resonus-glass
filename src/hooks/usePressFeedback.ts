@@ -16,7 +16,7 @@
  * turns out to be a scroll is cancelled long before that, and the callbacks
  * keep firing exactly when they always did.
  */
-import { useCallback } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import {
   cancelAnimation,
   useAnimatedStyle,
@@ -30,28 +30,41 @@ import { motion } from '@/theme/motion';
 /** What a pressed row fades to. The same amount the sheets use for theirs. */
 const PRESSED = 0.62;
 
-export function usePressFeedback(): {
+export function usePressFeedback(identity?: string): {
   style: { opacity: number };
   onPressIn: () => void;
   onPressOut: () => void;
 } {
   const dim = useSharedValue(1);
+  const binding = useMemo(() => ({ identity }), [identity]);
+  const current = useRef<object | null>(null);
+  useLayoutEffect(() => {
+    current.current = binding;
+    cancelAnimation(dim);
+    dim.set(1);
+    return () => {
+      current.current = null;
+      cancelAnimation(dim);
+    };
+  }, [binding, dim]);
 
   const onPressIn = useCallback(() => {
-    dim.value = withDelay(
+    if (current.current !== binding) return;
+    dim.set(withDelay(
       motion.duration.press,
       withTiming(PRESSED, { duration: motion.duration.press }),
-    );
-  }, [dim]);
+    ));
+  }, [binding, dim]);
 
   const onPressOut = useCallback(() => {
+    if (current.current !== binding) return;
     // Cancelled rather than reversed: while the wait is still running there is
     // nothing to come back from, and letting it play out after the finger has
     // gone is the flash this exists to avoid.
     cancelAnimation(dim);
-    dim.value = withTiming(1, { duration: motion.duration.exit });
-  }, [dim]);
+    dim.set(withTiming(1, { duration: motion.duration.exit }));
+  }, [binding, dim]);
 
-  const style = useAnimatedStyle(() => ({ opacity: dim.value }));
+  const style = useAnimatedStyle(() => ({ opacity: dim.get() }));
   return { style: style as unknown as { opacity: number }, onPressIn, onPressOut };
 }

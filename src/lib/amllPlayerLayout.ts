@@ -8,6 +8,15 @@ export interface AmllPlayerLayoutInput {
   showVolume: boolean;
   showQuality: boolean;
 }
+export const AMLL_TOP_PADDING = 8;
+export interface AmllPlayerHeaderArea {
+  top: number;
+  handleBottom: number;
+  bottom: number;
+  columnLeft: number;
+  columnRight: number;
+  columnOnly: boolean;
+}
 
 /** The safe-area owner passes the already-inset viewport. */
 export function amllPlayerLayout({ width, height, fontScale, showVolume }: AmllPlayerLayoutInput) {
@@ -66,4 +75,31 @@ export function amllPlayerLayout({ width, height, fontScale, showVolume }: AmllP
     largeCover, smallCover, lyricsTop, lyricsHeight,
     centeredColumnLeft: horizontal ? (innerWidth - leftWidth) / 2 : 0,
   };
+}
+
+/** Bounds are local to the full safe-area view, including its padding. */
+export function amllPlayerHeaderArea(
+  layout: ReturnType<typeof amllPlayerLayout>, showLyrics: boolean, topInset: number, leftInset: number,
+): AmllPlayerHeaderArea {
+  const handleBottom = topInset + AMLL_TOP_PADDING + layout.headerHeight;
+  return {
+    top: topInset,
+    handleBottom,
+    bottom: handleBottom + (showLyrics
+      ? layout.horizontal ? layout.metadataTop + layout.metadataHeight : layout.lyricsTop
+      : layout.largeCover.y),
+    columnLeft: leftInset + layout.padding,
+    columnRight: leftInset + layout.padding + layout.leftWidth,
+    columnOnly: showLyrics && layout.horizontal,
+  };
+}
+
+/** Decide at touch-down only; an accepted drag can continue into the lyrics. */
+export function isAmllPlayerHeaderTouch(area: AmllPlayerHeaderArea, x: number, y: number, scrollOffset: number): boolean {
+  'worklet';
+  if (!Number.isFinite(x) || !Number.isFinite(y) || y < area.top) return false;
+  if (y < area.handleBottom) return true;
+  const offset = Number.isFinite(scrollOffset) ? Math.max(0, scrollOffset) : 0;
+  return y < Math.max(area.handleBottom, area.bottom - offset)
+    && (!area.columnOnly || (x >= area.columnLeft && x < area.columnRight));
 }
