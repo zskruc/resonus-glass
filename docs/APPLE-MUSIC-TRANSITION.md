@@ -4,19 +4,19 @@
 
 `.17` / Android `versionCode 99` 当前构建已以同包名、原签名覆盖安装到三星设备。
 574 项应用测试、139 项原生测试、类型与翻译检查通过；lint 为 0 错误、117 项警告。
-以下定量结果来自此前 `.17` 诊断构建，包含 Search 修复的最终包仍待复测。历史 `.13` 基础检查不代表当前全场景或长期性能通过，Primuse 整页形变仍已移除。
+以下封面录像数据来自此前 `.17` 诊断构建；最终包本轮已完成有限滚动复测。历史 `.13` 基础检查不代表当前全场景或长期性能通过，Primuse 整页形变仍已移除。
 
 The current `.17` / Android `versionCode 99` build is installed on Samsung with
 the same package and original certificate. All 574 app tests, 139 native tests,
 typechecking and translations pass; lint reports zero errors and 117 warnings.
-The quantitative observations come from the earlier `.17` diagnostic build;
-the final build containing the Search correction still awaits another measurement. Historical `.13` checks do not establish
+The artwork recordings come from the earlier `.17` diagnostic build;
+the final build has now completed a limited scroll retest. Historical `.13` checks do not establish
 current all-scenario or long-session acceptance; the rejected Primuse whole-player morph remains removed.
 
 关闭端点 `restingArtwork` 现在来自与真实封面相同 Yoga 层级的空锚点，位于按压与
 横滑变形之外，直接保留物理像素取整后的坐标与尺寸；入场继续测量已绘制封面。
 入场中途反向关闭保持当前画面连续。图像比例及 Mini／共享封面的裁切交接已对齐。
-三次收合录像的端点图像配准得到估计缩放 `0.9925`、`dx = dy = 0`，此前 `.16`
+此前 `.17` 诊断构建的三次收合录像，端点图像配准得到估计缩放 `0.9925`、`dx = dy = 0`，此前 `.16`
 对应缩放为 `1.1225`。本次未再出现明显的裁切尺寸跳变，但独立解码、缩放和重采样
 仍有静态差异，不能称为像素完全一致。
 
@@ -24,7 +24,7 @@ The closing `restingArtwork` now comes from an empty anchor matching the real
 artwork's Yoga hierarchy outside press/swipe deformation. Native measurement
 preserves physical pixel rounding, while entry still reads the painted image.
 Closing during entry preserves the painted pose; image aspect and Mini/overlay crop handoff
-are aligned. Three recorded closes estimate endpoint registration scale `0.9925`
+are aligned. Three closes recorded with the earlier `.17` diagnostic build estimate endpoint registration scale `0.9925`
 with `dx = dy = 0`, versus `.16` scale `1.1225`. The large crop-size jump did not
 recur in these samples, but separate decoding, scaling and resampling still leave
 static differences; pixel identity is not claimed.
@@ -41,21 +41,33 @@ windows. Close cleanup keeps the outgoing player hidden through the interval
 before its animation mappers stop. These findings apply to the inspected samples,
 not every possible interaction.
 
-本次有效 All Music 滚动采样约 8 秒，45 次快速滑动的工作量中，应用记录 924 个
-Surface 帧、10 次 `App Deadline Missed / Late Present`。关联显示帧间隔中位数为
-`8.32ms`、P99 `16.64ms`、最大 `24.97ms`；943 个完整 UI 帧中，80 个超过 `8.33ms`，其中一个超过
-`16.67ms`。不能据此承诺持续 120fps；错误页面的 `.16` 采样无效，不作性能对比。
-采样时隐藏 Search 玻璃使安全检查保留离屏图像路径，最小修复后的 direct 路径仍待
-复测；这次结果不能代表后续路径的最终性能。
+最终包有效 All Music 滚动采样约 8 秒，45 次快速滑动的工作量中，应用记录 927 个
+Surface 帧、14 次 `App Deadline Missed / Late Present`。关联显示帧间隔中位数为
+`8.32ms`、P99 `16.64ms`、最大 `16.65ms`；949 个完整 UI 帧中，84 个超过 `8.33ms`，
+其中三个超过 `16.67ms`。短暂慢帧仍存在，不能据此承诺持续无损 120fps。缓存、温度与
+热身未严格控制，不与此前诊断构建计算改善幅度；错误页面的 `.16` 采样无效，不作对比。
 
-The valid All Music capture covers about eight seconds of a 45-swipe workload,
-with 924 application Surface frames and 10 `App Deadline Missed / Late Present`
+The final build's valid All Music capture covers about eight seconds of a 45-swipe
+workload, with 927 application Surface frames and 14 `App Deadline Missed / Late Present`
 frames. Mapped display-frame intervals have median `8.32ms`, P99 `16.64ms` and
-maximum `24.97ms`; of 943 completed outer UI frames, 80 exceed `8.33ms`, including one over `16.67ms`.
-This does not promise sustained 120fps. The wrong-page `.16` capture is invalid
-and is not a performance baseline. Hidden Search glass kept the offscreen image
-path active during this run; the minimally corrected direct path still needs a
-new measurement, so its final performance is not established here.
+maximum `16.65ms`; of 949 completed outer UI frames, 84 exceed `8.33ms`, including
+three over `16.67ms`. Short stalls remain; sustained lossless 120fps is not claimed.
+Cache, temperature and warmup were not strictly controlled, so no improvement
+percentage against the earlier diagnostic build is calculated. The wrong-page
+`.16` capture is invalid and is not a comparison baseline.
+
+本轮读到的累计原生计数中，1285 次背景记录全部为 direct；离屏 GPU 图像捕获、异步提交及 `syncAndDraw`
+计数均为零，与 trace 中没有离屏 Draw 一致。窗口和现有光学滤镜仍需绘制，不能把
+这项路径确认当作零渲染成本。搜索下拉显示原材质已确认；后续点按片段进入播放器，
+操作归属未能确认，搜索聚焦、取消及返回本轮未验收，不登记为通过或已确认故障。
+
+Native counters read after this round report 1285 backdrop recordings, all direct. Offscreen GPU image
+capture, asynchronous submission and `syncAndDraw` counters are zero, matching the
+absence of offscreen Draw passes in the trace. The window and existing optical
+filters still require rendering. Pull-down Search retained its original material;
+the later tap sequence was inconclusive after the player opened. Search focus,
+cancellation and return remain unverified, rather than recorded as passes or
+confirmed failures.
 
 最终 `.17` 构建已移除临时自动开启转场记录的行为；私有录像、图像
 及日志不提交或链接到公开文档。Mini 标题保留同一 Marquee 树，以独立 `active` 暂停／
