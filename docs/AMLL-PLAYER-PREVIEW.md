@@ -1,8 +1,18 @@
 # AMLL 播放器预览 / AMLL player preview
 
-`0.8.4.1-amll.19` · Android `versionCode 101` · `preview/amll-player`
+`0.8.4.1-amll.20` · Android `versionCode 102` · `preview/amll-player`
 
-## 当前 `.19` / Current `.19`
+## 当前 `.20` / Current `.20`
+
+玻璃调节室模式栏移除“我的参数”入口，其余显示名称缩短为“开源默认”和“iOS参考”。英文对应显示为“Open-source defaults”和“iOS reference”。旧版保存的参数及当前材质选择继续保留，参数摘要兼容旧自定义模式；参考模式说明也不再引导进入已移除的入口。类型、翻译及改动界面 lint 检查通过。
+
+The glass tuning mode row removes Custom parameters and uses the shorter labels Open-source defaults and iOS reference, with matching Chinese labels. Existing saved values and the active material choice are retained; the summary still handles a legacy custom selection. Reference-mode guidance no longer points to the removed entry. Typechecking, translation checks and targeted screen lint pass.
+
+`.20` / `102` 已以原签名覆盖安装到三星，实机确认模式栏仅有 AM++ 参考、开源默认、iOS参考三个入口。该检查未修改或保存参数。
+
+`.20` / `102` is installed on Samsung with the original certificate. The mode row was observed with only AM++ reference, Open-source defaults and iOS reference. No parameters were edited or saved during this check.
+
+## `.19` 功能与实机记录 / `.19` features and device record
 
 播放器下拉收合区域扩大到播放控制区上方，覆盖大封面、歌曲信息与空白区域；进度条、音量及播放按钮继续处理各自操作。手势仅向下激活，短屏和大字体布局仍可向上滚动。歌词页继续使用信息区下拉，不接管歌词滚动和点按跳播。
 

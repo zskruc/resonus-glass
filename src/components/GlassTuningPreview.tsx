@@ -143,8 +143,8 @@ export function GlassTuningPreview({ target }: { target: GlassTarget }) {
           )}
         </View>
       </View>
-      <Text style={[styles.hint, { color: colors.textMuted }]}>{t(mode === 'amPlus' ? 'AM++ reference' : mode === 'kyantDefault' ? 'Kyant defaults'
-        : mode === 'iphoneReference' ? 'iPhone reference' : 'Custom parameters')} · {t('Drag the background, or let it move slowly.')}</Text>
+      <Text style={[styles.hint, { color: colors.textMuted }]}>{t(mode === 'amPlus' ? 'AM++ reference' : mode === 'kyantDefault' ? 'Open-source defaults'
+        : mode === 'iphoneReference' ? 'iOS reference' : 'Custom parameters')} · {t('Drag the background, or let it move slowly.')}</Text>
     </View>
   );
 }

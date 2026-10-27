@@ -23,9 +23,8 @@ const TARGETS: { value: GlassTarget; label: string }[] = [
 ];
 const MODES: { value: GlassAppearanceMode; label: string }[] = [
   { value: 'amPlus', label: 'AM++ reference' },
-  { value: 'kyantDefault', label: 'Kyant defaults' },
-  { value: 'iphoneReference', label: 'iPhone reference' },
-  { value: 'custom', label: 'Custom parameters' },
+  { value: 'kyantDefault', label: 'Open-source defaults' },
+  { value: 'iphoneReference', label: 'iOS reference' },
 ];
 
 type NumericParameter = 'blur' | 'refraction' | 'refractionHeight' | 'highlightWidth' | 'highlightOpacity' | 'tintOpacity';
@@ -215,7 +214,7 @@ export default function GlassTuningSettings() {
         <Text style={styles.introduction}>{t('Changes apply live. Save to keep them after restarting. Export your finished settings and send them to me.')}</Text>
         {mode === 'kyantDefault' ? <Text style={styles.notice}>{t('Uses AndroidLiquidGlass’s original button, bottom tabs, and dialog materials. Your saved custom parameters are kept.')}</Text> : null}
         {mode === 'amPlus' ? <Text style={styles.notice}>{t('AM++ keeps its dock layout and motion while you tune its glass. Save changes separately, or restore and save all AM++ defaults with one tap. Your Custom parameters stay unchanged.')}</Text> : null}
-        {mode === 'iphoneReference' ? <Text style={styles.notice}>{t('iPhone reference approximates the observed appearance; it does not copy Apple’s private parameters. Switch to Custom parameters to restore and edit your saved styles.')}</Text> : null}
+        {mode === 'iphoneReference' ? <Text style={styles.notice}>{t('iOS reference approximates the observed appearance. Your saved parameters are kept.')}</Text> : null}
         {!isLiquidGlassAvailable ? <Text style={styles.notice}>{t('Native liquid glass is unavailable on this device. This preview uses a solid fallback.')}</Text> : null}
         {!enabled ? (
           <View style={styles.noticeBox}>
@@ -300,7 +299,7 @@ export default function GlassTuningSettings() {
         {mode === 'kyantDefault' ? <Text style={styles.description}>{t('Export keeps your three custom styles; the default materials do not overwrite them.')}</Text> : null}
         {mode === 'amPlus' ? <Text style={styles.description}>{t('Export includes the active AM++ parameters for all three surfaces, separately from Custom parameters.')}</Text> : null}
         <Text selectable style={styles.summary}>{[
-          `${t(MODES.find((item) => item.value === mode)!.label)} · ${t(TARGETS.find((item) => item.value === target)!.label)}`,
+          `${t(MODES.find((item) => item.value === mode)?.label ?? 'Custom parameters')} · ${t(TARGETS.find((item) => item.value === target)!.label)}`,
           ...parameters.map((parameter) => `${t(parameter.label)}: ${parameter.percent
             ? `${Math.round(profile[parameter.key] * 100)}%`
             : `${Number(profile[parameter.key].toFixed(2))} dp`}`),

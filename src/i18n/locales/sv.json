@@ -1,5 +1,5 @@
 {
-  "Kyant defaults": "Kyant-standard",
+  "Open-source defaults": "Kyant-standard",
   "Uses AndroidLiquidGlass’s original button, bottom tabs, and dialog materials. Your saved custom parameters are kept.": "Använder AndroidLiquidGlass ursprungliga material för knappar, nedre flikar och dialogrutor. Dina sparade egna parametrar behålls.",
   "Export keeps your three custom styles; the default materials do not overwrite them.": "Exporten behåller dina tre egna stilar; standardmaterialen skriver inte över dem.",
   "All": "Alla",

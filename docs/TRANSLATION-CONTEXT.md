@@ -844,9 +844,8 @@ you are actually typing into, which is easier than reading it here.
 | `Higher values bend the background more.` |  |
 | `Highlight intensity` |  |
 | `Highlight width` |  |
-| `iPhone reference` |  |
-| `iPhone reference approximates the observed appearance; it does not copy Apple’s private parameters. Switch to Custom parameters to restore and edit your saved styles.` |  |
-| `Kyant defaults` | The original AndroidLiquidGlass component presets. These are not Apple’s private optical parameters. Saved custom styles remain available in Custom parameters. |
+| `iOS reference` |  |
+| `iOS reference approximates the observed appearance. Your saved parameters are kept.` |  |
 | `Lens and light` |  |
 | `Lens edge depth` |  |
 | `Live glass preview · sample content` |  |
@@ -854,6 +853,7 @@ you are actually typing into, which is easier than reading it here.
 | `Lower values show more of the background.` |  |
 | `Move background` |  |
 | `Native liquid glass is unavailable on this device. This preview uses a solid fallback.` |  |
+| `Open-source defaults` | The original AndroidLiquidGlass component presets. These are not Apple’s private optical parameters. Saved custom styles are retained. |
 | `Other surfaces` |  |
 | `Pause motion` |  |
 | `Refraction strength` |  |

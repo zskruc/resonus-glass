@@ -17,7 +17,7 @@
 // purpose. They are not counted as missing.
 {
   "notes": {
-    "Kyant defaults": "The original AndroidLiquidGlass component presets. These are not Apple’s private optical parameters. Saved custom styles remain available in Custom parameters.",
+    "Open-source defaults": "The original AndroidLiquidGlass component presets. These are not Apple’s private optical parameters. Saved custom styles are retained.",
     // ── The app's own words ──────────────────────────────────────────────────
     // These come back on screen after screen. Whatever each language settles
     // on, it reads much better said the same way every time.

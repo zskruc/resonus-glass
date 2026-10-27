@@ -1,5 +1,5 @@
 {
-  "Kyant defaults": "Domyślne Kyant",
+  "Open-source defaults": "Domyślne Kyant",
   "Uses AndroidLiquidGlass’s original button, bottom tabs, and dialog materials. Your saved custom parameters are kept.": "Używa oryginalnych materiałów AndroidLiquidGlass dla przycisków, dolnych kart i okien dialogowych. Zapisane własne parametry zostają zachowane.",
   "Export keeps your three custom styles; the default materials do not overwrite them.": "Eksport zachowuje trzy własne style; materiały domyślne ich nie nadpisują.",
   "Diagnostics": "Diagnostyka",

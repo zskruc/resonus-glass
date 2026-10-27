@@ -1,5 +1,5 @@
 {
-  "Kyant defaults": "Параметры Kyant",
+  "Open-source defaults": "Параметры Kyant",
   "Uses AndroidLiquidGlass’s original button, bottom tabs, and dialog materials. Your saved custom parameters are kept.": "Используются оригинальные материалы AndroidLiquidGlass для кнопок, нижних вкладок и диалогов. Сохранённые пользовательские параметры сохраняются.",
   "Export keeps your three custom styles; the default materials do not overwrite them.": "Экспорт сохраняет три пользовательских стиля; стандартные материалы их не перезаписывают.",
   "Turn on auto-download?": "Включить авто-скачивание?",
