@@ -20,7 +20,8 @@ const RETURN_SPRING = { damping: 20, stiffness: 200, mass: 1, reduceMotion: moti
 
 /**
  * Attach rootStyle to the entire opaque player and handleGesture to its safe
- * content view. Only touches beginning in the visible header can dismiss it.
+ * content view. Cover mode accepts touches above the playback controls;
+ * lyric mode keeps its information header separate from lyric scrolling.
  * Keep lyrics/backdrop mounted while closing: this hook holds the
  * route until the whole surface has left, then commits the original back action.
  */
@@ -180,12 +181,14 @@ export function useAmllPlayerTransition({ width = 0, height, focused, enabled = 
 
   const handleGesture = useMemo(() => Gesture.Pan()
     .enabled(focused && enabled && !allowRemoval)
-    // Native bounds reject lyric/transport starts before the pan competes
-    // with their own scrolling, taps and sliders. Landscape needs an L-shaped
-    // refinement, and a short screen may already have scrolled its header.
+    // Cover/metadata dragging stops at the top of the playback block, keeping
+    // seeking, volume and transport input independent. Lyrics retain their own
+    // header bounds; a short screen may have scrolled the column already.
     .hitSlop({ top: -headerArea.top, height: headerArea.bottom - headerArea.top })
     .maxPointers(1)
-    .activeOffsetY([-6, 6])
+    // Only a downward movement can take ownership. An upward cover swipe must
+    // still scroll a short/accessibility layout to its playback controls.
+    .activeOffsetY(6)
     .failOffsetX([-24, 24])
     .onTouchesDown((event, manager) => {
       const touch = event.allTouches[0];

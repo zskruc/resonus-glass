@@ -1,6 +1,16 @@
 # Apple Music 风格播放器转场 / Apple Music style player transition
 
-## 当前 `.17` 状态 / Current `.17` status
+## 当前 `.18` / Current `.18`
+
+`.18` / Android `versionCode 100` 将封面模式的下拉入口扩展到播放控件上方，包含封面和歌曲信息；原播放控制区不参与收合手势。仅向下移动激活，保留短屏向上滚动、文字点击及既有收合阈值。歌词区的滚动和点按播放边界不变。共享封面与背景转场的几何、参数和交接逻辑继续沿用 `.17`。
+
+`.18` / Android `versionCode 100` expands cover-mode downward dismissal through the artwork and metadata to the top of the playback block. The controls keep their own input. Downward-only activation preserves upward column scrolling, metadata taps and the existing close thresholds. Lyric scrolling and line-seeking boundaries are unchanged. Shared-artwork/background geometry, timing and handoff remain those of `.17`.
+
+本轮 584 项应用测试、类型及翻译检查通过，lint 为 0 错误、117 项现有警告；按要求只构建 APK，尚未安装或进行 `.18` 实机验收。下方记录均属于旧版。
+
+All 584 app tests, typechecking and translations pass; lint reports zero errors and 117 existing warnings. This round builds an APK only as requested, with `.18` installation/device validation pending. The records below concern earlier builds.
+
+## `.17` 实机记录 / `.17` device record
 
 `.17` / Android `versionCode 99` 当前构建已以同包名、原签名覆盖安装到三星设备。
 574 项应用测试、139 项原生测试、类型与翻译检查通过；lint 为 0 错误、117 项警告。

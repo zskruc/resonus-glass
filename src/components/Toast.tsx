@@ -1,14 +1,15 @@
 /** Brief pill-shaped message at the bottom (Spotify style). */
 import { useEffect } from 'react';
-import { Text } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown, FadeOut } from 'react-native-reanimated';
 
 import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import { useFloatingBottom } from '@/hooks/useScreenBottomPadding';
 import { useToast } from '@/store/toast';
-import { colors, fontSize, radius, spacing, themed } from '@/theme';
+import { fontSize, radius, spacing, themed, useTheme } from '@/theme';
 
 export function Toast() {
+  const colors = useTheme();
   const message = useToast((s) => s.message);
   const actionLabel = useToast((s) => s.actionLabel);
   const runAction = useToast((s) => s.runAction);
@@ -36,7 +37,11 @@ export function Toast() {
       // Without an action the toast is purely informational and shouldn't steal touches.
       pointerEvents={actionLabel ? 'box-none' : 'none'}
     >
-      <GlassBackdrop radius={radius.pill} variant="prominent" tint={colors.snackbar} />
+      <GlassBackdrop radius={radius.pill} variant="prominent" tint={colors.surface} />
+      {/* The native material can pick a light tint independently of the legacy
+          dark snackbar palette. Keep themed ink above a local contrast wash;
+          the original glass, lens and highlight remain underneath. */}
+      <View pointerEvents="none" accessible={false} style={styles.contrastSurface} />
       <Text style={[styles.text, actionLabel ? styles.textLeft : null]} numberOfLines={2}>
         {message}
       </Text>
@@ -51,9 +56,7 @@ export function Toast() {
           }}
           style={({ pressed }) => pressed && { opacity: 0.6 }}
         >
-          {/* The accent as picked, not the theme's: the pill is dark in both
-              appearances, and the light theme darkens the accent for white. */}
-          <Text style={[styles.action, { color: colors.accentVivid }]}>{actionLabel}</Text>
+          <Text style={styles.action}>{actionLabel}</Text>
         </GlassPressable>
       ) : null}
     </Animated.View>
@@ -65,14 +68,20 @@ const styles = themed((colors) => ({
     position: 'absolute',
     left: spacing.xl,
     right: spacing.xl,
-    backgroundColor: colors.snackbar,
+    backgroundColor: 'transparent',
     borderRadius: radius.pill,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.xl,
     alignItems: 'center',
   },
   pillRow: { flexDirection: 'row', gap: spacing.lg },
-  text: { color: colors.onSnackbar, fontSize: fontSize.sm, fontWeight: '500' },
+  contrastSurface: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    opacity: 0.72,
+  },
+  text: { color: colors.text, fontSize: fontSize.sm, fontWeight: '500' },
   textLeft: { flex: 1 },
-  action: { fontSize: fontSize.sm, fontWeight: '600' },
+  action: { color: colors.text, fontSize: fontSize.sm, fontWeight: '600', textDecorationLine: 'underline' },
 }));

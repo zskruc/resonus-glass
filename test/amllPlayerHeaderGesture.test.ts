@@ -17,7 +17,7 @@ class Pan {
   enabled(value: boolean) { this.options.enabled = value; return this; }
   hitSlop(value: object) { this.options.hitSlop = value; return this; }
   maxPointers(value: number) { this.options.maxPointers = value; return this; }
-  activeOffsetY(value: number[]) { this.options.activeOffsetY = value; return this; }
+  activeOffsetY(value: number | number[]) { this.options.activeOffsetY = value; return this; }
   failOffsetX(value: number[]) { this.options.failOffsetX = value; return this; }
   onTouchesDown(callback: (...args: any[]) => void) { this.callbacks.down = callback; return this; }
   onStart(callback: (...args: any[]) => void) { this.callbacks.start = callback; return this; }
@@ -171,6 +171,10 @@ function harness(width = 412, height = 840, lyrics = false, fontScale = 1) {
   };
   const drag = (x: number, y: number, translationY = 140, velocityY = 0) => {
     if (!accepts(x, y)) return false;
+    const range = pan().options.activeOffsetY;
+    const activates = Array.isArray(range) ? translationY < range[0] || translationY > range[1]
+      : range >= 0 ? translationY > range : translationY < range;
+    if (!activates) return false;
     const event: Event = { translationY, velocityY };
     pan().callbacks.start(); pan().callbacks.update(event); flushUI();
     pan().callbacks.end(event, true); pan().callbacks.finalize(event, true); flushUI();
@@ -191,18 +195,46 @@ function harness(width = 412, height = 840, lyrics = false, fontScale = 1) {
 }
 
 describe('AMLL visible header dismissal gesture', () => {
-  it('covers the whole band below the status bar and above the large cover without taking cover or controls touches', () => {
+  it('covers the whole band below the status bar through artwork and metadata while excluding all playback controls', () => {
     const h = harness();
     assert.equal(h.pan().options.hitSlop.top, -30);
     assert.equal(h.pan().options.hitSlop.height, h.headerArea.bottom - 30);
-    assert.equal(h.headerArea.bottom, 30 + layoutRules.AMLL_TOP_PADDING + h.layout.headerHeight + h.layout.largeCover.y);
+    assert.equal(h.headerArea.bottom, 30 + layoutRules.AMLL_TOP_PADDING + h.layout.headerHeight + h.layout.controlsTop);
     assert.equal(h.accepts(1, 31), true);
     assert.equal(h.accepts(411, h.headerArea.bottom - 1), true);
     assert.equal(h.accepts(206, 29), false);
     assert.equal(h.accepts(206, h.headerArea.bottom), false);
+    assert.equal(h.accepts(206, h.headerArea.handleBottom + h.layout.largeCover.y + h.layout.largeCover.size / 2), true);
+    assert.equal(h.accepts(206, h.headerArea.handleBottom + h.layout.metadataTop + 20), true);
     assert.equal(h.drag(206, h.headerArea.handleBottom + h.layout.controlsTop + 10), false);
     assert.equal(h.queued(), 0);
     assert.equal(h.root().get(), 0);
+  });
+
+  it('closes once from the large artwork while leaving upward column scrolling and taps available', () => {
+    const h = harness(320, 440, false, 2.5);
+    const coverY = h.headerArea.handleBottom + h.layout.largeCover.y + h.layout.largeCover.size / 2;
+    assert.equal(h.layout.scrollable, true);
+    assert.equal(h.drag(160, coverY, -160), false, 'upward scrolling cannot activate dismissal');
+    assert.equal(h.drag(160, coverY, 0), false, 'metadata/cover taps cannot activate dismissal');
+    assert.equal(h.queued(), 0);
+    assert.equal(h.root().get(), 0);
+    assert.equal(h.drag(160, coverY, 200), true);
+    h.drain(); h.render(); h.finish(); h.drain(); h.render();
+    assert.equal(h.navigations(), 1);
+    h.drain(); h.render();
+    assert.equal(h.navigations(), 1);
+  });
+
+  it('keeps playback controls outside the enlarged cover area after an accessibility column scroll', () => {
+    const h = harness(320, 440, false, 2.5);
+    h.headerScrollOffset.set(80);
+    assert.equal(h.accepts(160, h.headerArea.bottom - 81), true);
+    assert.equal(h.drag(160, h.headerArea.bottom - 79), false);
+    h.headerScrollOffset.set(1000);
+    assert.equal(h.accepts(160, h.headerArea.handleBottom - 1), true);
+    assert.equal(h.drag(160, h.headerArea.handleBottom + 1), false);
+    assert.equal(h.queued(), 0);
   });
 
   it('admits portrait lyric header cover, title, artist and empty margins, while rejecting lyric seeking and scroll starts', () => {
@@ -258,7 +290,7 @@ describe('AMLL visible header dismissal gesture', () => {
 
   it('leaves header button taps unactivated and returns short or cancelled pulls without closing', () => {
     const h = harness(412, 840, true);
-    assert.equal(JSON.stringify(h.pan().options.activeOffsetY), '[-6,6]');
+    assert.equal(h.pan().options.activeOffsetY, 6);
     assert.equal(h.accepts(200, h.headerArea.handleBottom + 20), true);
     // A tap never enters Pan ACTIVE; native Pressable keeps its ordinary tap.
     h.pan().callbacks.finalize({ translationY: 0, velocityY: 0 }, false);

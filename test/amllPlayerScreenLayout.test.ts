@@ -4,6 +4,8 @@ import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import * as layoutRules from '../src/lib/amllPlayerLayout';
+import { artistTargets, type ArtistTarget } from '../src/lib/artistNav';
+import type { Song } from '../src/api/subsonic';
 import { nativeMeasureBoundary } from './helpers/nativeMeasureBoundary';
 
 type Element = { type: unknown; props: Record<string, any> };
@@ -20,14 +22,26 @@ const find = (node: unknown, name: string): Element[] => {
 function harness() {
   let cursor = 0;
   const slots: any[] = [], effects: (() => void)[] = [];
+  const cleanups = new Set<() => void>();
   const slot = <T,>(create: () => T): T => slots[cursor++] ??= create();
-  const effect = (create: () => void, deps: unknown[]) => {
-    const state = slot(() => ({ deps: undefined as unknown[] | undefined }));
-    if (state.deps && deps.every((value, index) => Object.is(value, state.deps![index]))) return;
-    state.deps = deps; effects.push(create);
+  const memo = <T,>(create: () => T, deps: unknown[]): T => {
+    const state = slot(() => ({ deps: undefined as unknown[] | undefined, value: undefined as T | undefined }));
+    if (!state.deps || state.deps.length !== deps.length || deps.some((value, index) => !Object.is(value, state.deps![index]))) {
+      state.deps = deps; state.value = create();
+    }
+    return state.value as T;
   };
-  const song = { id: 'song', title: 'Title', artist: 'Artist', duration: 277, starred: false, url: undefined as string | undefined };
-  const player = { song, isPlaying: false, isBuffering: false, durationSec: 277, shuffle: false, repeat: 'off',
+  const effect = (create: () => (() => void) | void, deps: unknown[]) => {
+    const state = slot(() => ({ deps: undefined as unknown[] | undefined, cleanup: undefined as (() => void) | undefined }));
+    if (state.deps && state.deps.length === deps.length && deps.every((value, index) => Object.is(value, state.deps![index]))) return;
+    state.deps = deps; effects.push(() => {
+      if (state.cleanup) { cleanups.delete(state.cleanup); state.cleanup(); }
+      state.cleanup = create() || undefined;
+      if (state.cleanup) cleanups.add(state.cleanup);
+    });
+  };
+  const song: Song = { id: 'song', title: 'Title', artist: 'Artist', duration: 277 };
+  const player = { song: song as Song | null, isPlaying: false, isBuffering: false, durationSec: 277, shuffle: false, repeat: 'off',
     toggle() {}, next() {}, previous() {}, toggleShuffle() {}, cycleRepeat() {} };
   const settings = { showAudioQuality: false, showSystemVolume: false, fitCoverArt: false, marqueeTitles: false };
   const dimensions = { width: 384, height: 832, fontScale: 1 };
@@ -39,16 +53,20 @@ function harness() {
   let transitionProps: Record<string, any>;
   let closeCalls = 0;
   const menuCalls: any[][] = [];
+  const navigations: string[] = [];
+  const artistPickers: ArtistTarget[][] = [];
+  let focused = true;
+  let live: { title: string; artist?: string } | null = null;
   const transition = { closing: false, entryReady: true, rootStyle: {}, contentStyle: {}, artworkStyle: {},
     controlsMotionStyle: {}, handleGesture: {}, close() { closeCalls++; }, onArtworkLayout() {}, onClipHostReady() {} };
   const dependencies: Record<string, any> = {
     react: { useRef: (value: unknown) => slot(() => ({ current: value })),
       useState: (initial: unknown) => { const state = slot(() => ({ value: initial }));
         return [state.value, (value: unknown) => { state.value = typeof value === 'function' ? value(state.value) : value; }]; },
-      useMemo: (create: () => unknown) => create(), useCallback: (callback: unknown) => callback,
-      useEffect: effect },
+      useMemo: memo, useCallback: (callback: unknown, deps: unknown[]) => memo(() => callback, deps),
+      useEffect: effect, useLayoutEffect: effect },
     'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' },
-    'expo-router': { useIsFocused: () => true },
+    'expo-router': { useIsFocused: () => focused },
     'expo-navigation-bar': { NavigationBar: 'NavigationBar' },
     'expo-status-bar': { StatusBar: 'StatusBar' },
     'react-native': { ActivityIndicator: 'Spinner', Pressable: 'Pressable', ScrollView: 'ScrollView', Text: 'Text', View: 'View',
@@ -75,13 +93,17 @@ function harness() {
     '@/i18n': { useT: () => (text: string) => text },
     '@/lib/amllPlayerLayout': layoutRules,
     '@/lib/amllLyricPlayback': { seekAndPlayAmllLyricLine() {} },
+    '@/lib/artistNav': { artistTargets },
     '@/lib/format': { formatGroupedDeviceLabel: () => '' },
     '@/lib/haptics': { haptic() {} },
     '@/lib/playerPalette': { buildPlayerPalette: () => null },
-    '@/lib/pushOnce': { pushOnce() {} },
+    '@/lib/pushOnce': { pushOnce(href: string) { navigations.push(href); } },
     '@/store/jukebox': { useJukebox: (select: (state: object) => unknown) => select({ active: false }) },
     '@/store/player': { currentSong: (state: typeof player) => state.song,
-      usePlayerStore: (select: (state: typeof player) => unknown) => select(player), useLiveInfo: () => null },
+      usePlayerStore: (select: (state: typeof player) => unknown) => select(player), useLiveInfo: () => live },
+    '@/store/artistPicker': { useArtistPicker: (select: (state: object) => unknown) => select({
+      open(artists: ArtistTarget[]) { artistPickers.push(artists); },
+    }) },
     '@/store/settings': { useSettings: (select: (state: typeof settings) => unknown) => select(settings) },
     '@/store/songMenu': { useSongMenu: (select: (state: object) => unknown) => select({ open(...args: any[]) { menuCalls.push(args); } }) },
     '@/store/toast': {},
@@ -102,7 +124,10 @@ function harness() {
   runInNewContext(output, { exports, require(name: string) {
     assert.ok(Object.hasOwn(dependencies, name), `Unexpected screen dependency ${name}`); return dependencies[name];
   } });
-  return { player, settings, dimensions, values, transition, menuCalls, closeCalls: () => closeCalls,
+  return { player, settings, dimensions, values, transition, menuCalls, navigations, artistPickers, closeCalls: () => closeCalls,
+    focused(value: boolean) { focused = value; },
+    live(value: typeof live) { live = value; },
+    unmount() { for (const cleanup of cleanups) cleanup(); cleanups.clear(); },
     shadowNode(value: object | null) { shadowNode = value; },
     nativeMeasureCalls: nativeMeasure.calls,
     measure(value: Measurement | null) { measured = value; },
@@ -214,7 +239,7 @@ test('only the full local-song metadata exposes the favorite action while compac
   assert.equal(favorite[0].props.id, 'song');
   assert.equal(favorite[0].props.active, true);
   assert.equal(find(tree, 'More').length, 2, 'the retained compact and large metadata keep their own More callback');
-  h.player.song.url = 'https://radio.test/live';
+  h.player.song!.url = 'https://radio.test/live';
   tree = h.render();
   assert.equal(find(tree, 'FavoriteControl').length, 0, 'radio URL metadata cannot expose the Subsonic star action');
 });
@@ -270,4 +295,119 @@ test('removed mode controls remain available through the existing More menu in c
     assert.equal(options.presentation, 'card');
   }
   assert.equal(h.menuCalls.length, 2);
+});
+
+const metadataLinks = (tree: unknown) => find(tree, 'Pressable').filter((node) => node.props.accessibilityRole === 'link');
+
+test('the actual metadata artist and album names navigate independently above the retained player in cover and lyric modes', () => {
+  const h = harness();
+  h.player.song = { id: 'song', title: 'Title', artist: 'Artist', artistId: 'artist-id', album: 'Album', albumId: 'album-id' };
+  for (const lyrics of [false, true]) {
+    if (lyrics) find(h.render(), 'Controls')[0].props.onLyrics();
+    const tree = h.render();
+    const links = metadataLinks(tree);
+    assert.equal(links.length, 4, 'both retained metadata presentations expose the same two catalog targets');
+    for (const label of ['Artist', 'Album']) {
+      const candidates = links.filter((node) => node.props.accessibilityLabel === label);
+      const target = candidates[lyrics ? 0 : 1];
+      assert.equal(target.props.disabled, false);
+      assert.equal(find(target, 'Text')[0].props.children, label);
+      assert.equal(find(target, 'Text')[0].props.numberOfLines, 1);
+      target.props.onPress();
+    }
+    assert.equal(find(tree, 'MarqueeText').at(-1)!.props.text, 'Title', 'album navigation does not replace the track title');
+  }
+  assert.deepEqual(h.navigations, ['/artist/artist-id', '/album/album-id', '/artist/artist-id', '/album/album-id']);
+  assert.equal(h.closeCalls(), 0, 'details cover the retained player rather than popping its transition first');
+  assert.equal(h.artistPickers.length, 0);
+});
+
+test('the actual artist metadata uses the shared deduplicated collaboration and remixer picker', () => {
+  const h = harness();
+  h.player.song = { id: 'collaboration', title: 'Title', artist: 'First, Second', artistId: 'legacy',
+    artists: [{ id: 'first', name: 'First' }, { id: '', name: 'Missing ID' }, { id: 'second', name: 'Second' }, { id: 'first', name: 'Duplicate' }],
+    contributors: [{ role: 'composer', artist: { id: 'composer', name: 'Composer' } },
+      { role: 'remixer', artist: { id: 'second', name: 'Second' } }, { role: 'remixer', artist: { id: 'remix', name: 'Remixer' } }] };
+  metadataLinks(h.render()).at(-1)!.props.onPress();
+  assert.deepEqual(h.artistPickers, [[{ id: 'first', name: 'First' }, { id: 'second', name: 'Second' }, { id: 'remix', name: 'Remixer' }]]);
+  assert.deepEqual(h.navigations, []);
+  assert.equal(h.closeCalls(), 0);
+});
+
+test('missing metadata IDs remain readable without invented detail targets or album labels', () => {
+  const h = harness();
+  h.player.song = { id: 'unknown', title: 'Title', artist: 'No catalog artist', album: 'No catalog album' };
+  let tree = h.render();
+  assert.equal(metadataLinks(tree).length, 0);
+  for (const label of ['No catalog artist', 'No catalog album']) {
+    assert.equal(find(tree, 'Text').filter((node) => node.props.children === label).length, 2);
+  }
+  h.player.song = { id: 'unnamed-album', title: 'Title', albumId: 'not-a-label' };
+  tree = h.render();
+  assert.equal(metadataLinks(tree).length, 0, 'an album ID without an album name cannot create a fake name or target');
+  assert.equal(find(tree, 'Text').filter((node) => node.props.children === 'Unknown artist').length, 2);
+  h.player.song = null;
+  assert.equal(metadataLinks(h.render()).length, 0);
+  assert.deepEqual(h.navigations, []);
+});
+
+test('live radio preserves its broadcast metadata without using station catalog IDs, while a catalog VOD can still navigate', () => {
+  const h = harness();
+  h.player.song = { id: 'station', title: 'Station', artist: 'Station artist', artistId: 'stale-artist',
+    album: 'Station album', albumId: 'stale-album', url: 'https://radio.test/live' };
+  h.live({ title: 'Broadcast song', artist: 'Broadcast artist' });
+  let tree = h.render();
+  assert.equal(find(tree, 'MarqueeText').at(-1)!.props.text, 'Broadcast song');
+  assert.equal(find(tree, 'Text').filter((node) => node.props.children === 'Broadcast artist').length, 2);
+  assert.equal(find(tree, 'Text').filter((node) => node.props.children === 'Station album').length, 0);
+  assert.equal(metadataLinks(tree).length, 0, 'live metadata has no verified song artist or album ID');
+  h.live(null);
+  h.player.song = { ...h.player.song, id: 'catalog-file', title: 'Catalog file', vod: true };
+  tree = h.render();
+  metadataLinks(tree).filter((node) => node.props.accessibilityLabel === 'Station artist').at(-1)!.props.onPress();
+  metadataLinks(tree).filter((node) => node.props.accessibilityLabel === 'Station album').at(-1)!.props.onPress();
+  assert.deepEqual(h.navigations, ['/artist/stale-artist', '/album/stale-album']);
+});
+
+test('metadata callbacks reject old song, covered, closing, preparing and unmounted owners while fresh retained-player links still work', () => {
+  const h = harness();
+  const songA: Song = { id: 'A', title: 'A', artist: 'Artist A', artistId: 'artist-a', album: 'Album A', albumId: 'album-a' };
+  const songB: Song = { id: 'B', title: 'B', artist: 'Artist B', artistId: 'artist-b', album: 'Album B', albumId: 'album-b' };
+  const press = (links: Element[]) => { for (const link of links) link.props.onPress(); };
+  const assertBlocked = (links: Element[]) => {
+    const before = h.navigations.length;
+    press(links);
+    assert.equal(h.navigations.length, before);
+    assert.equal(h.artistPickers.length, 0);
+  };
+  h.player.song = songA;
+  const firstA = metadataLinks(h.render());
+  h.player.isPlaying = true;
+  h.render();
+  press(firstA.slice(-2));
+  assert.deepEqual(h.navigations, ['/artist/artist-a', '/album/album-a'], 'an unrelated playback rerender retains the valid metadata owner');
+  h.player.song = songB;
+  const oldB = metadataLinks(h.render());
+  assertBlocked(firstA);
+  h.player.song = songA;
+  let currentA = metadataLinks(h.render());
+  assertBlocked(firstA);
+  assertBlocked(oldB);
+  for (const boundary of ['covered', 'closing', 'preparing'] as const) {
+    if (boundary === 'covered') h.focused(false);
+    if (boundary === 'closing') h.transition.closing = true;
+    if (boundary === 'preparing') h.transition.entryReady = false;
+    const blocked = metadataLinks(h.render());
+    assert.ok(blocked.every((node) => node.props.disabled));
+    assertBlocked(currentA);
+    assertBlocked(blocked);
+    h.focused(true); h.transition.closing = false; h.transition.entryReady = true;
+    currentA = metadataLinks(h.render());
+    assertBlocked(blocked);
+  }
+  press(currentA.slice(-2));
+  assert.deepEqual(h.navigations.slice(-2), ['/artist/artist-a', '/album/album-a'], 'returning from details restores fresh navigation');
+  h.unmount();
+  assertBlocked(currentA);
+  assert.equal(h.closeCalls(), 0);
 });

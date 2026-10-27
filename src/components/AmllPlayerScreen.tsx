@@ -5,7 +5,7 @@
 import { useIsFocused } from 'expo-router';
 import { NavigationBar } from 'expo-navigation-bar';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, AppState, Pressable, ScrollView, StyleSheet, Text, View,
   useWindowDimensions,
@@ -35,11 +35,13 @@ import { useLyrics } from '@/hooks/useLyrics';
 import { useT } from '@/i18n';
 import { AMLL_TOP_PADDING, amllPlayerHeaderArea, amllPlayerLayout } from '@/lib/amllPlayerLayout';
 import { seekAndPlayAmllLyricLine } from '@/lib/amllLyricPlayback';
+import { artistTargets } from '@/lib/artistNav';
 import { formatGroupedDeviceLabel } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { buildPlayerPalette } from '@/lib/playerPalette';
 import { pushOnce } from '@/lib/pushOnce';
 import { useJukebox } from '@/store/jukebox';
+import { useArtistPicker } from '@/store/artistPicker';
 import { currentSong, useLiveInfo, usePlayerStore } from '@/store/player';
 import { useSettings } from '@/store/settings';
 import { useSongMenu } from '@/store/songMenu';
@@ -139,6 +141,25 @@ export function AmllPlayerScreen() {
   const lyrics = useLyrics(song ?? undefined);
   const title = live?.title || song?.title || t('Now playing');
   const artist = live?.artist || song?.artist || t('Unknown artist');
+  const liveStream = !!song?.url && !song.vod;
+  const album = liveStream ? undefined : song?.album;
+  const artists = useMemo(() => song && !liveStream ? artistTargets(song) : [], [song, liveStream]);
+  const openArtistPicker = useArtistPicker((state) => state.open);
+  const metadataBinding = useMemo(() => ({ song, interactive }), [song, interactive]);
+  const currentMetadata = useRef<typeof metadataBinding | null>(metadataBinding);
+  useLayoutEffect(() => {
+    currentMetadata.current = metadataBinding;
+    return () => { currentMetadata.current = null; };
+  }, [metadataBinding]);
+  const goArtist = useCallback(() => {
+    if (currentMetadata.current !== metadataBinding || !interactive || !artists.length) return;
+    if (artists.length > 1) openArtistPicker(artists);
+    else pushOnce(`/artist/${artists[0].id}`);
+  }, [metadataBinding, interactive, artists, openArtistPicker]);
+  const goAlbum = useCallback(() => {
+    if (currentMetadata.current !== metadataBinding || !interactive || liveStream || !song?.albumId) return;
+    pushOnce(`/album/${song.albumId}`);
+  }, [metadataBinding, interactive, liveStream, song]);
   const controlsActive = interactive && (!showLyrics || horizontal);
 
   useEffect(() => {
@@ -234,7 +255,23 @@ export function AmllPlayerScreen() {
       <View style={styles.metadataText}>
         <MarqueeText text={title} enabled={marquee && active && (compact ? showLyrics : !showLyrics || horizontal)}
           style={compact ? styles.compactTitle : styles.title} />
-        <Text numberOfLines={1} style={compact ? styles.compactArtist : styles.artist}>{artist}</Text>
+        <View style={styles.metadataDetails}>
+          {artists.length ? (
+            <Pressable accessibilityRole="link" accessibilityLabel={artist} disabled={!interactive}
+              onPress={goArtist} style={styles.metadataLink}>
+              <Text numberOfLines={1} style={compact ? styles.compactArtist : styles.artist}>{artist}</Text>
+            </Pressable>
+          ) : <Text numberOfLines={1} style={[compact ? styles.compactArtist : styles.artist, styles.metadataLink]}>{artist}</Text>}
+          {album ? <>
+            <Text accessible={false} style={compact ? styles.compactArtist : styles.artist}> · </Text>
+            {song?.albumId ? (
+              <Pressable accessibilityRole="link" accessibilityLabel={album} disabled={!interactive}
+                onPress={goAlbum} style={styles.metadataLink}>
+                <Text numberOfLines={1} style={compact ? styles.compactArtist : styles.artist}>{album}</Text>
+              </Pressable>
+            ) : <Text numberOfLines={1} style={[compact ? styles.compactArtist : styles.artist, styles.metadataLink]}>{album}</Text>}
+          </> : null}
+        </View>
       </View>
       {!compact && song && !song.url ? <AmllPlayerFavoriteButton id={song.id} starred={!!song.starred} active={interactive} /> : null}
       <AmllPlayerMoreButton label={t('More options')} onPress={showMenu} active={interactive}
@@ -372,6 +409,8 @@ const styles = StyleSheet.create({
   metadata: { position: 'absolute', justifyContent: 'center' },
   metadataRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   metadataText: { flex: 1, minWidth: 0 },
+  metadataDetails: { flexDirection: 'row', alignItems: 'center' },
+  metadataLink: { flexShrink: 1, minWidth: 0 },
   title: { color: INK, fontSize: 20, fontWeight: '600', lineHeight: 29.0666667, includeFontPadding: false },
   artist: { color: SECONDARY, fontSize: 20, lineHeight: 29.0666667, includeFontPadding: false },
   compactTitle: { color: INK, fontSize: 18, fontWeight: '600', lineHeight: 23 },

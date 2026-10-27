@@ -105,7 +105,7 @@ export function amllPlayerHeaderArea(
     handleBottom,
     bottom: handleBottom + (showLyrics
       ? layout.horizontal ? layout.metadataTop + layout.metadataHeight : layout.lyricsTop
-      : layout.largeCover.y),
+      : layout.controlsTop),
     columnLeft: leftInset + layout.padding,
     columnRight: leftInset + layout.padding + layout.leftWidth,
     columnOnly: showLyrics && layout.horizontal,
