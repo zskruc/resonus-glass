@@ -151,14 +151,34 @@ export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, reve
     'worklet';
     if (!available || clipHost.get() <= 0 || !playerCanReturnToMini.get() || playerSurfaceOwner.get() !== owner) return false;
     const currentPhase = phase.get();
+    if (currentPhase === 'preparing') return false;
     let next = snapshot.get();
-    if (currentPhase === 'idle' || currentPhase === 'preparing') {
+    if (currentPhase === 'idle') {
       const mini = miniArtworkMetrics.get();
       const actual = readArtwork?.();
-      next = mini && actual ? { ...mini, playerArtwork: { ...actual, y: actual.y - offset.get() } } : null;
+      next = mini && actual ? { ...mini, miniArtwork: mini.restingArtwork ?? mini.miniArtwork,
+        playerArtwork: { ...actual, y: actual.y - offset.get() } } : null;
     }
     if (!isAppleMusicTransitionSnapshotValid(next, width, height)) return false;
-    const carriedProgress = currentPhase === 'idle' || currentPhase === 'preparing' ? 1 : effectiveProgress.get();
+    const carriedProgress = currentPhase === 'idle' ? 1 : effectiveProgress.get();
+    if (currentPhase === 'opening' && carriedProgress > 0) {
+      const rest = miniArtworkMetrics.get()?.restingArtwork;
+      const painted = frame.get()?.artwork.rect;
+      if (rest && painted) {
+        // Opening starts at the actual pressed image. Closing must land at
+        // idle geometry, even if that press spring has not settled yet.
+        // Rebase only the unused full endpoint so a fast reversal is continuous.
+        const p = carriedProgress;
+        const drag = entryIsPull.get() && revealOffset.get() >= 0 ? 0 : offset.get();
+        const end = (value: number, start: number) => (value - start * (1 - p)) / p;
+        const rebased = { ...next, miniArtwork: rest, playerArtwork: {
+          x: end(painted.x, rest.x), y: end(painted.y - drag, rest.y),
+          width: end(painted.width, rest.width), height: end(painted.height, rest.height),
+          cornerRadius: Math.max(0, end(painted.cornerRadius ?? 0, rest.cornerRadius ?? 0)),
+        } };
+        if (isAppleMusicTransitionSnapshotValid(rebased, width, height)) next = rebased;
+      }
+    }
     const carriedStack = currentPhase === 'idle' ? 1 - Math.min(1, Math.max(0, offset.get() / height))
       : frame.get()?.underlay ? (1 - frame.get()!.underlay.scale) / APPLE_MUSIC_PLAYER_MOTION.windowScaleDrop : carriedProgress;
     cancelAnimation(progress); cancelAnimation(offset); cancelAnimation(revealOffset);

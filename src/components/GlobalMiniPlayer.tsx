@@ -6,7 +6,7 @@
  */
 import { useSegments } from 'expo-router';
 import { useEffect, useLayoutEffect, useState } from 'react';
-import Animated, { cancelAnimation, useAnimatedReaction, useAnimatedStyle, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AMPP_DOCK, amppMiniSink, amppProgress } from '@/lib/amppDock';
@@ -17,6 +17,7 @@ import { MINI_PLAYER_GAP, MINI_PLAYER_HEIGHT, spacing, TAB_BAR_BOTTOM_GAP, TAB_B
 import { MiniPlayer } from './MiniPlayer';
 import { PlayerDockUnderlay } from './PlayerDockUnderlay';
 import { playerCanReturnToMini } from '@/lib/playerReveal';
+import { useRetainedDockProgress } from '@/hooks/useRetainedDockProgress';
 
 export function GlobalMiniPlayer() {
   const insets = useSafeAreaInsets();
@@ -26,7 +27,7 @@ export function GlobalMiniPlayer() {
   // is nearly everywhere and not only inside the tabs (see `useTabBarShown`).
   const withBar = useTabBarShown();
   const dock = useLiquidDock();
-  const { progress, uiEnabled, amPlus } = dock;
+  const { amPlus } = dock;
   const navHeight = amPlus ? AMPP_DOCK.navigationHeight : TAB_BAR_HEIGHT;
   const miniHeight = amPlus ? AMPP_DOCK.miniHeight : MINI_PLAYER_HEIGHT;
   const bottomGap = amPlus ? AMPP_DOCK.bottomGap : TAB_BAR_BOTTOM_GAP;
@@ -50,17 +51,7 @@ export function GlobalMiniPlayer() {
     || lastDock.hasSearch !== dock.hasSearch || lastDock.enabled !== dock.enabled)) {
     setLastDock({ bottom, compact: dock.compact, hasSearch: dock.hasSearch, enabled: dock.enabled });
   }
-  const uiVisible = useSharedValue(visible);
-  // Child layout effects run before the provider resets the new route. Mark the
-  // outgoing mini frozen first, even before animated worklet effects refresh.
-  useLayoutEffect(() => { uiVisible.set(visible); }, [visible, uiVisible]);
-  const frozenProgress = useSharedValue(0);
-  useAnimatedReaction(
-    () => uiVisible.get() ? (uiEnabled.get() ? progress.get() : 0) : null,
-    (value) => { if (value !== null) frozenProgress.set(value); },
-  );
-  const visualProgress = useDerivedValue(() => uiVisible.get()
-    ? (uiEnabled.get() ? progress.get() : 0) : frozenProgress.get());
+  const visualProgress = useRetainedDockProgress(visible, dock);
   const opacity = useSharedValue(1);
   useEffect(() => {
     cancelAnimation(opacity);

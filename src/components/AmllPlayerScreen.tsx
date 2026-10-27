@@ -62,13 +62,9 @@ export function AmllPlayerScreen() {
   const playing = usePlayerStore((state) => state.isPlaying);
   const buffering = usePlayerStore((state) => state.isBuffering);
   const durationSec = usePlayerStore((state) => state.durationSec);
-  const shuffle = usePlayerStore((state) => state.shuffle);
-  const repeat = usePlayerStore((state) => state.repeat);
   const toggle = usePlayerStore((state) => state.toggle);
   const next = usePlayerStore((state) => state.next);
   const previous = usePlayerStore((state) => state.previous);
-  const toggleShuffle = usePlayerStore((state) => state.toggleShuffle);
-  const cycleRepeat = usePlayerStore((state) => state.cycleRepeat);
   const openMenu = useSongMenu((state) => state.open);
   const showQuality = useSettings((state) => state.showAudioQuality);
   const showVolume = useSettings((state) => state.showSystemVolume);
@@ -217,6 +213,9 @@ export function AmllPlayerScreen() {
     haptic('light');
     setShowLyrics((shown) => !shown);
   };
+  const closeAccessiblePlayer = () => {
+    if (interactive) transition.close();
+  };
 
   const playFromLyric = useCallback((seconds: number) => {
     seekAndPlayAmllLyricLine(song?.id, seconds, {
@@ -272,12 +271,7 @@ export function AmllPlayerScreen() {
       <GestureDetector gesture={transition.handleGesture}>
       <Animated.View style={[styles.safe, { paddingTop: insets.top + AMLL_TOP_PADDING, paddingBottom: insets.bottom,
         paddingLeft: insets.left + layout.padding, paddingRight: insets.right + layout.padding }, transition.contentStyle]}>
-          <Animated.View>
-            <Pressable accessibilityRole="button" accessibilityLabel={t('Close')} onPress={transition.close}
-              style={[styles.handleButton, { height: layout.headerHeight }]} hitSlop={{ top: 8, bottom: 8 }}>
-              <View style={styles.handle} />
-            </Pressable>
-          </Animated.View>
+        <View pointerEvents="none" accessible={false} style={{ height: layout.headerHeight }} />
         <View style={{ width: layout.innerWidth, height: layout.viewportHeight }}>
           {horizontal ? (
             <Animated.View pointerEvents={showLyrics ? 'auto' : 'none'}
@@ -298,6 +292,11 @@ export function AmllPlayerScreen() {
                     width: layout.coverFrame.size, height: layout.coverFrame.size }} />
                 <Animated.View style={[styles.cover, coverStyle, transition.artworkStyle]}>
                   <Pressable accessibilityRole="button" accessibilityLabel={showLyrics ? t('Show cover') : t('Lyrics')}
+                    accessibilityActions={[{ name: 'dismiss', label: t('Close') }]}
+                    onAccessibilityAction={(event) => {
+                      if (event.nativeEvent.actionName === 'dismiss') closeAccessiblePlayer();
+                    }}
+                    onAccessibilityEscape={closeAccessiblePlayer}
                     onPress={switchLyrics} onLongPress={showMenu} style={styles.coverPressable}>
                     <Cover uri={cover} size={layout.largeCover.size} transition={0}
                       contentFit={fitCover ? 'contain' : 'cover'} autoplay={interactive && playing} preferStatic={false}
@@ -333,8 +332,7 @@ export function AmllPlayerScreen() {
                   style={[styles.controls, controlsStyle, transition.controlsMotionStyle]}>
                   <AmllPlayerControls width={layout.leftWidth} viewportWidth={window.width} viewportHeight={layout.referenceHeight}
                     horizontal={horizontal} fontScale={window.fontScale} playing={playing} buffering={buffering}
-                    shuffle={shuffle} repeat={repeat} onPrevious={previous} onToggle={toggle} onNext={next}
-                    onShuffle={toggleShuffle} onRepeat={cycleRepeat} onLongPressPlay={stop}
+                    onPrevious={previous} onToggle={toggle} onNext={next} onLongPressPlay={stop}
                     showLyrics={showLyrics} onLyrics={switchLyrics} onOutput={() => setOutputOpen(true)}
                     onQueue={() => pushOnce('/queue')} outputLabel={remoteName ? `${t('Devices')}: ${remoteName}` : t('Devices')}
                     active={controlsActive}
@@ -367,8 +365,6 @@ export function AmllPlayerScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: 'transparent' },
   safe: { flex: 1 },
-  handleButton: { alignItems: 'center', justifyContent: 'flex-start' },
-  handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.42)' },
   column: { position: 'absolute', top: 0 },
   cover: { position: 'absolute', top: 0, left: 0, transformOrigin: 'top left', overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.06)',
     boxShadow: '0px 12px 24px rgba(0,0,0,0.22)' },

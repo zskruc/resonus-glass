@@ -37,8 +37,10 @@ function harness() {
   let shadowNode: object | null = {};
   const nativeMeasure = nativeMeasureBoundary(() => measured ? { x: 0, y: 0, ...measured } : null);
   let transitionProps: Record<string, any>;
+  let closeCalls = 0;
+  const menuCalls: any[][] = [];
   const transition = { closing: false, entryReady: true, rootStyle: {}, contentStyle: {}, artworkStyle: {},
-    controlsMotionStyle: {}, handleGesture: {}, close() {}, onArtworkLayout() {}, onClipHostReady() {} };
+    controlsMotionStyle: {}, handleGesture: {}, close() { closeCalls++; }, onArtworkLayout() {}, onClipHostReady() {} };
   const dependencies: Record<string, any> = {
     react: { useRef: (value: unknown) => slot(() => ({ current: value })),
       useState: (initial: unknown) => { const state = slot(() => ({ value: initial }));
@@ -81,7 +83,7 @@ function harness() {
     '@/store/player': { currentSong: (state: typeof player) => state.song,
       usePlayerStore: (select: (state: typeof player) => unknown) => select(player), useLiveInfo: () => null },
     '@/store/settings': { useSettings: (select: (state: typeof settings) => unknown) => select(settings) },
-    '@/store/songMenu': { useSongMenu: (select: (state: object) => unknown) => select({ open() {} }) },
+    '@/store/songMenu': { useSongMenu: (select: (state: object) => unknown) => select({ open(...args: any[]) { menuCalls.push(args); } }) },
     '@/store/toast': {},
     '@/store/upnp': { useUpnp: (select: (state: object) => unknown) => select({ connected: false, devices: [] }) },
     '../../modules/liquid-glass': { PlayerSurfaceClipView: 'SurfaceClip', isNativePlayerSurfaceClipAvailable: true },
@@ -100,7 +102,7 @@ function harness() {
   runInNewContext(output, { exports, require(name: string) {
     assert.ok(Object.hasOwn(dependencies, name), `Unexpected screen dependency ${name}`); return dependencies[name];
   } });
-  return { player, settings, dimensions, values, transition,
+  return { player, settings, dimensions, values, transition, menuCalls, closeCalls: () => closeCalls,
     shadowNode(value: object | null) { shadowNode = value; },
     nativeMeasureCalls: nativeMeasure.calls,
     measure(value: Measurement | null) { measured = value; },
@@ -215,4 +217,57 @@ test('only the full local-song metadata exposes the favorite action while compac
   h.player.song.url = 'https://radio.test/live';
   tree = h.render();
   assert.equal(find(tree, 'FavoriteControl').length, 0, 'radio URL metadata cannot expose the Subsonic star action');
+});
+
+test('both cover and lyric modes remove the visual handle and its tap target while retaining header space and accessible dismissal', () => {
+  const h = harness();
+  for (const lyrics of [false, true]) {
+    if (lyrics) find(h.render(), 'Controls')[0].props.onLyrics();
+    const tree = h.render();
+    const detector = find(tree, 'GestureDetector')[0];
+    assert.equal(detector.props.gesture, h.transition.handleGesture, 'the existing header pan remains attached');
+    const headerSpace = detector.props.children.props.children[0];
+    assert.equal(headerSpace.type, 'View');
+    assert.equal(headerSpace.props.style.height, 44, 'retain the exact origin of all reference layout anchors');
+    assert.equal(headerSpace.props.pointerEvents, 'none');
+    assert.equal(headerSpace.props.accessible, false);
+    assert.equal(headerSpace.props.children, undefined, 'there is no bar or transparent Close button in the header');
+    assert.equal(headerSpace.props.onPress, undefined);
+    const pressables = find(tree, 'Pressable');
+    assert.equal(pressables.length, 1, 'only the existing artwork remains a screen-level Pressable');
+    const artwork = pressables[0];
+    assert.equal(artwork.props.accessibilityLabel, lyrics ? 'Show cover' : 'Lyrics');
+    assert.equal(artwork.props.accessibilityActions[0].name, 'dismiss');
+    assert.equal(artwork.props.accessibilityActions[0].label, 'Close');
+    const calls = h.closeCalls();
+    artwork.props.onAccessibilityAction({ nativeEvent: { actionName: 'activate' } });
+    assert.equal(h.closeCalls(), calls);
+    artwork.props.onAccessibilityAction({ nativeEvent: { actionName: 'dismiss' } });
+    artwork.props.onAccessibilityEscape();
+    assert.equal(h.closeCalls(), calls + 2, 'screen-reader actions retain a close entry without a new visual control');
+  }
+  h.transition.entryReady = false;
+  const preparingArtwork = find(h.render(), 'Pressable')[0];
+  const calls = h.closeCalls();
+  preparingArtwork.props.onAccessibilityAction({ nativeEvent: { actionName: 'dismiss' } });
+  preparingArtwork.props.onAccessibilityEscape();
+  assert.equal(h.closeCalls(), calls, 'preparing entry cannot receive an accessibility close');
+});
+
+test('removed mode controls remain available through the existing More menu in cover and lyric modes', () => {
+  const h = harness();
+  for (const lyrics of [false, true]) {
+    if (lyrics) find(h.render(), 'Controls')[0].props.onLyrics();
+    const tree = h.render();
+    const controls = find(tree, 'Controls')[0];
+    for (const prop of ['shuffle', 'repeat', 'onShuffle', 'onRepeat']) {
+      assert.equal(prop in controls.props, false, `${prop} is not retained on hidden transport controls`);
+    }
+    const menus = find(tree, 'More');
+    menus[lyrics ? 0 : menus.length - 1].props.onPress();
+    const options = h.menuCalls.at(-1)![2];
+    assert.equal(options.playbackModes, true);
+    assert.equal(options.presentation, 'card');
+  }
+  assert.equal(h.menuCalls.length, 2);
 });

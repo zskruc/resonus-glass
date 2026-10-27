@@ -18,6 +18,8 @@ export const playerSurfaceOwner = makeMutable(0);
 export type MiniArtworkMetrics = {
   viewportWidth: number; viewportHeight: number;
   miniPlayer: AppleMusicRect; miniArtwork: AppleMusicRect;
+  /** Idle image endpoint, independent of press elasticity or horizontal swiping. */
+  restingArtwork?: AppleMusicRect;
 };
 export type PlayerArtworkFlight = {
   owner: number;

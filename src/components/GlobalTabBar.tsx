@@ -23,7 +23,6 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useAnimatedReaction,
   useAnimatedStyle,
-  useDerivedValue,
   useReducedMotion,
   useSharedValue,
   withSpring,
@@ -46,6 +45,7 @@ import { useT } from '@/i18n';
 import { rememberTab, requestSearchFocus, reselectTab, tabOrigin, TABS, type TabSegment } from '@/lib/tabOrigin';
 import { getActiveTabJumpAction } from '@/lib/tabNavigation';
 import { useLiquidTabsPress } from '@/hooks/useLiquidTabsPress';
+import { useRetainedDockProgress } from '@/hooks/useRetainedDockProgress';
 import { getCompactNavigationContentStyle, getLiquidDockGeometry } from '@/lib/liquidDock';
 import { AMPP_DOCK, amppExpandedAlpha, amppProgress, amppSearchAlpha, amppSprungProgress, getAmppControls, getAmppDockGeometry, getAmppSlotTranslation } from '@/lib/amppDock';
 import { useSettings } from '@/store/settings';
@@ -109,9 +109,10 @@ export function GlobalTabBar() {
   const rtl = I18nManager.isRTL;
   const reduceMotion = useReducedMotion();
   const { width: screenWidth } = useScreenSize();
-  const { progress: sourceDockProgress, compact: targetCompact, uiCompact: dockCompactTarget,
+  const dock = useLiquidDock();
+  const { compact: targetCompact, uiCompact: dockCompactTarget,
     expand, hasSearch: dockHasSearch, enabled: dockEnabled, scope: dockScope,
-    nativeInput, nativeInputHost, requestNativeCompact } = useLiquidDock();
+    nativeInput, nativeInputHost, requestNativeCompact } = dock;
   const navigationOverrides = useGlassTuning((s) => s.mode === 'amPlus' ? s.amPlusOverrides.navigation : s.overrides.navigation);
   const glassMode = useGlassTuning((s) => s.mode);
   const amPlus = glassMode === 'amPlus';
@@ -137,13 +138,7 @@ export function GlobalTabBar() {
   }
   const compact = shown ? targetCompact : lastDockTarget.compact;
   const hasSearch = shown ? dockHasSearch : lastDockTarget.hasSearch;
-  const uiShown = useSharedValue(shown);
-  useLayoutEffect(() => { uiShown.set(shown); }, [shown, uiShown]);
-  const frozenDockProgress = useSharedValue(0);
-  useAnimatedReaction(() => uiShown.value ? sourceDockProgress.value : null, (value) => {
-    if (value !== null) frozenDockProgress.set(value);
-  });
-  const dockProgress = useDerivedValue(() => uiShown.value ? sourceDockProgress.value : frozenDockProgress.value);
+  const dockProgress = useRetainedDockProgress(shown, dock);
   // Mirror the collapse intent. A row that is visible and interactive during
   // expansion can navigate without waiting for the spring to reach exactly 0.
   // JS taps must not synchronously read a UI-thread shared value.
@@ -167,6 +162,13 @@ export function GlobalTabBar() {
   const showLabels = useSettings((s) => s.showTabLabels);
   const root = segments[0];
   const inTabs = root === '(tabs)' || root === undefined;
+  const liveSelectionTarget = inTabs ? 1 : .38;
+  const retainSelection = underlay.reveal || underlay.returning;
+  const [lastSelectionTarget, setLastSelectionTarget] = useState(liveSelectionTarget);
+  if (shown && !retainSelection && lastSelectionTarget !== liveSelectionTarget) {
+    setLastSelectionTarget(liveSelectionTarget);
+  }
+  const selectionTarget = retainSelection ? lastSelectionTarget : liveSelectionTarget;
   // Where a stack opened from here would belong; the back arrow reads the same
   // thing to know where to let you out (see `tabOrigin`).
   if (inTabs) rememberTab(segments[1]);
@@ -285,9 +287,12 @@ export function GlobalTabBar() {
         selectionPosition.set(animate ? withSpring(target, SELECTION_SPRING) : target);
         if (animate && routeChanged) release();
       }
-      selectionOpacity.set(withTiming(inTabs ? 1 : 0.38, { duration: motion.duration.exit }));
+      // The revealed dock belongs to the covered route. Player segments must
+      // not dim its original selection and start a second fade after route pop.
+      selectionOpacity.set(retainSelection ? selectionTarget
+        : withTiming(selectionTarget, { duration: motion.duration.exit }));
     });
-  }, [tabWidth, selectedIndex, tabs.length, inTabs, routeSelection, selectionDestination, selectionPosition, selectionOpacity, reduceMotion, rtl, shown, expandedInteractive, dockProgress, press, release]);
+  }, [tabWidth, selectedIndex, tabs.length, selectionTarget, retainSelection, routeSelection, selectionDestination, selectionPosition, selectionOpacity, reduceMotion, rtl, shown, expandedInteractive, dockProgress, press, release]);
   const selectionStyle = useAnimatedStyle(() => {
     const progress = Math.max(0, Math.min(1, dockProgress.value));
     return {

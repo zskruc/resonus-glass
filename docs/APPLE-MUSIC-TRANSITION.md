@@ -2,23 +2,48 @@
 
 ## 当前状态 / Current status
 
-`.13` / Android `versionCode 95` 的 ARM64 修复包已构建，保留原包名和签名，三星已安装
-最终修复版并完成基础转场视觉检查；Mini／Tabs 同步淡入也已在最终覆盖包中确认，
-本轮观察未再看到路由返回后底栏迟现。
-527 项应用测试、125 项玻璃模块原生测试、类型与翻译检查通过；lint 为 0 错误、
-117 项警告。用户对观感的最终确认、持续帧率、长列表与长期稳定性仍待验证。
-不保证全程 120fps 或与 Apple 私有实现逐像素一致；被拒绝的 Primuse 整页形变仍已移除。
+`.15` / Android `versionCode 97` 的 ARM64 APK 已构建并核对原签名。558 项应用测试、
+125 项原生测试、类型与翻译检查通过；lint 为 0 错误、117 项警告。用户明确要求先构建、不安装，实机验收待重新连接后进行。
+`.14` 已安装，顶部白条及主控制区模式按钮移除已确认；已缓存 AllMusic 本次首屏
+较快显示出歌曲行；未取得严格的点击端到端计时。Mini 收回抖动仍被用户否定，尚未验收通过。
+下方 `.13` 记录是历史结果，不作为 `.15` 验收；不保证全程 120fps 或与 Apple 私有
+实现逐像素一致。被拒绝的 Primuse 整页形变仍已移除。
 
-The fixed `.13` / Android `versionCode 95` ARM64 build retains the original
-package/signing certificate. The final revision is installed on Samsung with
-basic transition visual checks completed. Mini/Tabs synchronized fading was
-confirmed in that revision, without the previously observed late dock reveal
-after route pop in this check. All 527 app tests, 125 native
-glass-module tests, typechecking and translation checks pass; lint reports zero
-errors and 117 warnings. User approval, sustained frame rate, long-list behavior
-and long-term stability remain unverified. This does not establish sustained
-120fps or pixel-identical Apple rendering. The rejected Primuse whole-player
-morph remains removed.
+The `.15` / Android `versionCode 97` ARM64 APK is built with the original signature
+verified. All 558 app tests, 125 native tests, typechecking and translations pass;
+lint reports zero errors and 117 warnings. The user requested a build without
+installation, with device acceptance deferred until reconnection. `.14` is
+installed: handle/mode-button removal was confirmed and the cached AllMusic
+opening promptly displayed track rows in this run, without rigorous tap-to-content timing. Mini return
+jitter remains rejected by the user. Historical `.13` results do not establish
+`.15` acceptance, sustained 120fps or pixel-identical Apple rendering. The
+rejected Primuse whole-player morph remains removed.
+
+`.15` 将关闭端点改为 `restingArtwork`：从不含按压／横滑变形的 anchor 计算 Mini
+静止封面位置；正常关闭落向该目标，入场中途反向关闭则重新计算另一端点，保留当前
+已绘制位置与尺寸的连续性。开启跑马灯时，Mini 标题保留同一 Marquee 树，以独立 `active` 暂停／恢复
+时钟并保留 offset，避免 route pop 重挂载。源码见 [MiniPlayer](../src/components/MiniPlayer.tsx)、
+[转场协调](../src/hooks/useAppleMusicPlayerMotion.ts) 与 [MarqueeText](../src/components/MarqueeText.tsx)。
+修复效果仍待实机确认。
+
+`.15` closes toward `restingArtwork`, derived from an anchor excluding transient
+press/swipe deformation. Ordinary closing lands on that resting target;
+reversing an opening rebases the other endpoint to preserve the currently
+painted position and dimensions. With marquee titles enabled, the mini retains one Marquee tree,
+pausing/resuming its clock through independent `active` state while preserving
+its offset. These corrections still require device confirmation.
+
+`.14` 移除顶部白条及其点击区域，但保留原高度、顶部下拉、系统返回和现有封面的
+无障碍关闭动作；主控制区只保留原位置的上一首／播放暂停／下一首，随机与循环仍在菜单。
+返回交接新增 scope-ready 保护：来源页面的进度尚未恢复时保留已绘制进度，恢复就绪后
+继续跟随滚动；选中透镜同时保留来源页透明度，不在揭露或返回时额外淡入。
+
+`.14` removes the top handle and its tap target while retaining header height,
+pull-down/system-back dismissal and accessible closing on the existing artwork.
+Only previous/play-pause/next remain in their original positions; modes stay in
+More. Scope-ready handoff retains painted dock progress until the origin's
+progress is restored, then follows scrolling again. Selected-lens opacity also
+retains its origin value without another reveal/return fade.
 
 ## 固定来源 / Pinned source
 
@@ -78,14 +103,14 @@ capability. Layout also follows the user's Samsung Apple Music reference;
 private screenshots are not published. Glass optics and other license boundaries
 remain unchanged.
 
-## 验证与回退 / Validation and fallback
+## `.13` 历史检查与保留的回退 / Historical `.13` checks and retained fallback
 
-实机基础视觉检查已看到封面在真实端点之间缩放并回位、完整入场、顶部短拉取消、长拉
+历史 `.13` 的实机基础视觉检查已看到封面在真实端点之间缩放并回位、完整入场、顶部短拉取消、长拉
 退出、歌词切换和歌词页顶部下拉返回；修复版这些检查期间未出现新的崩溃。三星参考布局、
 白色 SVG、暂停封面 0.85、收藏与更多入口也已确认。这不是持续 FPS 测试，也不等于所有
 页面、长列表、长期运行或全弹窗均已通过；最终审美效果仍须用户判断。
 
-Basic device checks observed artwork resizing and landing at real endpoints,
+Historical `.13` device checks observed artwork resizing and landing at real endpoints,
 full entry, short-pull cancellation, long-pull dismissal, lyric switching and
 lyric-header pull-down return, without a new crash during those fixed-build
 checks. The Samsung-reference layout, white SVGs, 0.85 paused artwork and
@@ -93,15 +118,15 @@ favorite/More entries were confirmed too. These were not sustained-FPS tests,
 nor acceptance of every page, long list, long-running session or popup. The user
 still needs to assess the final appearance.
 
-首次安装包的 `measure(null)` 问题已通过原生引用就绪保护修复，并在实际安装版本中
+`.13` 首次安装包的 `measure(null)` 问题已通过原生引用就绪保护修复，并在该版实际安装版本中
 复查测量路径；交付位置已替换为修复包。共享封面只在有效端点、当前 owner 与原生
 背景 host 就绪时启动；未就绪时延后尝试，无法建立时使用已有滑动回退。Android 原生
 host 就绪事件会重试尚未开始的入场；来源路由在本次 owner 下捕获，不跟随之后聚焦的
 页面变化。缺少原生裁切入口的环境沿用回退视图／滑动路径；host 暂未提供时保留中性
 背景，避免空透明帧。挂载代际 token、视口／曲目变化和失效测量均不应让旧飞行更新新 host。
 
-The first build's `measure(null)` error was fixed with native-ref readiness
-guards and the installed measurement path was checked again. Deliverable paths
+The first `.13` build's `measure(null)` error was fixed with native-ref readiness
+guards and that version's installed measurement path was checked again. Deliverable paths
 contain the fixed APK. Artwork flights require valid endpoints, the current
 owner and a ready background host; otherwise entry is deferred or uses the
 existing slide fallback. The Android host-ready event can retry an entry that

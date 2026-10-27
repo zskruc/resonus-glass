@@ -14,6 +14,9 @@ const shared = <T,>(initial: T) => ({ value: initial, get() { return this.value;
 const source = ts.transpileModule(readFileSync(new URL('../src/components/GlobalTabBar.tsx', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
 }).outputText;
+const retainedProgressSource = ts.transpileModule(readFileSync(new URL('../src/hooks/useRetainedDockProgress.ts', import.meta.url), 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText;
 
 class NativeGesture {
   options: Record<string, unknown> = {};
@@ -48,6 +51,8 @@ function harness({ amPlus = true, compact = false, uiCompact = compact, progress
   const reactions = new Set<{ prepare: () => unknown; react: (value: unknown, previous: unknown) => void; previous: unknown }>();
   const pressModes: boolean[] = [];
   const nativeMotion: number[][] = [];
+  const timingTargets: unknown[] = [];
+  const underlayState = { reveal: false, returning: false };
   let segments = ['(tabs)', 'index'];
   let shown = true;
   let expansions = 0;
@@ -107,7 +112,8 @@ function harness({ amPlus = true, compact = false, uiCompact = compact, progress
         const saved = slot(() => { const value = { prepare, react, previous: null as unknown }; reactions.add(value); return value; });
         saved.prepare = prepare; saved.react = react;
       },
-      useReducedMotion: () => false, withTiming: (value: unknown) => value, withSpring: (value: unknown) => value },
+      useReducedMotion: () => false, withTiming: (value: unknown) => { timingTargets.push(value); return value; },
+      withSpring: (value: unknown) => value },
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ bottom: 0 }) },
     'react-native-worklets': { scheduleOnRN: (callback: (...args: any[]) => unknown, ...args: unknown[]) => {
       if (deferRN) rnQueue.push(() => callback(...args)); else callback(...args);
@@ -116,11 +122,12 @@ function harness({ amPlus = true, compact = false, uiCompact = compact, progress
     '@/components/glass': { FloatingGlassBackdrop: 'Backdrop' },
     '../../modules/liquid-glass': { isLiquidGlassAvailable: true, LiquidGlassTabsView: 'NativeTabs',
       updateNativeTabsMotion: (...values: number[]) => nativeMotion.push(values) },
-    '@/hooks/useTabBar': { useTabBarShown: () => shown, usePlayerDockUnderlay: () => ({ reveal: false, returning: false }) },
-    './PlayerDockUnderlay': { PlayerDockUnderlay: 'Underlay', usePlayerDockMaterialReady: () => false },
+    '@/hooks/useTabBar': { useTabBarShown: () => shown, usePlayerDockUnderlay: () => underlayState },
+    './PlayerDockUnderlay': { PlayerDockUnderlay: 'Underlay', usePlayerDockMaterialReady: () => underlayState.reveal },
     '@/hooks/useLiquidDock': { COMPACT_DOCK_GAP: 8, COMPACT_DOCK_SIZE: 50, useLiquidDock: () => ({
       progress: dockProgress, compact, uiCompact: dockCompact, expand() { expansions++; }, hasSearch: true,
-      enabled: true, scope: 'test', nativeInput: false, nativeInputHost: shared(0), requestNativeCompact() {},
+      enabled: true, uiEnabled: shared(true), scope: 'test', uiScope: shared('test'),
+      nativeInput: false, nativeInputHost: shared(0), requestNativeCompact() {},
     }) },
     '@/hooks/useScreenSize': { useScreenSize: () => ({ width: 400 }) },
     '@/theme/motion': { motion: { duration: { exit: 150 }, reduceMotion: {} } },
@@ -143,6 +150,12 @@ function harness({ amPlus = true, compact = false, uiCompact = compact, progress
       useThemeMode: () => 'dark', BOTTOM_BAR_HORIZONTAL_MARGIN: 16, BOTTOM_BAR_MAX_WIDTH: 540,
       TAB_BAR_BOTTOM_GAP: 16, TAB_BAR_HEIGHT: 64 },
   };
+  const retainedProgress: Record<string, unknown> = {};
+  runInNewContext(retainedProgressSource, { exports: retainedProgress, require(id: string) {
+    assert.ok(Object.hasOwn(dependencies, id), `Unexpected retained-progress import ${id}`);
+    return dependencies[id];
+  } });
+  dependencies['@/hooks/useRetainedDockProgress'] = retainedProgress;
   const exports: Record<string, any> = {};
   runInNewContext(source, { exports, require(id: string) {
     assert.ok(Object.hasOwn(dependencies, id), `Unexpected tab bar import ${id}`);
@@ -182,8 +195,12 @@ function harness({ amPlus = true, compact = false, uiCompact = compact, progress
     return inset + (index + .5) * (width - 2 * inset) / nativeTabs().props.tabsCount;
   };
   return { dispatched, navigation, reselected, pressCalls: () => pressCalls, releaseCalls: () => releaseCalls,
-    expansions: () => expansions, focusRequests: () => focusRequests, render, ui, rnQueue, pressModes, nativeMotion, bottomTabs,
+    expansions: () => expansions, focusRequests: () => focusRequests, render, ui, rnQueue, pressModes, nativeMotion, bottomTabs, timingTargets,
     show(value: boolean) { shown = value; render(); },
+    handoff(route: string[], state: { shown: boolean; reveal: boolean; returning: boolean }) {
+      shown = state.shown; underlayState.reveal = state.reveal; underlayState.returning = state.returning;
+      return render(route);
+    },
     unmount() { for (const cleanup of cleanups) cleanup(); cleanups.clear(); },
     pan: () => gestures()[0], tapGesture: () => gestures()[1], x,
     down() { const [pan, tap] = gestures(); if (pan.options.enabled) pan.callbacks.onBegin(); tap.callbacks.onBegin(); ui(); },
@@ -192,6 +209,7 @@ function harness({ amPlus = true, compact = false, uiCompact = compact, progress
       tap.callbacks.onEnd({ x: x(index) }, true); tap.callbacks.onFinalize(); ui();
     },
     selection: () => nativeMotion.at(-1)?.[1],
+    selectionOpacity: () => nativeMotion.at(-1)?.[7],
     tap(label: string) { tab(label).props.onPress(); },
     pointerPress(label: string) { tab(label).props.onPress({ nativeEvent: { identifier: 0 } }); },
     pressIn(label: string) {
@@ -202,6 +220,31 @@ function harness({ amPlus = true, compact = false, uiCompact = compact, progress
     compactButton: () => findAll(tree, (node) => node.type === 'Pressable' && node.props.accessibilityRole === 'button')[0],
   };
 }
+
+describe('selected lens opacity across player handoff', () => {
+  it('retains the painted Home or child-page opacity without a new fade or press pulse on reveal and return', () => {
+    for (const amPlus of [false, true]) for (const origin of [['(tabs)', 'index'], ['artist', '[id]']]) {
+      const h = harness({ amPlus, progress: 0 });
+      h.render(origin);
+      const expected = origin[0] === '(tabs)' ? 1 : .38;
+      assert.equal(h.selectionOpacity(), expected);
+      const timings = h.timingTargets.length, presses = h.pressCalls(), releases = h.releaseCalls();
+      const selected = h.selection();
+      h.handoff(['player'], { shown: false, reveal: true, returning: false });
+      assert.equal(h.selectionOpacity(), expected, 'the covering player cannot replace the origin opacity with .38');
+      assert.equal(h.timingTargets.length, timings, 'revealing a retained dock must not start another opacity animation');
+      h.handoff(origin, { shown: true, reveal: false, returning: true });
+      assert.equal(h.selectionOpacity(), expected);
+      assert.equal(h.timingTargets.length, timings, 'the visible pop frame must continue the same painted target');
+      assert.equal(h.selection(), selected);
+      assert.equal(h.pressCalls(), presses);
+      assert.equal(h.releaseCalls(), releases);
+      h.handoff(['album', '[id]'], { shown: true, reveal: false, returning: false });
+      assert.equal(h.selectionOpacity(), .38, 'ordinary navigation still follows its normal child-page appearance');
+      assert.ok(h.timingTargets.length > timings, 'ordinary navigation retains its original opacity timing');
+    }
+  });
+});
 
 describe('tab activation while the dock expands', () => {
   it('dispatches a visible tab immediately while the expansion spring still has positive travel', () => {

@@ -145,10 +145,11 @@ Native adaptation boundaries:
   dispatched immediately on the confirmed press. The source's long click bounce
   and skip-arrow entrance animation are not included. Reduced-motion preferences
   are respected and stale/inactive control callbacks are rejected.
-- Hit targets are at least 44dp and very narrow rows can scroll. The user
-  explicitly requested shuffle/repeat beside transport in **portrait** too;
-  that five-button portrait arrangement is a deliberate difference from the
-  upstream three-button portrait layout. Native seek/system-volume slots and
+- Hit targets are at least 44dp and very narrow rows can scroll. Earlier
+  previews deliberately used a requested five-button portrait arrangement,
+  differing from upstream; that arrangement is historical. The current `.15`
+  retains `.14`'s three transport buttons in portrait and landscape, with
+  shuffle/repeat modes available in More. Native seek/system-volume slots and
   accessibility text sizing remain Resonus integrations.
 
 The artwork field and the other previously reviewed native player components

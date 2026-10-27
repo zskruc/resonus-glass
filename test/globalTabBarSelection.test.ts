@@ -14,6 +14,9 @@ const shared = <T,>(initial: T) => ({ value: initial, get() { return this.value;
 const source = ts.transpileModule(readFileSync(new URL('../src/components/GlobalTabBar.tsx', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
 }).outputText;
+const retainedProgressSource = ts.transpileModule(readFileSync(new URL('../src/hooks/useRetainedDockProgress.ts', import.meta.url), 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText;
 
 // Render the actual bar and inspect the props it hands to its visible controls.
 // Only hooks and native boundaries are stubbed; route/selection logic is real.
@@ -68,7 +71,8 @@ function harness({ amPlus = false, compact = false } = {}) {
     './PlayerDockUnderlay': { PlayerDockUnderlay: 'Underlay', usePlayerDockMaterialReady: () => false },
     '@/hooks/useLiquidDock': { COMPACT_DOCK_GAP: 8, COMPACT_DOCK_SIZE: 43, useLiquidDock: () => ({
       progress: shared(compact ? 1 : 0), compact, uiCompact: shared(compact), expand() {}, hasSearch: true,
-      enabled: true, scope: 'test', nativeInput: false, nativeInputHost: shared(0), requestNativeCompact() {},
+      enabled: true, uiEnabled: shared(true), scope: 'test', uiScope: shared('test'),
+      nativeInput: false, nativeInputHost: shared(0), requestNativeCompact() {},
     }) },
     '@/hooks/useScreenSize': { useScreenSize: () => ({ width: 400 }) },
     '@/theme/motion': { motion: { duration: { exit: 150 }, reduceMotion: {} } },
@@ -87,6 +91,12 @@ function harness({ amPlus = false, compact = false } = {}) {
     '@/theme': { useTheme: () => theme, useThemeMode: () => mode, BOTTOM_BAR_HORIZONTAL_MARGIN: 16,
       BOTTOM_BAR_MAX_WIDTH: 540, TAB_BAR_BOTTOM_GAP: 16, TAB_BAR_HEIGHT: 64 },
   };
+  const retainedProgress: Record<string, unknown> = {};
+  runInNewContext(retainedProgressSource, { exports: retainedProgress, require(id: string) {
+    assert.ok(Object.hasOwn(dependencies, id), `Unexpected retained-progress import ${id}`);
+    return dependencies[id];
+  } });
+  dependencies['@/hooks/useRetainedDockProgress'] = retainedProgress;
   const exports: Record<string, any> = {};
   runInNewContext(source, { exports, require(id: string) {
     assert.ok(Object.hasOwn(dependencies, id), `Unexpected bar import ${id}`);

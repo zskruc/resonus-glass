@@ -288,10 +288,11 @@ describe('background dock lifecycle', () => {
     const springSpecs: { target: number; stiffness: number; damping: number }[] = [];
     const glass = { mode: 'kyantDefault' };
     let scrollHandlers: Record<string, (event: unknown, context: unknown) => void>;
+    let observeWrite: ((shared: unknown, value: unknown) => void) | undefined;
     const mutable = <T,>(value: T) => ({
       writes: [] as T[],
       get: () => value,
-      set(next: T) { this.writes.push(next); value = next; },
+      set(next: T) { this.writes.push(next); value = next; observeWrite?.(this, next); },
     });
     const settings = { playerPresentation: 'amll', bottomTabs: [{ key: 'index', enabled: true }, { key: 'search', enabled: true }] };
     const dependencies = {
@@ -336,6 +337,8 @@ describe('background dock lifecycle', () => {
       compact: boolean;
       progress: ReturnType<typeof mutable<number>>;
       uiCompact: ReturnType<typeof mutable<boolean>>;
+      uiEnabled: ReturnType<typeof mutable<boolean>>;
+      uiScope: ReturnType<typeof mutable<string>>;
       generation: ReturnType<typeof mutable<number>>;
       enabled: boolean;
       amPlus: boolean;
@@ -361,6 +364,7 @@ describe('background dock lifecycle', () => {
       return render();
     };
     return { hooks, render, fold, read, springs: () => springs, springSpecs, nativeExpansions,
+      observeWrites(callback: (shared: unknown, value: unknown) => void) { observeWrite = callback; },
       nativeIntent(host: number, scope: string, serial: number) { nativeOwner = { host, scope, serial }; },
       keyboard(value: boolean) {
         keyboardVisible = value;
@@ -477,6 +481,24 @@ describe('background dock lifecycle', () => {
     dock.notifyCompact(false, previousGeneration); h.render();
     assert.equal(h.read().compact, true, 'the earlier page generation cannot change the restored target');
     assert.ok(h.nativeExpansions.includes(41));
+  });
+
+  it('publishes a UI route scope only after restoring the progress and enabled state for that scope', () => {
+    const h = dockHarness(true); h.mode('amPlus'); h.render();
+    let dock = h.fold();
+    const origin = dock.scope;
+    const publications: { scope: unknown; progress: number; compact: boolean; enabled: boolean }[] = [];
+    h.observeWrites((target, value) => {
+      if (target === dock.uiScope) publications.push({ scope: value, progress: dock.progress.get(),
+        compact: dock.uiCompact.get(), enabled: dock.uiEnabled.get() });
+    });
+    h.bar(false); h.navigate('/player', ['player']); dock = h.render();
+    assert.deepEqual(publications.at(-1), { scope: dock.scope, progress: 0, compact: false, enabled: false });
+    h.bar(true); h.navigate('/', ['(tabs)']); dock = h.render();
+    assert.equal(dock.scope, origin);
+    assert.deepEqual(publications.at(-1), { scope: origin, progress: 1, compact: true, enabled: true },
+      'a returned child must never see a matching scope with the old player progress zero');
+    assert.equal(publications.length, 2);
   });
 
   it('parks a UI collapse target even when its React notification has not arrived before the player opens', () => {

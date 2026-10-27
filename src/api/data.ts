@@ -113,12 +113,13 @@ function catalogSongs(catalog: { songs: Song[] }): Map<string, Song> {
  * of its songs at once. The mirror answers with one query for the lot, which
  * is what its own table of songs is for.
  */
-async function resolveSongs(ids: string[]): Promise<Map<string, Song>> {
+async function resolveSongs(ids: string[], known: Song[] = []): Promise<Map<string, Song>> {
   const out = new Map<string, Song>();
   const meta = useOfflineQueue.getState().data.songMeta ?? {};
+  const knownById = new Map(known.map((song) => [song.id, song]));
   const pending: string[] = [];
   for (const id of ids) {
-    const m = meta[id];
+    const m = meta[id] ?? knownById.get(id);
     if (m) out.set(id, m);
     else pending.push(id);
   }
@@ -1676,8 +1677,24 @@ export function getPlaylist(id: string): Promise<{ playlist: Subsonic.Playlist; 
     if (serverOffline()) return mirrorPlaylist(id);
     return Local.getPlaylist(id);
   }
-  return Subsonic.getPlaylist(auth(), id).then((res) => {
-    useLibraryMirror.getState().savePlaylistDetail(id, res.playlist, res.songs);
+  const asked = profileScopeId();
+  const request = Subsonic.getPlaylist(auth(), id);
+  const key = ['playlist', id];
+  const waiting = queryClient.getQueryState(key);
+  // Downloaded audio does not imply that the server can answer immediately.
+  // Show the complete saved tracklist while the ordinary query refresh runs.
+  // Never manufacture a playlist from its downloaded subset, overwrite a
+  // newer query/mutation, or carry this profile's data into another session.
+  if (waiting?.fetchStatus === 'fetching' && waiting.data === undefined) {
+    void Promise.resolve().then(() => useLibraryMirror.getState().playlistDetail(id)).then((detail) => {
+      if (!detail || detail.playlist.id !== id || profileScopeId() !== asked || isOffline()) return;
+      const state = queryClient.getQueryState(key);
+      if (!state || state.fetchStatus !== 'fetching' || state.data !== undefined) return;
+      queryClient.setQueryData(key, detail, { updatedAt: 0 });
+    }).catch(() => { /* An unreadable mirror must not fail the live request. */ });
+  }
+  return request.then((res) => {
+    if (profileScopeId() === asked) useLibraryMirror.getState().savePlaylistDetail(id, res.playlist, res.songs);
     return res;
   });
 }
@@ -1709,11 +1726,17 @@ async function mirrorPlaylist(
     // No saved tracklist nor edit: no songs offline.
     return { playlist: { ...playlist, songCount: 0 }, songs: [] };
   }
-  // Every id at once: one query for the playlist instead of one per song.
-  const found = await resolveSongs(songIds);
-  const songs = songIds
-    .map((sid) => found.get(sid))
-    .filter((s): s is Subsonic.Song => !!s);
+  // The complete metadata is already in detail. Reading every song's database
+  // row again doubled the native transfer and JSON parsing for a long list.
+  // Edits still resolve added ids, with outbox metadata taking precedence.
+  let songs: Song[];
+  if (edit?.songIds === undefined && detail) {
+    const meta = useOfflineQueue.getState().data.songMeta ?? {};
+    songs = detail.songs.map((song) => meta[song.id] ?? song);
+  } else {
+    const found = await resolveSongs(songIds, detail?.songs);
+    songs = songIds.map((sid) => found.get(sid)).filter((s): s is Song => !!s);
+  }
   // The count reflects what is actually shown (annotate may hide non-downloaded ones).
   const annotated = annotate(songs);
   return { playlist: { ...playlist, songCount: annotated.length }, songs: annotated };

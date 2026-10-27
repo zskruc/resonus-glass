@@ -9,7 +9,7 @@
  * Text inside a View measures at most the available width, so overflow would
  * never be detected.)
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useLayoutEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View, type StyleProp, type TextStyle } from 'react-native';
 import Animated, {
   cancelAnimation,
@@ -19,8 +19,10 @@ import Animated, {
   useSharedValue,
   withDelay,
   withRepeat,
+  withSequence,
   withTiming,
 } from 'react-native-reanimated';
+import { scheduleOnUI } from 'react-native-worklets';
 
 import { useForegroundEffect } from '@/hooks/useForegroundEffect';
 
@@ -35,11 +37,14 @@ export function MarqueeText({
   text,
   style,
   enabled = true,
+  active,
 }: {
   text: string;
   style?: StyleProp<TextStyle>;
   /** With false it never scrolls: long text is truncated with ellipsis. */
   enabled?: boolean;
+  /** Pause the clock without changing layout or restarting the painted pass. */
+  active?: boolean;
 }) {
   // Container width (with short text ≈ the text itself; with long text, the
   // available space, because maxWidth caps it) and real text width.
@@ -48,31 +53,57 @@ export function MarqueeText({
   const offset = useSharedValue(0);
 
   const overflows = enabled && containerW > 0 && textW > containerW + 1;
+  const running = active ?? true;
+  // Existing callers keep their focus-start behavior. Explicit lifecycle
+  // control opts into resuming the same painted position after a pause.
+  const retainPausedOffset = active !== undefined;
+
+  useLayoutEffect(() => {
+    // A new title, actual width or endpoint/settings change owns a fresh pass;
+    // covering the route changes only active and must never reset this pose.
+    scheduleOnUI(() => {
+      'worklet';
+      cancelAnimation(offset);
+      offset.set(0);
+    });
+  }, [text, enabled, containerW, textW, offset]);
 
   useForegroundEffect(useCallback(() => {
-    cancelAnimation(offset);
-    offset.set(0);
-    if (!overflows || !text) return;
-    const distance = textW + GAP;
-    // reduceMotion Never: without marquee the long title gets cut off with no
-    // way to read it, so it animates even with "reduce motion".
-    offset.set(withRepeat(
-      withDelay(
-        PAUSE_MS,
-        withTiming(-distance, {
-          duration: (distance / SPEED) * 1000,
-          easing: Easing.linear,
-          reduceMotion: ReduceMotion.Never,
-        }),
+    scheduleOnUI(() => {
+      'worklet';
+      cancelAnimation(offset);
+      if (!running || !overflows || containerW <= 0 || !text) return;
+      const distance = textW + GAP;
+      const painted = retainPausedOffset ? offset.get() : 0;
+      const position = Number.isFinite(painted) ? Math.max(-distance, Math.min(0, painted)) : 0;
+      if (!retainPausedOffset || position === -distance) offset.set(0);
+      // reduceMotion Never: without marquee the long title gets cut off with no
+      // way to read it, so it animates even with "reduce motion".
+      const timing = { easing: Easing.linear, reduceMotion: ReduceMotion.Never };
+      const loop = withRepeat(
+        withDelay(
+          PAUSE_MS,
+          withTiming(-distance, { ...timing, duration: (distance / SPEED) * 1000 }),
+          ReduceMotion.Never,
+        ),
+        -1, false, undefined, ReduceMotion.Never,
+      );
+      // A resumed pass travels only its remaining distance at the same speed.
+      // Reset at the seamless copy boundary, then resume ordinary full loops.
+      offset.set(position < 0 && position > -distance ? withSequence(
         ReduceMotion.Never,
-      ),
-      -1,
-      false,
-      undefined,
-      ReduceMotion.Never,
-    ));
-    return () => cancelAnimation(offset);
-  }, [overflows, textW, text, offset]));
+        withTiming(-distance, { ...timing, duration: ((distance + position) / SPEED) * 1000 }),
+        withTiming(0, { ...timing, duration: 0 }),
+        loop,
+      ) : loop);
+    });
+    return () => {
+      scheduleOnUI(() => {
+        'worklet';
+        cancelAnimation(offset);
+      });
+    };
+  }, [running, retainPausedOffset, overflows, containerW, textW, text, offset]));
 
   const anim = useAnimatedStyle(() => ({ transform: [{ translateX: offset.value }] }));
 

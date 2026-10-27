@@ -31,11 +31,6 @@ const ICONS: Record<string, ImageSource> = {
   next: require('../../assets/amll-controls/next.svg'),
   play: require('../../assets/amll-controls/play.svg'),
   pause: require('../../assets/amll-controls/pause.svg'),
-  shuffle: require('../../assets/amll-controls/shuffle.svg'),
-  'shuffle-active': require('../../assets/amll-controls/shuffle-active.svg'),
-  repeat: require('../../assets/amll-controls/repeat.svg'),
-  'repeat-active': require('../../assets/amll-controls/repeat-active.svg'),
-  'repeat-one-active': require('../../assets/amll-controls/repeat-one-active.svg'),
   'lyrics-off': require('../../assets/amll-controls/lyrics-off.svg'),
   'lyrics-on': require('../../assets/amll-controls/lyrics-on.svg'),
   'queue-off': require('../../assets/amll-controls/queue-off.svg'),
@@ -164,37 +159,28 @@ export interface AmllPlayerControlsProps extends AmllPlayerBottomActionsProps {
   fontScale?: number;
   playing: boolean;
   buffering?: boolean;
-  shuffle: boolean;
-  repeat: 'off' | 'all' | 'one';
   progress: ReactNode;
   volume?: ReactNode;
   onPrevious: () => void;
   onToggle: () => void;
   onNext: () => void;
-  onShuffle: () => void;
-  onRepeat: () => void;
   onLongPressPlay?: () => void;
 }
 
 export function AmllPlayerControls(props: AmllPlayerControlsProps) {
   const { width, viewportWidth = width, viewportHeight, horizontal, fontScale = 1, active = true,
-    playing, buffering = false, shuffle, repeat, progress, volume,
-    onPrevious, onToggle, onNext, onShuffle, onRepeat, onLongPressPlay } = props;
+    playing, buffering = false, progress, volume,
+    onPrevious, onToggle, onNext, onLongPressPlay } = props;
   const t = useT();
   const layout = amllPlayerControlLayout({ width, viewportWidth, viewportHeight, horizontal, fontScale, showVolume: !!volume });
   const labels: Record<AmllTransportAction, string> = {
     previous: t('Previous'), toggle: playing ? t('Pause') : t('Play'), next: t('Next'),
-    shuffle: t('Shuffle'), repeat: t('Repeat'),
   };
-  const handlers = { previous: onPrevious, toggle: onToggle, next: onNext, shuffle: onShuffle, repeat: onRepeat };
+  const handlers = { previous: onPrevious, toggle: onToggle, next: onNext };
   const glyph = (action: AmllTransportAction) => {
     if (action === 'toggle') return buffering ? <ActivityIndicator color={WHITE} />
       : <Glyph name={playing ? 'pause' : 'play'} size={layout.playGlyphSize} />;
-    if (action === 'previous' || action === 'next') return <Glyph name={action} size={layout.skipGlyphSize} />;
-    const selected = action === 'shuffle' ? shuffle : repeat !== 'off';
-    return <Glyph name={action === 'shuffle' ? shuffle ? 'shuffle-active' : 'shuffle'
-      : repeat === 'one' ? 'repeat-one-active' : repeat === 'all' ? 'repeat-active' : 'repeat'}
-    size={selected ? layout.modeSelectedGlyphSize : layout.modeGlyphSize} />;
+    return <Glyph name={action} size={layout.skipGlyphSize} />;
   };
   return (
     <View style={{ width, height: layout.height }}>
@@ -208,7 +194,6 @@ export function AmllPlayerControls(props: AmllPlayerControlsProps) {
           {layout.slots.map(({ action, left, top, size }) => <View key={action}
             style={{ position: 'absolute', left, top }}>
             <MediaButton label={labels[action]} size={size} active={active} onPress={handlers[action]}
-              selected={action === 'shuffle' ? shuffle : action === 'repeat' ? repeat !== 'off' : undefined}
               onLongPress={action === 'toggle' ? onLongPressPlay : undefined}>
               {glyph(action)}
             </MediaButton>

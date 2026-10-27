@@ -412,6 +412,7 @@ export function SyncedLyricsView({
             index={i}
             text={line.value.trim() || '♪'}
             words={line.words}
+            warmWords={active && !!line.words?.length && i === current + 1}
             highlighted={i === current}
             active={active}
             past={current >= 0 && i < current}
@@ -469,6 +470,7 @@ const LyricRow = memo(({
   index,
   text,
   words,
+  warmWords,
   highlighted,
   active = true,
   past,
@@ -484,6 +486,7 @@ const LyricRow = memo(({
   index: number;
   text: string;
   words?: LyricWord[];
+  warmWords: boolean;
   highlighted: boolean;
   active?: boolean;
   /** Lines before the current one: same colour as active, slightly dimmer. */
@@ -564,14 +567,15 @@ const LyricRow = memo(({
   });
   const lineStyle = amll ? amllLyricsLineStyle(size, weight) : lyricsLineStyle(large, size, weight, centered);
   const flattened = StyleSheet.flatten<TextStyle>(lineStyle);
-  const wordTextStyle: TextStyle = {
+  const wordTextStyle = useMemo<TextStyle>(() => ({
     fontFamily: flattened.fontFamily,
     fontSize: flattened.fontSize,
     fontStyle: flattened.fontStyle,
     fontWeight: flattened.fontWeight,
     letterSpacing: flattened.letterSpacing,
     lineHeight: flattened.lineHeight,
-  };
+  }), [flattened.fontFamily, flattened.fontSize, flattened.fontStyle, flattened.fontWeight,
+    flattened.letterSpacing, flattened.lineHeight]);
   const paddingVertical = typeof flattened.paddingVertical === 'number'
     ? flattened.paddingVertical
     : 0;
@@ -585,6 +589,7 @@ const LyricRow = memo(({
           <KaraokeWords
             words={words}
             highlighted={highlighted}
+            warm={warmWords}
             active={active}
             centered={centered}
             textStyle={wordTextStyle}

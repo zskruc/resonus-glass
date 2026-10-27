@@ -81,8 +81,8 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
   const visualProgress = useDerivedValue(() => dockEnabled
     ? amPlus ? amppSprungProgress(dockProgress.get()) : amppProgress(dockProgress.get()) : 0);
   const [settledLayout, setSettledLayout] = useState<'expanded' | 'compact' | 'moving'>(targetCompact ? 'compact' : 'expanded');
-  // Restore hidden hit targets and marquee measurement only at the final width.
-  // During the morph the title uses a normal Text with no onLayout JS callback.
+  // Restore hidden hit targets and marquee scrolling only at the final width.
+  // Route coverage pauses the mounted title instead of replacing its text tree.
   useAnimatedReaction(
     () => {
       const raw = dockEnabled ? dockProgress.get() : 0;
@@ -94,9 +94,12 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
   const expandedControls = !targetCompact && settledLayout === 'expanded';
   const baseMargin = Math.max(margin, (screenW - BOTTOM_BAR_MAX_WIDTH) / 2);
   const fullWidth = Math.max(0, screenW - baseMargin * 2);
-  const geometry = amPlus ? getAmppDockGeometry(fullWidth, 1, hasSearch, I18nManager.isRTL)
-    : getLiquidDockGeometry(fullWidth, navHeight, compactSize, COMPACT_DOCK_GAP, hasSearch, I18nManager.isRTL);
+  const rtl = I18nManager.isRTL;
+  const geometry = amPlus ? getAmppDockGeometry(fullWidth, 1, hasSearch, rtl)
+    : getLiquidDockGeometry(fullWidth, navHeight, compactSize, COMPACT_DOCK_GAP, hasSearch, rtl);
   const compactWidth = geometry.miniWidth;
+  const expandedCoverStart = spacing.lg;
+  const compactCoverStart = geometry.miniLogicalLeadingSpace + 10;
   const frameRef = useAnimatedRef<View>();
   const artworkRef = useAnimatedRef<Animated.View>();
   const recordArtwork = useCallback(() => {
@@ -108,12 +111,15 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
     const picture = measure(artworkRef);
     if (!frame || !picture || picture.width <= 0 || picture.height <= 0) return;
     const p = visualProgress.get();
+    const restingStart = expandedCoverStart + (compactCoverStart - expandedCoverStart) * p;
     miniArtworkMetrics.set({ viewportWidth: screenW, viewportHeight: screenH,
       miniPlayer: { x: frame.pageX + geometry.miniPhysicalOffsetX * p, y: frame.pageY,
         width: fullWidth + (compactWidth - fullWidth) * p, height: miniHeight, cornerRadius: miniHeight / 2 },
       miniArtwork: { x: picture.pageX, y: picture.pageY, width: picture.width, height: picture.height, cornerRadius: 4 },
+      restingArtwork: { x: frame.pageX + (rtl ? fullWidth - restingStart - 30 : restingStart),
+        y: frame.pageY + (miniHeight - 30) / 2, width: 30, height: 30, cornerRadius: 4 },
     });
-  }, [frameRef, artworkRef, visualProgress, geometry.miniPhysicalOffsetX, screenW, screenH, fullWidth, compactWidth, miniHeight]);
+  }, [frameRef, artworkRef, visualProgress, geometry.miniPhysicalOffsetX, screenW, screenH, fullWidth, compactWidth, miniHeight, expandedCoverStart, compactCoverStart, rtl]);
   useAnimatedReaction(() => visualProgress.get(), () => { recordArtwork(); });
   // Minimized navigation sits physically left and Search sits right;
   // foreground offsets still follow React Native's logical text direction.
@@ -141,8 +147,6 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
   const buttons = useSettings((s) => s.miniPlayerButtons);
   const hasSecondary = buttons !== 'none';
   const hasPrevious = buttons === 'previousNext';
-  const expandedCoverStart = spacing.lg;
-  const compactCoverStart = leadingSpace + 10;
   const coverDistance = compactCoverStart - expandedCoverStart;
   const expandedInfoStart = expandedCoverStart + 30 + spacing.sm;
   const compactInfoStart = compactCoverStart + 30 + spacing.sm;
@@ -391,10 +395,11 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
               </Animated.View>
               <Animated.View style={[styles.titleFrame, { start: targetInfoStart, width: targetInfoWidth, top: (miniHeight - 20) / 2 }, titleMotion]}>
                 <Animated.View style={[styles.titleContent, titleSwipeStyle]}>
-                  {marqueeTitles && expandedControls && (props.active ?? true) ? <MarqueeText
+                  {marqueeTitles ? <MarqueeText
                     text={live?.title ?? song.title}
                     style={[styles.title, { color: foreground }]}
-                    enabled
+                    enabled={expandedControls}
+                    active={props.active ?? true}
                   /> : <Text style={[styles.title, { color: foreground }]} numberOfLines={1}>
                     {live?.title ?? song.title}
                   </Text>}

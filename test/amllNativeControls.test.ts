@@ -101,27 +101,21 @@ function findAll(node: unknown, predicate: (element: Element) => boolean): Eleme
   return [...(predicate(element) ? [element] : []), ...findAll(element.props.children, predicate)];
 }
 
-test('native transport keeps every existing action and selects the original play/shuffle/repeat state SVGs', () => {
+test('the actual transport mounts only previous/play/next with no hidden mode touch or accessibility targets', () => {
   const h = harness();
   const first = h.buttons(h.controls());
-  assert.deepEqual(first.map((node) => node.props.label), ['Shuffle', 'Previous', 'Play', 'Next', 'Repeat']);
+  assert.deepEqual(first.map((node) => node.props.label), ['Previous', 'Play', 'Next']);
   for (const node of first) h.button(node).props.onPress();
-  h.button(first[2]).props.onLongPress();
-  assert.deepEqual(h.calls, ['shuffle', 'previous', 'toggle', 'next', 'repeat', 'stop']);
-  const active = h.buttons(h.controls({ playing: true, shuffle: true, repeat: 'one' }));
-  assert.equal(active[0].props.children.props.name, 'shuffle-active');
-  assert.equal(active[2].props.children.props.name, 'pause');
-  assert.equal(active[4].props.children.props.name, 'repeat-one-active');
-  assert.equal(active[0].props.children.props.size, 28, 'selected plate keeps the compact mode size');
-  assert.equal(first[0].props.children.props.size, 36, 'unselected SVG whitespace preserves roughly 22dp ink');
-  const repeatImage = h.glyph(active[4].props.children);
-  assert.equal(repeatImage.props.source.endsWith('/repeat-one-active.svg'), true);
-  assert.equal(repeatImage.props.tintColor, undefined, 'static SVG paint must not depend on native tint support');
-  assert.equal(h.button(active[0]).props.accessibilityState.selected, true);
-  const all = h.buttons(h.controls({ repeat: 'all' }));
-  assert.equal(all[4].props.children.props.name, 'repeat-active');
+  h.button(first[1]).props.onLongPress();
+  assert.deepEqual(h.calls, ['previous', 'toggle', 'next', 'stop']);
+  for (const horizontal of [false, true]) {
+    const active = h.buttons(h.controls({ horizontal, playing: true, shuffle: true, repeat: 'one' }));
+    assert.deepEqual(active.map((node) => node.props.label), ['Previous', 'Pause', 'Next']);
+    assert.deepEqual(active.map((node) => node.props.children.props.name), ['previous', 'pause', 'next']);
+    for (const node of active) assert.equal(h.button(node).props.accessibilityState.selected, undefined);
+  }
   const loading = h.buttons(h.controls({ buffering: true }));
-  assert.equal(loading[2].props.children.type, 'Spinner');
+  assert.equal(loading[1].props.children.type, 'Spinner');
 });
 
 test('lyrics, queue, output and More keep callbacks and use checked artwork rather than text or icon fonts', () => {
@@ -162,7 +156,7 @@ test('the player favorite keeps the shared transaction, follows central favorite
 
 test('the actual native button gives short press/release feedback, acts immediately and rejects stale callbacks', () => {
   const h = harness();
-  const node = h.buttons(h.controls())[2];
+  const node = h.buttons(h.controls())[1];
   const play = h.button(node);
   play.props.onPressIn();
   const press = h.values('Play')[0].animation! as Animation;
@@ -175,20 +169,20 @@ test('the actual native button gives short press/release feedback, acts immediat
   play.props.onPress();
   assert.deepEqual(h.calls, ['toggle'], 'action runs before any animation completion');
   assert.equal(h.values('Play')[0].animation, release, 'press does not start a second bounce');
-  const disabled = h.buttons(h.controls({ active: false }))[2];
+  const disabled = h.buttons(h.controls({ active: false }))[1];
   assert.equal(h.button(disabled).props.accessibilityState.disabled, true);
   assert.equal(h.values('Play')[0].animation, undefined);
   play.props.onPress(); play.props.onLongPress(); play.props.onPressOut();
   assert.equal(h.values('Play')[0].animation, undefined);
   assert.deepEqual(h.calls, ['toggle']);
-  h.button(h.buttons(h.controls({ active: true }))[2]); h.unmount('Play');
+  h.button(h.buttons(h.controls({ active: true }))[1]); h.unmount('Play');
   play.props.onPress();
   assert.deepEqual(h.calls, ['toggle']);
 });
 
 test('skip arrows render the white upstream SVG immediately without a separate entrance animation', () => {
   const h = harness();
-  for (const index of [1, 3]) {
+  for (const index of [0, 2]) {
     const node = h.buttons(h.controls())[index].props.children;
     const image = h.glyph(node);
     assert.equal(image.type, 'SvgImage');

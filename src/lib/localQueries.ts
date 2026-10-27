@@ -971,15 +971,23 @@ function toPlaylist(rec: LocalPlaylistRec, songs: Song[]): Playlist {
  * playlists hold instead of the library they came from; a song that is no
  * longer in the source simply does not come back and the playlist is shorter.
  */
-async function playlistSongs(): Promise<Map<string, Song>> {
+async function playlistSongs(requestedIds?: string[]): Promise<Map<string, Song>> {
+  if (requestedIds?.length === 0) return new Map();
   const src = await localSrc();
   if (src) {
     try {
-      const list = await loadPlaylists();
-      const ids = [...new Set(list.flatMap((p) => p.songIds))];
+      const ids = requestedIds ?? [...new Set((await loadPlaylists()).flatMap((p) => p.songIds))];
       return await LocalCat.songsByIds(src, ids);
     } catch {
       // Falls through to the catalog in memory.
+    }
+  }
+  const dir = downloadsDir();
+  if (dir && requestedIds) {
+    try {
+      return await Cat.songsByIds(dir, requestedIds);
+    } catch {
+      // Falls through to the existing catalog fallback.
     }
   }
   const c = await ensureCatalog();
@@ -996,8 +1004,9 @@ export async function getPlaylists(): Promise<Playlist[]> {
 }
 
 export async function getPlaylist(id: string): Promise<{ playlist: Playlist; songs: Song[] }> {
-  const [list, byId] = await Promise.all([loadPlaylists(), playlistSongs()]);
+  const list = await loadPlaylists();
   const rec = list.find((p) => p.id === id);
+  const byId = await playlistSongs(rec?.songIds ?? []);
   const songs = (rec?.songIds ?? []).map((sid) => byId.get(sid)).filter(Boolean) as Song[];
   return {
     playlist: rec ? toPlaylist(rec, songs) : { id, name: id, songCount: 0 },

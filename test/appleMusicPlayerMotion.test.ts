@@ -42,6 +42,18 @@ function assertContinuousFrame(actual: artworkRules.AppleMusicPlayerTransitionFr
 const mini = () => ({ viewportWidth: 400, viewportHeight: 800,
   miniPlayer: { x: 12, y: 700, width: 376, height: 56 },
   miniArtwork: { x: 20, y: 708, width: 40, height: 40 } });
+const pressedMini = () => ({ ...mini(),
+  miniArtwork: { x: 30.605, y: 707.605, width: 32.79, height: 32.79, cornerRadius: 4 },
+  restingArtwork: { x: 32, y: 709, width: 30, height: 30, cornerRadius: 4 } });
+function assertContinuousPaintedFrame(actual: artworkRules.AppleMusicPlayerTransitionFrame,
+  expected: artworkRules.AppleMusicPlayerTransitionFrame) {
+  // Retargeting the return endpoint may require a different fixed base box;
+  // verify the resulting painted rectangle, not that implementation detail.
+  for (const coordinate of ['x', 'y', 'width', 'height', 'cornerRadius'] as const) {
+    near(actual.artwork.rect[coordinate]!, expected.artwork.rect[coordinate]!);
+  }
+  assertContinuousFrame({ ...actual, artwork: expected.artwork }, expected);
+}
 
 // Run the real hook and the real makeMutable-based bus in one module world.
 // Only React storage, UI scheduling and native animation/clip boundaries are
@@ -361,6 +373,62 @@ describe('mounted Apple Music artwork motion lifecycle', () => {
     assert.equal(h.pendingRN(), 0);
     h.advance(h.progress(), 0, true); h.drainRN();
     assert.deepEqual(h.finishes, [8]);
+  });
+
+  it('opens from the actual pressed mini picture but closes to the untransformed resting rectangle', () => {
+    const metrics = pressedMini();
+    const w = world(); w.bus.miniArtworkMetrics.set(metrics);
+    const h = w.mount(); h.frame();
+    assert.deepEqual(plain(w.bus.playerArtworkFlight.get().frame.artwork.rect), metrics.miniArtwork,
+      'entry owns the actual native painted rectangle, including its still-running press spring');
+    h.advance(h.progress(), 1, true); h.drainRN();
+    assert.equal(h.result.phase.get(), 'idle');
+    h.setArtwork({ x: 25, y: 110, width: 350, height: 350 });
+    assert.equal(h.result.beginClose(21), true); h.flushUI();
+    assert.deepEqual(plain(w.bus.playerArtworkFlight.get().frame.artwork.rect),
+      { x: 25, y: 110, width: 350, height: 350, cornerRadius: 10 });
+    h.advance(h.progress(), .5);
+    assert.deepEqual(plain(w.bus.playerArtworkFlight.get().frame.artwork.rect),
+      { x: 28.5, y: 409.5, width: 190, height: 190, cornerRadius: 7 });
+    h.advance(h.progress(), 0, true);
+    assert.deepEqual(plain(w.bus.playerArtworkFlight.get().frame.artwork.rect), metrics.restingArtwork);
+    h.drainRN(); assert.deepEqual(h.finishes, [21]);
+  });
+
+  it('retargets an opening reversal continuously to rest instead of the stale pressed or swiped entry picture', () => {
+    for (const position of [.01, .37, .95]) {
+      const metrics = pressedMini();
+      // A horizontal swipe may be much larger than the small press scale.
+      metrics.miniArtwork.x += 48;
+      const w = world(); w.bus.miniArtworkMetrics.set(metrics);
+      const h = w.mount(); h.frame();
+      const openingDone = h.progress().animation?.done;
+      h.advance(h.progress(), position);
+      const before = plain(w.bus.playerArtworkFlight.get().frame);
+      assert.equal(h.result.beginClose(22), true); h.flushUI();
+      assertContinuousPaintedFrame(w.bus.playerArtworkFlight.get().frame, before);
+      assert.equal(h.measurements(), 1, 'retargeting uses the captured endpoints rather than measuring a hidden player');
+      openingDone?.(true); h.flushUI();
+      assert.equal(h.result.phase.get(), 'closing');
+      assert.equal(h.pendingRN(), 0);
+      h.advance(h.progress(), 0, true);
+      assert.deepEqual(plain(w.bus.playerArtworkFlight.get().frame.artwork.rect), metrics.restingArtwork);
+      h.drainRN(); assert.deepEqual(h.finishes, [22]);
+    }
+  });
+
+  it('carries an interrupted mini pull to the resting destination without a second drag or visible endpoint jump', () => {
+    const metrics = pressedMini();
+    const w = world(); w.bus.miniArtworkMetrics.set(metrics); w.bus.revealOffset.set(520);
+    const h = w.mount({ revealing: true }); h.frame();
+    const before = plain(w.bus.playerArtworkFlight.get().frame);
+    assert.equal(h.result.beginClose(23), true); h.flushUI();
+    assert.equal(h.offset.get(), 0);
+    assert.equal(w.bus.revealOffset.get(), -1);
+    assertContinuousPaintedFrame(w.bus.playerArtworkFlight.get().frame, before);
+    h.advance(h.progress(), 0, true);
+    assert.deepEqual(plain(w.bus.playerArtworkFlight.get().frame.artwork.rect), metrics.restingArtwork);
+    h.drainRN(); assert.deepEqual(h.finishes, [23]);
   });
 
   it('extends MiniPlayer upward pulling into the same measured interpolation and settles only after the pull relinquishes ownership', () => {

@@ -2,9 +2,9 @@
 
 ## 当前状态 / Current status
 
-当前 `.13` / Android `versionCode 95` 已采用 f728743/AppleMusicStylePlayer 的共享封面及独立背景裁切，最终修复包已安装到三星并完成基础转场视觉检查。最终观感待用户确认，持续性能未验收；权威实现与验证范围见 [Apple Music 转场说明](./APPLE-MUSIC-TRANSITION.md)。Primuse 整页形变仍已移除，下文保留研究和历史回滚记录。
+当前 `.15` / Android `versionCode 97` 已构建并核对原签名；558 项应用测试及 125 项原生测试通过。按用户要求暂不安装，实机验收待重新连接后进行。`.14` 已安装，白条／模式按钮移除及缓存 AllMusic 显示已有歌曲行已确认，但 Mini 收回抖动仍被用户否定。`.15` 保留 f728743/AppleMusicStylePlayer 结构，补充静止封面落点与 Marquee 生命周期修复；权威实现与验证范围见 [Apple Music 转场说明](./APPLE-MUSIC-TRANSITION.md)。Primuse 整页形变仍已移除，下文 `.13` 采用与早期研究均保留为历史。
 
-Current `.13` / Android `versionCode 95` adapts f728743/AppleMusicStylePlayer shared artwork and independent background clipping. The final fix is installed on Samsung with basic transition checks completed; user approval and sustained-performance acceptance remain pending. See the [authoritative transition guide](./APPLE-MUSIC-TRANSITION.md). Primuse's whole-player morph remains removed; research and rollback history follow.
+Current `.15` / Android `versionCode 97` is built with the original signature verified; 558 app tests and 125 native tests pass. It is not installed as requested, and device acceptance awaits reconnection. `.14` is installed, with handle/mode removal and cached AllMusic content display confirmed, but mini return jitter still rejected. `.15` retains the f728743/AppleMusicStylePlayer structure and adds resting-artwork and Marquee-lifecycle corrections. See the [authoritative transition guide](./APPLE-MUSIC-TRANSITION.md). Primuse's whole-player morph remains removed; `.13` adoption, earlier research and rollback records below are historical.
 
 ## `.12` 历史回滚 / Historical `.12` rollback
 

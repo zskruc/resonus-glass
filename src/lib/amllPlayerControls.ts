@@ -3,7 +3,7 @@
  * Compact native layout for AMLL controls, commit 5fee356362353dbb24ce9bea3a62536478040de7.
  * Source and modifications: THIRD_PARTY_NOTICES.md; full license: licenses/AMLL-AGPL-3.0.txt.
  */
-export type AmllTransportAction = 'shuffle' | 'previous' | 'toggle' | 'next' | 'repeat';
+export type AmllTransportAction = 'previous' | 'toggle' | 'next';
 export type AmllBottomAction = 'lyrics' | 'output' | 'queue';
 
 const valid = (value: number, fallback: number) => Number.isFinite(value) && value > 0 ? value : fallback;
@@ -17,7 +17,6 @@ export function amllControlVisuals(viewportWidth: number, viewportHeight: number
   // These SVG viewBoxes include whitespace: keep the original path geometry,
   // compensating only image bounds to recover the former native visual sizes.
   return { skipGlyphSize: skipInkSize * 134 / 84, playGlyphSize: playInkSize * 38 / 34.1406,
-    modeGlyphSize: 36, modeSelectedGlyphSize: 28,
     utilityGlyphSize: 36, utilitySelectedGlyphSize: 24, utilitySize: 48, utilityGap: 32 };
 }
 
@@ -32,25 +31,24 @@ export function amllPlayerControlLayout({ width, viewportWidth = width, viewport
   const availableWidth = valid(width, 1);
   const height = valid(viewportHeight, 640);
   const scale = Math.max(1, Math.min(2.5, valid(fontScale, 1)));
-  // User-requested native layout exception: expose the source's shuffle/repeat
-  // controls beside transport in portrait too, with five distinct hit targets.
-  const actions: AmllTransportAction[] = ['shuffle', 'previous', 'toggle', 'next', 'repeat'];
-  const contentWidth = Math.max(availableWidth, actions.length * 44);
+  // The mode buttons now live only in More. Keep the previous reference grid
+  // so removing them never shifts the three transport anchors or row height.
+  const actions: AmllTransportAction[] = ['previous', 'toggle', 'next'];
+  const referenceColumns = 5;
+  const contentWidth = Math.max(availableWidth, referenceColumns * 44);
   const referenceScale = Math.max(.7, Math.min(1.35, height / 832));
   const transportButtonSize = horizontal ? Math.max(44, Math.min(96, contentWidth * .18))
     : contentWidth >= 344 ? Math.min(68, 2 * (contentWidth * .2211805556 - Math.max(22, contentWidth * .0625)) - 44)
       : Math.max(44, Math.min(60, contentWidth / 5));
   // Keep the reference's main three centers (85 / 192 / 299 on a 384dp
-  // phone). The user-requested mode buttons occupy the two outer 44dp targets.
+  // phone), leaving the removed outer mode-button regions empty.
   const centers = !horizontal && contentWidth >= 344
-    ? [Math.max(22, contentWidth * .0625), contentWidth * .2211805556, contentWidth / 2,
-      contentWidth * .7788194444, Math.min(contentWidth - 22, contentWidth * .9375)]
+    ? [contentWidth * .2211805556, contentWidth / 2, contentWidth * .7788194444]
     : actions.map((_, index) => horizontal
-      ? transportButtonSize / 2 + index * (contentWidth - transportButtonSize) / 4
-      : (index + .5) * contentWidth / 5);
+      ? transportButtonSize / 2 + (index + 1) * (contentWidth - transportButtonSize) / 4
+      : (index + 1.5) * contentWidth / referenceColumns);
   const slots = actions.map((action, index) => {
-    const size = !horizontal && (action === 'shuffle' || action === 'repeat') ? 44 : transportButtonSize;
-    return { action, left: centers[index] - size / 2, top: (transportButtonSize - size) / 2, size };
+    return { action, left: centers[index] - transportButtonSize / 2, top: 0, size: transportButtonSize };
   });
   const visuals = amllControlVisuals(viewportWidth, height, horizontal);
   const progressHeight = 44 + Math.ceil(16 * scale);

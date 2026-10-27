@@ -1,12 +1,30 @@
 # AMLL 播放器预览 / AMLL player preview
 
-`0.8.4.1-amll.13` · Android `versionCode 95` · `preview/amll-player`
+`0.8.4.1-amll.15` · Android `versionCode 97` · `preview/amll-player`
 
-## 当前 `.13` / Current `.13`
+## 当前 `.15` / Current `.15`
 
-最终修复包已安装到三星，基础转场视觉检查已完成，最终观感仍待用户确认；不代表持续帧率、长列表或全场景验收。当前采用 f728743/AppleMusicStylePlayer 的共享封面与独立背景裁切，Primuse 整页形变仍已撤销。当前实现、来源及完整验证边界以 [Apple Music 转场说明](./APPLE-MUSIC-TRANSITION.md) 为准，下文保留历史记录。
+ARM64 APK 已构建并核对原签名；558 项应用测试、125 项原生测试、类型与翻译检查通过，lint 为 0 错误、117 项警告；按用户要求只构建、不安装，待重新连接后实机验证。`.14` 已安装并确认白条及主控制区模式按钮移除，本次已缓存 AllMusic 较快显示出歌曲行；用户仍不接受 Mini 收回抖动。不能将此前基础检查当作 `.15` 的视觉、持续帧率、长列表或全场景验收。转场仍沿用 f728743/AppleMusicStylePlayer 的共享封面与独立背景裁切，详见 [Apple Music 转场说明](./APPLE-MUSIC-TRANSITION.md)。
 
-The final fix is installed on Samsung with basic transition visual checks completed; user approval, sustained frame rate, long-list and all-scenario acceptance remain pending. The current transition adapts f728743/AppleMusicStylePlayer shared artwork and independent background clipping; the Primuse whole-player morph remains removed. The [Apple Music transition guide](./APPLE-MUSIC-TRANSITION.md) is authoritative for current implementation, provenance and validation. Historical records follow.
+The ARM64 APK is built and its original signature is verified. All 558 app tests, 125 native tests, typechecking and translation checks pass; lint reports zero errors and 117 warnings. The user requested a build without installation; device checks await reconnection. `.14` is installed: handle/mode-button removal was confirmed, and cached AllMusic promptly displayed track rows in this run. Mini return jitter remains rejected. Earlier basic checks do not establish `.15` appearance, sustained frame rate, long-list or all-scenario acceptance. The f728743/AppleMusicStylePlayer shared-artwork and independent-background structure remains; see the [transition guide](./APPLE-MUSIC-TRANSITION.md).
+
+`.15` 的关闭封面以排除按压／横滑变形的 `restingArtwork` 为目标；入场反向关闭重新计算端点并保持当前画面连续。开启跑马灯时，Mini 保留同一 Marquee 树，独立 `active` 暂停时钟并保留 offset，返回时续播。这两项修复待实机确认，以下 `.14` 五项修改继续保留。
+
+`.15` closes artwork toward `restingArtwork`, excluding press/swipe deformation; reversing an opening rebases its endpoints without interrupting the painted pose. With marquee titles enabled, Mini retains one Marquee tree, with independent `active` control pausing the clock at its current offset and resuming on return. Both corrections await device confirmation; the five `.14` changes below remain.
+
+保留 `.14` 的播放／歌词页白条移除，保留原高度、顶部下拉、系统返回与封面的无障碍关闭；主控制区仅保留原位置的三个播放按钮，随机／循环模式仍可从菜单设置。底栏在来源 scope 恢复前保留已绘制进度，并保留来源选中透明度。
+
+The `.14` handle removal remains, retaining header height, pull-down/system Back and accessible closing on the artwork. Transport keeps three buttons in their original positions, with shuffle/repeat modes in More. The dock retains painted progress until its origin scope is ready and preserves selected opacity across handoff.
+
+逐字遮罩只准备当前与下一行，下一行延后 720ms 预备；这项两行预算不改变歌词时间轴、行模糊范围或玻璃光学参数。有完整歌单镜像时先显示保存列表，HTTP 在后台更新；离线避免再次解析已有歌曲 SQL，本地查询仅取当前歌单 ID，保留顺序与重复项。没有完整镜像或缓存时，首次点击仍可能等待；已测缓存场景不代表全部歌单、持续性能或恒定 120fps。
+
+Word masks are prepared only for the current/next rows, with next-row preparation delayed by 720ms. This two-row budget changes neither lyric timing, row blur nor glass optics. A complete saved playlist can display while HTTP refreshes in the background; offline metadata avoids duplicate song SQL and local reads request only the current playlist's IDs, preserving order and duplicates. A first opening without complete saved data can still wait. The observed cached case does not establish every playlist's speed, sustained performance or constant 120fps.
+
+## `.13` 历史记录 / Historical `.13` record
+
+`.13` 已安装，曾完成共享封面缩放回位、入场、短拉取消、长拉退出、歌词切换与下拉返回及 Mini／Tabs 同步出现的基础视觉检查；没有据此认定持续性能或长期稳定性通过。Primuse 整页形变已撤销，布局继续参考三星 Apple Music；私有参考截图不公开上传。
+
+`.13` was installed and basic checks covered artwork resizing/landing, entry, short-pull cancellation, long-pull dismissal, lyric switching/return and synchronized Mini/Tabs reveal. They did not establish sustained performance or long-term stability. The Primuse whole-player morph remains removed, with Samsung Apple Music layout reference retained; private screenshots are not published.
 
 ## `.12` 历史回滚 / Historical `.12` rollback
 
@@ -30,9 +48,9 @@ See the source/license boundaries below, [performance evidence](./PLAYLIST-SCROL
 
 `0.8.4.1-amll.9` · Android `versionCode 91` · `preview/amll-player`
 
-当时 `.9` APK 已构建并核对原签名，425 项应用测试、113 项玻璃模块测试及两组原生方法回归通过；该阶段尚未安装。这是历史状态，当前构建与实机范围以上方 `.13` 及其链接说明为准。
+当时 `.9` APK 已构建并核对原签名，425 项应用测试、113 项玻璃模块测试及两组原生方法回归通过；该阶段尚未安装。这是历史状态，当前构建与实机范围以上方 `.15` 及其链接说明为准。
 
-At that stage the `.9` APK was built with the original certificate; 425 app tests, 113 glass-module tests and both native-method harnesses passed, with installation still pending. This is historical status; the `.13` section and linked guide above describe the current build and validation boundary.
+At that stage the `.9` APK was built with the original certificate; 425 app tests, 113 glass-module tests and both native-method harnesses passed, with installation still pending. This is historical status; the `.15` section and linked guide above describe the current build and validation boundary.
 
 `.9` 的 Player 页可在状态栏下方、大封面上方整片区域下拉退出；歌词页可从顶部小封面、歌曲名与创作者区域下拉，原有阈值保持不变。横屏与短屏按可见标题区域判断，歌词、滑条和控制按钮区域不作为返回手势入口。子页面底栏的来源选项卡继续显示主题色和选中态。
 
@@ -52,10 +70,10 @@ The pinned AMLL package declares **AGPL-3.0-only**. Current [controls](../src/co
 
 - 默认进入大封面布局，显示歌曲信息、进度与播放控制。点击封面或歌词按钮切换到歌词模式：小封面与歌曲信息置顶，歌词占满其余区域，隐藏进度、播放和音量控制；当前歌词的定位锚点为歌词区域高度的手机 10%、横屏 42%。
 - 同一个封面视图通过原生动画缩放、移动；没有以两张不同封面互相替换。小屏与大字体采用可滚动的内容列，避免封面、文字与控制区域重叠。
-- 点击顶部横条、向下拖动或系统返回，统一退出整个播放器。关闭过渡保留已绘制的歌词和原生背景；失焦时冻结当前高亮行、滚动位置、逐字进度与行效果，不再通过提前卸载歌词露出空白区域。恢复可见后再对齐最新播放时间。
-- 竖屏大封面页直接显示随机／上一首／播放暂停／下一首／循环五个按钮，再排列歌词／输出／队列与音量条；底部预留最多 48dp，使信息组整体上移。次要文字使用 0.78 白色透明度，原有业务回调保留。
+- 顶部白条及其点击区域已移除，保留原布局高度、顶部整片下拉和系统返回；现有封面支持无障碍关闭动作。关闭过渡保留已绘制的歌词和原生背景；失焦时冻结当前高亮行、滚动位置、逐字进度与行效果，不再通过提前卸载歌词露出空白区域。恢复可见后再对齐最新播放时间。
+- 竖屏大封面页仅显示上一首／播放暂停／下一首三个按钮，保留原位置、歌词／输出／队列与音量条；随机和循环仍在菜单。次要文字使用 0.78 白色透明度，原有业务回调保留。
 - 横屏采用约 45% 的封面／控制列与 55% 的歌词列；隐藏歌词时，原来的封面／控制列移向中央。
-- 横屏保留随机／上一首／播放暂停／下一首／循环五个播放按钮，底部左侧为输出，右侧为歌词与队列。
+- 横屏同样仅显示原位置的三个主播放按钮，底部左侧为输出，右侧为歌词与队列。
 - 歌词、输出与队列等辅助图标显示为 24dp，点击区域仍为 48dp；不通过放大图形来填满触摸区域。
 - 歌词继续使用 Resonus 的本地、服务器与 LRCLIB 数据和跳播逻辑。有时间轴的歌词使用现有逐字与同步渲染，纯文本歌词可单独滚动。
 - AMLL 页面点击同步歌词会跳到对应时间；若当前暂停，同时恢复播放，正在播放时继续播放。原有歌词页面未传入此回调时，仍保持仅跳播的行为。
@@ -64,9 +82,9 @@ The pinned AMLL package declares **AGPL-3.0-only**. Current [controls](../src/co
 
 The player defaults to the large-cover view. The cover or lyric button switches to a small-cover header and full-page lyrics; progress, transport and volume controls are hidden in lyric mode. Active lyrics anchor at 10% of the lyric region in portrait and 42% in landscape. One cover view moves and scales through native animation; small viewports and accessibility text can scroll rather than overlap.
 
-Tapping the top handle, dragging down and system Back dismiss the entire player consistently. The closing transition retains the last lyric frame and native background. Losing focus freezes the highlighted line, scroll offset, word clock and row effects rather than removing the lyrics early; returning to the page realigns them with current playback.
+The visual handle and its tap target are removed while retaining header height, full-header pull-down dismissal and system Back. Accessible closing is available on the existing artwork. The closing transition retains the last lyric frame and native background. Losing focus freezes the highlighted line, scroll offset, word clock and row effects rather than removing the lyrics early; returning to the page realigns them with current playback.
 
-Portrait shows shuffle/previous/play-pause/next/repeat, followed by lyrics/output/queue and volume. Up to 48dp of bottom breathing room lifts the information group, with secondary text at 0.78 white opacity. Landscape keeps five transport buttons, output at the lower left and lyrics/queue at the lower right. Its approximately 45% artwork/control and 55% lyric split remains. Existing Resonus lyric, seek, playback, queue, output, volume, quality and menu callbacks remain in use; the previous Resonus layout’s preferences are unchanged.
+Portrait and landscape show only previous/play-pause/next at their original positions; shuffle/repeat remain in More. Portrait keeps lyrics/output/queue and volume, with secondary text at 0.78 white opacity. Landscape retains output at the lower left and lyrics/queue at the lower right, and its approximately 45% artwork/control and 55% lyric split remains. Existing Resonus lyric, seek, playback, queue, output, volume, quality and menu callbacks remain in use; the previous Resonus layout’s preferences are unchanged.
 
 Auxiliary glyphs such as lyrics, output and queue are 24dp within 48dp touch targets. Tapping a synchronized lyric in the AMLL player seeks to that time and resumes playback if paused; an already-playing song continues. Other lyric views keep seek-only behavior unless they opt into the callback. All player presentations share Resonus's `lyricBlurRadius`, past/future treatment and transitions. The AMLL-only four-row distance cutoff is removed: filters belong only to measured rows in the viewport plus a small margin, so visible lyrics remain blurred even far from the playing line. The disabled/manual-browsing/no-current-line clear states and frozen last frame remain. AM++ blur parameters and its algorithm are not ported.
 

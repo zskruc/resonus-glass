@@ -174,8 +174,9 @@ function mini(initialRoot = '(tabs)', presentation = 'amll') {
   route.context.segments = [initialRoot];
   route.context.presentation = presentation;
   const bus = load('lib/playerReveal.ts', r);
+  const retainedProgress = load('hooks/useRetainedDockProgress.ts', r);
   const dock = { progress: mutable(0.75), uiEnabled: mutable(true), amPlus: true,
-    compact: true, hasSearch: true, enabled: true };
+    compact: true, hasSearch: true, enabled: true, scope: 'home', uiScope: mutable('home') };
   const component = load('components/GlobalMiniPlayer.tsx', r, {
     'expo-router': route.router,
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 30, bottom: 20, left: 0, right: 0 }) },
@@ -183,6 +184,7 @@ function mini(initialRoot = '(tabs)', presentation = 'amll') {
     '@/lib/playerReveal': bus,
     '@/hooks/useTabBar': route.hook,
     '@/hooks/useLiquidDock': { COMPACT_DOCK_SIZE: 44, useLiquidDock: () => dock },
+    '@/hooks/useRetainedDockProgress': retainedProgress,
     '@/theme/motion': { motion: { duration: { fade: 200 }, reduceMotion: { decorative: 'system' } } },
     '@/theme': { MINI_PLAYER_GAP: 8, MINI_PLAYER_HEIGHT: 48, spacing: { sm: 8 }, TAB_BAR_BOTTOM_GAP: 0, TAB_BAR_HEIGHT: 62 },
     './MiniPlayer': { MiniPlayer: 'MiniPlayer' },
@@ -214,6 +216,44 @@ function publishFlight(bus: Record<string, any>, phase: 'opening' | 'closing' | 
   bus.playerArtworkFlight.set({ owner: bus.createPlayerSurfaceOwner(), phase, frame });
   return frame;
 }
+
+describe('retained dock progress across UI scope handoff', () => {
+  it('keeps the last painted compact endpoint before the provider restores a returning route, then follows live scroll', () => {
+    const r = runtime();
+    const hook = load('hooks/useRetainedDockProgress.ts', r);
+    const dock = { progress: mutable(1), uiEnabled: mutable(true), scope: 'home', uiScope: mutable('home') };
+    let shown = true;
+    const render = () => r.render(() => hook.useRetainedDockProgress(shown, dock)) as Mutable;
+    let painted = render(); r.ui();
+    assert.equal(painted.get(), 1);
+    shown = false; dock.scope = 'player'; render();
+    dock.uiScope.set('player'); dock.progress.set(0); r.ui();
+    assert.equal(painted.get(), 1, 'the hidden player scope cannot overwrite the last painted dock');
+    shown = true; dock.scope = 'home'; painted = render();
+    assert.equal(painted.get(), 1, 'child layout has become visible before the provider UI restoration');
+    r.ui(); assert.equal(painted.get(), 1, 'a stale player progress frame must not be painted during pop');
+    dock.progress.set(1); r.ui(); assert.equal(painted.get(), 1);
+    dock.uiScope.set('home'); r.ui(); assert.equal(painted.get(), 1);
+    dock.progress.set(.43); r.ui(); assert.equal(painted.get(), .43, 'the retained endpoint does not freeze later real scrolling');
+    assert.equal(r.values[0].get(), true, 'the first shared slot remains visibility');
+    assert.equal(r.values[1].get(), .43, 'the second shared slot holds the actual painted progress');
+  });
+
+  it('uses a newly matched ordinary route rather than retaining an old route indefinitely', () => {
+    const r = runtime();
+    const hook = load('hooks/useRetainedDockProgress.ts', r);
+    const dock = { progress: mutable(.8), uiEnabled: mutable(true), scope: 'home', uiScope: mutable('home') };
+    const render = () => r.render(() => hook.useRetainedDockProgress(true, dock)) as Mutable;
+    let painted = render(); r.ui(); assert.equal(painted.get(), .8);
+    dock.scope = 'album'; dock.progress.set(0); painted = render(); r.ui();
+    assert.equal(painted.get(), .8, 'an ordinary route mismatch also waits for its provider');
+    dock.progress.set(.25); dock.uiScope.set('album'); r.ui(); assert.equal(painted.get(), .25);
+    dock.uiEnabled.set(false); r.ui(); assert.equal(painted.get(), 0, 'a matching disabled dock paints zero');
+    dock.uiEnabled.set(true); dock.progress.set(.6); r.ui(); assert.equal(painted.get(), .6);
+    dock.scope = 'settings'; dock.uiScope.set('settings'); dock.progress.set(.1);
+    painted = render(); r.ui(); assert.equal(painted.get(), .1, 'a new ready scope uses its own live value immediately');
+  });
+});
 
 describe('player dock route ownership', () => {
   it('captures a visible Home dock for its player, then returns it without a second fade', () => {
@@ -405,6 +445,26 @@ describe('player dock native clipping and material lifecycle', () => {
 });
 
 describe('GlobalMiniPlayer dismissal underlay', () => {
+  it('returns with the previously painted compact geometry even when child layout precedes provider restoration', () => {
+    const h = mini();
+    h.dock.progress.set(1); h.r.ui();
+    const translation = h.style().transform[0].translateY;
+    h.dock.scope = 'player'; h.render('player');
+    h.dock.uiScope.set('player'); h.dock.progress.set(0); h.r.ui();
+    assert.equal(h.child().props.dockProgress.get(), 1);
+    h.dock.scope = 'home'; h.render('(tabs)', false);
+    assert.equal(h.child().props.active, true, 'the returning child is already visible');
+    assert.equal(h.child().props.dockProgress.get(), 1, 'its source scope still belongs to player');
+    assert.equal(h.style().transform[0].translateY, translation, 'the first visible pop frame retains the same position');
+    h.r.ui(); assert.equal(h.child().props.dockProgress.get(), 1);
+    h.dock.progress.set(1); h.dock.uiScope.set('home'); h.r.ui();
+    assert.equal(h.child().props.dockProgress.get(), 1);
+    assert.equal(h.style().transform[0].translateY, translation);
+    h.dock.progress.set(.4); h.r.ui();
+    assert.equal(h.child().props.dockProgress.get(), .4);
+    assert.notEqual(h.style().transform[0].translateY, translation);
+  });
+
   it('publishes native return eligibility only while the captured MiniPlayer belongs beneath this AMLL route', () => {
     const h = mini();
     assert.equal(h.bus.playerCanReturnToMini.get(), false);

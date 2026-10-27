@@ -139,7 +139,6 @@ export function LiquidDockProvider({ children }: PropsWithChildren) {
         scheduleOnRN(captureParkedTarget, uiCompact.get(), parkedToken);
       }
       generation.set(nextGeneration);
-      uiScope.set(scope);
       nativeIntent.set(0);
       if (nativeInput) expandNativeDockScrollInput?.(nativeInputHost.get());
       uiEnabled.set(enabled);
@@ -149,6 +148,9 @@ export function LiquidDockProvider({ children }: PropsWithChildren) {
       progress.set(start);
       if (handoff === 'restore' && Math.abs(start - (targetCompact ? 1 : 0)) > 0.001)
         progress.set(withSpring(targetCompact ? 1 : 0, dockSpring(targetCompact, amPlus)));
+      // Publish readiness last: returning globals must not briefly read the
+      // covered player's zero progress before its parked geometry is restored.
+      uiScope.set(scope);
     });
   }, [route, enabled, hasSearch, amPlus, scope, handoff, restoredCompact, parkedToken, captureParkedTarget, nativeInput, generation, progress, parkedProgress, parkedCompact, uiCompact, uiEnabled, uiScope, nativeIntent, nativeInputHost]);
 
