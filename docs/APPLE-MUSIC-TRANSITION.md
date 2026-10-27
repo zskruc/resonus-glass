@@ -6,9 +6,13 @@
 
 `.19` / Android `versionCode 101` retains `.18`'s expanded cover-mode downward dismissal through the artwork and metadata to the top of the playback block. The controls keep their own input. Downward-only activation preserves upward column scrolling, metadata taps and the existing close thresholds. Lyric scrolling and line-seeking boundaries are unchanged. Shared-artwork/background geometry, timing and handoff remain those of `.17`.
 
-当前修正版已以原签名覆盖安装，版本核对为 `.19` / `101`；584 项应用测试、类型及翻译检查通过，lint 为 0 错误、117 项现有警告。已观察歌曲名／艺人布局，后续跳转及封面下拉检查因手机自动锁屏暂停，仍待实机确认。下方转场及帧时间记录均属于旧版。
+当前修正版已以原签名覆盖安装，版本核对为 `.19` / `101`；584 项应用测试、类型及翻译检查通过，lint 为 0 错误、117 项现有警告。三星实机已确认仅歌曲名／艺人两行：点按歌曲名打开所属专辑，点按艺人打开对应详情，两次返回均保留同一首歌的暂停位置。从大封面内部起手向下滑动，已收合回 Home 与 Mini Player；此次起手位置不是顶部空白区。
 
-The corrected build is installed with its original certificate and verified as `.19` / `101`; all 584 app tests, typechecking and translations pass, with zero lint errors and 117 existing warnings. Title/artist layout was observed; subsequent navigation and artwork-dismissal checks were interrupted by automatic locking and remain pending. Transition and frame-time records below concern earlier builds.
+The corrected build is installed with its original certificate and verified as `.19` / `101`; all 584 app tests, typechecking and translations pass, with zero lint errors and 117 existing warnings. Samsung device checks confirmed the title/artist-only layout: the song title opened its album, and the artist opened the corresponding details. Both returns retained the same track and paused position. A downward swipe beginning inside the large artwork, rather than the empty top band, dismissed to Home with Mini Player visible.
+
+本轮仅覆盖这首歌的单艺人导航、返回及一次封面下拉结果，未验证多艺人、歌词模式或帧率。通知的 Mini Player 材质已有源码及组件属性测试依据，但本轮未拍到通知，外观仍未验收。截图仅留本地；下方转场及帧时间记录均属于旧版。临时 USB 常亮设置已恢复原值，手机已交还。
+
+This round covers this track's single-artist navigation, returns and one artwork-dismissal outcome, without validating the collaboration picker, lyric mode or frame rate. Notification wiring to Mini Player's material is supported by source and component-prop tests, but its device appearance was not captured or visually accepted. Screenshots remain local; transition and frame-time records below concern earlier builds. The temporary USB keep-awake setting was restored to its original value, and the phone was released.
 
 ## `.17` 实机记录 / `.17` device record
 

@@ -12,9 +12,13 @@ Downward dismissal now covers the large artwork, metadata and space above the pl
 
 Shared notifications such as Play next reuse Mini Player's glass component, including its material mode, user parameters and blur preference. Text/actions follow the theme with a subtle glyph-only halo. Player metadata displays the song title and artist only: the title opens its album, while the artist opens artist details or the existing collaboration picker. Missing detail IDs remain plain text, and detail routes retain the player beneath them.
 
-ARM64 修正版 APK 已构建，并以原包名与签名覆盖安装到三星，版本核对为 `.19` / `101`，首次安装日期保持不变。584 项应用测试、类型及翻译检查通过，lint 为 0 错误、117 项现有警告。实机已看到仅歌曲名与艺人的两行布局；手机 30 秒自动锁屏使后续跳转及封面下拉检查暂停，这些操作与通知外观尚未完成本版验收。此前 `.17` 的录像和帧时间不作为本版的新测量。
+ARM64 修正版 APK 已构建，并以原包名与签名覆盖安装到三星，版本核对为 `.19` / `101`，首次安装日期保持不变。584 项应用测试、类型及翻译检查通过，lint 为 0 错误、117 项现有警告。实机确认播放器仅显示歌曲名与艺人两行；点按歌曲名进入所属专辑，点按艺人进入对应详情，两次返回均保留同一首歌的暂停位置。从大封面内部向下滑动后，已回到 Home 与 Mini Player。
 
-The corrected ARM64 APK is installed on Samsung with its original package and certificate, verified as `.19` / `101` with the first-install date unchanged. All 584 app tests, typechecking and translation checks pass; lint reports zero errors and 117 existing warnings. The two-line title/artist layout was observed on device; a 30-second automatic lock interrupted later navigation and artwork-dismissal checks. Those interactions and notification appearance remain unverified for this build. Earlier `.17` recordings and frame times are not new measurements of this build.
+The corrected ARM64 APK is installed on Samsung with its original package and certificate, verified as `.19` / `101` with the first-install date unchanged. All 584 app tests, typechecking and translation checks pass; lint reports zero errors and 117 existing warnings. Device checks confirmed the title/artist-only layout: tapping the song title opened its album, and tapping the artist opened the corresponding details. Both returns retained the same track and paused position. A downward swipe starting inside the large artwork returned to Home with Mini Player visible.
+
+本轮导航检查仅覆盖这首歌的单艺人路径，未验收多艺人选择、歌词模式或帧率表现。通知的 Mini Player 材质接线已由源码与组件属性测试核对，本轮没有通知实机画面，尚不作外观验收。此前 `.17` 的录像和帧时间不作为本版的新测量；本轮截图仅留本地。临时 USB 常亮设置已恢复原值，手机已交还。
+
+Navigation checks covered this track's single-artist path only, without validating the collaboration picker, lyric mode or frame-rate performance. Source and component-prop tests verify notification wiring to Mini Player's material, but notification appearance was not captured or visually accepted on device in this round. Earlier `.17` recordings and frame times are not new measurements of this build; this round's screenshots remain local. The temporary USB keep-awake setting was restored to its original value, and the phone was released.
 
 ## `.17` 实机记录 / `.17` device record
 
