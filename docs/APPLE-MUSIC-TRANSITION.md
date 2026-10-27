@@ -6,9 +6,9 @@
 
 `.19` / Android `versionCode 101` retains `.18`'s expanded cover-mode downward dismissal through the artwork and metadata to the top of the playback block. The controls keep their own input. Downward-only activation preserves upward column scrolling, metadata taps and the existing close thresholds. Lyric scrolling and line-seeking boundaries are unchanged. Shared-artwork/background geometry, timing and handoff remain those of `.17`.
 
-当前修正版 APK 已构建并核对原签名；584 项应用测试、类型及翻译检查通过，lint 为 0 错误、117 项现有警告。覆盖安装与实机检查待完成。下方记录均属于旧版。
+当前修正版已以原签名覆盖安装，版本核对为 `.19` / `101`；584 项应用测试、类型及翻译检查通过，lint 为 0 错误、117 项现有警告。已观察歌曲名／艺人布局，后续跳转及封面下拉检查因手机自动锁屏暂停，仍待实机确认。下方转场及帧时间记录均属于旧版。
 
-The corrected APK is built with its original certificate verified; all 584 app tests, typechecking and translations pass, with zero lint errors and 117 existing warnings. Replacement installation and device validation are pending. The records below concern earlier builds.
+The corrected build is installed with its original certificate and verified as `.19` / `101`; all 584 app tests, typechecking and translations pass, with zero lint errors and 117 existing warnings. Title/artist layout was observed; subsequent navigation and artwork-dismissal checks were interrupted by automatic locking and remain pending. Transition and frame-time records below concern earlier builds.
 
 ## `.17` 实机记录 / `.17` device record
 

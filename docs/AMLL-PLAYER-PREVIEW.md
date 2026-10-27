@@ -12,9 +12,9 @@ Downward dismissal now covers the large artwork, metadata and space above the pl
 
 Shared notifications such as Play next reuse Mini Player's glass component, including its material mode, user parameters and blur preference. Text/actions follow the theme with a subtle glyph-only halo. Player metadata displays the song title and artist only: the title opens its album, while the artist opens artist details or the existing collaboration picker. Missing detail IDs remain plain text, and detail routes retain the player beneath them.
 
-ARM64 修正版 APK 已构建并核对原包名与签名。584 项应用测试、类型及翻译检查通过，lint 为 0 错误、117 项现有警告；当前等待覆盖安装与实机检查。此前 `.17` 的录像和帧时间不作为本版的新测量。
+ARM64 修正版 APK 已构建，并以原包名与签名覆盖安装到三星，版本核对为 `.19` / `101`，首次安装日期保持不变。584 项应用测试、类型及翻译检查通过，lint 为 0 错误、117 项现有警告。实机已看到仅歌曲名与艺人的两行布局；手机 30 秒自动锁屏使后续跳转及封面下拉检查暂停，这些操作与通知外观尚未完成本版验收。此前 `.17` 的录像和帧时间不作为本版的新测量。
 
-The corrected ARM64 APK is built with its package and original certificate verified. All 584 app tests, typechecking and translation checks pass; lint reports zero errors and 117 existing warnings. Replacement installation and device validation are pending. Earlier `.17` recordings and frame times are not new measurements of this build.
+The corrected ARM64 APK is installed on Samsung with its original package and certificate, verified as `.19` / `101` with the first-install date unchanged. All 584 app tests, typechecking and translation checks pass; lint reports zero errors and 117 existing warnings. The two-line title/artist layout was observed on device; a 30-second automatic lock interrupted later navigation and artwork-dismissal checks. Those interactions and notification appearance remain unverified for this build. Earlier `.17` recordings and frame times are not new measurements of this build.
 
 ## `.17` 实机记录 / `.17` device record
 
