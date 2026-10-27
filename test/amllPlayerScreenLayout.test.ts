@@ -299,7 +299,7 @@ test('removed mode controls remain available through the existing More menu in c
 
 const metadataLinks = (tree: unknown) => find(tree, 'Pressable').filter((node) => node.props.accessibilityRole === 'link');
 
-test('the actual metadata artist and album names navigate independently above the retained player in cover and lyric modes', () => {
+test('the actual metadata shows only title and artist, with independent album and artist links above the retained player', () => {
   const h = harness();
   h.player.song = { id: 'song', title: 'Title', artist: 'Artist', artistId: 'artist-id', album: 'Album', albumId: 'album-id' };
   for (const lyrics of [false, true]) {
@@ -307,15 +307,22 @@ test('the actual metadata artist and album names navigate independently above th
     const tree = h.render();
     const links = metadataLinks(tree);
     assert.equal(links.length, 4, 'both retained metadata presentations expose the same two catalog targets');
-    for (const label of ['Artist', 'Album']) {
+    for (const label of ['Artist', 'Title']) {
       const candidates = links.filter((node) => node.props.accessibilityLabel === label);
       const target = candidates[lyrics ? 0 : 1];
+      assert.ok(target, `${label} remains a distinct metadata link`);
       assert.equal(target.props.disabled, false);
-      assert.equal(find(target, 'Text')[0].props.children, label);
-      assert.equal(find(target, 'Text')[0].props.numberOfLines, 1);
+      if (label === 'Title') assert.equal(find(target, 'MarqueeText')[0].props.text, label);
+      else {
+        assert.equal(find(target, 'Text')[0].props.children, label);
+        assert.equal(find(target, 'Text')[0].props.numberOfLines, 1);
+      }
       target.props.onPress();
     }
     assert.equal(find(tree, 'MarqueeText').at(-1)!.props.text, 'Title', 'album navigation does not replace the track title');
+    assert.equal(find(tree, 'Text').filter((node) => ['Album', ' · '].includes(node.props.children)).length, 0,
+      'neither the album name nor a third metadata field is displayed');
+    assert.equal(links.some((node) => node.props.accessibilityLabel === 'Album'), false);
   }
   assert.deepEqual(h.navigations, ['/artist/artist-id', '/album/album-id', '/artist/artist-id', '/album/album-id']);
   assert.equal(h.closeCalls(), 0, 'details cover the retained player rather than popping its transition first');
@@ -334,21 +341,24 @@ test('the actual artist metadata uses the shared deduplicated collaboration and 
   assert.equal(h.closeCalls(), 0);
 });
 
-test('missing metadata IDs remain readable without invented detail targets or album labels', () => {
+test('missing metadata IDs leave plain title and artist, while an album ID alone makes the existing title navigable', () => {
   const h = harness();
   h.player.song = { id: 'unknown', title: 'Title', artist: 'No catalog artist', album: 'No catalog album' };
   let tree = h.render();
   assert.equal(metadataLinks(tree).length, 0);
-  for (const label of ['No catalog artist', 'No catalog album']) {
-    assert.equal(find(tree, 'Text').filter((node) => node.props.children === label).length, 2);
-  }
+  assert.equal(find(tree, 'MarqueeText').filter((node) => node.props.text === 'Title').length, 2);
+  assert.equal(find(tree, 'Text').filter((node) => node.props.children === 'No catalog artist').length, 2);
+  assert.equal(find(tree, 'Text').filter((node) => node.props.children === 'No catalog album').length, 0);
   h.player.song = { id: 'unnamed-album', title: 'Title', albumId: 'not-a-label' };
   tree = h.render();
-  assert.equal(metadataLinks(tree).length, 0, 'an album ID without an album name cannot create a fake name or target');
+  const links = metadataLinks(tree);
+  assert.equal(links.length, 2, 'both title presentations can navigate using the real album ID without requiring an album name');
+  assert.ok(links.every((node) => node.props.accessibilityLabel === 'Title'));
+  links.at(-1)!.props.onPress();
   assert.equal(find(tree, 'Text').filter((node) => node.props.children === 'Unknown artist').length, 2);
   h.player.song = null;
   assert.equal(metadataLinks(h.render()).length, 0);
-  assert.deepEqual(h.navigations, []);
+  assert.deepEqual(h.navigations, ['/album/not-a-label']);
 });
 
 test('live radio preserves its broadcast metadata without using station catalog IDs, while a catalog VOD can still navigate', () => {
@@ -365,7 +375,10 @@ test('live radio preserves its broadcast metadata without using station catalog 
   h.player.song = { ...h.player.song, id: 'catalog-file', title: 'Catalog file', vod: true };
   tree = h.render();
   metadataLinks(tree).filter((node) => node.props.accessibilityLabel === 'Station artist').at(-1)!.props.onPress();
-  metadataLinks(tree).filter((node) => node.props.accessibilityLabel === 'Station album').at(-1)!.props.onPress();
+  const titleLink = metadataLinks(tree).filter((node) => node.props.accessibilityLabel === 'Catalog file').at(-1);
+  assert.ok(titleLink, 'the catalog title, rather than an album name, links to its verified album');
+  titleLink.props.onPress();
+  assert.equal(find(tree, 'Text').filter((node) => node.props.children === 'Station album').length, 0);
   assert.deepEqual(h.navigations, ['/artist/stale-artist', '/album/stale-album']);
 });
 
@@ -385,7 +398,7 @@ test('metadata callbacks reject old song, covered, closing, preparing and unmoun
   h.player.isPlaying = true;
   h.render();
   press(firstA.slice(-2));
-  assert.deepEqual(h.navigations, ['/artist/artist-a', '/album/album-a'], 'an unrelated playback rerender retains the valid metadata owner');
+  assert.deepEqual(h.navigations, ['/album/album-a', '/artist/artist-a'], 'an unrelated playback rerender retains the valid metadata owner');
   h.player.song = songB;
   const oldB = metadataLinks(h.render());
   assertBlocked(firstA);
@@ -406,7 +419,7 @@ test('metadata callbacks reject old song, covered, closing, preparing and unmoun
     assertBlocked(blocked);
   }
   press(currentA.slice(-2));
-  assert.deepEqual(h.navigations.slice(-2), ['/artist/artist-a', '/album/album-a'], 'returning from details restores fresh navigation');
+  assert.deepEqual(h.navigations.slice(-2), ['/album/album-a', '/artist/artist-a'], 'returning from details restores fresh navigation');
   h.unmount();
   assertBlocked(currentA);
   assert.equal(h.closeCalls(), 0);

@@ -142,7 +142,6 @@ export function AmllPlayerScreen() {
   const title = live?.title || song?.title || t('Now playing');
   const artist = live?.artist || song?.artist || t('Unknown artist');
   const liveStream = !!song?.url && !song.vod;
-  const album = liveStream ? undefined : song?.album;
   const artists = useMemo(() => song && !liveStream ? artistTargets(song) : [], [song, liveStream]);
   const openArtistPicker = useArtistPicker((state) => state.open);
   const metadataBinding = useMemo(() => ({ song, interactive }), [song, interactive]);
@@ -253,25 +252,20 @@ export function AmllPlayerScreen() {
   const metadata = (compact: boolean) => (
     <View style={[styles.metadataRow, !compact && !horizontal && { marginRight: -8, gap: 0 }]}>
       <View style={styles.metadataText}>
-        <MarqueeText text={title} enabled={marquee && active && (compact ? showLyrics : !showLyrics || horizontal)}
-          style={compact ? styles.compactTitle : styles.title} />
-        <View style={styles.metadataDetails}>
-          {artists.length ? (
-            <Pressable accessibilityRole="link" accessibilityLabel={artist} disabled={!interactive}
-              onPress={goArtist} style={styles.metadataLink}>
-              <Text numberOfLines={1} style={compact ? styles.compactArtist : styles.artist}>{artist}</Text>
-            </Pressable>
-          ) : <Text numberOfLines={1} style={[compact ? styles.compactArtist : styles.artist, styles.metadataLink]}>{artist}</Text>}
-          {album ? <>
-            <Text accessible={false} style={compact ? styles.compactArtist : styles.artist}> · </Text>
-            {song?.albumId ? (
-              <Pressable accessibilityRole="link" accessibilityLabel={album} disabled={!interactive}
-                onPress={goAlbum} style={styles.metadataLink}>
-                <Text numberOfLines={1} style={compact ? styles.compactArtist : styles.artist}>{album}</Text>
-              </Pressable>
-            ) : <Text numberOfLines={1} style={[compact ? styles.compactArtist : styles.artist, styles.metadataLink]}>{album}</Text>}
-          </> : null}
-        </View>
+        {!liveStream && song?.albumId ? (
+          <Pressable accessibilityRole="link" accessibilityLabel={title} disabled={!interactive}
+            onPress={goAlbum} style={styles.metadataLink}>
+            <MarqueeText text={title} enabled={marquee && active && (compact ? showLyrics : !showLyrics || horizontal)}
+              style={compact ? styles.compactTitle : styles.title} />
+          </Pressable>
+        ) : <MarqueeText text={title} enabled={marquee && active && (compact ? showLyrics : !showLyrics || horizontal)}
+          style={compact ? styles.compactTitle : styles.title} />}
+        {artists.length ? (
+          <Pressable accessibilityRole="link" accessibilityLabel={artist} disabled={!interactive}
+            onPress={goArtist} style={styles.metadataLink}>
+            <Text numberOfLines={1} style={compact ? styles.compactArtist : styles.artist}>{artist}</Text>
+          </Pressable>
+        ) : <Text numberOfLines={1} style={compact ? styles.compactArtist : styles.artist}>{artist}</Text>}
       </View>
       {!compact && song && !song.url ? <AmllPlayerFavoriteButton id={song.id} starred={!!song.starred} active={interactive} /> : null}
       <AmllPlayerMoreButton label={t('More options')} onPress={showMenu} active={interactive}
@@ -409,8 +403,7 @@ const styles = StyleSheet.create({
   metadata: { position: 'absolute', justifyContent: 'center' },
   metadataRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   metadataText: { flex: 1, minWidth: 0 },
-  metadataDetails: { flexDirection: 'row', alignItems: 'center' },
-  metadataLink: { flexShrink: 1, minWidth: 0 },
+  metadataLink: { alignSelf: 'flex-start', maxWidth: '100%' },
   title: { color: INK, fontSize: 20, fontWeight: '600', lineHeight: 29.0666667, includeFontPadding: false },
   artist: { color: SECONDARY, fontSize: 20, lineHeight: 29.0666667, includeFontPadding: false },
   compactTitle: { color: INK, fontSize: 18, fontWeight: '600', lineHeight: 23 },

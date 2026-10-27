@@ -1,20 +1,20 @@
 # AMLL 播放器预览 / AMLL player preview
 
-`0.8.4.1-amll.18` · Android `versionCode 100` · `preview/amll-player`
+`0.8.4.1-amll.19` · Android `versionCode 101` · `preview/amll-player`
 
-## 当前 `.18` / Current `.18`
+## 当前 `.19` / Current `.19`
 
 播放器下拉收合区域扩大到播放控制区上方，覆盖大封面、歌曲信息与空白区域；进度条、音量及播放按钮继续处理各自操作。手势仅向下激活，短屏和大字体布局仍可向上滚动。歌词页继续使用信息区下拉，不接管歌词滚动和点按跳播。
 
 Downward dismissal now covers the large artwork, metadata and space above the playback block. Seeking, volume and transport retain their own input. Only downward movement activates dismissal, preserving upward column scrolling on short screens and with large text. Lyric mode retains its information-header boundary without taking lyric scrolling or line seeking.
 
-“下一首播放”等共享提示的文字与操作随明暗主题配色，并在原玻璃材质上增加局部对比底层；艺人和专辑名在同一行分别点击跳转，多艺人沿用选择列表。缺少详情 ID 时显示普通文字；打开详情时保留播放器状态，返回后可继续操作。
+“下一首播放”等共享提示复用 Mini Player 的玻璃组件，跟随相同材质模式、用户参数与模糊开关。正文及操作文字随明暗主题配色，使用仅限字形的轻微描影。播放器只展示歌曲名和艺人名：歌曲名点击进入所属专辑，艺人点击进入艺人详情；多艺人沿用选择列表。缺少详情 ID 时显示普通文字；打开详情时保留播放器状态，返回后可继续操作。
 
-Shared notifications such as Play next use themed text/actions over a local contrast layer while retaining their glass material. Artist and album names are separate links on the existing metadata line; collaborations use the existing artist picker. Missing detail IDs remain plain text, and detail routes retain the player beneath them.
+Shared notifications such as Play next reuse Mini Player's glass component, including its material mode, user parameters and blur preference. Text/actions follow the theme with a subtle glyph-only halo. Player metadata displays the song title and artist only: the title opens its album, while the artist opens artist details or the existing collaboration picker. Missing detail IDs remain plain text, and detail routes retain the player beneath them.
 
-584 项应用测试、类型及翻译检查通过；lint 为 0 错误、117 项现有警告。本轮按要求只构建 APK，尚未安装或进行 `.18` 实机验收；此前 `.17` 的录像和帧时间不作为本版的新测量。
+ARM64 修正版 APK 已构建并核对原包名与签名。584 项应用测试、类型及翻译检查通过，lint 为 0 错误、117 项现有警告；当前等待覆盖安装与实机检查。此前 `.17` 的录像和帧时间不作为本版的新测量。
 
-All 584 app tests, typechecking and translation checks pass; lint reports zero errors and 117 existing warnings. This round builds an APK only as requested; `.18` installation and device validation are pending. Earlier `.17` recordings and frame times are not new measurements of this build.
+The corrected ARM64 APK is built with its package and original certificate verified. All 584 app tests, typechecking and translation checks pass; lint reports zero errors and 117 existing warnings. Replacement installation and device validation are pending. Earlier `.17` recordings and frame times are not new measurements of this build.
 
 ## `.17` 实机记录 / `.17` device record
 

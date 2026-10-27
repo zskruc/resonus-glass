@@ -1,15 +1,17 @@
 /** Brief pill-shaped message at the bottom (Spotify style). */
 import { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text } from 'react-native';
 import Animated, { FadeInDown, FadeOut } from 'react-native-reanimated';
 
-import { GlassBackdrop, GlassPressable } from '@/components/glass';
+import { FloatingGlassBackdrop, GlassPressable } from '@/components/glass';
 import { useFloatingBottom } from '@/hooks/useScreenBottomPadding';
 import { useToast } from '@/store/toast';
 import { fontSize, radius, spacing, themed, useTheme } from '@/theme';
+import { useBarBlur } from './BarBlur';
 
 export function Toast() {
-  const colors = useTheme();
+  useTheme();
+  const blurred = useBarBlur('miniPlayer');
   const message = useToast((s) => s.message);
   const actionLabel = useToast((s) => s.actionLabel);
   const runAction = useToast((s) => s.runAction);
@@ -37,12 +39,9 @@ export function Toast() {
       // Without an action the toast is purely informational and shouldn't steal touches.
       pointerEvents={actionLabel ? 'box-none' : 'none'}
     >
-      <GlassBackdrop radius={radius.pill} variant="prominent" tint={colors.surface} />
-      {/* The native material can pick a light tint independently of the legacy
-          dark snackbar palette. Keep themed ink above a local contrast wash;
-          the original glass, lens and highlight remain underneath. */}
-      <View pointerEvents="none" accessible={false} style={styles.contrastSurface} />
-      <Text style={[styles.text, actionLabel ? styles.textLeft : null]} numberOfLines={2}>
+      {/* Same material and user settings as the mini, without dock motion. */}
+      <FloatingGlassBackdrop radius={radius.pill} target="miniPlayer" blurred={blurred} />
+      <Text style={[styles.ink, styles.text, actionLabel ? styles.textLeft : null]} numberOfLines={2}>
         {message}
       </Text>
       {actionLabel ? (
@@ -56,7 +55,7 @@ export function Toast() {
           }}
           style={({ pressed }) => pressed && { opacity: 0.6 }}
         >
-          <Text style={styles.action}>{actionLabel}</Text>
+          <Text style={[styles.ink, styles.action]}>{actionLabel}</Text>
         </GlassPressable>
       ) : null}
     </Animated.View>
@@ -75,13 +74,13 @@ const styles = themed((colors) => ({
     alignItems: 'center',
   },
   pillRow: { flexDirection: 'row', gap: spacing.lg },
-  contrastSurface: {
-    ...StyleSheet.absoluteFill,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surface,
-    opacity: 0.72,
+  ink: {
+    color: colors.text,
+    textShadowColor: `${colors.onInverse}80`,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 1,
   },
-  text: { color: colors.text, fontSize: fontSize.sm, fontWeight: '500' },
+  text: { fontSize: fontSize.sm, fontWeight: '500' },
   textLeft: { flex: 1 },
-  action: { color: colors.text, fontSize: fontSize.sm, fontWeight: '600', textDecorationLine: 'underline' },
+  action: { fontSize: fontSize.sm, fontWeight: '600', textDecorationLine: 'underline' },
 }));

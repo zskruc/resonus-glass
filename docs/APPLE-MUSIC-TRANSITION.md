@@ -1,14 +1,14 @@
 # Apple Music 风格播放器转场 / Apple Music style player transition
 
-## 当前 `.18` / Current `.18`
+## 当前 `.19` / Current `.19`
 
-`.18` / Android `versionCode 100` 将封面模式的下拉入口扩展到播放控件上方，包含封面和歌曲信息；原播放控制区不参与收合手势。仅向下移动激活，保留短屏向上滚动、文字点击及既有收合阈值。歌词区的滚动和点按播放边界不变。共享封面与背景转场的几何、参数和交接逻辑继续沿用 `.17`。
+`.19` / Android `versionCode 101` 保留 `.18` 扩展的封面模式下拉入口，包含播放控件上方的封面和歌曲信息；原播放控制区不参与收合手势。仅向下移动激活，保留短屏向上滚动、文字点击及既有收合阈值。歌词区的滚动和点按播放边界不变。共享封面与背景转场的几何、参数和交接逻辑继续沿用 `.17`。
 
-`.18` / Android `versionCode 100` expands cover-mode downward dismissal through the artwork and metadata to the top of the playback block. The controls keep their own input. Downward-only activation preserves upward column scrolling, metadata taps and the existing close thresholds. Lyric scrolling and line-seeking boundaries are unchanged. Shared-artwork/background geometry, timing and handoff remain those of `.17`.
+`.19` / Android `versionCode 101` retains `.18`'s expanded cover-mode downward dismissal through the artwork and metadata to the top of the playback block. The controls keep their own input. Downward-only activation preserves upward column scrolling, metadata taps and the existing close thresholds. Lyric scrolling and line-seeking boundaries are unchanged. Shared-artwork/background geometry, timing and handoff remain those of `.17`.
 
-本轮 584 项应用测试、类型及翻译检查通过，lint 为 0 错误、117 项现有警告；按要求只构建 APK，尚未安装或进行 `.18` 实机验收。下方记录均属于旧版。
+当前修正版 APK 已构建并核对原签名；584 项应用测试、类型及翻译检查通过，lint 为 0 错误、117 项现有警告。覆盖安装与实机检查待完成。下方记录均属于旧版。
 
-All 584 app tests, typechecking and translations pass; lint reports zero errors and 117 existing warnings. This round builds an APK only as requested, with `.18` installation/device validation pending. The records below concern earlier builds.
+The corrected APK is built with its original certificate verified; all 584 app tests, typechecking and translations pass, with zero lint errors and 117 existing warnings. Replacement installation and device validation are pending. The records below concern earlier builds.
 
 ## `.17` 实机记录 / `.17` device record
 
