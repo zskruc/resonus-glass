@@ -67,6 +67,14 @@ internal data class BackdropFrame(
   val pageEpoch: Long
 )
 
+/** A borrowed producer node, never an independently retained screen snapshot. */
+internal class RecordedBackdropContent(val node: RenderNode, val source: WeakReference<View>,
+  val windowWidth: Int, val windowHeight: Int, val windowX: Int, val windowY: Int, val direct: Boolean = false) {
+  var firstReadTraced = false
+}
+
+internal typealias RecordedBackdropFrame = RecordedBackdropBridge.Entry<RecordedBackdropContent>
+
 /** Ordinary alpha remains unchanged during capture, unlike transition alpha. */
 private fun isMaterialVisible(surface: LiquidGlassView, visibleRect: Rect): Boolean {
   if (!surface.glassEnabled || !surface.isShown || surface.width <= 0 || surface.height <= 0) return false
@@ -116,6 +124,11 @@ internal object WindowBackdrops {
   /** The capture omits these parents, including their decorative/interactive children. */
   fun isGlassContainer(view: View, captureRoot: View): Boolean = view !== captureRoot &&
     surfaces.any { it.glassEnabled && it.parent === view }
+
+  /** Live child RenderNodes can restore alpha later; hidden consumers are unsafe too. */
+  fun sourceContainsAttachedGlass(source: View): Boolean = surfaces.any {
+    it.glassEnabled && it.isAttachedToWindow && isDescendantOf(it, source)
+  }
 
   /** Omit wrappers without changing ordinary alpha or the visibility property. */
   fun <T> withoutGlass(root: View, activityDecor: View?, captureSource: View = root, capture: () -> T): T {
@@ -196,6 +209,12 @@ internal class WindowBackdrop(
   private var menuScrimReference: WeakReference<View>? = null
   private val backgroundChanges = BackdropSceneChanges()
   private val nativePage = NativeBackdropPage()
+  private val recordedBridge = RecordedBackdropBridge<RecordedBackdropContent>()
+  private var tracedDirectSession = -1
+  private var tracedDirectReadyEpoch = Long.MIN_VALUE
+  private var tracedDirectReadEpoch = Long.MIN_VALUE
+  private var tracedBridgeCandidateSession = -1
+  private var tracedBridgeCandidateEpoch = Long.MIN_VALUE
   private val menuGeometry = BackdropSceneChanges()
   private var menuGeometrySignature: Long? = null
   private val surfaceGeometry = BackdropGeometryChanges<LiquidGlassView>()
@@ -251,6 +270,8 @@ internal class WindowBackdrop(
   }
   private var reader: ImageReader? = null
   private var renderer: HardwareRenderer? = null
+  // Independent from the offscreen renderer: one reusable node for safe sources.
+  private var directSourceNode: RenderNode? = null
   private var renderNode: RenderNode? = null
   private var rawSourceNode: RenderNode? = null
   private var processedSourceNode: RenderNode? = null
@@ -277,6 +298,9 @@ internal class WindowBackdrop(
   private var surfaceGeometryChangeCount = 0L
   private var surfaceGeometryRedrawCount = 0L
   private var pageChangeCount = 0L
+  private var tracedClearSession = -1
+  private var tracedClearEpoch = Long.MIN_VALUE
+  private var tracedEmptySince = 0L
   private var stalePageFrameCount = 0L
   private var isolatedPageCaptureCount = 0L
   private var contentCaptureCount = 0L
@@ -309,6 +333,10 @@ internal class WindowBackdrop(
   // Fixed per-window counters; recording a phase never allocates a map or logs.
   private val capturePrepareStats = CapturePhaseStats()
   private val sourceRecordStats = CapturePhaseStats()
+  private val directPrepareStats = CapturePhaseStats()
+  private val directRecordStats = CapturePhaseStats()
+  private val directTotalStats = CapturePhaseStats()
+  private var directCaptureCount = 0L
   private val atlasRecordStats = CapturePhaseStats()
   private val renderSyncAndDrawStats = CapturePhaseStats()
   private var lastDiagnosticLog = 0L
@@ -382,6 +410,7 @@ internal class WindowBackdrop(
     val unblurredPatch: UnblurredBackdropPatch?,
     val targets: List<LiquidGlassView>,
     val pageEpoch: Long,
+    val recordSerial: Long,
     val submittedAt: Long,
     val submittedAtNanos: Long
   )
@@ -433,9 +462,36 @@ internal class WindowBackdrop(
     val source = activityDecor?.takeIf { it.isAttachedToWindow } ?: root
     if (!nativePage.observe(source)) return
     pageChangeCount++
+    clearRecordedBackdrop("page")
+    if (PlayerTransitionTrace.enabled) {
+      val now = SystemClock.uptimeMillis()
+      val epoch = nativePage.policy.epoch
+      if (tracedClearSession != PlayerTransitionTrace.session || tracedClearEpoch != epoch) {
+        tracedClearSession = PlayerTransitionTrace.session
+        tracedClearEpoch = epoch
+        tracedEmptySince = now
+      }
+      PlayerTransitionTrace.backdropClear(epoch, now, tracedEmptySince, frame != null,
+        nativePage.policy.captureAllowed, activityDecor != null && activityDecor !== root)
+    }
     frame = null
-    notifyBackdropDrawingChanged(surfaces)
     sceneVersion++
+    // Record the NEW page before notifying draw observers. Never reuse old-page
+    // pixels, and never submit a GPU/image capture from this observation callback.
+    if (!closed && !captureFailed && !WindowBackdrops.isCapturing && nativePage.policy.captureAllowed &&
+      root.isHardwareAccelerated && root.width > 0 && root.height > 0) {
+      val visible = surfaces.filter { isMaterialVisible(it, screenRect) }
+      if (visible.isNotEmpty()) {
+        try {
+          capture(visible, scrollVersion, materialVersion, sceneVersion, currentFrameTimeNanos,
+            scrollVersion != capturedScrollVersion, directOnly = true)
+        } catch (exception: RuntimeException) {
+          clearRecordedBackdrop("direct-failure")
+          Log.w("ResonusGlass", "Direct page recording unavailable", exception)
+        }
+      }
+    }
+    notifyBackdropDrawingChanged(surfaces)
     ownRedrawsToSkip = 0
     requestFrameClock()
     root.invalidate()
@@ -596,6 +652,7 @@ internal class WindowBackdrop(
     delayedCapturePosted = false
     lastCapture = now
     val captureStarted = SystemClock.elapsedRealtimeNanos()
+    val directCountBefore = directCaptureCount
     captureAttemptCount++
     try {
       val captured = capture(visible, scrollVersion, materialVersion, sceneVersion, vsyncNanos, scrollDirty)
@@ -605,8 +662,10 @@ internal class WindowBackdrop(
       failCapture(exception)
     } finally {
       val elapsed = SystemClock.elapsedRealtimeNanos() - captureStarted
-      captureCpuTotalNanos += elapsed
-      captureCpuMaxNanos = maxOf(captureCpuMaxNanos, elapsed)
+      if (directCaptureCount == directCountBefore) {
+        captureCpuTotalNanos += elapsed
+        captureCpuMaxNanos = maxOf(captureCpuMaxNanos, elapsed)
+      } else captureAttemptCount--
       if (now - lastDiagnosticLog >= 2_000L) logCounters()
     }
     return true
@@ -618,10 +677,17 @@ internal class WindowBackdrop(
     submittedMaterialVersion: Long,
     submittedSceneVersion: Long,
     vsyncNanos: Long,
-    isScrollCapture: Boolean
+    isScrollCapture: Boolean,
+    directOnly: Boolean = false
   ): BackdropFrame? {
     val preparationStarted = SystemClock.elapsedRealtimeNanos()
     var preparationEnded = 0L
+    var directAttempt = false
+    val candidateEpoch = nativePage.policy.epoch
+    val traceCandidate = frame == null
+    var bridgeMask = 0
+    var bridgeSourceKind = 0 // 0 = window; 1 = content host; 2 = isolated opaque page.
+    var recordSerial = recordedBridge.recordSerial
     try {
       root.getLocationOnScreen(location)
       updateCaptureRect(visible)
@@ -642,6 +708,21 @@ internal class WindowBackdrop(
       val contentUnderlay = stackContent?.let { findContentUnderlayColor(it) }
       val captureSource = selectBackdropCaptureSource(root, activityWindow, isolatedTop,
         stackContent?.takeIf { contentUnderlay != null })
+      bridgeSourceKind = when {
+        captureSource === stackContent -> 1
+        captureSource === isolatedTop -> 2
+        else -> 0
+      }
+      run {
+        if (asynchronous) bridgeMask = bridgeMask or RecordedBackdropEligibility.ASYNC
+        if (activityWindow) bridgeMask = bridgeMask or RecordedBackdropEligibility.ACTIVITY
+        if (bridgeSourceKind != 0) bridgeMask = bridgeMask or RecordedBackdropEligibility.NON_WINDOW_SOURCE
+        if (!WindowBackdrops.sourceContainsAttachedGlass(captureSource))
+          bridgeMask = bridgeMask or RecordedBackdropEligibility.NO_SOURCE_CONSUMERS
+        if (edge == null) bridgeMask = bridgeMask or RecordedBackdropEligibility.NO_PROGRESSIVE
+        if (frame == null) bridgeMask = bridgeMask or RecordedBackdropEligibility.NO_IMAGE
+        if (isRecordedSourceDrawable(captureSource)) bridgeMask = bridgeMask or RecordedBackdropEligibility.SOURCE_DRAWABLE
+      }
       if (isolatedTop != null) isolatedPageCaptureCount++
       if (captureSource === stackContent) contentCaptureCount++
       // The edge's shader clamps atlas sampling on API 33+. Earlier releases
@@ -673,8 +754,54 @@ internal class WindowBackdrop(
       val rawSampleHeight = if (rawMaterial != null && !rawRect.isEmpty)
         ceil((rawRect.bottom - captureRect.top) * scale).toInt() - rawSampleY else 0
       val hasRawPatch = rawSampleWidth > 0 && rawSampleHeight > 0
+      if (!hasRawPatch) bridgeMask = bridgeMask or RecordedBackdropEligibility.NO_PATCH
       val height = if (hasRawPatch)
         quantize(requestedMainHeight + ATLAS_GUARD_ROWS + rawSampleHeight, SAMPLE_SIZE_STEP) else requestedMainHeight
+      if (RecordedBackdropEligibility.allowsDirect(bridgeMask)) {
+        directAttempt = true
+        // This source physically contains no attached enabled material. Its live
+        // child display lists are safe to replay without freezing alpha staging
+        // through a HardwareRenderer submission or waiting for an ImageReader.
+        clearRecordedBackdrop("record")
+        recordSerial = recordedBridge.beginRecord()
+        val node = directSourceNode ?: RenderNode("Resonus direct backdrop source").also { directSourceNode = it }
+        node.setPosition(0, 0, width, requestedMainHeight)
+        node.setClipToBounds(true)
+        node.setRenderEffect(null)
+        preparationEnded = SystemClock.elapsedRealtimeNanos()
+        WindowBackdrops.withoutGlass(root, activityDecor, captureSource) {
+          recordSource(node, width, requestedMainHeight, scale, captureSource,
+            if (captureSource === stackContent) contentUnderlay else null, null, direct = true)
+        }
+        bridgeMask = bridgeMask or RecordedBackdropEligibility.RECORDED
+        if (recordedBridge.publish(
+            RecordedBackdropContent(node, WeakReference(captureSource), root.width, root.height, location[0], location[1], direct = true),
+            RecordedBackdropGeometry(scale, originX, originY, width, requestedMainHeight),
+            candidateEpoch, generation, recordSerial, nativePage.policy.epoch, generation,
+            nativePage.policy.captureAllowed, bridgeMask, direct = true)) {
+          frame = null
+          // Keep queued FIFO tickets paired with their eventual images, but
+          // retire their publication/watchdog ownership now. They cannot replace
+          // this newer direct recording, nor throttle its subsequent VSyncs.
+          inFlightTickets.removeAll { !recordedBridge.acceptsImage(it.recordSerial) }
+          updateCaptureWatchdog()
+          captureCount++
+          directCaptureCount++
+          lastCapture = SystemClock.uptimeMillis()
+          recordSubmission(submittedScrollVersion, submittedMaterialVersion, submittedSceneVersion, vsyncNanos, isScrollCapture)
+          ownRedrawsToSkip = OWN_REDRAW_TRAVERSALS
+          if (PlayerTransitionTrace.enabled && (tracedDirectSession != PlayerTransitionTrace.session ||
+              tracedDirectReadyEpoch != candidateEpoch)) {
+            if (tracedDirectSession != PlayerTransitionTrace.session) tracedDirectReadEpoch = Long.MIN_VALUE
+            tracedDirectSession = PlayerTransitionTrace.session
+            tracedDirectReadyEpoch = candidateEpoch
+            PlayerTransitionTrace.bridge("direct.ready", candidateEpoch, generation, recordSerial)
+          }
+          notifyBackdropDrawingChanged(visible)
+        }
+        return null
+      }
+      if (directOnly) return null
       val now = SystemClock.uptimeMillis()
       // Keep capacity during moving/elastic bounds, but do not carry a full-page
       // Surface into a small bottom dock for the rest of the session. Clearing
@@ -737,6 +864,10 @@ internal class WindowBackdrop(
       }
       // One low-resolution graph on the existing producer; every material samples
       // the same processed frame. No visible edge restores the original raw path.
+      // A reused node is mutable: withdraw its old coordinates before changing
+      // its effect, position or display list, including a same-page recording.
+      clearRecordedBackdrop("record", notify = true)
+      recordSerial = recordedBridge.beginRecord()
       val recordingNode = if (patch != null) {
         val raw = rawSourceNode ?: RenderNode("Resonus raw backdrop source").also { rawSourceNode = it }
         raw.setPosition(0, 0, pixelWidth, mainHeight)
@@ -753,7 +884,7 @@ internal class WindowBackdrop(
       }
       if (asynchronous) {
         val ticket = PendingCapture(generation, source, scale, originX, originY, processed?.stamp,
-          pixelWidth, mainHeight, patch, visible, nativePage.policy.epoch,
+          pixelWidth, mainHeight, patch, visible, nativePage.policy.epoch, recordSerial,
           SystemClock.uptimeMillis(), SystemClock.elapsedRealtimeNanos())
         inFlightTickets.add(ticket)
         synchronized(ticketLock) { queuedTickets.addLast(ticket) }
@@ -766,41 +897,8 @@ internal class WindowBackdrop(
         // Gaussian needs opaque padding: transparent unused rows would lower its
         // alpha at the screen bottom and expose sharp raw content underneath.
         // Ordinary materials retain their original transparent capture path.
-        timeCapturePhase(sourceRecordStats) {
-          val canvas = recordingNode.beginRecording(pixelWidth, mainHeight)
-          try {
-            if (processed != null) {
-              val background = processed.stamp.tintColor
-              canvas.drawColor(Color.rgb(Color.red(background), Color.green(background), Color.blue(background)), PorterDuff.Mode.SRC)
-            } else {
-              canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-            }
-            canvas.scale(scale, scale)
-            canvas.translate(-captureRect.left.toFloat(), -captureRect.top.toFloat())
-            canvas.clipRect(captureRect)
-            if (captureSource === stackContent && contentUnderlay != null) canvas.drawColor(contentUnderlay)
-            // A transparent React Native Modal lives in a second window. Include
-            // the Activity's actual screen behind it before drawing the modal.
-            if (activityDecor != null && activityDecor !== root && activityDecor.isAttachedToWindow) {
-              activityDecor.getLocationOnScreen(activityLocation)
-              val checkpoint = canvas.save()
-              canvas.translate(
-                (activityLocation[0] - location[0]).toFloat(),
-                (activityLocation[1] - location[1]).toFloat()
-              )
-              activityDecor.draw(canvas)
-              canvas.restoreToCount(checkpoint)
-            }
-            if (captureSource === root) root.draw(canvas) else {
-              captureSource.getLocationOnScreen(contentLocation)
-              canvas.translate((contentLocation[0] - location[0]).toFloat(),
-                (contentLocation[1] - location[1]).toFloat())
-              captureSource.draw(canvas)
-            }
-          } finally {
-            recordingNode.endRecording()
-          }
-        }
+        recordSource(recordingNode, pixelWidth, mainHeight, scale, captureSource,
+          if (captureSource === stackContent) contentUnderlay else null, processed?.stamp?.tintColor)
         if (patch != null) {
           timeCapturePhase(atlasRecordStats) {
             // Replay the already-recorded scene; never draw the Android root twice.
@@ -839,6 +937,7 @@ internal class WindowBackdrop(
           request.syncAndDraw()
         }
       }
+      bridgeMask = bridgeMask or RecordedBackdropEligibility.RECORDED
       // syncAndDraw can report a lost/stopped renderer without throwing. Treat
       // those flags like driver exceptions, but retain the current frame for an
       // ordinary dropped frame. REDRAW_REQUESTED remains a successful capture.
@@ -859,7 +958,17 @@ internal class WindowBackdrop(
         root.invalidate()
         return null
       }
+      bridgeMask = bridgeMask or RecordedBackdropEligibility.SYNC_OK
       if (asynchronous) {
+        if (traceCandidate) traceRecordedCandidate(candidateEpoch, recordSerial, bridgeMask, bridgeSourceKind)
+        if (frame == null && recordedBridge.publish(
+            RecordedBackdropContent(recordingNode, WeakReference(captureSource), root.width, root.height, location[0], location[1]),
+            RecordedBackdropGeometry(scale, originX, originY, pixelWidth, mainHeight),
+            candidateEpoch, generation, recordSerial, nativePage.policy.epoch, generation,
+            nativePage.policy.captureAllowed, bridgeMask)) {
+          PlayerTransitionTrace.bridge("ready", candidateEpoch, generation, recordSerial)
+          notifyBackdropDrawingChanged(visible)
+        }
         asyncCaptureCount++
         recordSubmission(submittedScrollVersion, submittedMaterialVersion, submittedSceneVersion, vsyncNanos, isScrollCapture)
         return null
@@ -874,10 +983,112 @@ internal class WindowBackdrop(
       return BackdropFrame(bitmap, image, scale, originX, originY, source, processed?.stamp,
         pixelWidth, mainHeight, patch, nativePage.policy.epoch)
     } finally {
+      if (traceCandidate) traceRecordedCandidate(candidateEpoch, recordSerial, bridgeMask, bridgeSourceKind)
       // Include partial preparation when a resize is deferred or setup throws.
       val ended = if (preparationEnded != 0L) preparationEnded else SystemClock.elapsedRealtimeNanos()
-      capturePrepareStats.record(ended - preparationStarted)
+      if (directAttempt) {
+        directPrepareStats.record(ended - preparationStarted)
+        directTotalStats.record(SystemClock.elapsedRealtimeNanos() - preparationStarted)
+      } else if (!directOnly) capturePrepareStats.record(ended - preparationStarted)
     }
+  }
+
+  /** Shared source recording; exactly one source draw in either producer. */
+  private fun recordSource(node: RenderNode, width: Int, height: Int, scale: Float,
+    captureSource: View, underlayColor: Int?, processedColor: Int?, direct: Boolean = false) {
+    timeCapturePhase(if (direct) directRecordStats else sourceRecordStats) {
+      val canvas = node.beginRecording(width, height)
+      try {
+        if (processedColor != null) {
+          val background = processedColor
+          canvas.drawColor(Color.rgb(Color.red(background), Color.green(background), Color.blue(background)), PorterDuff.Mode.SRC)
+        } else {
+          canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+        }
+        canvas.scale(scale, scale)
+        canvas.translate(-captureRect.left.toFloat(), -captureRect.top.toFloat())
+        canvas.clipRect(captureRect)
+        if (underlayColor != null) canvas.drawColor(underlayColor)
+        // A transparent React Native Modal lives in a second window. Include
+        // the Activity's actual screen behind it before drawing the modal.
+        if (activityDecor != null && activityDecor !== root && activityDecor.isAttachedToWindow) {
+          activityDecor.getLocationOnScreen(activityLocation)
+          val checkpoint = canvas.save()
+          canvas.translate(
+            (activityLocation[0] - location[0]).toFloat(),
+            (activityLocation[1] - location[1]).toFloat()
+          )
+          activityDecor.draw(canvas)
+          canvas.restoreToCount(checkpoint)
+        }
+        if (captureSource === root) root.draw(canvas) else {
+          captureSource.getLocationOnScreen(contentLocation)
+          canvas.translate((contentLocation[0] - location[0]).toFloat(),
+            (contentLocation[1] - location[1]).toFloat())
+          captureSource.draw(canvas)
+        }
+      } finally {
+        node.endRecording()
+      }
+    }
+  }
+
+  private fun traceRecordedCandidate(epoch: Long, serial: Long, mask: Int, sourceKind: Int) {
+    if (!PlayerTransitionTrace.enabled || (tracedBridgeCandidateSession == PlayerTransitionTrace.session &&
+      tracedBridgeCandidateEpoch == epoch)) return
+    tracedBridgeCandidateSession = PlayerTransitionTrace.session
+    tracedBridgeCandidateEpoch = epoch
+    PlayerTransitionTrace.bridgeCandidate(epoch, generation, serial, mask, sourceKind)
+  }
+
+  private fun isRecordedSourceDrawable(source: View): Boolean {
+    if (!source.isAttachedToWindow || !source.isShown || source.width <= 0 || source.height <= 0 ||
+      source.rootView !== root) return false
+    var ancestor: View? = source
+    while (ancestor != null) {
+      if (ancestor.visibility != View.VISIBLE || ancestor.alpha <= 0f) return false
+      if (ancestor === root) return true
+      ancestor = ancestor.parent as? View
+    }
+    return false
+  }
+
+  /** Draw-time validation only: no capture, notification or frame-clock request here. */
+  internal fun recordedBackdrop(): RecordedBackdropFrame? {
+    if (frame != null || recordedBridge.value == null) return null
+    root.getLocationOnScreen(location)
+    val recorded = recordedBridge.current(nativePage.policy.epoch, generation, nativePage.policy.captureAllowed)
+    val source = recorded?.content?.source?.get()
+    if (closed || captureFailed || recorded == null || source == null || !root.isHardwareAccelerated ||
+      recorded.content.windowWidth != root.width || recorded.content.windowHeight != root.height ||
+      recorded.content.windowX != location[0] || recorded.content.windowY != location[1] ||
+      !isRecordedSourceDrawable(source) || WindowBackdrops.sourceContainsAttachedGlass(source) ||
+      !recorded.content.node.hasDisplayList()) {
+      clearRecordedBackdrop("invalid")
+      return null
+    }
+    return recorded
+  }
+
+  internal fun onRecordedBackdropRead(recorded: RecordedBackdropFrame) {
+    if (!PlayerTransitionTrace.enabled || recorded.content.firstReadTraced) return
+    recorded.content.firstReadTraced = true
+    if (recorded.content.direct) {
+      if (tracedDirectSession == PlayerTransitionTrace.session && tracedDirectReadEpoch == recorded.pageEpoch) return
+      tracedDirectSession = PlayerTransitionTrace.session
+      tracedDirectReadEpoch = recorded.pageEpoch
+    }
+    PlayerTransitionTrace.bridge(if (recorded.content.direct) "direct.read" else "read",
+      recorded.pageEpoch, recorded.generation, recorded.serial)
+  }
+
+  private fun clearRecordedBackdrop(reason: String, notify: Boolean = false, ticket: PendingCapture? = null) {
+    val previous = (if (ticket == null) recordedBridge.clear() else
+      recordedBridge.clearIfMatches(ticket.pageEpoch, ticket.generation, ticket.recordSerial)) ?: return
+    // This reference borrows the producer node: do not discard its display list.
+    if (!previous.content.direct || reason != "record")
+      PlayerTransitionTrace.bridge("clear", previous.pageEpoch, previous.generation, previous.serial, reason)
+    if (notify && !closed) notifyBackdropDrawingChanged(surfaces)
   }
 
   private fun findContentSource(): View? {
@@ -1015,7 +1226,7 @@ internal class WindowBackdrop(
     // A Fragment swap can finish after the capture was queued but before the
     // next pre-draw. Observe native identity here too, before accepting pixels.
     observeNativePage()
-    if (!nativePage.policy.accepts(ticket.pageEpoch)) {
+    if (!nativePage.policy.accepts(ticket.pageEpoch) || !recordedBridge.acceptsImage(ticket.recordSerial)) {
       stalePageFrameCount++
       result.frame?.image?.let { retireImage(it) }
       requestFrameClock()
@@ -1036,6 +1247,7 @@ internal class WindowBackdrop(
     } else {
       droppedFrameCount++
       if (result.fenceTimedOut) fenceTimeoutCount++
+      clearRecordedBackdrop("delivery", notify = true, ticket = ticket)
       // Retain the current image on a dropped/slow frame and try the next draw.
       capturedMaterialVersion = Long.MIN_VALUE
       ownRedrawsToSkip = 0
@@ -1124,6 +1336,13 @@ internal class WindowBackdrop(
     if (captureCount == 1L) {
       Log.i("ResonusGlass", "GPU backdrop active (${pixelWidth}x${pixelHeight}, ${targets.size} visible materials, async=$asynchronous)")
     }
+    if (PlayerTransitionTrace.enabled && tracedClearSession == PlayerTransitionTrace.session &&
+      tracedClearEpoch == captured.pageEpoch) {
+      PlayerTransitionTrace.backdropPublish(captured.pageEpoch, SystemClock.uptimeMillis(), tracedEmptySince,
+        activityDecor != null && activityDecor !== root)
+      tracedClearEpoch = Long.MIN_VALUE
+    }
+    clearRecordedBackdrop("image")
     frame = captured
     frames.addLast(captured)
     // Keep both sampled images alive; maxImages=6 also covers both pipeline
@@ -1146,12 +1365,14 @@ internal class WindowBackdrop(
     failureClass = exception.javaClass.simpleName
     Log.w("ResonusGlass", "GPU backdrop unavailable ($failureClass); using material fallback")
     captureFailed = true
+    clearRecordedBackdrop("failure")
     frame = null
     notifyBackdropDrawingChanged(surfaces)
     releaseCapture()
   }
 
   private fun releaseCapture(keepDisplayedFrames: Boolean = false) {
+    clearRecordedBackdrop("release", notify = true)
     synchronized(ticketLock) {
       generation++
       queuedTickets.clear()
@@ -1197,6 +1418,12 @@ internal class WindowBackdrop(
     val publishIntervalStats = publishIntervalStats()
     return mapOf(
       "captureCount" to captureCount,
+      "directCaptureCount" to directCaptureCount,
+      "directPrepareTotalNs" to directPrepareStats.totalNanos,
+      "directRecordTotalNs" to directRecordStats.totalNanos,
+      "directRecordMaxNs" to directRecordStats.maxNanos,
+      "directCaptureTotalNs" to directTotalStats.totalNanos,
+      "directCaptureMaxNs" to directTotalStats.maxNanos,
       "preDrawCount" to preDrawCount,
       "ownRedrawSkipCount" to ownRedrawSkipCount,
       "throttledDrawCount" to throttledDrawCount,
@@ -1278,6 +1505,8 @@ internal class WindowBackdrop(
     lastDiagnosticLog = SystemClock.uptimeMillis()
     val publishIntervalStats = publishIntervalStats()
     Log.i("ResonusGlass", "window=$diagnosticId captureCount=$captureCount " +
+      "directCaptureCount=$directCaptureCount directRecordTotalNs=${directRecordStats.totalNanos} directRecordMaxNs=${directRecordStats.maxNanos} " +
+      "directCaptureTotalNs=${directTotalStats.totalNanos} directCaptureMaxNs=${directTotalStats.maxNanos} " +
       "preDrawCount=$preDrawCount ownSkip=$ownRedrawSkipCount " +
       "throttled=$throttledDrawCount delayed=$delayedCaptureCount " +
       "hostRestore=$hostRestoreCount failed=$captureFailed " +
@@ -1338,6 +1567,8 @@ internal class WindowBackdrop(
       activityDecor.viewTreeObserver.removeOnPreDrawListener(backgroundPreDrawListener)
     }
     releaseCapture()
+    directSourceNode?.discardDisplayList()
+    directSourceNode = null
     imageThread?.quitSafely()
   }
 

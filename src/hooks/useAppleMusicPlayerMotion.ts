@@ -40,12 +40,13 @@ export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, reve
   const stackProgress = useSharedValue(1);
   const entryAttemptQueued = useSharedValue(false);
   const originRoute = useSharedValue<{ owner: number; key: string | null }>({ owner, key: null });
+  const retired = useSharedValue(false);
   const notifyReady = useCallback(() => { if (live.current) setEntryReady(true); }, []);
   useLayoutEffect(() => { focusedUI.set(focused); }, [focused, focusedUI]);
 
   const effectiveProgress = useDerivedValue(() => entryIsPull.get() && revealOffset.get() >= 0
     ? Math.max(0, Math.min(1, 1 - revealOffset.get() / height)) : progress.get());
-  const running = useDerivedValue(() => phase.get() !== 'idle');
+  const running = useDerivedValue(() => !retired.get() && phase.get() !== 'idle');
   const frame = useDerivedValue(() => {
     const p = phase.get();
     if (p === 'idle' || p === 'preparing') return null;
@@ -55,6 +56,7 @@ export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, reve
       stackProgress: p === 'closing' || p === 'handoff' ? stackProgress.get() : effectiveProgress.get() });
   });
   const surfaceOffset = useDerivedValue(() => {
+    if (retired.get()) return height;
     if (phase.get() === 'preparing') return height;
     if (frame.get()) return (1 - effectiveProgress.get()) * height + offset.get();
     return revealOffset.get() >= 0 ? revealOffset.get() : offset.get();
@@ -62,7 +64,7 @@ export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, reve
 
   const tryStartEntry = useCallback(function startArtworkEntry() {
     'worklet';
-    if (phase.get() !== 'preparing') return;
+    if (retired.get() || phase.get() !== 'preparing') return;
     const mini = miniArtworkMetrics.get();
     const artwork = clipHost.get() > 0 ? readArtwork?.() : null;
     const next = mini && artwork ? { ...mini, playerArtwork: artwork } : null;
@@ -86,26 +88,31 @@ export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, reve
     progress.set(revealing ? 1 : 0);
     phase.set('opening');
     if (!revealing) progress.set(withSpring(1, SMOOTH, (finished) => {
-      if (!finished || playerSurfaceOwner.get() !== owner || phase.get() !== 'opening') return;
+      if (!finished || retired.get() || playerSurfaceOwner.get() !== owner || phase.get() !== 'opening') return;
       phase.set('idle');
       scheduleOnRN(notifyReady);
     }));
-  }, [phase, readArtwork, width, height, owner, retries, revealing, offset, progress, snapshot, notifyReady, clipHost, entryAttemptQueued]);
+  }, [phase, readArtwork, width, height, owner, retries, revealing, offset, progress, snapshot, notifyReady, clipHost, entryAttemptQueued, retired]);
 
   useLayoutEffect(() => {
     live.current = true;
-    if (handlesEntry) scheduleOnUI(() => {
-      phase.set('preparing'); retries.set(0);
-      entryAttemptQueued.set(true);
-      requestAnimationFrame(() => { entryAttemptQueued.set(false); tryStartEntry(); });
+    scheduleOnUI(() => {
+      retired.set(false);
+      if (handlesEntry) {
+        phase.set('preparing'); retries.set(0);
+        entryAttemptQueued.set(true);
+        requestAnimationFrame(() => { entryAttemptQueued.set(false); tryStartEntry(); });
+      }
     });
     return () => {
       live.current = false;
       scheduleOnUI(() => {
+        // Layout cleanup can reach the UI before passive mapper cleanup or
+        // native detach. Keep the old surface hidden through that interval.
+        retired.set(true);
         cancelAnimation(progress);
         cancelAnimation(stackProgress);
         entryAttemptQueued.set(false);
-        phase.set('idle');
         if (playerArtworkFlight.get()?.owner === owner) playerArtworkFlight.set(null);
         if (playerUnderlayFrame.get()?.owner === owner) playerUnderlayFrame.set(null);
       });
@@ -114,13 +121,13 @@ export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, reve
   }, [handlesEntry, owner]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useAnimatedReaction(() => [phase.get(), effectiveProgress.get(), revealOffset.get()] as const, ([p, value, revealed]) => {
-    if (p !== 'opening' || !entryIsPull.get() || revealed >= 0 || value < 1 || playerSurfaceOwner.get() !== owner) return;
+    if (retired.get() || p !== 'opening' || !entryIsPull.get() || revealed >= 0 || value < 1 || playerSurfaceOwner.get() !== owner) return;
     phase.set('idle'); entryIsPull.set(false);
     scheduleOnRN(notifyReady);
   });
-  useAnimatedReaction(() => [phase.get(), frame.get(), focusedUI.get(), offset.get(), playerUnderlayRouteKey.get(), playerSurfaceOwner.get()] as const,
-    ([p, value, isFocused, drag, routeKey, activeOwner]) => {
-    if (activeOwner !== owner) return;
+  useAnimatedReaction(() => [phase.get(), frame.get(), focusedUI.get(), offset.get(), playerUnderlayRouteKey.get(), playerSurfaceOwner.get(), retired.get()] as const,
+    ([p, value, isFocused, drag, routeKey, activeOwner, isRetired]) => {
+    if (isRetired || activeOwner !== owner) return;
     // A child page may publish its own key while covering this retained player.
     // Capture the first nonempty origin for this owner, including one published
     // after our layout effect, rather than following later focused pages.
@@ -138,7 +145,7 @@ export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, reve
     const value = frame.get();
     const rect = value?.background.rect;
     return [clipHost.get(), rect?.x ?? 0, rect?.y ?? 0, rect?.width ?? width, rect?.height ?? height,
-      value?.background.cornerRadius ?? 0, phase.get() === 'preparing' ? 0 : value ? effectiveProgress.get() : 1];
+      value?.background.cornerRadius ?? 0, retired.get() || phase.get() === 'preparing' ? 0 : value ? effectiveProgress.get() : 1];
   }, (values) => {
     if (values[0] <= 0 || !updateNativePlayerSurfaceClip) return;
     const previous = lastClip.get();
@@ -149,7 +156,7 @@ export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, reve
 
   const beginClose = useCallback((generation: number): boolean => {
     'worklet';
-    if (!available || clipHost.get() <= 0 || !playerCanReturnToMini.get() || playerSurfaceOwner.get() !== owner) return false;
+    if (retired.get() || !available || clipHost.get() <= 0 || !playerCanReturnToMini.get() || playerSurfaceOwner.get() !== owner) return false;
     const currentPhase = phase.get();
     if (currentPhase === 'preparing') return false;
     let next = snapshot.get();
@@ -192,16 +199,17 @@ export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, reve
     phase.set('closing');
     offset.set(withSpring(0, SMOOTH));
     progress.set(withSpring(0, SMOOTH, (finished) => {
-      if (!finished || playerSurfaceOwner.get() !== owner || phase.get() !== 'closing') return;
+      if (!finished || retired.get() || playerSurfaceOwner.get() !== owner || phase.get() !== 'closing') return;
       phase.set('handoff');
       scheduleOnRN(finish, generation);
     }));
     return true;
-  }, [available, width, height, owner, readArtwork, offset, progress, snapshot, phase, entryIsPull, effectiveProgress, finish, closeGeneration, stackProgress, frame, clipHost]);
+  }, [available, width, height, owner, readArtwork, offset, progress, snapshot, phase, entryIsPull, effectiveProgress, finish, closeGeneration, stackProgress, frame, clipHost, retired]);
   const cancelDrag = useCallback(() => {
     'worklet';
+    if (retired.get()) return;
     offset.set(withSpring(0, SMOOTH));
-  }, [offset]);
+  }, [offset, retired]);
   const abandon = useCallback(() => {
     'worklet';
     cancelAnimation(progress);
@@ -213,7 +221,7 @@ export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, reve
   const viewport = useRef({ width, height });
   const completeInvalidatedFlight = useCallback(() => {
     'worklet';
-    if (playerSurfaceOwner.get() !== owner) return;
+    if (retired.get() || playerSurfaceOwner.get() !== owner) return;
     const closing = phase.get() === 'closing' || phase.get() === 'handoff';
     const generation = closeGeneration.get();
     abandon();
@@ -221,7 +229,7 @@ export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, reve
     revealOffset.set(-1);
     if (closing) scheduleOnRN(finish, generation);
     else scheduleOnRN(notifyReady);
-  }, [owner, phase, closeGeneration, abandon, offset, height, finish, notifyReady]);
+  }, [owner, phase, closeGeneration, abandon, offset, height, finish, notifyReady, retired]);
   useLayoutEffect(() => {
     if (viewport.current.width === width && viewport.current.height === height) return;
     viewport.current = { width, height };
@@ -239,7 +247,7 @@ export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, reve
   }, [artworkIdentity, phase, completeInvalidatedFlight]);
 
   const contentStyle = useAnimatedStyle(() => {
-    if (phase.get() === 'preparing') return { opacity: 0, transform: [{ translateX: 0 }, { translateY: 0 }] };
+    if (retired.get() || phase.get() === 'preparing') return { opacity: 0, transform: [{ translateX: 0 }, { translateY: 0 }] };
     const value = frame.get();
     return { opacity: value?.fullContentOpacity ?? 1,
       // A missing native ready event must not leave the slide fallback
@@ -247,18 +255,18 @@ export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, reve
       backgroundColor: available && clipHost.get() <= 0 ? '#25252D' : 'transparent',
       transform: [{ translateX: value?.contentTranslateX ?? 0 }, { translateY: value?.contentTranslateY ?? 0 }] };
   });
-  const artworkStyle = useAnimatedStyle(() => ({ opacity: frame.get() ? 0 : 1 }));
+  const artworkStyle = useAnimatedStyle(() => ({ opacity: retired.get() || frame.get() ? 0 : 1 }));
   const controlsStyle = useAnimatedStyle(() => ({ transform: [{ translateY: frame.get()?.controlsTranslateY ?? 0 }] }));
   const onArtworkLayout = useCallback(() => { if (handlesEntry) scheduleOnUI(tryStartEntry); }, [handlesEntry, tryStartEntry]);
   const onClipHostReady = useCallback((event: { nativeEvent: { hostId: number; cornerRadius?: number } }) => {
     clipHost.set(event.nativeEvent.hostId);
     corner.set(event.nativeEvent.cornerRadius ?? 0);
     if (handlesEntry) scheduleOnUI(() => {
-      if (phase.get() !== 'preparing' || entryAttemptQueued.get()) return;
+      if (retired.get() || phase.get() !== 'preparing' || entryAttemptQueued.get()) return;
       entryAttemptQueued.set(true);
       requestAnimationFrame(() => { entryAttemptQueued.set(false); tryStartEntry(); });
     });
-  }, [clipHost, corner, handlesEntry, tryStartEntry, phase, entryAttemptQueued]);
+  }, [clipHost, corner, handlesEntry, tryStartEntry, phase, entryAttemptQueued, retired]);
   return { available, handlesEntry, entryReady, running, surfaceOffset, phase, beginClose, cancelDrag,
     abandon, contentStyle, artworkStyle, controlsStyle, onArtworkLayout, onClipHostReady };
 }

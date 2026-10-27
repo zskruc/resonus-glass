@@ -41,14 +41,24 @@ class PlayerSurfaceClipView(context: Context, appContext: AppContext) : ExpoView
   internal fun setInitialOpacity(value: Double) {
     if (!value.isFinite()) return
     initialOpacity = value.coerceIn(0.0, 1.0).toFloat()
-    if (!bounds.hasFrame) alpha = initialOpacity
+    if (!bounds.hasFrame) {
+      val previousAlpha = alpha
+      alpha = initialOpacity
+      if (PlayerTransitionTrace.enabled && hostToken > 0 && (previousAlpha > 0f) != (alpha > 0f))
+        PlayerTransitionTrace.clip("initialAlpha", hostToken, previousAlpha, alpha, bounds)
+    }
   }
 
   internal fun updateClip(left: Double, top: Double, width: Double, height: Double,
     radius: Double, opacity: Double) {
     val changes = bounds.update(resources.displayMetrics.density, left, top, width, height, radius, opacity)
     if (changes == PlayerSurfaceClipBounds.INVALID || changes == 0) return
-    if (changes and PlayerSurfaceClipBounds.ALPHA != 0) alpha = bounds.opacity
+    if (changes and PlayerSurfaceClipBounds.ALPHA != 0) {
+      val previousAlpha = alpha
+      alpha = bounds.opacity
+      if (PlayerTransitionTrace.enabled && (previousAlpha > 0f) != (alpha > 0f))
+        PlayerTransitionTrace.clip("alpha", hostToken, previousAlpha, alpha, bounds)
+    }
     if (changes and PlayerSurfaceClipBounds.CLIP != 0) {
       clipRect.set(bounds.left, bounds.top, bounds.right, bounds.bottom)
       clipPath.rewind()
@@ -68,6 +78,7 @@ class PlayerSurfaceClipView(context: Context, appContext: AppContext) : ExpoView
     // made visible. The first fresh scalar frame will record its own clip.
     invalidate()
     hostToken = PlayerSurfaceClipHosts.attach(this)
+    if (PlayerTransitionTrace.enabled) PlayerTransitionTrace.clip("attach", hostToken, 0f, alpha, bounds)
     onClipHostReady(mapOf("hostId" to hostToken, "cornerRadius" to attachmentCornerRadiusDp()))
   }
 
@@ -81,6 +92,7 @@ class PlayerSurfaceClipView(context: Context, appContext: AppContext) : ExpoView
   }
 
   override fun onDetachedFromWindow() {
+    if (PlayerTransitionTrace.enabled) PlayerTransitionTrace.clip("detach", hostToken, alpha, 0f, bounds)
     PlayerSurfaceClipHosts.detach(hostToken)
     hostToken = 0
     bounds.clear()

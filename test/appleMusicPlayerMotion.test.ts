@@ -70,6 +70,7 @@ function world(nativeAvailable = true) {
     const slots: any[] = [];
     const effects: (() => void)[] = [];
     const cleanups = new Set<() => void>();
+    const layoutEffects = new Set<{ create: () => (() => void) | void; cleanup: (() => void) | undefined }>();
     const reactions = new Set<Reaction>();
     const values: Mutable[] = [];
     const frames: (() => void)[] = [];
@@ -98,7 +99,11 @@ function world(nativeAvailable = true) {
       return saved.value as T;
     };
     const effect = (create: () => (() => void) | void, deps: Deps) => {
-      const saved = slot(() => ({ deps: undefined as Deps, cleanup: undefined as (() => void) | undefined }));
+      const saved = slot(() => {
+        const registration = { deps: undefined as Deps, create, cleanup: undefined as (() => void) | undefined };
+        layoutEffects.add(registration); return registration;
+      });
+      saved.create = create;
       if (!changed(saved.deps, deps)) return;
       saved.deps = deps;
       effects.push(() => {
@@ -185,6 +190,13 @@ function world(nativeAvailable = true) {
       }
     };
     if (initial.fromMini === false) attachClip();
+    const cleanupLayoutEffects = () => {
+      for (const cleanup of cleanups) cleanup();
+      cleanups.clear();
+      // Reanimated's installed useAnimatedReaction/useAnimatedStyle stop their
+      // mappers in passive effects, after this layout-cleanup UI transaction.
+      flushUI();
+    };
     return {
       get result() { return result; }, owner, offset, finishes, render, flushUI, advance,
       // Production shared-value allocation order, not a replacement policy.
@@ -194,7 +206,17 @@ function world(nativeAvailable = true) {
       pendingFrames: () => frames.length, pendingRN: () => rn.length,
       frame() { attachClip(); const next = frames.splice(0); for (const callback of next) callback(); flushUI(); },
       drainRN() { while (rn.length) rn.shift()!(); flushUI(); },
-      unmount() { for (const cleanup of cleanups) cleanup(); cleanups.clear(); reactions.clear(); },
+      cleanupLayoutEffects,
+      stopMappers() { reactions.clear(); },
+      replayLayoutEffects() {
+        cleanupLayoutEffects();
+        for (const effect of layoutEffects) {
+          effect.cleanup = effect.create() || undefined;
+          if (effect.cleanup) cleanups.add(effect.cleanup);
+        }
+        flushUI();
+      },
+      unmount() { cleanupLayoutEffects(); reactions.clear(); },
       style: (name: 'contentStyle' | 'artworkStyle' | 'controlsStyle') => (result[name] as unknown as { updater(): any }).updater(),
     };
   };
@@ -517,6 +539,48 @@ describe('mounted Apple Music artwork motion lifecycle', () => {
     assert.equal(w.bus.playerArtworkFlight.get(), freshFlight);
     assert.equal(w.bus.playerArtworkFlight.get().owner, fresh.owner);
     old.drainRN(); assert.deepEqual(old.finishes, []);
+  });
+
+  it('keeps the retired player content and native backdrop hidden between layout cleanup and passive mapper stop', () => {
+    for (const position of [.35, 0]) {
+      const w = world(); const h = w.mount({ fromMini: false }); h.offset.set(0);
+      h.result.beginClose(24); h.flushUI();
+      const staleDone = h.progress().animation?.done;
+      h.advance(h.progress(), position, position === 0); h.drainRN();
+      assert.equal(h.result.phase.get(), position === 0 ? 'handoff' : 'closing');
+      h.cleanupLayoutEffects();
+      assert.equal(h.style('contentStyle').opacity, 0,
+        'unmount must not restore the still-attached full player before its mappers stop');
+      assert.equal(h.style('artworkStyle').opacity, 0);
+      assert.equal(w.clips.at(-1)?.[6], 0,
+        'layout cleanup must not send a full-window alpha=1 update to the old native clip host');
+      assert.equal(w.bus.playerArtworkFlight.get(), null);
+      assert.equal(w.bus.playerUnderlayFrame.get(), null);
+      const retiredWrites = w.clips.length;
+      h.flushUI();
+      assert.equal(w.clips.length, retiredWrites, 'the hidden cleanup endpoint does not create an idle update loop');
+      staleDone?.(true); h.flushUI();
+      assert.equal(h.pendingRN(), 0, 'a retired close completion cannot queue a second route handoff');
+      assert.equal(h.result.beginClose(25), false);
+      h.stopMappers();
+    }
+  });
+
+  it('rearms a StrictMode layout-effect replay without keeping the new lifetime retired', () => {
+    const w = world(); const h = w.mount(); h.frame(); h.advance(h.progress(), .4);
+    assert.equal(h.result.phase.get(), 'opening');
+    h.replayLayoutEffects();
+    assert.equal(h.result.phase.get(), 'preparing');
+    assert.equal(h.style('contentStyle').opacity, 0);
+    h.frame();
+    assert.equal(h.result.phase.get(), 'opening');
+    assert.equal(w.bus.playerArtworkFlight.get()?.owner, h.owner);
+    h.advance(h.progress(), 1, true); h.drainRN();
+    assert.equal(h.result.phase.get(), 'idle');
+    assert.equal(h.style('contentStyle').opacity, 1);
+    assert.equal(h.style('artworkStyle').opacity, 1);
+    assert.equal(w.clips.at(-1)?.[6], 1);
+    assert.equal(h.render().entryReady, true);
   });
 
   it('drops a queued entry-ready update after unmount and stops queued measurement retries', () => {

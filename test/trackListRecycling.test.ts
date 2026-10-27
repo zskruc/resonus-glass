@@ -20,6 +20,7 @@ const turn = () => new Promise<void>((resolve) => queueMicrotask(resolve));
 // replacement key/ownership/index logic lives in this renderer.
 function hooks() {
   let cursor = 0;
+  let stateWrites = 0;
   const slots: any[] = [];
   const pending: (() => void)[] = [];
   const cleanups = new Set<() => void>();
@@ -50,6 +51,7 @@ function hooks() {
     useState: <T,>(value: T | (() => T)) => {
       const state = slot(() => ({ value: typeof value === 'function' ? (value as () => T)() : value }));
       return [state.value, (next: T | ((previous: T) => T)) => {
+        stateWrites++;
         state.value = typeof next === 'function' ? (next as (previous: T) => T)(state.value) : next;
       }];
     },
@@ -63,6 +65,7 @@ function hooks() {
   return {
     react,
     slot,
+    get stateWrites() { return stateWrites; },
     begin() { cursor = 0; },
     commit() { while (pending.length) pending.shift()!(); },
     unmount() { for (const cleanup of cleanups) cleanup(); cleanups.clear(); },
@@ -134,6 +137,15 @@ const songA = { id: 'A', title: 'Àlpha', artist: 'Singer', duration: 123, track
 const songB = { id: 'B', title: 'Beta', artist: 'Other', duration: 99, track: 2 };
 
 function list() {
+  const timings: { toValue: number; complete(finished?: boolean): void; stops: number }[] = [];
+  const listNative = { ...native, Animated: { ...native.Animated, timing: (_value: unknown, config: { toValue: number }) => {
+    let callback: ((result: { finished: boolean }) => void) | undefined;
+    const job = { toValue: config.toValue, stops: 0,
+      complete(finished = true) { callback?.({ finished }); },
+      start(next: typeof callback) { callback = next; },
+      stop() { this.stops++; callback?.({ finished: false }); } };
+    timings.push(job); return job;
+  } } };
   const runtime = hooks();
   const anim = animation(runtime);
   const played: number[] = [];
@@ -147,7 +159,7 @@ function list() {
     'expo-linear-gradient': { LinearGradient: 'Gradient' },
     'expo-router': { Link: 'Link', useRouter: () => ({ push() {}, back() {} }) },
     '@shopify/flash-list': { FlashList: 'FlashList' },
-    'react-native': native,
+    'react-native': listNative,
     'react-native-reanimated': anim.api,
     'react-native-worklets': { scheduleOnRN: (callback: (...args: any[]) => void, ...args: any[]) => callback(...args) },
     'react-native-gesture-handler': { ScrollView: 'GHScrollView', GestureDetector: 'GestureDetector', Gesture: { Pan() {
@@ -198,7 +210,9 @@ function list() {
   const row = (index: number) => find(recycler().props.renderItem({ item: recycler().props.data[index], index }), (node) => node.type === 'TrackRow')!;
   const search = () => find(recycler().props.ListHeaderComponent, (node) => node.type === 'TextInput')!;
   render();
-  return { render, recycler, row, search, played, removed, gestures, scrolls, dock,
+  return { render, recycler, row, search, played, removed, gestures, scrolls, dock, timings,
+    unmount: runtime.unmount, stateWrites: () => runtime.stateWrites,
+    material: () => find(recycler().props.ListHeaderComponent, (node) => node.type === 'GlassBackdrop'),
     detach() { if (typeof mountedRef === 'function') mountedRef(null); else if (mountedRef) mountedRef.current = null; },
     attach(instance: unknown) { if (typeof mountedRef === 'function') mountedRef(instance); else if (mountedRef) mountedRef.current = instance; },
     selectionBar: () => find(tree, (node) => node.type === 'SelectionBar')!,
@@ -476,6 +490,75 @@ describe('recycled shared playlist rendering and positions', () => {
     assert.equal(h.search().props.value, '');
     assert.equal(JSON.stringify(h.scrolls), '[{"offset":0,"animated":false}]');
     assert.equal(h.recycler().props.renderScrollComponent, stableHost);
+  });
+});
+
+describe('collapsed search material capture safety in the actual shared list', () => {
+  const reveal = (h: ReturnType<typeof list>) => {
+    h.gestures.at(-1).callbacks.onBegin();
+    h.gestures.at(-1).callbacks.onChange({ translationY: 70 });
+    h.render();
+  };
+  const cancel = (h: ReturnType<typeof list>) => {
+    h.search().props.onFocus(); h.render();
+    find(h.recycler().props.ListHeaderComponent, (node) => node.type === 'GlassPressable'
+      && node.props.children?.props.children === 'Cancel')!.props.onPress();
+    h.render();
+  };
+
+  it('keeps the native search consumer detached at zero height and retains identical material through both animations', () => {
+    const h = list();
+    assert.equal(h.material(), undefined, 'ordinary list scrolling must have no hidden enabled native search glass');
+    assert.ok(h.search(), 'the input and pull-to-reveal host retain their existing tree');
+    reveal(h);
+    assert.ok(h.material());
+    const opticalProps = { ...h.material()!.props };
+    const opening = h.timings.at(-1)!;
+    assert.ok(opening.toValue > 0);
+    opening.complete(); h.render();
+    assert.ok(h.material(), 'open search retains its material');
+    cancel(h);
+    const closing = h.timings.at(-1)!;
+    assert.equal(closing.toValue, 0);
+    assert.deepEqual({ ...h.material()!.props }, opticalProps, 'closing uses unchanged material parameters');
+    closing.complete(false); h.render();
+    assert.ok(h.material(), 'an interrupted animation cannot report zero height');
+    cancel(h); h.timings.at(-1)!.complete(); h.render();
+    assert.equal(h.material(), undefined, 'only completed collapse detaches the native consumer');
+    assert.equal(h.search().props.value, '');
+  });
+
+  it('rejects a queued old collapse completion after a new reveal and an ABA collapse', () => {
+    const h = list();
+    reveal(h); h.timings.at(-1)!.complete(); h.render();
+    cancel(h); const oldClose = h.timings.at(-1)!;
+    reveal(h); const newOpen = h.timings.at(-1)!;
+    assert.ok(oldClose.stops > 0);
+    oldClose.complete(); h.render();
+    assert.ok(h.material(), 'old finished callback cannot remove a newly opened material');
+    newOpen.complete(); h.render();
+    cancel(h); const newClose = h.timings.at(-1)!;
+    oldClose.complete(); h.render();
+    assert.ok(h.material(), 'ABA close has a different generation');
+    newClose.complete(); h.render();
+    assert.equal(h.material(), undefined);
+  });
+
+  it('stops the owner animation on unmount and ignores its queued completion and old reveal gesture', () => {
+    const h = list();
+    reveal(h); cancel(h);
+    const closing = h.timings.at(-1)!;
+    const oldGesture = h.gestures.at(-1);
+    h.unmount();
+    assert.ok(closing.stops > 0);
+    const writes = h.stateWrites();
+    closing.complete();
+    oldGesture.callbacks.onBegin(); oldGesture.callbacks.onChange({ translationY: 70 });
+    assert.equal(h.stateWrites(), writes, 'retired component cannot schedule material/reveal state');
+    const replacement = list();
+    reveal(replacement);
+    closing.complete(); replacement.render();
+    assert.ok(replacement.material(), 'an old owner cannot detach the new list material');
   });
 });
 

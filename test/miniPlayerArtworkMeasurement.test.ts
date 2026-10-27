@@ -13,6 +13,20 @@ type Element = { type: unknown; props: Record<string, any> };
 type Ref = (() => any) & { wrapper: object | null };
 const jsx = (type: unknown, props: object) => ({ type, props });
 const mutable = (value: any) => ({ value, get() { return this.value; }, set(next: any) { this.value = next; } });
+const plain = (value: unknown) => JSON.parse(JSON.stringify(value));
+function pathToRef(node: unknown, ref: Ref): Element[] | null {
+  if (Array.isArray(node)) {
+    for (const child of node) { const path = pathToRef(child, ref); if (path) return path; }
+    return null;
+  }
+  if (!node || typeof node !== 'object' || !('props' in node)) return null;
+  const element = node as Element;
+  if (element.props.ref === ref) return [element];
+  const child = pathToRef(element.props.children, ref);
+  return child ? [element, ...child] : null;
+}
+const staticStyle = (node: Element): Record<string, any> => Object.assign({},
+  ...(Array.isArray(node.props.style) ? node.props.style : [node.props.style]).filter((style: any) => style && !style.read));
 
 function harness(options: { amPlus?: boolean; rtl?: boolean; progress?: number; compact?: boolean; hasSearch?: boolean } = {}) {
   let cursor = 0;
@@ -103,7 +117,7 @@ test('installed native measure still reproduces the null ShadowNode crash guarde
   assert.throws(() => boundary.measure(() => null), /native measure requires a ShadowNode object/);
 });
 
-test('the actual MiniPlayer first UI reaction skips null refs and its real onLayout measures after both attach', () => {
+test('the actual MiniPlayer skips unattached refs, then its real ghost onLayout publishes native-rounded resting coordinates', () => {
   const h = harness();
   assert.doesNotThrow(() => h.flushUI());
   assert.equal(h.nativeCalls.length, 0);
@@ -116,25 +130,32 @@ test('the actual MiniPlayer first UI reaction skips null refs and its real onLay
   const metrics = JSON.parse(JSON.stringify(h.bus.miniArtworkMetrics.get()));
   assert.deepEqual(metrics, { viewportWidth: 400, viewportHeight: 800,
     miniPlayer: { x: 16, y: 700, width: 368, height: 48, cornerRadius: 24 },
-    miniArtwork: { x: 32, y: 709, width: 30, height: 30, cornerRadius: 4 },
-    restingArtwork: { x: 32, y: 709, width: 30, height: 30, cornerRadius: 4 } });
+    miniArtwork: { x: 32, y: 709, width: 30, height: 30, cornerRadius: 4 } });
+  assert.equal(h.refs.length, 3);
+  const rest = { x: 32.2666666667, y: 709.0666666667, width: 29.8666666667, height: 30.1333333333, cornerRadius: 4 };
+  h.attach(2, { pageX: rest.x, pageY: rest.y, width: rest.width, height: rest.height });
+  pathToRef(h.tree, h.refs[2])!.at(-1)!.props.onLayout();
+  assert.equal(h.nativeCalls.length, 5);
+  assert.deepEqual(plain(h.bus.miniArtworkMetrics.get().restingArtwork), rest,
+    'the measured leaf, including physical pixel rounding, must replace nominal 30dp math');
   h.refs[0].wrapper = null;
   h.tree.props.onLayout();
-  assert.equal(h.nativeCalls.length, 2, 'a detached frame cannot pass null to native measure');
+  assert.equal(h.nativeCalls.length, 5, 'a detached frame cannot pass null to native measure');
 });
 
 test('actual AM++ press and horizontal swipe keep painted entry measurements separate from the resting return endpoint', () => {
   const h = harness({ amPlus: true });
   h.attach(0, { pageX: 16, pageY: 700, width: 368, height: 43 });
-  const rest = { x: 32, y: 706.5, width: 30, height: 30, cornerRadius: 4 };
+  const rest = { x: 32.2666666667, y: 706.4, width: 29.8666666667, height: 30.1333333333, cornerRadius: 4 };
   h.attach(1, { pageX: rest.x, pageY: rest.y, width: rest.width, height: rest.height });
+  h.attach(2, { pageX: rest.x, pageY: rest.y, width: rest.width, height: rest.height });
   h.tree.props.onLayout();
   assert.deepEqual(JSON.parse(JSON.stringify(h.bus.miniArtworkMetrics.get().restingArtwork)), rest);
 
   // Execute the production pan callbacks, then supply native measure's painted
   // coordinates including that ancestor scale and the cover's horizontal swipe.
   h.gestures.onBegin({ x: 100, y: 20 });
-  const card = h.tree.props.children.props.children as Element;
+  const card = pathToRef(h.tree, h.refs[1])![2];
   const cardStyle = card.props.style.find((style: any) => style?.read).read();
   const scaleX = cardStyle.transform.find((item: any) => 'scaleX' in item).scaleX;
   assert.equal(scaleX, 1 + 4 / 43, 'the real press spring still scales the painted mini');
@@ -149,7 +170,7 @@ test('actual AM++ press and horizontal swipe keep painted entry measurements sep
   assert.deepEqual(metrics.miniPlayer, { x: 16, y: 700, width: 368, height: 43, cornerRadius: 21.5 });
 });
 
-test('resting artwork follows physical compact travel and logical cover placement in LTR and RTL', () => {
+test('the resting ghost mirrors the real image Yoga hierarchy and compact travel in LTR and RTL without copying press or swipe motion', () => {
   for (const rtl of [false, true]) {
     for (const hasSearch of [false, true]) {
       for (const p of [0, .4, 1]) {
@@ -158,17 +179,55 @@ test('resting artwork follows physical compact travel and logical cover placemen
         // This intentionally stale, deformed native picture cannot define the
         // resting rectangle, including while compact layout is interpolating.
         h.attach(1, { pageX: 150, pageY: 720, width: 32.79, height: 32.79 });
+        const rest = { x: rtl ? 315.4666666667 : 77.0666666667, y: 709.0666666667,
+          width: 30.1333333333, height: 29.8666666667, cornerRadius: 4 };
+        h.attach(2, { pageX: rest.x, pageY: rest.y, width: rest.width, height: rest.height });
         h.tree.props.onLayout();
         const metrics = JSON.parse(JSON.stringify(h.bus.miniArtworkMetrics.get()));
-        const compactLeading = rtl && !hasSearch ? 0 : 56;
-        const logicalStart = 16 + (compactLeading + 10 - 16) * p;
-        const expectedX = 16 + (rtl ? 368 - logicalStart - 30 : logicalStart);
-        assert.deepEqual(metrics.restingArtwork,
-          { x: expectedX, y: 709, width: 30, height: 30, cornerRadius: 4 },
-          `resting coordinates must resolve logical start once (rtl=${rtl}, search=${hasSearch}, p=${p})`);
+        assert.deepEqual(metrics.restingArtwork, rest,
+          `resting coordinates come from native layout (rtl=${rtl}, search=${hasSearch}, p=${p})`);
         assert.equal(metrics.miniPlayer.x, 16 + 56 * p);
         assert.equal(metrics.miniPlayer.width, 368 - (hasSearch ? 112 : 56) * p);
+
+        const actual = pathToRef(h.tree, h.refs[1])!;
+        const ghost = pathToRef(h.tree, h.refs[2])!;
+        // GestureDetector contributes no Yoga box. Every following real layout
+        // box has a matching untransformed ghost box, avoiding a different
+        // sequence of per-parent physical-pixel rounding.
+        const realBoxes = actual.filter((node) => node.type !== 'GestureDetector');
+        assert.equal(ghost.length, realBoxes.length);
+        for (let index = 1; index < ghost.length - 1; index++) {
+          const realStyle = staticStyle(realBoxes[index]), ghostStyle = staticStyle(ghost[index]);
+          for (const key of index === 1 ? ['width', 'height'] : ['start', 'left', 'right', 'top', 'bottom', 'width', 'height']) {
+            assert.equal(ghostStyle[key], realStyle[key], `layout box ${index} ${key} must match`);
+          }
+        }
+        assert.equal(staticStyle(ghost[1]).position, 'absolute');
+        assert.equal(staticStyle(ghost[1]).top, 0);
+        assert.equal(ghost[1].props.pointerEvents, 'none');
+        assert.equal(ghost[1].props.importantForAccessibility, 'no-hide-descendants');
+        assert.deepEqual(plain(staticStyle(ghost.at(-1)!)), { width: 30, height: 30 });
+        const realMotion = realBoxes.at(-2)!.props.style.at(-1);
+        assert.equal(ghost.at(-2)!.props.style.at(-1), realMotion, 'both artwork frames share the actual logical cover travel worklet');
+        assert.equal(ghost[1].props.style.some((style: any) => style?.read), false, 'card press deformation is outside the measured ghost');
+        assert.equal(ghost.at(-1)!.props.style.read, undefined, 'cover swipe motion is outside the measured ghost');
       }
     }
   }
+});
+
+test('missing, detached and zero-size resting leaves retain actual entry geometry without sending null to native measure', () => {
+  const h = harness();
+  h.attach(0, { pageX: 16, pageY: 700, width: 368, height: 48 });
+  h.attach(1, { pageX: 31, pageY: 708, width: 32.79, height: 32.79 });
+  for (const zero of [false, true]) {
+    if (zero) h.attach(2, { pageX: 0, pageY: 0, width: 0, height: 0 });
+    assert.doesNotThrow(() => h.tree.props.onLayout());
+    const metrics = h.bus.miniArtworkMetrics.get();
+    assert.equal(metrics.restingArtwork, undefined);
+    assert.equal(metrics.miniArtwork.width, 32.79);
+  }
+  h.refs[2].wrapper = null;
+  assert.doesNotThrow(() => h.tree.props.onLayout());
+  assert.equal(h.bus.miniArtworkMetrics.get().restingArtwork, undefined);
 });

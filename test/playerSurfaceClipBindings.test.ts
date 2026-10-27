@@ -13,12 +13,17 @@ const compiled = ts.transpileModule(readFileSync(new URL('../modules/liquid-glas
 
 // Run the actual production module and wrappers. Only Expo/native lookup and
 // JSX are mocked; binding and availability policy come from index.tsx itself.
-function load({ platform = 'android', clipApi = true, glassSupported = true } = {}) {
+function load({ platform = 'android', clipApi = true, glassSupported = true, traceApi = clipApi }: {
+  platform?: string; clipApi?: boolean; glassSupported?: boolean; traceApi?: boolean;
+} = {}) {
   const requested: Binding[] = [];
   const bindings = new Map<string | undefined, Binding>();
   const updatePlayerSurfaceClip = () => {};
+  const traceCalls: boolean[] = [];
+  const setPlayerTransitionTrace = (enabled: boolean) => { traceCalls.push(enabled); };
   let lookups = 0;
-  const native = { isSupported: glassSupported, ...(clipApi ? { updatePlayerSurfaceClip } : {}) };
+  const native = { isSupported: glassSupported, ...(clipApi ? { updatePlayerSurfaceClip } : {}),
+    ...(traceApi ? { setPlayerTransitionTrace } : {}) };
   const react = { forwardRef: (render: (props: object, ref: unknown) => Element) =>
     (props: object) => render(props, null) };
   const exports: Record<string, any> = {};
@@ -37,10 +42,23 @@ function load({ platform = 'android', clipApi = true, glassSupported = true } = 
     };
     assert.fail(`Unexpected surface-clip runtime import: ${name}`);
   } });
-  return { api: exports, bindings, requested, updatePlayerSurfaceClip, lookups: () => lookups };
+  return { api: exports, bindings, requested, updatePlayerSurfaceClip, setPlayerTransitionTrace, traceCalls,
+    lookups: () => lookups };
 }
 
 describe('background-only player clip binding', () => {
+  it('exports trace opt-in without enabling it at module load, retaining compatibility with earlier APKs', () => {
+    const h = load();
+    assert.equal(h.api.setPlayerTransitionTrace, h.setPlayerTransitionTrace);
+    assert.deepEqual(h.traceCalls, [], 'loading player/glass must never enable diagnostic logging');
+    h.api.setPlayerTransitionTrace(true); h.api.setPlayerTransitionTrace(false);
+    assert.deepEqual(h.traceCalls, [true, false]);
+    const older = load({ traceApi: false });
+    assert.equal(older.api.setPlayerTransitionTrace, null);
+    assert.equal(older.api.isNativePlayerSurfaceClipAvailable, true);
+    assert.equal(older.api.LiquidGlassView({}).type, older.bindings.get(undefined));
+    assert.equal(load({ platform: 'web' }).api.setPlayerTransitionTrace, null);
+  });
   it('keeps Glass/tabs on the original default binding and existing controls on their named views', () => {
     const h = load();
     const glass = h.api.LiquidGlassView({ materialPreset: 'amPlus', dark: true, refraction: 24 }) as Element;

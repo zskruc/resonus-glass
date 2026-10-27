@@ -319,6 +319,7 @@ export function TrackListView({
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  const [searchMaterialMounted, setSearchMaterialMounted] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [descriptionHasMore, setDescriptionHasMore] = useState(false);
   const [searchH] = useState(() => new Animated.Value(0));
@@ -328,19 +329,51 @@ export function TrackListView({
   // and several would pass the `!revealed` guard before the re-render, each
   // triggering haptic. The ref updates instantly and stops the rest.
   const revealedRef = useRef(false);
+  const searchMotionOwner = useRef({
+    active: true, generation: 0, animation: null as Animated.CompositeAnimation | null,
+  });
+  useLayoutEffect(() => {
+    const owner = searchMotionOwner.current;
+    owner.active = true;
+    return () => {
+      owner.active = false;
+      owner.generation++;
+      owner.animation?.stop();
+      owner.animation = null;
+    };
+  }, []);
+
+  function animateSearchBar(toValue: number) {
+    const owner = searchMotionOwner.current;
+    if (!owner.active) return;
+    const generation = ++owner.generation;
+    owner.animation?.stop();
+    // A collapsed search field must not leave an enabled native material
+    // inside the list's capture source. Retain it through BOTH directions of
+    // the height animation, then detach only this owner's finished close.
+    setSearchMaterialMounted(true);
+    const animation = Animated.timing(searchH, { toValue, duration: motion.duration.fade, useNativeDriver: false });
+    owner.animation = animation;
+    animation.start(({ finished }) => {
+      if (!owner.active || generation !== owner.generation) return;
+      owner.animation = null;
+      if (finished && toValue === 0) setSearchMaterialMounted(false);
+    });
+  }
 
   function revealSearchBar() {
-    if (revealedRef.current) return;
+    if (!searchMotionOwner.current.active || revealedRef.current) return;
     revealedRef.current = true;
     haptic('light');
     setRevealed(true);
-    Animated.timing(searchH, { toValue: SEARCH_H, duration: motion.duration.fade, useNativeDriver: false }).start();
+    animateSearchBar(SEARCH_H);
   }
 
   function collapseSearchBar() {
+    if (!searchMotionOwner.current.active) return;
     revealedRef.current = false;
     setRevealed(false);
-    Animated.timing(searchH, { toValue: 0, duration: motion.duration.fade, useNativeDriver: false }).start();
+    animateSearchBar(0);
   }
 
   // Only the search state transition reaches JS; header and dock scrolling
@@ -613,7 +646,7 @@ export function TrackListView({
               <Animated.View style={[styles.searchClip, { height: searchH }]}>
               <View style={styles.searchRow}>
                 <View collapsable={false} style={styles.searchBox}>
-                  <GlassBackdrop radius={radius.pill} tint={colors.highlight} variant="regular" />
+                  {searchMaterialMounted ? <GlassBackdrop radius={radius.pill} tint={colors.highlight} variant="regular" /> : null}
                   <Icon name="search" size={18} color={colors.textSecondary} />
                   <TextInput
                     style={styles.searchInput}

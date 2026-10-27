@@ -9,6 +9,8 @@ class LiquidGlassModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("ResonusLiquidGlass")
     Constant("isSupported") { Build.VERSION.SDK_INT >= Build.VERSION_CODES.S }
+    Function("setPlayerTransitionTrace") { enabled: Boolean -> PlayerTransitionTrace.configure(enabled) }
+    OnDestroy { PlayerTransitionTrace.configure(false) }
     AsyncFunction("getDiagnostics") {
       WindowBackdrops.diagnostics() + TabsMotionHosts.diagnostics()
     }.runOnQueue(Queues.MAIN)

@@ -116,7 +116,8 @@ const nativeModule = Platform.OS === 'android'
   ? requireOptionalNativeModule<{ isSupported: boolean; getDiagnostics(): Promise<LiquidGlassDiagnostics>;
     updateTabsMotion: UpdateTabsMotion; updateDockProgress: UpdateDockProgress;
     updateButtonMotion: UpdateButtonMotion; readDockScrollIntent: ReadDockScrollIntent;
-    expandDockScrollInput: ExpandDockScrollInput; updatePlayerSurfaceClip?: UpdatePlayerSurfaceClip }>('ResonusLiquidGlass')
+    expandDockScrollInput: ExpandDockScrollInput; updatePlayerSurfaceClip?: UpdatePlayerSurfaceClip;
+    setPlayerTransitionTrace?: (enabled: boolean) => void }>('ResonusLiquidGlass')
   : null;
 
 export const isLiquidGlassAvailable = Boolean(nativeModule?.isSupported);
@@ -128,6 +129,8 @@ export const updateNativeButtonMotion = nativeModule?.updateButtonMotion ?? null
 export const readNativeDockScrollIntent = nativeModule?.readDockScrollIntent ?? null;
 export const expandNativeDockScrollInput = nativeModule?.expandDockScrollInput ?? null;
 export const updateNativePlayerSurfaceClip = nativeModule?.updatePlayerSurfaceClip ?? null;
+/** Opt-in bounded geometry diagnostics; the native default is disabled. */
+export const setPlayerTransitionTrace = nativeModule?.setPlayerTransitionTrace ?? null;
 export const isNativePlayerSurfaceClipAvailable = updateNativePlayerSurfaceClip !== null;
 
 export type PlayerSurfaceClipViewProps = ViewProps & {

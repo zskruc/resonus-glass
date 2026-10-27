@@ -424,6 +424,65 @@ describe('favorite state in a recycled song row', () => {
 });
 
 describe('cover state in a recycled song row', () => {
+  it('reports current decoded image dimensions through opt-in metadata while retaining the legacy animation callback', () => {
+    const h = artwork();
+    const metadata: unknown[][] = [];
+    h.render({ uri: 'https://covers/wide', size: 48, transition: 0,
+      onImageMetadata: (...args: unknown[]) => metadata.push(args),
+      onAnimatedDetected: (...args: unknown[]) => h.detected.push(args) });
+    assert.equal(h.tree().key, 'https://covers/wide:0', 'metadata opt-in isolates the native source event target without a row resetKey');
+    h.tree().props.onLoad({ source: { width: 600, height: 400, isAnimated: true } });
+    assert.deepEqual(JSON.parse(JSON.stringify(metadata)),
+      [['https://covers/wide', { width: 600, height: 400, isAnimated: true }]]);
+    assert.deepEqual(h.detected, [['https://covers/wide', true]]);
+    assert.equal(h.displayed(), 0, 'load metadata does not pretend that native display has completed');
+    h.tree().props.onDisplay();
+    assert.equal(h.displayed(), 1);
+  });
+
+  it('rejects invalid metadata dimensions without suppressing the existing animation notification', () => {
+    const h = artwork();
+    const metadata: unknown[][] = [];
+    h.render({ uri: 'https://covers/A', size: 48,
+      onImageMetadata: (...args: unknown[]) => metadata.push(args),
+      onAnimatedDetected: (...args: unknown[]) => h.detected.push(args) });
+    for (const bad of [0, -1, NaN, Infinity, undefined, null]) {
+      h.tree().props.onLoad({ source: { width: bad, height: 400, isAnimated: false } });
+      h.tree().props.onLoad({ source: { width: 600, height: bad, isAnimated: false } });
+    }
+    assert.equal(metadata.length, 0);
+    assert.equal(h.detected.length, 12, 'legacy animation detection does not require dimension metadata');
+    h.tree().props.onLoad({ source: { width: 29.8666666667, height: 30.1333333333 } });
+    assert.deepEqual(JSON.parse(JSON.stringify(metadata)),
+      [['https://covers/A', { width: 29.8666666667, height: 30.1333333333, isAnimated: false }]],
+      'valid native dimensions are forwarded unchanged instead of rounded or replaced with the view size');
+  });
+
+  it('rejects metadata from old A, B, repeated-A and unmounted bindings while keeping ordinary cover keys stable', () => {
+    const h = artwork();
+    const metadata: unknown[][] = [];
+    const report = (...args: unknown[]) => metadata.push(args);
+    const aProps = { uri: 'https://covers/A', size: 48, onImageMetadata: report };
+    h.render(aProps); const firstA = h.tree();
+    h.render({ ...aProps, uri: 'https://covers/B' }); const b = h.tree();
+    assert.notEqual(b.key, firstA.key);
+    h.render(aProps); const secondA = h.tree();
+    const event = { source: { width: 600, height: 400, isAnimated: false } };
+    firstA.props.onLoad(event); b.props.onLoad(event);
+    assert.equal(metadata.length, 0, 'an equal URI does not revive the first A ownership lifetime');
+    secondA.props.onLoad(event);
+    assert.deepEqual(JSON.parse(JSON.stringify(metadata)),
+      [['https://covers/A', { width: 600, height: 400, isAnimated: false }]]);
+    h.unmount(); secondA.props.onLoad(event);
+    assert.equal(metadata.length, 1);
+
+    const legacy = artwork();
+    legacy.render({ uri: 'https://covers/A', size: 48 }); const oldKey = legacy.tree().key;
+    legacy.render({ uri: 'https://covers/B', size: 48 });
+    assert.equal(legacy.tree().key, oldKey, 'ordinary non-recycled callers retain their prior native-key behavior');
+    legacy.unmount();
+  });
+
   it('shows B image in its first render without inheriting A failure or running a reset effect', () => {
     const h = artwork();
     h.tree().props.onError(); h.render();

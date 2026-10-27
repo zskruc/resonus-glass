@@ -1,16 +1,34 @@
 # AMLL 播放器预览 / AMLL player preview
 
-`0.8.4.1-amll.15` · Android `versionCode 97` · `preview/amll-player`
+`0.8.4.1-amll.17` · Android `versionCode 99` · `preview/amll-player`
 
-## 当前 `.15` / Current `.15`
+## 当前 `.17` / Current `.17`
 
-ARM64 APK 已构建并核对原签名；558 项应用测试、125 项原生测试、类型与翻译检查通过，lint 为 0 错误、117 项警告；按用户要求只构建、不安装，待重新连接后实机验证。`.14` 已安装并确认白条及主控制区模式按钮移除，本次已缓存 AllMusic 较快显示出歌曲行；用户仍不接受 Mini 收回抖动。不能将此前基础检查当作 `.15` 的视觉、持续帧率、长列表或全场景验收。转场仍沿用 f728743/AppleMusicStylePlayer 的共享封面与独立背景裁切，详见 [Apple Music 转场说明](./APPLE-MUSIC-TRANSITION.md)。
+`.17` 当前构建已在三星设备上以同包名、原签名覆盖安装。574 项应用测试、139 项原生测试、类型与翻译检查通过；lint 为 0 错误、117 项警告。以下定量结果来自此前 `.17` 诊断构建，不代表全部页面、长期运行或持续帧率验收；包含 Search 修复的最终包仍待复测。转场继续采用 f728743/AppleMusicStylePlayer 的共享封面与独立背景裁切，详见 [Apple Music 转场说明](./APPLE-MUSIC-TRANSITION.md)。
 
-The ARM64 APK is built and its original signature is verified. All 558 app tests, 125 native tests, typechecking and translation checks pass; lint reports zero errors and 117 warnings. The user requested a build without installation; device checks await reconnection. `.14` is installed: handle/mode-button removal was confirmed, and cached AllMusic promptly displayed track rows in this run. Mini return jitter remains rejected. Earlier basic checks do not establish `.15` appearance, sustained frame rate, long-list or all-scenario acceptance. The f728743/AppleMusicStylePlayer shared-artwork and independent-background structure remains; see the [transition guide](./APPLE-MUSIC-TRANSITION.md).
+The current `.17` build is installed on the Samsung device with the same package and original signing certificate. All 574 app tests, 139 native tests, typechecking and translation checks pass; lint reports zero errors and 117 warnings. The quantitative observations below come from the earlier `.17` diagnostic build and do not establish acceptance of every page, long sessions or sustained frame rates. The final build containing the Search correction still awaits another measurement. The f728743/AppleMusicStylePlayer shared-artwork and separate-background structure remains; see the [transition guide](./APPLE-MUSIC-TRANSITION.md).
 
-`.15` 的关闭封面以排除按压／横滑变形的 `restingArtwork` 为目标；入场反向关闭重新计算端点并保持当前画面连续。开启跑马灯时，Mini 保留同一 Marquee 树，独立 `active` 暂停时钟并保留 offset，返回时续播。这两项修复待实机确认，以下 `.14` 五项修改继续保留。
+Mini 的退出目标改为在按压与横滑变形之外测量的空封面锚点，保留 Yoga 的实际像素取整；入场仍读取当前已绘制封面。共享封面补齐图像比例与裁切交接。在本次三次收合录像中，端点图像配准的估计缩放为 `0.9925`、水平与垂直平移均为 `0`；`.16` 对应缩放为 `1.1225`。这消除了本次可见的大幅裁切跳变，但不表示像素完全相同；独立解码、缩放与重采样仍可能留下静态差异。
 
-`.15` closes artwork toward `restingArtwork`, excluding press/swipe deformation; reversing an opening rebases its endpoints without interrupting the painted pose. With marquee titles enabled, Mini retains one Marquee tree, with independent `active` control pausing the clock at its current offset and resuming on return. Both corrections await device confirmation; the five `.14` changes below remain.
+Mini now measures its resting artwork from an empty layout anchor outside press/swipe deformation, preserving Yoga's actual pixel rounding; entry still measures the currently painted cover. Shared artwork also accounts for image aspect and crop handoff. Across three recorded closes, endpoint image registration estimated scale `0.9925` with zero horizontal/vertical shift, versus `1.1225` for `.16`. The large crop change was absent in these samples; independent decoding, scaling and resampling can still produce static pixel differences.
+
+本次三个交接窗口内，同一底栏像素区域的标准差为 `23.75–23.90`，连续帧平均绝对像素差最大为 `0.59`；没有重现 `.16` 某次标准差升至 `41.95` 的单帧闪变。这些区域测量只描述所检查的交接片段，不等于全局无抖动或用户最终视觉验收。
+
+In the three handoff windows, the same tab-region pixel standard deviation stayed at `23.75–23.90`, with maximum consecutive-frame mean absolute pixel difference `0.59`. The single-frame excursion to `41.95` seen once in `.16` did not recur in these samples. These region measurements describe only the inspected handoffs, not globally jitter-free rendering or final visual acceptance.
+
+有效 All Music 滚动采样覆盖约 8 秒，手势工作量为 45 次快速滑动。924 个应用 Surface 帧中有 10 次 `App Deadline Missed / Late Present`；关联显示帧间隔中位数为 `8.32ms`，P99 为 `16.64ms`、最大 `24.97ms`。943 个完整 UI 帧中，80 个超过 `8.33ms`，其中一个超过 `16.67ms`。这不是全局或长期 120fps 承诺，也不能用错误页面的 `.16` 采样计算改善幅度。采样时隐藏的 Search 玻璃仍阻挡 direct 路径，部分绘制继续走离屏图像管线；最小修复后的路径尚待复测，当前结果不能代表它的最终性能。
+
+A valid All Music scroll capture covers about eight seconds of a 45-swipe workload. Of 924 application Surface frames, 10 report `App Deadline Missed / Late Present`; mapped display-frame intervals have median `8.32ms`, P99 `16.64ms` and maximum `24.97ms`. Of 943 completed outer UI frames, 80 exceed `8.33ms`, including one over `16.67ms`. This does not promise global or sustained 120fps, and the wrong-page `.16` capture cannot serve as a comparison baseline. Hidden Search glass still blocked the direct path during this capture, leaving some draws on the offscreen image pipeline. The minimal correction awaits another measurement; these results do not establish its final performance.
+
+最终 `.17` 构建已移除临时自动开启转场记录的行为；日志、图像和录像仅保存在本地，不作为公开文档附件。
+
+Automatic transition tracing has been removed from the final `.17` build. Logs, images and recordings remain local and are not attached to the public documentation.
+
+## `.14`–`.16` 保留的改动 / Retained `.14`–`.16` changes
+
+`.15` 引入不含按压／横滑变形的 `restingArtwork` 目标与入场反向关闭的连续端点计算；`.17` 再将名义尺寸计算替换为实际布局测量。开启跑马灯时，Mini 保留同一 Marquee 树，独立 `active` 暂停时钟并保留 offset，返回时续播。关闭卸载期间保持旧播放器隐藏，避免在动画监听停止前恢复完整背景。
+
+`.15` introduced a resting artwork destination and continuous endpoint rebasing when an opening reverses; `.17` replaces nominal dimensions with real layout measurement. With marquee titles enabled, Mini retains one Marquee tree and pauses its clock at the existing offset through independent `active` state. During close cleanup the outgoing player remains hidden until its animation observers stop.
 
 保留 `.14` 的播放／歌词页白条移除，保留原高度、顶部下拉、系统返回与封面的无障碍关闭；主控制区仅保留原位置的三个播放按钮，随机／循环模式仍可从菜单设置。底栏在来源 scope 恢复前保留已绘制进度，并保留来源选中透明度。
 
@@ -48,9 +66,9 @@ See the source/license boundaries below, [performance evidence](./PLAYLIST-SCROL
 
 `0.8.4.1-amll.9` · Android `versionCode 91` · `preview/amll-player`
 
-当时 `.9` APK 已构建并核对原签名，425 项应用测试、113 项玻璃模块测试及两组原生方法回归通过；该阶段尚未安装。这是历史状态，当前构建与实机范围以上方 `.15` 及其链接说明为准。
+当时 `.9` APK 已构建并核对原签名，425 项应用测试、113 项玻璃模块测试及两组原生方法回归通过；该阶段尚未安装。这是历史状态，当前构建与实机范围以上方 `.17` 及其链接说明为准。
 
-At that stage the `.9` APK was built with the original certificate; 425 app tests, 113 glass-module tests and both native-method harnesses passed, with installation still pending. This is historical status; the `.15` section and linked guide above describe the current build and validation boundary.
+At that stage the `.9` APK was built with the original certificate; 425 app tests, 113 glass-module tests and both native-method harnesses passed, with installation still pending. This is historical status; the `.17` section and linked guide above describe the current build and validation boundary.
 
 `.9` 的 Player 页可在状态栏下方、大封面上方整片区域下拉退出；歌词页可从顶部小封面、歌曲名与创作者区域下拉，原有阈值保持不变。横屏与短屏按可见标题区域判断，歌词、滑条和控制按钮区域不作为返回手势入口。子页面底栏的来源选项卡继续显示主题色和选中态。
 

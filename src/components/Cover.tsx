@@ -30,6 +30,12 @@ export function useCoverRadius(size: number): number {
   return coverRadius(useSettings((s) => s.coverCorners), size);
 }
 
+export interface CoverImageMetadata {
+  width: number;
+  height: number;
+  isAnimated: boolean;
+}
+
 interface Props {
   uri?: string;
   /** Recycled list binding; resets local image errors without remounting. */
@@ -62,6 +68,8 @@ interface Props {
    * back with it because by then the song may have changed.
    */
   onAnimatedDetected?: (uri: string, isAnimated: boolean) => void;
+  /** Intrinsic decoder dimensions, bound to this exact URI/native image request. */
+  onImageMetadata?: (uri: string, metadata: CoverImageMetadata) => void;
 }
 
 /**
@@ -324,6 +332,7 @@ export function Cover({
   preferStatic,
   style,
   onAnimatedDetected,
+  onImageMetadata,
 }: Props) {
   // A recycled row must render the new artwork immediately, rather than keep
   // the old error placeholder until a passive effect has reset a boolean.
@@ -400,7 +409,7 @@ export function Cover({
       // native image when a recycled slot changes source, so a delayed event
       // cannot be delivered to another source's newest React callback. Covers
       // from the same album keep the image; the row and its hooks still recycle.
-      key={resetKey === undefined ? redraw.nonce : `${shown}:${redraw.nonce}`}
+      key={resetKey === undefined && !onImageMetadata ? redraw.nonce : `${shown}:${redraw.nonce}`}
       ref={imageRef}
       source={{ uri: shown }}
       style={[{ width: size, height: size, borderRadius }, style as StyleProp<ImageStyle>]}
@@ -420,6 +429,10 @@ export function Cover({
       onLoad={(e) => {
         if (currentBinding.current !== binding) return;
         if (onAnimatedDetected && uri) onAnimatedDetected(uri, !!e.source?.isAnimated);
+        const { width, height, isAnimated } = e.source;
+        if (onImageMetadata && uri && Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) {
+          onImageMetadata(uri, { width, height, isAnimated: !!isAnimated });
+        }
       }}
       // expo-image defaults to 'disk', which keeps the file but not the decoded
       // image: scrolling a list back up decoded every cover again. Covers are

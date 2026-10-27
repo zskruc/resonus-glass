@@ -102,6 +102,7 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
   const compactCoverStart = geometry.miniLogicalLeadingSpace + 10;
   const frameRef = useAnimatedRef<View>();
   const artworkRef = useAnimatedRef<Animated.View>();
+  const restingArtworkRef = useAnimatedRef<Animated.View>();
   const recordArtwork = useCallback(() => {
     'worklet';
     // Reanimated's Fabric ref starts as null, while measure() only rejects -1.
@@ -109,17 +110,18 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
     if (!frameRef() || !artworkRef()) return;
     const frame = measure(frameRef);
     const picture = measure(artworkRef);
+    const resting = restingArtworkRef() ? measure(restingArtworkRef) : null;
     if (!frame || !picture || picture.width <= 0 || picture.height <= 0) return;
     const p = visualProgress.get();
-    const restingStart = expandedCoverStart + (compactCoverStart - expandedCoverStart) * p;
     miniArtworkMetrics.set({ viewportWidth: screenW, viewportHeight: screenH,
       miniPlayer: { x: frame.pageX + geometry.miniPhysicalOffsetX * p, y: frame.pageY,
         width: fullWidth + (compactWidth - fullWidth) * p, height: miniHeight, cornerRadius: miniHeight / 2 },
       miniArtwork: { x: picture.pageX, y: picture.pageY, width: picture.width, height: picture.height, cornerRadius: 4 },
-      restingArtwork: { x: frame.pageX + (rtl ? fullWidth - restingStart - 30 : restingStart),
-        y: frame.pageY + (miniHeight - 30) / 2, width: 30, height: 30, cornerRadius: 4 },
+      restingArtwork: resting && resting.width > 0 && resting.height > 0
+        ? { x: resting.pageX, y: resting.pageY, width: resting.width, height: resting.height, cornerRadius: 4 }
+        : undefined,
     });
-  }, [frameRef, artworkRef, visualProgress, geometry.miniPhysicalOffsetX, screenW, screenH, fullWidth, compactWidth, miniHeight, expandedCoverStart, compactCoverStart, rtl]);
+  }, [frameRef, artworkRef, restingArtworkRef, visualProgress, geometry.miniPhysicalOffsetX, screenW, screenH, fullWidth, compactWidth, miniHeight]);
   useAnimatedReaction(() => visualProgress.get(), () => { recordArtwork(); });
   // Minimized navigation sits physically left and Search sits right;
   // foreground offsets still follow React Native's logical text direction.
@@ -370,6 +372,21 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
   return (
     <View ref={frameRef} collapsable={false} onLayout={() => scheduleOnUI(recordArtwork)} pointerEvents="box-none"
       style={[styles.frame, { height: miniHeight, marginStart: baseMargin, marginEnd: baseMargin }]}>
+      {/* Mirror the image's Yoga hierarchy outside press/swipe transforms.
+          Native measurement preserves the exact physical-pixel rounding. */}
+      <View collapsable={false} pointerEvents="none" accessible={false} accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants" style={[styles.card, { position: 'absolute', top: 0, height: miniHeight }]}>
+        <View collapsable={false}
+          style={[styles.hitArea, { start: targetStart, width: targetWidth, height: miniHeight }]}>
+          <Animated.View collapsable={false} style={styles.details}>
+            <Animated.View collapsable={false}
+              style={[styles.artwork, { start: targetCoverStart, top: (miniHeight - 30) / 2 }, coverMotion]}>
+              <Animated.View ref={restingArtworkRef} collapsable={false}
+                onLayout={() => scheduleOnUI(recordArtwork)} style={{ width: 30, height: 30 }} />
+            </Animated.View>
+          </Animated.View>
+        </View>
+      </View>
       <GestureDetector gesture={pan}>
         <Animated.View pointerEvents="box-none" collapsable={false} style={[styles.card, { height: miniHeight }, cardStyle]}>
           {/* Native material morphs inside fixed bounds. It must not inherit

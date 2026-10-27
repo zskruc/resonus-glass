@@ -1,37 +1,73 @@
 # Apple Music 风格播放器转场 / Apple Music style player transition
 
-## 当前状态 / Current status
+## 当前 `.17` 状态 / Current `.17` status
 
-`.15` / Android `versionCode 97` 的 ARM64 APK 已构建并核对原签名。558 项应用测试、
-125 项原生测试、类型与翻译检查通过；lint 为 0 错误、117 项警告。用户明确要求先构建、不安装，实机验收待重新连接后进行。
-`.14` 已安装，顶部白条及主控制区模式按钮移除已确认；已缓存 AllMusic 本次首屏
-较快显示出歌曲行；未取得严格的点击端到端计时。Mini 收回抖动仍被用户否定，尚未验收通过。
-下方 `.13` 记录是历史结果，不作为 `.15` 验收；不保证全程 120fps 或与 Apple 私有
-实现逐像素一致。被拒绝的 Primuse 整页形变仍已移除。
+`.17` / Android `versionCode 99` 当前构建已以同包名、原签名覆盖安装到三星设备。
+574 项应用测试、139 项原生测试、类型与翻译检查通过；lint 为 0 错误、117 项警告。
+以下定量结果来自此前 `.17` 诊断构建，包含 Search 修复的最终包仍待复测。历史 `.13` 基础检查不代表当前全场景或长期性能通过，Primuse 整页形变仍已移除。
 
-The `.15` / Android `versionCode 97` ARM64 APK is built with the original signature
-verified. All 558 app tests, 125 native tests, typechecking and translations pass;
-lint reports zero errors and 117 warnings. The user requested a build without
-installation, with device acceptance deferred until reconnection. `.14` is
-installed: handle/mode-button removal was confirmed and the cached AllMusic
-opening promptly displayed track rows in this run, without rigorous tap-to-content timing. Mini return
-jitter remains rejected by the user. Historical `.13` results do not establish
-`.15` acceptance, sustained 120fps or pixel-identical Apple rendering. The
-rejected Primuse whole-player morph remains removed.
+The current `.17` / Android `versionCode 99` build is installed on Samsung with
+the same package and original certificate. All 574 app tests, 139 native tests,
+typechecking and translations pass; lint reports zero errors and 117 warnings.
+The quantitative observations come from the earlier `.17` diagnostic build;
+the final build containing the Search correction still awaits another measurement. Historical `.13` checks do not establish
+current all-scenario or long-session acceptance; the rejected Primuse whole-player morph remains removed.
 
-`.15` 将关闭端点改为 `restingArtwork`：从不含按压／横滑变形的 anchor 计算 Mini
-静止封面位置；正常关闭落向该目标，入场中途反向关闭则重新计算另一端点，保留当前
-已绘制位置与尺寸的连续性。开启跑马灯时，Mini 标题保留同一 Marquee 树，以独立 `active` 暂停／恢复
-时钟并保留 offset，避免 route pop 重挂载。源码见 [MiniPlayer](../src/components/MiniPlayer.tsx)、
+关闭端点 `restingArtwork` 现在来自与真实封面相同 Yoga 层级的空锚点，位于按压与
+横滑变形之外，直接保留物理像素取整后的坐标与尺寸；入场继续测量已绘制封面。
+入场中途反向关闭保持当前画面连续。图像比例及 Mini／共享封面的裁切交接已对齐。
+三次收合录像的端点图像配准得到估计缩放 `0.9925`、`dx = dy = 0`，此前 `.16`
+对应缩放为 `1.1225`。本次未再出现明显的裁切尺寸跳变，但独立解码、缩放和重采样
+仍有静态差异，不能称为像素完全一致。
+
+The closing `restingArtwork` now comes from an empty anchor matching the real
+artwork's Yoga hierarchy outside press/swipe deformation. Native measurement
+preserves physical pixel rounding, while entry still reads the painted image.
+Closing during entry preserves the painted pose; image aspect and Mini/overlay crop handoff
+are aligned. Three recorded closes estimate endpoint registration scale `0.9925`
+with `dx = dy = 0`, versus `.16` scale `1.1225`. The large crop-size jump did not
+recur in these samples, but separate decoding, scaling and resampling still leave
+static differences; pixel identity is not claimed.
+
+三个交接窗口的同一底栏像素区域标准差为 `23.75–23.90`，连续帧平均绝对像素差最大
+`0.59`；`.16` 曾出现一次标准差 `41.95` 的单帧闪变，本次三个窗口未重现。关闭卸载
+期间保留隐藏状态，防止 layout cleanup 到 mapper 停止的间隙恢复完整播放器背景。
+这些结果只适用于所检查片段，不代表所有操作均无闪变。
+
+Across three handoff windows, the same tab-region pixel standard deviation stays
+at `23.75–23.90` and maximum consecutive-frame mean absolute pixel difference is
+`0.59`. The `.16` single-frame excursion to `41.95` did not recur in these three
+windows. Close cleanup keeps the outgoing player hidden through the interval
+before its animation mappers stop. These findings apply to the inspected samples,
+not every possible interaction.
+
+本次有效 All Music 滚动采样约 8 秒，45 次快速滑动的工作量中，应用记录 924 个
+Surface 帧、10 次 `App Deadline Missed / Late Present`。关联显示帧间隔中位数为
+`8.32ms`、P99 `16.64ms`、最大 `24.97ms`；943 个完整 UI 帧中，80 个超过 `8.33ms`，其中一个超过
+`16.67ms`。不能据此承诺持续 120fps；错误页面的 `.16` 采样无效，不作性能对比。
+采样时隐藏 Search 玻璃使安全检查保留离屏图像路径，最小修复后的 direct 路径仍待
+复测；这次结果不能代表后续路径的最终性能。
+
+The valid All Music capture covers about eight seconds of a 45-swipe workload,
+with 924 application Surface frames and 10 `App Deadline Missed / Late Present`
+frames. Mapped display-frame intervals have median `8.32ms`, P99 `16.64ms` and
+maximum `24.97ms`; of 943 completed outer UI frames, 80 exceed `8.33ms`, including one over `16.67ms`.
+This does not promise sustained 120fps. The wrong-page `.16` capture is invalid
+and is not a performance baseline. Hidden Search glass kept the offscreen image
+path active during this run; the minimally corrected direct path still needs a
+new measurement, so its final performance is not established here.
+
+最终 `.17` 构建已移除临时自动开启转场记录的行为；私有录像、图像
+及日志不提交或链接到公开文档。Mini 标题保留同一 Marquee 树，以独立 `active` 暂停／
+恢复时钟并保留 offset。源码见 [MiniPlayer](../src/components/MiniPlayer.tsx)、
 [转场协调](../src/hooks/useAppleMusicPlayerMotion.ts) 与 [MarqueeText](../src/components/MarqueeText.tsx)。
-修复效果仍待实机确认。
 
-`.15` closes toward `restingArtwork`, derived from an anchor excluding transient
-press/swipe deformation. Ordinary closing lands on that resting target;
-reversing an opening rebases the other endpoint to preserve the currently
-painted position and dimensions. With marquee titles enabled, the mini retains one Marquee tree,
-pausing/resuming its clock through independent `active` state while preserving
-its offset. These corrections still require device confirmation.
+Automatic transition tracing has been removed from the final `.17` build. Private recordings, images and logs are neither
+committed nor linked publicly. Mini retains one Marquee tree and pauses/resumes
+its clock through independent `active` state while preserving its offset. See
+the source links above.
+
+## 保留的 `.14` 行为 / Retained `.14` behavior
 
 `.14` 移除顶部白条及其点击区域，但保留原高度、顶部下拉、系统返回和现有封面的
 无障碍关闭动作；主控制区只保留原位置的上一首／播放暂停／下一首，随机与循环仍在菜单。

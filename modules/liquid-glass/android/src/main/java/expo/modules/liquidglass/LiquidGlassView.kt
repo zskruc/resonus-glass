@@ -333,6 +333,28 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
     } finally { canvas.restoreToCount(checkpoint) }
   }
 
+  private fun drawRecordedBackdrop(canvas: Canvas, recorded: RecordedBackdropFrame, originX: Int, originY: Int) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || !canvas.isHardwareAccelerated ||
+      !recorded.content.node.hasDisplayList() || !recorded.geometry.isValid()) return
+    val geometry = recorded.geometry
+    val checkpoint = canvas.save()
+    try {
+      // The existing record is in sampled pixels. Match the image path's frozen
+      // screen origin and inverse scale; do not re-draw or remeasure the source.
+      canvas.translate(geometry.localX(0f, originX), geometry.localY(0f, originY))
+      canvas.scale(geometry.inverseScale, geometry.inverseScale)
+      canvas.clipRect(0f, 0f, geometry.pixelWidth.toFloat(), geometry.pixelHeight.toFloat())
+      canvas.drawRenderNode(recorded.content.node)
+      snapshot?.onRecordedBackdropRead(recorded)
+    } finally {
+      canvas.restoreToCount(checkpoint)
+    }
+  }
+
+  private fun hasBackdropSource(): Boolean = snapshot?.let {
+    it.frame != null || (!progressiveBlur && it.recordedBackdrop() != null)
+  } == true
+
   protected val composeView = ComposeView(context).apply {
     id = View.generateViewId()
     layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
@@ -551,6 +573,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
       @Suppress("UNUSED_VARIABLE") val version = frameVersion
       @Suppress("UNUSED_VARIABLE") val geometry = geometryVersion
       val captured = snapshot?.frame
+      val recorded = if (captured == null && !isProgressiveBlur) snapshot?.recordedBackdrop() else null
       if (enabled && staticBackground != null) {
         // Settings cards sit over a declared flat page color. Keeping the
         // identical source local avoids capturing/repositioning a whole page
@@ -560,6 +583,12 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
         getLocationOnScreen(sampleLocation)
         drawIntoCanvas { composeCanvas ->
           drawCapturedBackdrop(composeCanvas.nativeCanvas, captured,
+            sampleLocation[0] + materialOffsetX, sampleLocation[1] + materialOffsetY)
+        }
+      } else if (enabled && recorded != null) {
+        getLocationOnScreen(sampleLocation)
+        drawIntoCanvas { composeCanvas ->
+          drawRecordedBackdrop(composeCanvas.nativeCanvas, recorded,
             sampleLocation[0] + materialOffsetX, sampleLocation[1] + materialOffsetY)
         }
       }
@@ -634,7 +663,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
           depthEffect = glassDepthEffect,
           chromaticAberration = glassChromaticAberration,
           tint = tint,
-          tintOpacity = { if (enabled && (officialMaterial || staticBackground != null || snapshot?.frame != null)) opacity else maxOf(opacity, 0.82f) },
+          tintOpacity = { if (enabled && (officialMaterial || staticBackground != null || hasBackdropSource())) opacity else maxOf(opacity, 0.82f) },
           dark = isDark
         )
       } else {
@@ -699,7 +728,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
             onDrawSurface = {
               // API 31/32 retain true background blur, but Android's shader lens
               // and directional highlight require API 33 (handled by Backdrop).
-              val hasFrame = staticBackground != null || snapshot?.frame != null
+              val hasFrame = staticBackground != null || hasBackdropSource()
               // A page boundary briefly has no image. Official materials keep
               // their own surface alpha rather than flashing the old .82 fill.
               val materialOpacity = if (enabled && (officialMaterial || hasFrame)) opacity else maxOf(opacity, 0.82f)
