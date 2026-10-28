@@ -371,6 +371,93 @@ describe('glass appearance modes and saved custom profiles', () => {
     assert.deepEqual(useGlassTuning.getState().amPlusOverrides.miniPlayer, { tintColor: null });
   });
 
+  it('keeps Automatic tint through apply-all, save, reload and repeated theme changes in either direction', async () => {
+    await useGlassTuning.getState().hydrate();
+    for (const savedInDark of [false, true]) {
+      useGlassTuning.getState().update('miniPlayer', {
+        blur: 7.5, refraction: 21, tintOpacity: .28, tintColor: null,
+      });
+      useGlassTuning.getState().applyToAll('miniPlayer', savedInDark);
+      await useGlassTuning.getState().save();
+      const stored = JSON.parse(storage.items.get(AM_PLUS_KEY)!);
+      for (const target of ['miniPlayer', 'navigation', 'controls'] as const) {
+        assert.equal(stored.overrides[target].tintColor, null);
+        assert.equal(stored.overrides[target].blur, 7.5);
+        assert.equal(stored.overrides[target].refraction, 21);
+        assert.equal(stored.overrides[target].tintOpacity, .28);
+      }
+      useGlassTuning.setState({ amPlusOverrides: { miniPlayer: {}, navigation: {}, controls: {} }, hydrated: false });
+      await useGlassTuning.getState().hydrate();
+      const writesBeforeThemeChanges = storage.writes.length;
+      for (const dark of [savedInDark, !savedInDark, savedInDark, !savedInDark]) {
+        for (const target of ['miniPlayer', 'navigation'] as const) {
+          const profile = getGlassProfile(target, dark);
+          assert.equal(profile.tintColor, dark ? '#121212' : '#FAFAFA');
+          assert.equal(profile.blur, 7.5);
+          assert.equal(profile.refraction, 21);
+          assert.equal(profile.tintOpacity, .28);
+        }
+      }
+      assert.equal(storage.writes.length, writesBeforeThemeChanges);
+      assert.deepEqual(JSON.parse(storage.items.get(AM_PLUS_KEY)!), stored);
+    }
+  });
+
+  it('copies an unset Automatic tint from controls and clears previous fixed colors on all other targets', async () => {
+    await useGlassTuning.getState().hydrate();
+    useGlassTuning.getState().update('miniPlayer', { tintColor: '#FF0000' });
+    useGlassTuning.getState().update('navigation', { tintColor: '#0000FF' });
+    assert.equal(getGlassProfile('controls', false).tintColor, 'transparent');
+    useGlassTuning.getState().applyToAll('controls', false);
+    await useGlassTuning.getState().save();
+    for (const target of ['miniPlayer', 'navigation', 'controls'] as const) {
+      const override = useGlassTuning.getState().amPlusOverrides[target];
+      assert.equal(override.tintColor, null);
+      assert.equal(override.tintOpacity, 0);
+      assert.equal(override.blur, 2);
+    }
+    assert.equal(getGlassProfile('navigation', false).tintColor, '#FAFAFA');
+    assert.equal(getGlassProfile('navigation', true).tintColor, '#121212');
+  });
+
+  it('preserves explicitly chosen colors through apply-all and reload, even if they match a theme default', async () => {
+    await useGlassTuning.getState().hydrate();
+    for (const tintColor of ['#12ABCD', '#FFFFFF', '#000000', '#FAFAFA', '#121212']) {
+      useGlassTuning.getState().update('navigation', { tintColor, tintOpacity: 0 });
+      useGlassTuning.getState().applyToAll('navigation', false);
+      await useGlassTuning.getState().save();
+      useGlassTuning.setState({ amPlusOverrides: { miniPlayer: {}, navigation: {}, controls: {} }, hydrated: false });
+      await useGlassTuning.getState().hydrate();
+      for (const target of ['miniPlayer', 'navigation', 'controls'] as const) {
+        for (const dark of [false, true]) {
+          assert.equal(getGlassProfile(target, dark).tintColor, tintColor);
+          assert.equal(getGlassProfile(target, dark).tintOpacity, 0);
+        }
+      }
+    }
+  });
+
+  it('applies custom profiles independently and blocks apply-all in read-only reference modes', async () => {
+    storage.items.set(PARAMETERS_KEY, JSON.stringify(saved));
+    await useGlassTuning.getState().hydrate();
+    const originalAmPlus = useGlassTuning.getState().amPlusOverrides;
+    useGlassTuning.getState().setMode('custom');
+    useGlassTuning.getState().update('navigation', { tintColor: null, blur: 5, refraction: 17, tintOpacity: .15 });
+    useGlassTuning.getState().applyToAll('navigation', true);
+    for (const target of ['miniPlayer', 'navigation', 'controls'] as const) {
+      assert.equal(useGlassTuning.getState().overrides[target].tintColor, null);
+      assert.equal(useGlassTuning.getState().overrides[target].refraction, 17);
+    }
+    assert.deepEqual(useGlassTuning.getState().amPlusOverrides, originalAmPlus);
+    const copiedCustom = useGlassTuning.getState().overrides;
+    for (const mode of ['kyantDefault', 'iphoneReference'] as const) {
+      useGlassTuning.getState().setMode(mode);
+      useGlassTuning.getState().applyToAll('miniPlayer', false);
+      assert.deepEqual(useGlassTuning.getState().overrides, copiedCustom);
+      assert.deepEqual(useGlassTuning.getState().amPlusOverrides, originalAmPlus);
+    }
+  });
+
   it('reports AM++ save failures and retries the complete independent snapshot', async () => {
     await useGlassTuning.getState().hydrate();
     useGlassTuning.getState().update('navigation', { blur: 5 });

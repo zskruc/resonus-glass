@@ -95,6 +95,8 @@ interface GlassTuningState {
   setMode(mode: GlassAppearanceMode): void;
   /** Updates previews immediately; persistence is explicit, after editing. */
   update(target: GlassTarget, patch: GlassOverrides): void;
+  /** Copies visible parameters while retaining Automatic tint as a theme policy. */
+  applyToAll(source: GlassTarget, dark: boolean): void;
   save(): Promise<void>;
   /** Restores only this live preview; Save persists the completed selection. */
   reset(target: GlassTarget): void;
@@ -195,6 +197,21 @@ export const useGlassTuning = create<GlassTuningState>((set, get) => ({
       ...state[field],
       [target]: { ...state[field][target], ...clean },
     } }));
+  },
+  applyToAll: (source, dark) => {
+    const state = get();
+    if (state.mode !== 'custom' && state.mode !== 'amPlus') return;
+    const field = state.mode === 'amPlus' ? 'amPlusOverrides' : 'overrides';
+    const overrides = state[field][source];
+    const profile = resolveGlassProfile(source, dark, overrides, state.mode);
+    // Rendering resolves AM++ Automatic into this theme's #FAFAFA/#121212.
+    // Copying that resolved color would turn Automatic into a fixed color,
+    // so persist the source's policy rather than its current painted value.
+    const copy = sanitizeGlassOverrides({
+      ...profile,
+      tintColor: overrides.tintColor == null ? null : profile.tintColor,
+    });
+    set({ [field]: Object.fromEntries(TARGETS.map((target) => [target, { ...copy }])) as OverridesByTarget });
   },
   save: async () => {
     await get().hydrate();

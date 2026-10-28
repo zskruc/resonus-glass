@@ -1,8 +1,22 @@
 # AMLL 播放器预览 / AMLL player preview
 
-`0.8.4.1-amll.20` · Android `versionCode 102` · `preview/amll-player`
+`0.8.4.1-amll.21` · Android `versionCode 103` · `preview/amll-player`
 
-## 当前 `.20` / Current `.20`
+## 当前 `.21` / Current `.21`
+
+修复玻璃调节室“应用到全部控件”丢失自动底色的问题。复制操作保留自动颜色的原始选择，不再将当前主题解析出的浅色或深色保存为固定颜色；从“其他面板”复制自动参数时，也会清除目标控件此前的固定底色。模糊、折射及其他光学参数仍按原有操作复制。
+
+Apply to all controls now preserves the original Automatic tint selection instead of persisting the current theme's resolved light or dark color. Copying an automatic profile from Other surfaces also clears a destination's previous explicit tint. Blur, refraction and other optical values retain the existing copy behavior.
+
+旧版已经保存的固定颜色无法可靠区分是自动误保存还是手动指定，因此不会猜测改写。升级后，对旧配置重新选择一次“自动”并应用全部、保存，即可恢复持续跟随深浅主题；此后切换主题无需再操作玻璃调节室。原有参数和手动指定颜色均保留。
+
+Older fixed colors have no record of whether they were chosen manually or incorrectly resolved from Automatic, so they are not rewritten heuristically. For an affected saved profile, select Automatic once, apply to all and save after updating. Later theme changes follow automatically without reopening the tuning screen. Existing parameters and intentional fixed colors are retained.
+
+588 项应用测试、类型、翻译及改动源码 lint 检查通过。新增回归测试确认旧逻辑会丢失自动颜色，修复后覆盖保存重载、深浅双向反复切换、其他面板清除旧色及固定颜色保留。ARM64 Release APK 构建成功，包名、`.21` / `103` 版本与原签名已核对。本轮电脑未检测到三星，未安装或进行实机外观验收。
+
+All 588 app tests, typechecking, translation checks and targeted source lint pass. New regressions reproduce the old loss of Automatic and cover save/reload, repeated light/dark transitions, clearing stale destination colors and retaining explicit colors. The ARM64 release APK is built with the original application ID and signing certificate, verified as `.21` / `103`. No Samsung device was detected in this round; installation and visual device acceptance remain unperformed.
+
+## `.20` 功能与实机记录 / `.20` features and device record
 
 玻璃调节室模式栏移除“我的参数”入口，其余显示名称缩短为“开源默认”和“iOS参考”。英文对应显示为“Open-source defaults”和“iOS reference”。旧版保存的参数及当前材质选择继续保留，参数摘要兼容旧自定义模式；参考模式说明也不再引导进入已移除的入口。类型、翻译及改动界面 lint 检查通过。
 

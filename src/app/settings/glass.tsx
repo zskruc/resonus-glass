@@ -97,6 +97,7 @@ export default function GlassTuningSettings() {
   const setMode = useGlassTuning((state) => state.setMode);
   const hydrated = useGlassTuning((state) => state.hydrated);
   const update = useGlassTuning((state) => state.update);
+  const applyToAll = useGlassTuning((state) => state.applyToAll);
   const save = useGlassTuning((state) => state.save);
   const reset = useGlassTuning((state) => state.reset);
   const resetAmPlusDefaults = useGlassTuning((state) => state.resetAmPlusDefaults);
@@ -284,7 +285,7 @@ export default function GlassTuningSettings() {
         <View style={styles.management}>
           <Pressable
             onPress={() => {
-              TARGETS.forEach((item) => update(item.value, { ...profile }));
+              applyToAll(target, dark);
               showToast(t('Applied to all glass controls'));
             }}
             disabled={editingDisabled}
@@ -303,7 +304,7 @@ export default function GlassTuningSettings() {
           ...parameters.map((parameter) => `${t(parameter.label)}: ${parameter.percent
             ? `${Math.round(profile[parameter.key] * 100)}%`
             : `${Number(profile[parameter.key].toFixed(2))} dp`}`),
-          `${t('Glass tint')}: ${profile.tintOpacity === 0 ? t('Off') : profile.tintColor ?? t('Automatic tint')}`,
+          `${t('Glass tint')}: ${profile.tintOpacity === 0 ? t('Off') : automaticTint ? t('Automatic tint') : profile.tintColor}`,
           `${t('Depth effect')}: ${t(profile.depthEffect ? 'On' : 'Off')}`,
           `${t('Color dispersion')}: ${t(profile.chromaticAberration ? 'On' : 'Off')}`,
         ].join('\n')}</Text>
