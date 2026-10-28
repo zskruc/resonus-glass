@@ -66,6 +66,7 @@ function harness() {
   };
   const nativeGlass = { LiquidGlassView: 'NativeGlass', LiquidGlassToggle: 'NativeToggle', LiquidGlassSlider: 'NativeSlider',
     isLiquidGlassAvailable: true,
+    isGlassThemeTraceEnabled: false,
     updateNativeDockProgress: (...args: unknown[]) => nativeCalls.push(args),
     updateNativeButtonMotion: (...args: unknown[]) => nativeCalls.push(args),
   };
@@ -86,6 +87,7 @@ function harness() {
   });
   // Execute the actual FloatingGlassBackdrop used by MiniPlayer, including its
   // current tuning selection and the optional native motion mapper guards.
+  const glassThemeTrace = load('lib/glassThemeTrace.ts', { '../../modules/liquid-glass': nativeGlass });
   const glass = load('components/glass/index.tsx', {
     react, 'react/jsx-runtime': { jsx, jsxs: jsx }, 'react-native': native,
     'react-native-reanimated': animated,
@@ -95,6 +97,7 @@ function harness() {
     '@/store/glassTuning': { ...tuningModule, useGlassTuning: (select: (state: unknown) => unknown) => select(tuning.getState()) },
     '@/theme': theme, '@/theme/glassDefaults': glassDefaults,
     '@/lib/glassMaterialTuning': { glassMaterialTuningMask },
+    '@/lib/glassThemeTrace': glassThemeTrace,
     '@/lib/glassSwitchSize': { GLASS_SWITCH_SIZE: {} },
     './StaticGlassBackdropContext': { DynamicGlassBackdrop: 'DynamicGlassBackdrop' },
   });

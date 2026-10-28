@@ -41,8 +41,17 @@ nonzero capacity only from the same AM++ motion-only caller and release it at
 the two endpoints. These capacity additions are distributed under GPLv3 with
 Resonus; all original Apache-2.0 portions retain their license.
 
-Resonus keeps 1.0.0's existing invalidation policy and explicitly invalidates
-placement when the new clip strategy changes. `BackdropLayerSize.kt` extracts
+Resonus retains 1.0.0's opt-out from automatic invalidation and explicitly
+invalidates placement when the new clip strategy changes. Material element
+updates also explicitly invalidate drawing after replacing the surface and
+foreground callbacks. Updating the effect cache alone changes the effect layer,
+but cannot repaint a cached tint: a stationary compact dock could therefore
+retain the previous light/dark fill until a geometry change. This invalidation
+is scoped to modifier-element updates; effect observation and backdrop frames
+do not gain a self-scheduling redraw loop. Optical values, shaders and the
+motion-only backing-capacity policy remain unchanged.
+
+`BackdropLayerSize.kt` extracts
 the unchanged padding, shadow/highlight extents and physical maximum into pure
 functions used by unit tests. Tests also cover live outline/clip bounds and
 draw-context restoration after interrupted/nested recording. The other 24

@@ -597,6 +597,14 @@ internal class WindowBackdrop(
     val scrollDirty = scrollVersion != capturedScrollVersion
     val materialDirty = materialVersion != capturedMaterialVersion
     val sceneDirty = sceneVersion != capturedSceneVersion
+    if (GlassThemeTrace.enabled) {
+      val night = root.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+      GlassThemeTrace.recordWindow(this, "preDraw-theme", night.toLong()) {
+        "systemNight=$night ownSkip=$ownRedrawsToSkip scrollDirty=$scrollDirty materialDirty=$materialDirty " +
+          "sceneDirty=$sceneDirty materialVersion=$materialVersion capturedMaterial=$capturedMaterialVersion " +
+          "sceneVersion=$sceneVersion capturedScene=$capturedSceneVersion serial=${recordedBridge.recordSerial}"
+      }
+    }
     if (isolatedSceneKnown && frame != null && !scrollDirty && !materialDirty && !sceneDirty) {
       // Foreground scrolling does not change the omitted card's background.
       // Do not leave the old 42ms idle request waking this otherwise static scene.
@@ -996,6 +1004,19 @@ internal class WindowBackdrop(
   /** Shared source recording; exactly one source draw in either producer. */
   private fun recordSource(node: RenderNode, width: Int, height: Int, scale: Float,
     captureSource: View, underlayColor: Int?, processedColor: Int?, direct: Boolean = false) {
+    if (GlassThemeTrace.enabled) {
+      val night = root.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+      val background = (captureSource.background as? ColorDrawable)?.color
+        ?: BackgroundStyleApplicator.getBackgroundColor(captureSource) ?: 0
+      val fingerprint = (night.toLong() * 31L + (underlayColor ?: 0)) * 31L + background
+      GlassThemeTrace.recordWindow(this, "source-theme", fingerprint) {
+        "systemNight=$night underlay=${underlayColor?.toUInt()?.toString(16)} " +
+          "sourceColor=${background.toUInt().toString(16)} sourceRoot=${captureSource === root} direct=$direct " +
+          "materialVersion=$materialVersion capturedMaterial=$capturedMaterialVersion " +
+          "sceneVersion=$sceneVersion capturedScene=$capturedSceneVersion serial=${recordedBridge.recordSerial} " +
+          "pageEpoch=${nativePage.policy.epoch} generation=$generation"
+      }
+    }
     timeCapturePhase(if (direct) directRecordStats else sourceRecordStats) {
       val canvas = node.beginRecording(width, height)
       try {

@@ -215,6 +215,9 @@ private class DrawBackdropElement(
         node.onDrawSurface = onDrawSurface
         node.onDrawFront = onDrawFront
         node.invalidateDrawCache()
+        // Automatic invalidation is disabled; replacing draw callbacks must
+        // repaint a settled material even when its geometry/effects are unchanged.
+        node.invalidateDraw()
     }
 
     override fun InspectorInfo.inspectableProperties() {

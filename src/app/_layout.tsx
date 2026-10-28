@@ -121,10 +121,16 @@ const LYRICS_MODAL = Platform.OS === 'android' ? {
  * which debounces the tap and never touches the stack.
  */
 
-/** Keep background UI changes from queuing a render for every song played. */
+/**
+ * Android Recents captures the retained native stack while the app backgrounds.
+ * Suspense hiding disconnects layout effects and can clear only some player
+ * layers before that capture. Keep Android mounted; foreground effects still
+ * pause work, and navigation's freezeOnBlur still suspends covered routes.
+ */
 function useAway(): boolean {
-  const [away, setAway] = useState(() => AppState.currentState === 'background');
+  const [away, setAway] = useState(() => Platform.OS !== 'android' && AppState.currentState === 'background');
   useEffect(() => {
+    if (Platform.OS === 'android') return;
     const sub = AppState.addEventListener('change', (state) => {
       // Inactive can still be visible behind the notification shade or a call.
       if (state === 'background') setAway(true);

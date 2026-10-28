@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
@@ -220,7 +221,8 @@ internal fun LiquidBottomTabsMaterial(
   chromaticAberration: Boolean,
   tint: Color,
   tintOpacity: () -> Float,
-  dark: Boolean
+  dark: Boolean,
+  themeTraceHost: LiquidGlassView? = null
 ) {
   val amPlusHighlight = if (amPlusMaterial) remember { AmPlusInteractiveHighlight() } else null
   val selectionVisible by remember(amPlusMaterial) {
@@ -302,7 +304,12 @@ internal fun LiquidBottomTabsMaterial(
           scaleX = scale
           scaleY = scale
         },
-        onDrawSurface = { drawRect(tint.copy(alpha = tintOpacity() * tint.alpha)) },
+        onDrawSurface = {
+          val alpha = tintOpacity() * tint.alpha
+          if (themeTraceHost != null) GlassThemeTrace.recordMaterial(themeTraceHost, GlassThemeTrace.SURFACE,
+            tint.toArgb(), alpha, dark)
+          drawRect(tint.copy(alpha = alpha))
+        },
         onDrawFront = {
           val progress = pressProgress()
           if (progress > 0f) {

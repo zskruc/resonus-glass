@@ -16,6 +16,7 @@ import androidx.compose.foundation.Canvas as ComposeCanvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -128,6 +129,18 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
   private var geometryVersion by mutableIntStateOf(0)
   private var snapshot: WindowBackdrop? = null
   private var needsDisplayListRestore = true
+  private val appearanceCommits = MaterialAppearanceCommits(
+    postFrame = { postOnAnimation(it) },
+    cancelFrame = { removeCallbacks(it) },
+    invalidate = {
+      // Prop delivery can redraw the previous composition before its new tint
+      // callback is committed. Request one traversal after that commit, without
+      // relying on scrolling, geometry changes or another backdrop publication.
+      composeView.invalidate()
+      invalidate()
+      snapshot?.onMaterialChanged()
+    }
+  )
   private var motionHostToken = 0
   private val onMotionHostReady by EventDispatcher()
   private val onDockCollapseIntent by EventDispatcher()
@@ -212,8 +225,19 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
 
   internal fun updateTintColor(value: Int) {
     if (tintColor == value) return
+    val previous = tintColor
     tintColor = value
+    if (GlassThemeTrace.enabled) GlassThemeTrace.recordMaterial(this, GlassThemeTrace.TINT,
+      value, tintOpacity, dark, previous)
     if (progressiveBlur) snapshot?.onMaterialChanged()
+  }
+
+  internal fun updateDark(value: Boolean) {
+    if (dark == value) return
+    val previous = dark
+    dark = value
+    if (GlassThemeTrace.enabled) GlassThemeTrace.recordMaterial(this, GlassThemeTrace.DARK,
+      tintColor, tintOpacity, value, if (previous) 1 else 0)
   }
 
   internal fun updateTintOpacity(value: Float) {
@@ -427,6 +451,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
       composeView.setViewTreeSavedStateRegistryOwner(activity)
     }
     super.onAttachedToWindow()
+    appearanceCommits.attach()
     attachBackdrop()
     // ViewGroup attaches its children after this callback. Re-measure on the
     // next UI turn, once Compose can safely obtain its window Recomposer.
@@ -443,6 +468,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
   }
 
   override fun onDetachedFromWindow() {
+    appearanceCommits.detach()
     AmPlusDockScrollInput.detachSurface(this)
     amPlusTabForeground?.detach()
     amPlusSelectionOverlay.detach()
@@ -543,14 +569,18 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
     val glassBlur = blurRadius
     val isProgressiveBlur = progressiveBlur
     val glassRefraction = refraction
-    val tint = Color(tintColor)
+    val tintArgb = tintColor
+    val tint = Color(tintArgb)
     val opacity = tintOpacity
     val isDark = dark
+    SideEffect { appearanceCommits.commit(tintArgb, opacity.toRawBits(), isDark) }
     val staticBackground = staticBackdropColor
     val enabled = glassEnabled
     val preset = materialPreset
     val amPlusMaterial = preset == "amPlus"
     val tuningMask = materialTuningMask
+    if (GlassThemeTrace.enabled) GlassThemeTrace.recordMaterial(this, GlassThemeTrace.COMPOSE,
+      tintArgb, opacity, isDark)
     // Media popup recipes: AM-plus-plus-media-plugin b9e043c (GPL-3.0),
     // GlassPlayerDialog/GlassPlayerMoreMenu. Reuse this shared source; these
     // materials never create an independent capture or a press-animation job.
@@ -664,7 +694,8 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
           chromaticAberration = glassChromaticAberration,
           tint = tint,
           tintOpacity = { if (enabled && (officialMaterial || staticBackground != null || hasBackdropSource())) opacity else maxOf(opacity, 0.82f) },
-          dark = isDark
+          dark = isDark,
+          themeTraceHost = if (GlassThemeTrace.enabled && amPlusMaterial) this else null
         )
       } else {
         val surfaceCapacity = with(LocalDensity.current) {
@@ -732,6 +763,8 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
               // A page boundary briefly has no image. Official materials keep
               // their own surface alpha rather than flashing the old .82 fill.
               val materialOpacity = if (enabled && (officialMaterial || hasFrame)) opacity else maxOf(opacity, 0.82f)
+              if (GlassThemeTrace.enabled && amPlusMaterial) GlassThemeTrace.recordMaterial(this@LiquidGlassView,
+                GlassThemeTrace.SURFACE, tintArgb, materialOpacity * tint.alpha, isDark)
               if (preset == "button" && opacity > 0f) {
                 // LiquidButton's optional tint: hue blend followed by its
                 // exact catalog .75 surface alpha. Untinted remains clear.

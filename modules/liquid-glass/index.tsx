@@ -113,7 +113,7 @@ export type LiquidGlassDiagnostics = {
 };
 
 const nativeModule = Platform.OS === 'android'
-  ? requireOptionalNativeModule<{ isSupported: boolean; getDiagnostics(): Promise<LiquidGlassDiagnostics>;
+  ? requireOptionalNativeModule<{ isSupported: boolean; themeTraceEnabled?: boolean; getDiagnostics(): Promise<LiquidGlassDiagnostics>;
     updateTabsMotion: UpdateTabsMotion; updateDockProgress: UpdateDockProgress;
     updateButtonMotion: UpdateButtonMotion; readDockScrollIntent: ReadDockScrollIntent;
     expandDockScrollInput: ExpandDockScrollInput; updatePlayerSurfaceClip?: UpdatePlayerSurfaceClip;
@@ -121,6 +121,8 @@ const nativeModule = Platform.OS === 'android'
   : null;
 
 export const isLiquidGlassAvailable = Boolean(nativeModule?.isSupported);
+/** Process-scoped, opt-in appearance tracing; disabled unless native logging is enabled. */
+export const isGlassThemeTraceEnabled = Boolean(nativeModule?.themeTraceEnabled);
 // Preserve the raw JSI HostFunction. Worklets shares it directly into its UI
 // runtime; wrapping/binding it would create an RN-thread remote JS function.
 export const updateNativeTabsMotion = nativeModule?.updateTabsMotion ?? null;

@@ -1,8 +1,46 @@
 # AMLL 播放器预览 / AMLL player preview
 
-`0.8.4.1-amll.21` · Android `versionCode 103` · `preview/amll-player`
+`0.8.4.1-amll.24` · Android `versionCode 107` · `preview/amll-player`
 
-## 当前 `.21` / Current `.21`
+## 当前 `.24` / Current `.24`
+
+保留 `.23` 的材质提交后刷新，并修复 Android 后台任务预览的播放器图层重叠。Android 进入后台时不再对整个 Stack 和全局浮层启用 Suspense 冻结，避免其隐藏过程运行播放器的布局清理、提前清除独立背景与封面转场状态。页面继续挂载，既有前台工作暂停与导航 `freezeOnBlur` 保留；iOS 与 Web 的原后台冻结行为不变。
+
+`.24` retains the post-commit material refresh and addresses overlapping player layers in Android Recents. Android backgrounding no longer Suspense-freezes the entire Stack and global overlays: hiding that tree ran player layout cleanup and could clear its independent background/transition state before the task snapshot. Pages remain mounted; existing foreground-work suspension and navigation `freezeOnBlur` remain. iOS and Web retain their previous background-freezing behavior.
+
+`.24` / `107` 已以原包名、原签名覆盖安装到三星，首次安装日期保持不变。588 项应用测试、145 项玻璃模块原生测试、类型及翻译检查通过。实机六轮诊断切换的 18 个宿主结果均在新组合后画出正确底色，未再出现断绘；关闭诊断并重启后，再做六轮静止折叠切换及展开深浅切换，外观均正确，主题诊断日志为零。三类已保存参数均为自动底色，其余光学数值与测试前逐项一致。
+
+`.24` / `107` is installed on Samsung with the original package and certificate and unchanged first-install date. All 588 app tests, 145 glass-module native tests, typechecking and translation checks pass. Six traced theme switches produced 18 correct post-commit surface results. With tracing disabled and the process restarted, six more settled compact switches plus expanded dark/light switches retained the correct appearance, with zero theme diagnostic messages. All three saved profiles retain Automatic tint; every other optical value matches the pre-test device values.
+
+在同一专辑来源上，歌词三轮、播放器两轮，以及专辑详情和设置各两轮，共九轮后台任务卡及返回检查通过：保留对应完整背景与布局，没有复现专辑列表透底或不同播放布局混层，返回保留原页面。检查范围为这些实机截图和返回状态，未覆盖全部弹窗、长期后台、系统杀进程恢复或逐帧过渡。测试后恢复原系统自动明暗、30 秒息屏、USB 常亮关闭及原日志属性，停在首页；截图和设备日志仅留本地。
+
+Nine Recents-and-return checks pass: three lyric rounds, two player rounds, two album-detail rounds and two settings rounds. The album-origin lyric/player retained their complete background and layout, without the reported album-list bleed-through or mixed player modes; each returned to its original page. This accepts the captured device states, not every modal, long background sessions, process-death restoration or frame-by-frame transitions. Original system-auto appearance, 30-second timeout, disabled keep-awake and original logging property were restored, leaving Home visible. Screenshots and device logs remain local.
+
+## `.23` 主题绘制时序 / `.23` theme draw ordering
+
+`.23-diag.1` 的三星记录确认：八轮系统主题切换中，JavaScript 解析、原生颜色属性及新 Compose 状态均正确；异常轮次的最后一次实际玻璃绘制发生在新组合提交前，使用了上一主题的颜色，之后静止时没有新的正确绘制。对应背景颜色已经更新，问题不在参数保存或背景取色。
+
+Samsung traces from `.23-diag.1` showed correct JavaScript resolution, native properties and new Compose state throughout eight system-theme changes. In failing rounds, the last real surface draw preceded the new composition commit and used the previous tint; the settled dock did not draw the new tint. The source background had already updated, separating this failure from persistence and backdrop-color selection.
+
+`.23` 在成功组合提交后，按底色、浓度及明暗状态门控一个稳定的下一帧回调，刷新 Compose 宿主并通知共享材质更新。同帧的多次变化合批；相同状态不再申请帧，离开窗口时取消旧回调。模糊、折射、玻璃浓度及其他用户参数不变。
+
+After a successful composition commit, `.23` gates one stable next-frame callback on tint, opacity and appearance. It refreshes the Compose host and shared material; multiple changes in one frame coalesce. Unchanged state schedules no further frames, and detachment cancels old callbacks. Blur, refraction, tint opacity and other user parameters remain unchanged.
+
+## `.22` 补充排查 / `.22` follow-up investigation
+
+在 `.21` 的实机验收中进一步发现：折叠底栏静止时，系统深浅主题已经改变、文字也已更新，玻璃底色仍可能保留上一帧配色；等待五秒仍能复现，改变几何尺寸后才重新绘制。Backdrop 的材质元素关闭了自动失效，但更新绘制回调时只刷新效果缓存，没有要求重画表面。
+
+Device acceptance of `.21` exposed a second issue: a stationary compact dock could retain the previous surface tint after the page and foreground had changed theme. It remained reproducible after five seconds and recovered with a geometry change. Backdrop disables automatic invalidation; updating its draw callbacks refreshed the effect cache without requesting a surface redraw.
+
+`.22` 在材质元素属性更新后补充一次绘制失效。现有按帧效果观察、背景采样、几何容量、着色器和光学参数均保留，不增加静止时自行申请下一帧的循环。补丁范围记录于玻璃模块的 vendor `UPSTREAM.md`。
+
+`.22` explicitly invalidates drawing after material-element property updates. Per-frame effect observation, backdrop capture, geometry capacity, shaders and optical parameters remain unchanged; this does not add a self-scheduling idle-frame loop. The patch is documented in the glass module's vendor `UPSTREAM.md`.
+
+`.22` 的实机重复切换仍可复现静止底栏旧色，因此该补丁单独不作完整验收。后续诊断与提交后刷新处理见 `.23`。
+
+Repeated device switching in `.22` could still leave a settled surface with the old tint, so that patch alone is not accepted as the complete fix. See `.23` for the subsequent trace and post-commit refresh.
+
+## `.21` 自动底色保存 / `.21` automatic tint persistence
 
 修复玻璃调节室“应用到全部控件”丢失自动底色的问题。复制操作保留自动颜色的原始选择，不再将当前主题解析出的浅色或深色保存为固定颜色；从“其他面板”复制自动参数时，也会清除目标控件此前的固定底色。模糊、折射及其他光学参数仍按原有操作复制。
 
@@ -12,9 +50,9 @@ Apply to all controls now preserves the original Automatic tint selection instea
 
 Older fixed colors have no record of whether they were chosen manually or incorrectly resolved from Automatic, so they are not rewritten heuristically. For an affected saved profile, select Automatic once, apply to all and save after updating. Later theme changes follow automatically without reopening the tuning screen. Existing parameters and intentional fixed colors are retained.
 
-588 项应用测试、类型、翻译及改动源码 lint 检查通过。新增回归测试确认旧逻辑会丢失自动颜色，修复后覆盖保存重载、深浅双向反复切换、其他面板清除旧色及固定颜色保留。ARM64 Release APK 构建成功，包名、`.21` / `103` 版本与原签名已核对。本轮电脑未检测到三星，未安装或进行实机外观验收。
+588 项应用测试、类型、翻译及改动源码 lint 检查通过。新增回归测试确认旧逻辑会丢失自动颜色，修复后覆盖保存重载、深浅双向反复切换、其他面板清除旧色及固定颜色保留。ARM64 Release APK 构建成功，包名、`.21` / `103` 版本与原签名已核对。初次构建时手机未连接；随后安装到三星的验收发现了上述静止折叠材质的绘制失效问题，因此 `.21` 单独不作为主题切换问题的完整验收通过版本。
 
-All 588 app tests, typechecking, translation checks and targeted source lint pass. New regressions reproduce the old loss of Automatic and cover save/reload, repeated light/dark transitions, clearing stale destination colors and retaining explicit colors. The ARM64 release APK is built with the original application ID and signing certificate, verified as `.21` / `103`. No Samsung device was detected in this round; installation and visual device acceptance remain unperformed.
+All 588 app tests, typechecking, translation checks and targeted source lint pass. New regressions reproduce the old loss of Automatic and cover save/reload, repeated light/dark transitions, clearing stale destination colors and retaining explicit colors. The ARM64 release APK was built with the original application ID and signing certificate, verified as `.21` / `103`. Its initial build had no connected device; later Samsung acceptance exposed the stationary compact-material redraw issue described above, so `.21` alone is not accepted as the complete theme-switch fix.
 
 ## `.20` 功能与实机记录 / `.20` features and device record
 

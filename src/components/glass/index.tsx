@@ -9,11 +9,12 @@ import {
 } from 'react-native';
 import { SafeAreaView, type SafeAreaViewProps } from 'react-native-safe-area-context';
 
-import { LiquidGlassView, LiquidGlassToggle, LiquidGlassSlider, isLiquidGlassAvailable, updateNativeDockProgress, updateNativeButtonMotion } from '../../../modules/liquid-glass';
+import { LiquidGlassView, LiquidGlassToggle, LiquidGlassSlider, isLiquidGlassAvailable, isGlassThemeTraceEnabled, updateNativeDockProgress, updateNativeButtonMotion } from '../../../modules/liquid-glass';
 import { resolveGlassProfile, sanitizeGlassOverrides, useGlassTuning, type GlassTarget } from '@/store/glassTuning';
 import { useTheme, useThemeMode } from '@/theme';
 import { getKyantGlassProfile } from '@/theme/glassDefaults';
 import { glassMaterialTuningMask } from '@/lib/glassMaterialTuning';
+import { traceResolvedGlassTheme } from '@/lib/glassThemeTrace';
 import { GLASS_SWITCH_SIZE } from '@/lib/glassSwitchSize';
 import { DynamicGlassBackdrop } from './StaticGlassBackdropContext';
 
@@ -150,6 +151,14 @@ export function FloatingGlassBackdrop({ radius, tint, blurred = true, appearance
       borderRadius: radius, backgroundColor: dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.10)',
     }]} />;
   }
+  const materialTint = kyantDefaults ? profile.tintColor ?? 'transparent'
+    : target === 'miniPlayer' ? 'transparent' : profile.tintColor ?? tint ?? colors.surface;
+  const materialOpacity = kyantDefaults ? (blurred ? profile.tintOpacity : 1)
+    : target === 'miniPlayer' ? 0 : blurred ? profile.tintOpacity : 1;
+  if (isGlassThemeTraceEnabled) {
+    traceResolvedGlassTheme(target, dockRole ?? (target === 'miniPlayer' ? 'mini' : 'navigation'),
+      mode, dark, materialTint, materialOpacity);
+  }
   return (
     isLiquidGlassAvailable ? (
         <LiquidGlassView pointerEvents="none" style={StyleSheet.absoluteFill}
@@ -163,10 +172,7 @@ export function FloatingGlassBackdrop({ radius, tint, blurred = true, appearance
           refractionHeight={blurred ? profile.refractionHeight : 0}
           highlightWidth={profile.highlightWidth} highlightOpacity={profile.highlightOpacity}
           depthEffect={profile.depthEffect} chromaticAberration={profile.chromaticAberration}
-          tintColor={kyantDefaults ? profile.tintColor ?? 'transparent'
-            : target === 'miniPlayer' ? 'transparent' : profile.tintColor ?? tint ?? colors.surface}
-          tintOpacity={kyantDefaults ? (blurred ? profile.tintOpacity : 1)
-            : target === 'miniPlayer' ? 0 : blurred ? profile.tintOpacity : 1}
+          tintColor={materialTint} tintOpacity={materialOpacity}
           dark={dark} enabled />
       ) : (
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, fallbackDockStyle, {
