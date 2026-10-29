@@ -54,12 +54,22 @@ Samsung `.25` testing found mini upward swipes did not open. Android RNGH resets
 
 All 625 app tests, typechecking and translation checks pass for `.26`. The seven new mounted mini-component tests fail five cases against the original source and all pass after the fix; no new lint warnings were added. Native/optical source is unchanged from the 147-test `.25` native result. Final package verification and Samsung retest status are recorded below.
 
-`.26` ARM64 Release 已构建成功，包名 `com.zskruc.resonus.glasspreview`、版本 `109` 与原签名核对通过，可覆盖升级。手机已断开，本包尚未安装；上拉实机复测待重新连接。
+`.26` ARM64 Release 已构建成功，包名 `com.zskruc.resonus.glasspreview`、版本 `109` 与原签名核对通过，可覆盖升级。初次构建时手机已断开；随后重新连接的 `.26` 实机记录见下文。
 
-The `.26` ARM64 release is built with package `com.zskruc.resonus.glasspreview`, version code `109` and the original signing certificate verified for in-place update. The phone was disconnected; this package is not installed and upward gesture device acceptance awaits reconnection.
+The `.26` ARM64 release is built with package `com.zskruc.resonus.glasspreview`, version code `109` and the original signing certificate verified for in-place update. The phone was disconnected at build time; subsequent `.26` device acceptance is recorded below.
 
 APK: `Resonus-Glass-AMLL-v0.8.4.1-amll.26-arm64-v8a.apk`
 SHA-256: `fd743e38704497b7862b063d6339c2187613b5fe148fe74c2684b4dd1cc6e4b6`
+
+## `.26` 实机记录 / `.26` device record
+
+`.26` / `109` 已以原包名、原签名覆盖安装到三星，首次安装日期保持不变。Mini 上拉两次均进入完整 Player，排除了 `.25` 停留在 Home 的失败；Mini 点按展开、封面下拉收合、反向取消回弹及回弹后打开输出设备均正常。停稳后封面、播放、歌词、输出与队列按钮的边界与 `.25` 对应布局一致。
+
+`.26` / `109` is installed in place on Samsung with its existing package, certificate and unchanged first-install date. Two upward mini intents reached the full player, excluding the `.25` Home failure. Mini tap, cover dismissal, reverse-cancel and output access after cancellation also pass. Settled artwork/transport/lyric/output/queue bounds match the corresponding `.25` layout.
+
+另有九步模式检查全部符合预期：封面收合、再次上拉、歌词打开、歌词后台返回、歌词信息区收合、Mini 点按、队列打开、队列返回、硬件返回。歌词任务卡保留完整背景与歌词布局，未见旧版专辑／大封面叠层；返回保持歌词模式。测试以当前歌曲与有限截图／操作结果为范围，不等同于所有页面、长期运行、持续 120fps 或逐帧无抖动验收。截图、任务卡与录像仅留本地，不公开上传。
+
+Nine additional mode checks match expectations: cover dismissal, another upward open, lyrics, lyric Recents return, header dismissal, mini tap, queue open/return and hardware Back. The lyric task card retains its complete background and lyric layout, without the old album/full-artwork overlap; returning retains lyric mode. These checks cover the current track and limited captured states, not all pages, long sessions, sustained 120fps or absence of every frame discontinuity. Screenshots, task cards and video remain local.
 
 ## `.25` 实机记录 / `.25` device record
 
