@@ -189,6 +189,28 @@ removed. These MIT portions do not change the separate AGPL/GPL notices for
 the existing controls, glass and lyrics. Scope and pending preview validation:
 [Apple Music transition](./docs/APPLE-MUSIC-TRANSITION.md).
 
+## LNPopupUI / LNPopupController presentation adaptation
+
+The `.25` Android player presentation adapts the open/close geometry, content
+phases and Automatic interaction model of [LeoNatan/LNPopupController](https://github.com/LeoNatan/LNPopupController),
+pinned commit [`2e20c7e1bc8990d58d81c74b8a17df9b5b433a1a`](https://github.com/LeoNatan/LNPopupController/tree/2e20c7e1bc8990d58d81c74b8a17df9b5b433a1a).
+It was evaluated through [LNPopupUI](https://github.com/LeoNatan/LNPopupUI), its
+SwiftUI wrapper at `60853564423524c9ed15cc74c5969d3e1ca666f1`.
+Copyright (c) 2015-2025 Léo Natan. The complete upstream MIT license is retained
+unchanged in [licenses/LNPOPUPCONTROLLER-MIT.txt](./licenses/LNPOPUPCONTROLLER-MIT.txt).
+
+`Private/LNPopupController.mm` and `Private/TransitionAnimators/` inform the
+new LNPopup helpers in `src/lib/appleMusicPlayerTransition.ts`, the shared
+presentation progress in `src/hooks/useAppleMusicPlayerMotion.ts`, the parent
+header gesture and Mini Player's upward Snap. Geometry helpers from the earlier
+AppleMusicStylePlayer adaptation remain attributed above. Full-layout content
+and its independently retained background share native clipping bounds; artwork
+keeps one measured overlay and the existing atomic endpoint handoff. Optical
+profiles and settled player layout are unchanged. Android Reanimated approximates
+the 500ms spring intent and maps keyframe phases onto reversible progress; no
+UIKit runtime, private portal view or Apple glass implementation is imported.
+See [the LNPopup preview scope](./docs/LNPOPUP-TRANSITION.md) for limitations.
+
 ## Expo Image static artwork and disk prefetch patch
 
 `patches/expo-image@57.0.3.patch` modifies Expo Image 57.0.3, using the existing Glide bitmap decoders and pool ownership for opt-in first-frame artwork. It separates static and animated cache keys, makes disk-only prefetch download data without a drawable, clears completed/cancelled targets and makes animation starts idempotent. The preview builds `expo-image` from source so the patch is included. Expo Image and the modified files retain the following MIT terms:

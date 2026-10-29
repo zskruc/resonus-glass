@@ -27,6 +27,26 @@ export const APPLE_MUSIC_PLAYER_MOTION = {
   windowCornerRadius: 22,
 } as const;
 
+/**
+ * Android adaptation of LeoNatan/LNPopupController's Automatic presentation.
+ * Copyright (c) 2015-2025 Léo Natan. SPDX-License-Identifier: MIT.
+ * Pinned source: 2e20c7e1bc8990d58d81c74b8a17df9b5b433a1a,
+ * Private/LNPopupController.mm and Private/TransitionAnimators/.
+ * https://github.com/LeoNatan/LNPopupController/blob/2e20c7e1bc8990d58d81c74b8a17df9b5b433a1a/LICENSE
+ *
+ * Geometry, keyframe phases and release policy are adapted below. UIKit's
+ * property animator, portal rendering and native glass are not portable.
+ */
+export const LNPOPUP_PLAYER_MOTION = {
+  durationMs: 500,
+  tapDampingRatio: 1,
+  gestureDampingRatio: 0.87,
+  dragHeightFraction: 0.2,
+  snapHeightFraction: 0.32,
+  openingMiniFadeFraction: 0.1,
+  closingContentDelayFraction: 0.15,
+} as const;
+
 export interface AppleMusicRect {
   x: number;
   y: number;
@@ -78,6 +98,10 @@ export interface AppleMusicPlayerTransitionFrame {
   };
   /** An outline for the separate backdrop, never a scale for the whole player. */
   background: { rect: AppleMusicRect; cornerRadius: number };
+  /** Geometric progress, independent of staged foreground crossfades. */
+  artworkProgress: number;
+  /** The separate opaque player background's contribution over the real glass. */
+  surfaceOpacity: number;
   fullContentOpacity: number;
   miniContentOpacity: number;
   /** Move the fixed full-layout content with the shared container; do not resize it. */
@@ -86,6 +110,25 @@ export interface AppleMusicPlayerTransitionFrame {
   /** Local controls movement, in addition to the containing content translation. */
   controlsTranslateY: number;
   underlay: { scale: number; translateY: number; cornerRadius: number };
+}
+
+/** Rebase alpha when reversing a flight, without changing its measured geometry. */
+export interface LnPopupOpacityAnchor {
+  progress: number;
+  fullContentOpacity: number;
+  miniContentOpacity: number;
+}
+
+/** Retain the currently painted cover when switching to real resting endpoints. */
+export interface LnPopupArtworkAnchor {
+  progress: number;
+  rect: AppleMusicRect;
+}
+
+export interface LnPopupPlayerTransitionInput extends AppleMusicPlayerTransitionInput {
+  direction?: 'opening' | 'closing';
+  opacityAnchor?: LnPopupOpacityAnchor | null;
+  artworkAnchor?: LnPopupArtworkAnchor | null;
 }
 
 function unit(value: number): number {
@@ -204,9 +247,155 @@ export function resolveAppleMusicPlayerTransition({
       cornerRadius: Math.min(artworkRadius / Math.min(scaleX, scaleY), to.width / 2, to.height / 2),
     },
     background: { rect: background, cornerRadius: backgroundRadius },
+    artworkProgress: p, surfaceOpacity: p,
     fullContentOpacity: p, miniContentOpacity: 1 - p,
     contentTranslateX: background.x, contentTranslateY: background.y,
     controlsTranslateY: (Number.isFinite(controlsHeight) ? Math.max(0, controlsHeight) : 0) * (1 - p),
     underlay: appleMusicUnderlayFrame(stackProgress),
+  };
+}
+
+function smoothstep(from: number, to: number, value: number): number {
+  'worklet';
+  const p = unit((value - from) / (to - from));
+  return p * p * (3 - 2 * p);
+}
+
+/** Automatic uses Drag for an already open popup, bounded by its two endpoints. */
+export function lnPopupPlayerDrag(translationY: number, travelHeight: number): {
+  progress: number; offsetY: number; stackProgress: number;
+} {
+  'worklet';
+  const travel = Number.isFinite(travelHeight) && travelHeight > 0 ? travelHeight : 0;
+  const offsetY = travel > 0 && Number.isFinite(translationY)
+    ? Math.max(0, Math.min(travel, translationY)) : 0;
+  const progress = travel > 0 ? 1 - offsetY / travel : 1;
+  return { progress, offsetY, stackProgress: progress };
+}
+
+/**
+ * Open-popup Automatic/Drag release in LNPopupController: downward motion
+ * commits; an upward reversal restores Open until the pull passed halfway.
+ * The source's 20% height constant is for its general Drag state machine, not
+ * a replacement for this direction-aware Open-state branch.
+ */
+export function shouldDismissLnPopupPlayer(translationY: number, velocityY: number, travelHeight: number): boolean {
+  'worklet';
+  if (!Number.isFinite(translationY) || !Number.isFinite(velocityY) ||
+      !Number.isFinite(travelHeight) || travelHeight <= 0 || translationY <= 0) return false;
+  const p = lnPopupPlayerDrag(translationY, travelHeight).progress;
+  return velocityY > 0 ? p < 1 : p < 0.5;
+}
+
+/** Snap resistance formula used by the compact popup's Automatic interaction. */
+export function lnPopupRubberBand(distance: number, dimension: number): number {
+  'worklet';
+  if (!Number.isFinite(distance) || !Number.isFinite(dimension) || dimension <= 0) return 0;
+  const x = Math.max(0, distance);
+  const c = LNPOPUP_PLAYER_MOTION.snapHeightFraction;
+  // Equivalent to x*d*c/(d+c*x), without overflowing its x*d product or sum.
+  return x === 0 ? 0 : dimension / (1 + dimension / (c * x));
+}
+
+function lnPopupForegroundOpacity(progress: number, direction: 'opening' | 'closing', mini: boolean): number {
+  'worklet';
+  if (direction === 'opening') {
+    return mini ? 1 - unit(progress / LNPOPUP_PLAYER_MOTION.openingMiniFadeFraction) : progress;
+  }
+  const closing = unit((1 - progress - LNPOPUP_PLAYER_MOTION.closingContentDelayFraction) /
+    (1 - LNPOPUP_PLAYER_MOTION.closingContentDelayFraction));
+  return mini ? closing : 1 - closing;
+}
+
+function anchoredOpacity(progress: number, direction: 'opening' | 'closing', mini: boolean,
+  anchor?: LnPopupOpacityAnchor | null): number {
+  'worklet';
+  const base = lnPopupForegroundOpacity(progress, direction, mini);
+  if (!anchor || !Number.isFinite(anchor.progress) || anchor.progress <= 0 || anchor.progress >= 1 ||
+      !Number.isFinite(anchor.fullContentOpacity) || !Number.isFinite(anchor.miniContentOpacity)) return base;
+  const a = anchor.progress;
+  const alpha = unit(mini ? anchor.miniContentOpacity : anchor.fullContentOpacity);
+  if (progress === a) return alpha;
+  const rawAnchor = lnPopupForegroundOpacity(a, direction, mini);
+  const below = progress < a;
+  const startProgress = below ? 0 : a;
+  const endProgress = below ? a : 1;
+  const rawStart = below ? lnPopupForegroundOpacity(0, direction, mini) : rawAnchor;
+  const rawEnd = below ? rawAnchor : lnPopupForegroundOpacity(1, direction, mini);
+  const difference = rawEnd - rawStart;
+  // A phase can be flat (the mini is already hidden). Use remaining geometric
+  // distance there so a reversed flight still reaches its actual endpoint.
+  const fraction = Math.abs(difference) > 1e-7 ? unit((base - rawStart) / difference)
+    : unit((progress - startProgress) / (endProgress - startProgress));
+  const from = below ? (mini ? 1 : 0) : alpha;
+  const to = below ? alpha : (mini ? 0 : 1);
+  return mix(from, to, fraction);
+}
+
+function anchoredArtwork(progress: number, snapshot: AppleMusicTransitionSnapshot,
+  fallback: AppleMusicPlayerTransitionFrame['artwork'], anchor?: LnPopupArtworkAnchor | null): AppleMusicPlayerTransitionFrame['artwork'] {
+  'worklet';
+  const full = snapshot.playerArtwork;
+  if (!anchor || !Number.isFinite(anchor.progress) || anchor.progress <= 0 || anchor.progress >= 1 ||
+      !validRect(anchor.rect) || !Number.isFinite(anchor.rect.width / full.width) || anchor.rect.width / full.width <= 0 ||
+      !Number.isFinite(anchor.rect.height / full.height) || anchor.rect.height / full.height <= 0) return fallback;
+  const mini = snapshot.miniArtwork;
+  const miniRadius = radius(mini, APPLE_MUSIC_PLAYER_MOTION.compactArtworkCornerRadius);
+  const fullRadius = radius(full, APPLE_MUSIC_PLAYER_MOTION.expandedArtworkCornerRadius);
+  const anchorRadius = radius(anchor.rect, mix(miniRadius, fullRadius, anchor.progress));
+  const below = progress <= anchor.progress;
+  const start = below ? mini : anchor.rect;
+  const end = below ? anchor.rect : full;
+  const fraction = below ? progress / anchor.progress : (progress - anchor.progress) / (1 - anchor.progress);
+  const artworkRadius = mix(below ? miniRadius : anchorRadius, below ? anchorRadius : fullRadius, fraction);
+  const rect = {
+    x: mix(start.x, end.x, fraction), y: mix(start.y, end.y, fraction),
+    width: mix(start.width, end.width, fraction), height: mix(start.height, end.height, fraction),
+    cornerRadius: artworkRadius,
+  };
+  const scaleX = rect.width / full.width;
+  const scaleY = rect.height / full.height;
+  if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY) || scaleX <= 0 || scaleY <= 0) return fallback;
+  return {
+    rect, baseWidth: full.width, baseHeight: full.height,
+    translateX: rect.x + (rect.width - full.width) / 2,
+    translateY: rect.y + (rect.height - full.height) / 2,
+    scaleX, scaleY,
+    cornerRadius: Math.min(artworkRadius / Math.min(scaleX, scaleY), full.width / 2, full.height / 2),
+  };
+}
+
+/**
+ * One reversible presentation progress moves the container and shared cover.
+ * Full player layout is unchanged; the container translates and clips it, with
+ * the LNPopup foreground phases applied separately. No independently sliding
+ * controls or underlying-page zoom runs alongside the presentation.
+ */
+export function resolveLnPopupPlayerTransition(input: LnPopupPlayerTransitionInput): AppleMusicPlayerTransitionFrame | null {
+  'worklet';
+  const frame = resolveAppleMusicPlayerTransition({ ...input, dragOffsetY: 0, controlsHeight: 0 });
+  if (!frame) return null;
+  const p = unit(input.progress);
+  const direction = input.direction ?? 'opening';
+  // Match the display rounding during the morph, then continuously release it
+  // into the existing unrounded full-screen view. The old helper switched its
+  // moving radius to zero in a single endpoint frame.
+  const mini = input.snapshot!.miniPlayer;
+  const displayRadius = Number.isFinite(input.deviceCornerRadius) ? Math.max(0, input.deviceCornerRadius!) : 0;
+  const movingRadius = mix(radius(mini, APPLE_MUSIC_PLAYER_MOTION.compactBackgroundCornerRadius), displayRadius, p);
+  const backgroundRadius = movingRadius * (1 - smoothstep(0.9, 1, p));
+  return {
+    ...frame,
+    artwork: anchoredArtwork(p, input.snapshot!, frame.artwork, input.artworkAnchor),
+    background: { rect: frame.background.rect,
+      cornerRadius: Math.min(backgroundRadius, frame.background.rect.width / 2, frame.background.rect.height / 2) },
+    artworkProgress: p,
+    // Fade only where the morph is already almost a mini, revealing its real
+    // glass material instead of leaving an opaque cover-derived patch at rest.
+    surfaceOpacity: smoothstep(0, 0.12, p),
+    fullContentOpacity: anchoredOpacity(p, direction, false, input.opacityAnchor),
+    miniContentOpacity: anchoredOpacity(p, direction, true, input.opacityAnchor),
+    controlsTranslateY: 0,
+    underlay: { scale: 1, translateY: 0, cornerRadius: 0 },
   };
 }

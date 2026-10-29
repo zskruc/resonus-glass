@@ -55,12 +55,12 @@ export function PlayerArtworkOverlay() {
   const thumbStyle = useAnimatedStyle(() => {
     const published = playerArtworkFlight.get();
     const flight = published?.owner === playerSurfaceOwner.get() ? published : null;
-    return { transform: [{ scale: playerArtworkCropScale(fit, thumbWidth, thumbHeight, flight?.frame.fullContentOpacity ?? 0) }] };
+    return { transform: [{ scale: playerArtworkCropScale(fit, thumbWidth, thumbHeight, flight?.frame.artworkProgress ?? 0) }] };
   }, [fit, thumbWidth, thumbHeight]);
   const cardStyle = useAnimatedStyle(() => {
     const published = playerArtworkFlight.get();
     const flight = published?.owner === playerSurfaceOwner.get() ? published : null;
-    const progress = flight?.frame.fullContentOpacity ?? 0;
+    const progress = flight?.frame.artworkProgress ?? 0;
     return { opacity: playerArtworkCardOpacity(cardReady, progress),
       transform: [{ scale: playerArtworkCropScale(fit, cardWidth, cardHeight, progress) }] };
   }, [fit, cardReady, cardWidth, cardHeight]);

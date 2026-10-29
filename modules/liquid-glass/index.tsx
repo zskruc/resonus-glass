@@ -136,23 +136,26 @@ export const setPlayerTransitionTrace = nativeModule?.setPlayerTransitionTrace ?
 export const isNativePlayerSurfaceClipAvailable = updateNativePlayerSurfaceClip !== null;
 
 export type PlayerSurfaceClipViewProps = ViewProps & {
-  /** Background children only. The entire native subtree always ignores touch. */
   onClipHostReady?: (event: NativeSyntheticEvent<{ hostId: number; cornerRadius?: number }>) => void;
   initialOpacity?: number;
+  /** Opt in only for the separately clipped player content; backgrounds ignore input. */
+  interactive?: boolean;
 };
 const NativePlayerSurfaceClip = isNativePlayerSurfaceClipAvailable
   ? requireNativeView<PlayerSurfaceClipViewProps & React.RefAttributes<View>>('ResonusLiquidGlass', 'PlayerSurfaceClip')
   : null;
 
-/** Decorative background mask; never wrap the cover, controls or other inputs. */
+/** Fixed-layout native mask; interactive content must explicitly opt in. */
 export const PlayerSurfaceClipView = React.forwardRef<View, PlayerSurfaceClipViewProps>(function PlayerSurfaceClipView(
-  { onClipHostReady, initialOpacity = 0, ...props }, ref,
+  { onClipHostReady, initialOpacity = 0, interactive = false, ...props }, ref,
 ) {
-  if (!NativePlayerSurfaceClip) return <View {...props} ref={ref} pointerEvents="none"
-    accessible={false} importantForAccessibility="no-hide-descendants" />;
+  const pointerEvents = interactive ? 'box-none' : 'none';
+  const accessibility = interactive ? 'auto' : 'no-hide-descendants';
+  if (!NativePlayerSurfaceClip) return <View {...props} ref={ref} pointerEvents={pointerEvents}
+    accessible={false} importantForAccessibility={accessibility} />;
   return <NativePlayerSurfaceClip {...props} ref={ref} collapsable={false} initialOpacity={initialOpacity}
-    onClipHostReady={onClipHostReady} pointerEvents="none" accessible={false}
-    importantForAccessibility="no-hide-descendants" />;
+    interactive={interactive} onClipHostReady={onClipHostReady} pointerEvents={pointerEvents} accessible={false}
+    importantForAccessibility={accessibility} />;
 });
 
 /** Debug counters only; no screen content, device identity, or saved images. */

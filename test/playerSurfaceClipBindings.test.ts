@@ -46,7 +46,7 @@ function load({ platform = 'android', clipApi = true, glassSupported = true, tra
     lookups: () => lookups };
 }
 
-describe('background-only player clip binding', () => {
+describe('player clip binding and explicit input admission', () => {
   it('exports trace opt-in without enabling it at module load, retaining compatibility with earlier APKs', () => {
     const h = load();
     assert.equal(h.api.setPlayerTransitionTrace, h.setPlayerTransitionTrace);
@@ -93,6 +93,22 @@ describe('background-only player clip binding', () => {
     assert.equal(h.api.updateNativePlayerSurfaceClip, h.updatePlayerSurfaceClip);
   });
 
+  it('opts player content into child input and accessibility without making the host a target', () => {
+    const h = load();
+    const child = { testID: 'player-controls' };
+    const ready = () => {};
+    const clip = h.api.PlayerSurfaceClipView({ children: child, interactive: true, onClipHostReady: ready,
+      pointerEvents: 'auto', accessible: true, importantForAccessibility: 'no-hide-descendants' }) as Element;
+    assert.equal(clip.type, h.bindings.get('PlayerSurfaceClip'));
+    assert.equal(clip.props.children, child);
+    assert.equal(clip.props.interactive, true);
+    assert.equal(clip.props.pointerEvents, 'box-none');
+    assert.equal(clip.props.accessible, false);
+    assert.equal(clip.props.importantForAccessibility, 'auto');
+    assert.equal(clip.props.onClipHostReady, ready);
+    assert.equal(clip.props.collapsable, false);
+  });
+
   it('does not tie the background clip API to Android 12 glass availability', () => {
     const h = load({ glassSupported: false });
     assert.equal(h.api.isLiquidGlassAvailable, false);
@@ -125,6 +141,22 @@ describe('background-only player clip binding', () => {
     }
   });
 
+  it('keeps inputs usable in an older or non-Android fallback without leaking native-only props', () => {
+    for (const options of [{ clipApi: false }, { platform: 'ios' }, { platform: 'web' }]) {
+      const h = load(options);
+      const child = { testID: 'controls' };
+      const fallback = h.api.PlayerSurfaceClipView({ children: child, interactive: true,
+        initialOpacity: 0, onClipHostReady() {} }) as Element;
+      assert.equal(fallback.type, 'FallbackView');
+      assert.equal(fallback.props.children, child);
+      assert.equal(fallback.props.pointerEvents, 'box-none');
+      assert.equal(fallback.props.importantForAccessibility, 'auto');
+      assert.equal('interactive' in fallback.props, false);
+      assert.equal('initialOpacity' in fallback.props, false);
+      assert.equal('onClipHostReady' in fallback.props, false);
+    }
+  });
+
   it('samples only the public display corner on attachment, with an older-device zero fallback', () => {
     const view = readFileSync(new URL('../modules/liquid-glass/android/src/main/java/expo/modules/liquidglass/PlayerSurfaceClipView.kt', import.meta.url), 'utf8');
     assert.match(view, /onClipHostReady\(mapOf\("hostId" to hostToken, "cornerRadius" to attachmentCornerRadiusDp\(\)\)\)/);
@@ -146,7 +178,10 @@ describe('background-only player clip binding', () => {
     assert.match(expo, /if \(!viewManagerDefinitions\.contains\(DEFAULT_MODULE_VIEW\)\)\s*\{\s*viewManagerDefinitions\[DEFAULT_MODULE_VIEW\] = definition/);
     const view = readFileSync(new URL('../modules/liquid-glass/android/src/main/java/expo/modules/liquidglass/PlayerSurfaceClipView.kt', import.meta.url), 'utf8');
     assert.match(view, /class PlayerSurfaceClipView[^\n]*ReactPointerEventsView/);
-    assert.match(view, /override val pointerEvents:\s*PointerEvents\s+get\(\)\s*=\s*PointerEvents\.NONE/);
+    assert.match(view, /override val pointerEvents:\s*PointerEvents\s+get\(\)\s*=\s*if \(interactive\) PointerEvents\.BOX_NONE else PointerEvents\.NONE/);
+    assert.match(view, /if \(!interactive\) return false/);
+    assert.match(view, /MotionEvent\.ACTION_DOWN && !bounds\.contains\(event\.x, event\.y\)/);
+    assert.match(view, /return super\.dispatchTouchEvent\(event\)/);
     const rn = readFileSync(new URL('../node_modules/react-native/ReactAndroid/src/main/java/com/facebook/react/uimanager/TouchTargetHelper.kt', import.meta.url), 'utf8');
     assert.match(rn, /if \(view is ReactPointerEventsView\)\s*\{\s*view\.pointerEvents/);
     const rngh = readFileSync(new URL('../node_modules/react-native-gesture-handler/android/src/main/java/com/swmansion/gesturehandler/react/RNViewConfigurationHelper.kt', import.meta.url), 'utf8');

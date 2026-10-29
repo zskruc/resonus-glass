@@ -36,7 +36,7 @@ function harness() {
       if (changed(state.deps, deps)) effects.push(() => { state.cleanup?.(); state.deps = deps; state.cleanup = create(); });
     },
   };
-  const state = { song: { id: 'A' }, fit: true, progress: 1, owner: 7, active: true };
+  const state = { song: { id: 'A' }, fit: true, progress: 1, contentOpacity: 1, owner: 7, active: true };
   const imports: Record<string, unknown> = {
     react,
     'react/jsx-runtime': { jsx, jsxs: jsx },
@@ -46,7 +46,7 @@ function harness() {
     '@/hooks/useScreenSize': { useScreenSize: () => ({ width: 400 }) },
     '@/lib/playerReveal': {
       playerSurfaceOwner: { get: () => state.owner },
-      playerArtworkFlight: { get: () => state.active ? { owner: 7, frame: { fullContentOpacity: state.progress,
+      playerArtworkFlight: { get: () => state.active ? { owner: 7, frame: { fullContentOpacity: state.contentOpacity, artworkProgress: state.progress,
         artwork: { rect: { x: 10, y: 100, width: 40, height: 40, cornerRadius: 7 } } } } : null },
     },
     '@/lib/playerArtworkCrop': crop,
@@ -134,6 +134,24 @@ test('card and thumb keep their own aspect, rejecting late URI/ABA callbacks wit
   old.thumbImage.props.onImageMetadata('A/200', { width: 9, height: 1, isAnimated: false }); view = h.render();
   assert.equal(view.thumbStyle().transform[0].scale, 5, 'a previous A binding cannot mutate the later A request');
   h.state.owner = 8; assert.equal(view.outerStyle().opacity, 0, 'stale flights remain hidden');
+});
+
+test('foreground fading does not change artwork crop or resolution handoff', () => {
+  const h = harness(); let view = h.render();
+  view.thumbImage.props.onImageMetadata('A/200', { width: 900, height: 600, isAnimated: false });
+  view.cardImage.props.onImageMetadata('A/600', { width: 600, height: 900, isAnimated: false });
+  view.cardImage.props.onAnimatedDetected('A/600', false); view = h.render();
+  h.state.progress = .2;
+  const thumb = view.thumbStyle(); const card = view.cardStyle();
+  for (const alpha of [0, .15, .85, 1]) {
+    h.state.contentOpacity = alpha;
+    assert.deepEqual(view.thumbStyle(), thumb);
+    assert.deepEqual(view.cardStyle(), card);
+  }
+  h.state.progress = 0;
+  h.state.contentOpacity = 1;
+  assert.equal(view.cardStyle().opacity, 0, 'opaque content cannot keep the wrong high-res source at the mini endpoint');
+  assert.equal(view.thumbStyle().transform[0].scale, 1.5);
 });
 
 test('invalid metadata and progress cannot emit invalid scales or opacity', () => {

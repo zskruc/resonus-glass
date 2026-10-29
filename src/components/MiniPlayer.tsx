@@ -46,7 +46,7 @@ import { Cover } from './Cover';
 import { FavoriteButton } from './FavoriteButton';
 import { MarqueeText } from './MarqueeText';
 
-// Vertical gestures retain their existing dismissal and player-reveal behavior.
+// AMLL follows LNPopup Automatic: an upward intent snaps open; the full player drags closed.
 const DISMISS_Y = 80;
 const SWIPE_RETURN = { duration: 180, easing: motion.easing.move, reduceMotion: motion.reduceMotion.decorative };
 /** How far up the finger goes before the player starts coming up after it. */
@@ -200,6 +200,7 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
   // Pulled up, the player comes with the finger (see `playerReveal`): it is
   // opened with no animation and `revealOffset` places it.
   const revealing = useSharedValue(false);
+  const snappingOpen = useSharedValue(false);
   const startReveal = () => pushOnce(playerPresentation === 'amll' ? '/player?reveal=1&artwork=1' : '/player?reveal=1');
   const openPlayer = () => {
     if (playerPresentation === 'amll') scheduleOnUI(recordArtwork);
@@ -235,7 +236,8 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
         buttonOffsetX.set(e.translationX);
         buttonOffsetY.set(e.translationY);
       }
-      // Once the player is coming up, the pull is only ever vertical.
+      if (snappingOpen.get()) return;
+      // Once the legacy player is coming up, the pull is only ever vertical.
       if (revealing.value) {
         revealOffset.value = Math.min(screenH, Math.max(0, screenH + e.translationY + REVEAL_START));
         return;
@@ -251,6 +253,11 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
         translateY.value = 0;
         if (e.translationY < -REVEAL_START) {
           recordArtwork();
+          if (playerPresentation === 'amll') {
+            snappingOpen.set(true);
+            scheduleOnRN(openPlayer);
+            return;
+          }
           revealing.value = true;
           revealOffset.value = screenH;
           scheduleOnRN(startReveal);
@@ -260,6 +267,7 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
     .onEnd((e, success) => {
       if (!success) return;
       dragging.value = false;
+      if (snappingOpen.get()) return;
       const horizontal = !revealing.value && gestureAxis.value === 1;
       if (horizontal) {
         const width = fullWidth + (compactWidth - fullWidth) * visualProgress.get();
@@ -301,6 +309,7 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
       }
       dragging.value = false;
       gestureAxis.value = 0;
+      if (snappingOpen.get()) { snappingOpen.set(false); return; }
       if (!revealing.value) {
         if (!success) {
           translateX.value = withTiming(0, SWIPE_RETURN);

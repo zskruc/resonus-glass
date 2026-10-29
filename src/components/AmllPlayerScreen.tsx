@@ -292,13 +292,7 @@ export function AmllPlayerScreen() {
     )
   ) : null;
 
-  return (
-    <Animated.View style={[styles.screen, transition.rootStyle]}>
-      {focused ? <><StatusBar style="light" /><NavigationBar style="light" /></> : null}
-      {isNativePlayerSurfaceClipAvailable ? <PlayerSurfaceClipView style={StyleSheet.absoluteFill}
-        onClipHostReady={transition.onClipHostReady}>
-        <AmllPlayerBackground uri={cover} active={interactive && playing} />
-      </PlayerSurfaceClipView> : <AmllPlayerBackground uri={cover} active={interactive && playing} />}
+  const playerContent = (
       <GestureDetector gesture={transition.handleGesture}>
       <Animated.View style={[styles.safe, { paddingTop: insets.top + AMLL_TOP_PADDING, paddingBottom: insets.bottom,
         paddingLeft: insets.left + layout.padding, paddingRight: insets.right + layout.padding }, transition.contentStyle]}>
@@ -386,6 +380,17 @@ export function AmllPlayerScreen() {
           outputLabel={remoteName ? `${t('Devices')}: ${remoteName}` : t('Devices')} active={interactive} /> : null}
       </Animated.View>
       </GestureDetector>
+  );
+
+  return (
+    <Animated.View style={[styles.screen, transition.rootStyle]}>
+      {focused ? <><StatusBar style="light" /><NavigationBar style="light" /></> : null}
+      {isNativePlayerSurfaceClipAvailable ? <PlayerSurfaceClipView style={StyleSheet.absoluteFill}
+        onClipHostReady={transition.onClipHostReady}>
+        <AmllPlayerBackground uri={cover} active={interactive && playing} />
+      </PlayerSurfaceClipView> : <AmllPlayerBackground uri={cover} active={interactive && playing} />}
+      {isNativePlayerSurfaceClipAvailable ? <PlayerSurfaceClipView interactive style={StyleSheet.absoluteFill}
+        onClipHostReady={transition.onContentClipHostReady}>{playerContent}</PlayerSurfaceClipView> : playerContent}
       <OutputSheet visible={outputOpen && focused} onClose={() => setOutputOpen(false)} />
       <SpeedSheet openRef={openSpeed} />
       <PlayerAudioQualitySheet openRef={openQuality} />

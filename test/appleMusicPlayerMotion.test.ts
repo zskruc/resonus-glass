@@ -290,7 +290,7 @@ describe('mounted Apple Music artwork motion lifecycle', () => {
     assert.equal(h.result.phase.get(), 'opening');
     assert.equal(h.progress().animation?.kind, 'spring');
     assert.equal(h.progress().animation?.target, 1);
-    assert.equal(h.progress().animation?.options.duration, 200);
+    near(h.progress().animation?.options.duration as number, 500 / 1.5);
     assert.equal(h.progress().animation?.options.dampingRatio, 1);
     assert.equal(h.style('artworkStyle').opacity, 0);
     let flight = w.bus.playerArtworkFlight.get();
@@ -303,8 +303,8 @@ describe('mounted Apple Music artwork motion lifecycle', () => {
     h.advance(h.progress(), .5);
     flight = w.bus.playerArtworkFlight.get();
     assert.deepEqual(plain(flight.frame.artwork.rect), { x: 22.5, y: 409, width: 195, height: 195, cornerRadius: 8.5 });
-    assert.equal(h.style('controlsStyle').transform[0].translateY, 125);
-    assert.deepEqual(w.clips.at(-1), [41, 6, 350, 388, 428, 29, .5]);
+    assert.equal(h.style('controlsStyle').transform[0].translateY, 0, 'full controls retain their current player layout');
+    assert.deepEqual(w.clips.at(-1), [41, 6, 350, 388, 428, 29, 1]);
     assert.equal(h.measurements(), 1, 'endpoints remain frozen between frames');
     assert.equal(h.pendingRN(), 0, 'geometry does not dispatch JS every frame');
     h.advance(h.progress(), 1, true);
@@ -354,19 +354,24 @@ describe('mounted Apple Music artwork motion lifecycle', () => {
     }
   });
 
-  it('starts dismissal from the released painted artwork and waits at p=0 before the single route handoff', () => {
+  it('continues the finger-driven morph without a release-frame jump and waits at p=0 before the single route handoff', () => {
     const w = world(); const h = w.mount({ fromMini: false });
-    h.offset.set(160); h.setArtwork({ x: 25, y: 270, width: 350, height: 350 });
-    assert.equal(h.result.beginClose(7), true); h.flushUI();
+    h.offset.set(0);
+    assert.equal(h.result.beginDrag(), true); h.flushUI();
+    assert.equal(h.result.updateDrag(140), true); h.flushUI();
+    near(h.progress().get(), .8);
+    const before = plain(w.bus.playerArtworkFlight.get().frame);
+    assert.equal(h.result.beginClose(7, true), true); h.flushUI();
     assert.equal(h.result.phase.get(), 'closing');
-    assert.equal(w.bus.playerArtworkFlight.get().frame.artwork.rect.y, 270);
-    assert.equal(h.offset.get(), 160, 'release drag is animated, not reset before the first frame');
-    assert.equal(h.offset.animation?.target, 0);
+    assertContinuousFrame(w.bus.playerArtworkFlight.get().frame, before);
+    assert.equal(h.offset.get(), 0, 'the release retains the one geometry clock rather than adding a page offset');
+    assert.equal(h.offset.animation, undefined);
     assert.equal(h.progress().animation?.target, 0);
-    h.advance(h.offset, 80); h.advance(h.progress(), .5);
-    assert.equal(w.bus.playerArtworkFlight.get().frame.artwork.rect.y, 489);
+    assert.equal(h.progress().animation?.options.dampingRatio, .87);
+    h.advance(h.progress(), .5);
+    assert.equal(w.bus.playerArtworkFlight.get().frame.artwork.rect.y, 409);
     const complete = h.progress().animation?.done;
-    h.advance(h.offset, 0, true); h.advance(h.progress(), 0);
+    h.advance(h.progress(), 0);
     assert.equal(h.result.phase.get(), 'closing');
     assert.equal(h.pendingRN(), 0);
     assert.equal(h.style('artworkStyle').opacity, 0);
@@ -598,6 +603,7 @@ describe('mounted Apple Music artwork motion lifecycle', () => {
 
   it('ignores unsuccessful native animation completions and an entry fallback completion after unmount', () => {
     const w = world(); const h = w.mount(); h.frame();
+    h.advance(h.progress(), .4);
     h.progress().animation?.done?.(false); h.flushUI();
     assert.equal(h.result.phase.get(), 'opening');
     assert.equal(h.pendingRN(), 0);
@@ -718,11 +724,228 @@ describe('mounted Apple Music artwork motion lifecycle', () => {
     assert.equal(h.pendingFrames(), 0);
     assert.equal(h.pendingRN(), 0);
     h.result.beginClose(2); h.flushUI(); h.advance(h.progress(), .5);
-    assert.deepEqual(w.clips.at(-1), [12, 6, 350, 388, 428, 7, .5]);
+    assert.deepEqual(w.clips.at(-1), [12, 6, 350, 388, 428, 7, 1]);
     const count = w.clips.length;
     h.flushUI(); h.render(); h.flushUI(); assert.equal(w.clips.length, count);
     h.result.onClipHostReady({ nativeEvent: { hostId: 13 } }); h.flushUI();
-    assert.deepEqual(w.clips.at(-1), [13, 6, 350, 388, 428, 7, .5]);
+    assert.deepEqual(w.clips.at(-1), [13, 6, 350, 388, 428, 7, 1]);
     assert.equal(w.clips.length, count + 1);
+  });
+});
+
+describe('LNPopup coordinated player interaction', () => {
+  it('captures a downward drag once and publishes the cover, container and dock from the same progress without RN work', () => {
+    const w = world(); w.bus.playerUnderlayRouteKey.set('playlist-origin');
+    const h = w.mount({ fromMini: false }); h.offset.set(0);
+    assert.equal(h.result.beginDrag(), true); h.flushUI();
+    assert.equal(h.result.phase.get(), 'dragging');
+    assert.equal(w.bus.playerArtworkFlight.get().phase, 'dragging');
+    assert.equal(h.measurements(), 1);
+    assert.deepEqual(plain(w.bus.playerArtworkFlight.get().frame.artwork.rect),
+      { x: 25, y: 110, width: 350, height: 350, cornerRadius: 10 });
+    const writes = h.writes();
+    for (let position = 1; position <= 140; position++) {
+      assert.equal(h.result.updateDrag(position), true); h.flushUI();
+    }
+    const flight = w.bus.playerArtworkFlight.get();
+    near(h.progress().get(), .8);
+    near(flight.frame.artworkProgress, .8);
+    near(flight.frame.artwork.rect.width, 288);
+    near(flight.frame.artwork.rect.y, 229.6);
+    near(flight.frame.background.rect.y, 140);
+    near(flight.frame.background.rect.height, 651.2);
+    assert.equal(h.offset.get(), 0);
+    assert.equal(h.style('controlsStyle').transform[0].translateY, 0);
+    assert.deepEqual(plain(w.bus.playerUnderlayFrame.get()),
+      { owner: h.owner, routeKey: 'playlist-origin', scale: 1, translateY: 0, cornerRadius: 0 });
+    assert.equal(h.measurements(), 1, 'every frame reuses the captured endpoint geometry');
+    assert.equal(h.writes(), writes, 'dragging never changes React storage');
+    assert.equal(h.pendingRN(), 0, 'geometry does not dispatch to the JS thread');
+    assert.deepEqual(h.finishes, []);
+  });
+
+  it('springs a cancelled morph back to the unchanged player layout with no navigation and no first-frame discontinuity', () => {
+    const w = world(); const h = w.mount({ fromMini: false }); h.offset.set(0);
+    h.result.beginDrag(); h.result.updateDrag(140); h.flushUI();
+    const before = plain(w.bus.playerArtworkFlight.get().frame);
+    assert.equal(h.result.shouldDismissDrag(140, -50), false, 'an upward release before halfway restores Open');
+    h.result.cancelDrag(); h.flushUI();
+    assert.equal(h.result.phase.get(), 'cancelling');
+    assertContinuousFrame(w.bus.playerArtworkFlight.get().frame, before);
+    assert.equal(h.progress().animation?.target, 1);
+    assert.equal(h.progress().animation?.options.dampingRatio, .87);
+    near(h.progress().animation?.options.duration as number, 500 / 1.5);
+    h.advance(h.progress(), 1, true); h.drainRN();
+    assert.equal(h.result.phase.get(), 'idle');
+    assert.equal(h.result.running.get(), false);
+    assert.equal(w.bus.playerArtworkFlight.get(), null);
+    assert.equal(h.style('contentStyle').opacity, 1);
+    assert.deepEqual(plain(h.style('contentStyle').transform), [{ translateX: 0 }, { translateY: 0 }]);
+    assert.equal(h.style('artworkStyle').opacity, 1);
+    assert.equal(h.style('controlsStyle').transform[0].translateY, 0);
+    assert.deepEqual(w.clips.at(-1), [1, 0, 0, 400, 800, 0, 1]);
+    assert.deepEqual(h.finishes, []);
+  });
+
+  it('accepts a new pull during cancellation continuously and ignores the old cancellation completion', () => {
+    const w = world(); const h = w.mount({ fromMini: false }); h.offset.set(0);
+    h.result.beginDrag(); h.result.updateDrag(140); h.result.cancelDrag(); h.flushUI();
+    const cancelledDone = h.progress().animation?.done;
+    h.advance(h.progress(), .9);
+    const before = plain(w.bus.playerArtworkFlight.get().frame);
+    assert.equal(h.result.beginDrag(), true); h.flushUI();
+    assertContinuousFrame(w.bus.playerArtworkFlight.get().frame, before);
+    assert.equal(h.measurements(), 1, 'an interrupted return keeps the original valid endpoints');
+    h.result.updateDrag(70); h.flushUI(); near(h.progress().get(), .8);
+    cancelledDone?.(true); h.flushUI();
+    assert.equal(h.result.phase.get(), 'dragging');
+    assert.equal(h.pendingRN(), 0);
+    assert.equal(h.result.shouldDismissDrag(70, 200), true);
+    assert.equal(h.result.beginClose(30, true), true); h.flushUI();
+    assert.equal(h.result.beginClose(31, true), false, 'a committed close cannot be restarted');
+    h.advance(h.progress(), 0, true); h.drainRN();
+    assert.deepEqual(h.finishes, [30]);
+  });
+
+  it('enables the player after an opening was interrupted by a drag that then cancelled', () => {
+    const w = world(); const h = w.mount(); h.frame();
+    const staleOpening = h.progress().animation?.done;
+    h.advance(h.progress(), .7);
+    assert.equal(h.render().entryReady, false);
+    assert.equal(h.result.beginDrag(), true); h.result.updateDrag(20); h.flushUI();
+    h.result.cancelDrag(); h.flushUI();
+    staleOpening?.(true); h.flushUI();
+    assert.equal(h.result.phase.get(), 'cancelling');
+    assert.equal(h.render().entryReady, false);
+    h.advance(h.progress(), 1, true); h.drainRN();
+    assert.equal(h.result.phase.get(), 'idle');
+    assert.equal(h.render().entryReady, true, 'the cancelled opening must not leave all playback controls disabled');
+    assert.equal(w.bus.playerArtworkFlight.get(), null);
+    assert.deepEqual(h.finishes, []);
+  });
+
+  it('returns an interrupted pressed-mini opening to the actual full cover before its cancellation handoff', () => {
+    const w = world(); w.bus.miniArtworkMetrics.set(pressedMini());
+    const h = w.mount(); h.frame(); h.advance(h.progress(), .37);
+    const before = plain(w.bus.playerArtworkFlight.get().frame);
+    assert.equal(h.result.beginDrag(), true); h.flushUI();
+    assertContinuousPaintedFrame(w.bus.playerArtworkFlight.get().frame, before);
+    h.result.updateDrag(10); h.result.cancelDrag(); h.flushUI();
+    h.advance(h.progress(), 1);
+    assert.deepEqual(plain(w.bus.playerArtworkFlight.get().frame.artwork.rect),
+      { x: 25, y: 110, width: 350, height: 350, cornerRadius: 10 },
+      'the overlay must meet the actual full cover before revealing it, even if the initial mini press was still elastic');
+    h.advance(h.progress(), 1, true); h.drainRN();
+    assert.equal(h.result.phase.get(), 'idle');
+    assert.equal(h.render().entryReady, true);
+    assert.equal(h.style('artworkStyle').opacity, 1);
+    assert.deepEqual(h.finishes, []);
+  });
+
+  it('starts a later lyric-header pull with fresh endpoints after cancelling a pressed-mini reversal', () => {
+    const w = world(); w.bus.miniArtworkMetrics.set(pressedMini());
+    const h = w.mount(); h.frame(); h.advance(h.progress(), .37);
+    h.result.beginDrag(); h.result.updateDrag(10); h.result.cancelDrag();
+    h.advance(h.progress(), 1, true); h.drainRN();
+    h.setArtwork({ x: 20, y: 80, width: 72, height: 72, cornerRadius: 6 });
+    assert.equal(h.result.beginDrag(), true);
+    h.result.updateDrag(350); h.flushUI();
+    near(h.progress().get(), .5);
+    assert.deepEqual(plain(w.bus.playerArtworkFlight.get().frame.artwork.rect),
+      { x: 26, y: 394.5, width: 51, height: 51, cornerRadius: 5 },
+      'an old pressed-cover anchor must not bend a later pull from the lyric header');
+  });
+
+  it('leaves a translated slide fallback to the parent instead of snapping it into a new full-window morph', () => {
+    const w = world(); const h = w.mount({ fromMini: false });
+    h.offset.set(160); h.setArtwork({ x: 25, y: 270, width: 350, height: 350 });
+    assert.equal(h.result.beginDrag(), false);
+    assert.equal(h.result.beginClose(31), false);
+    assert.equal(h.offset.get(), 160);
+    assert.equal(h.offset.animation, undefined);
+    assert.equal(h.result.phase.get(), 'idle');
+    assert.equal(w.bus.playerArtworkFlight.get(), null);
+    assert.equal(h.measurements(), 0, 'the translated slide keeps ownership before any new snapshot');
+    assert.deepEqual(h.finishes, []);
+  });
+
+  it('hands an opening still at the mini endpoint back immediately, without a second spring or duplicate callback', () => {
+    const w = world(); const h = w.mount(); h.frame();
+    const oldOpening = h.progress().animation?.done;
+    assert.equal(h.progress().get(), 0);
+    assert.equal(h.result.beginClose(32), true); h.flushUI();
+    assert.equal(h.result.phase.get(), 'handoff');
+    assert.equal(h.progress().animation, undefined);
+    assert.equal(w.bus.playerArtworkFlight.get().frame.artworkProgress, 0);
+    assert.equal(h.pendingRN(), 1);
+    oldOpening?.(true); h.flushUI();
+    h.drainRN(); assert.deepEqual(h.finishes, [32]);
+    assert.equal(h.result.beginClose(33), false);
+  });
+
+  it('cancels a half-drag when another page takes focus and restores a complete player when returning', () => {
+    const w = world(); const h = w.mount({ fromMini: false }); h.offset.set(0);
+    h.result.beginDrag(); h.result.updateDrag(210); h.flushUI();
+    h.render({ focused: false });
+    assert.equal(h.result.phase.get(), 'cancelling');
+    assert.equal(w.bus.playerArtworkFlight.get(), null);
+    assert.equal(h.progress().animation?.target, 1);
+    h.advance(h.progress(), 1, true); h.render({ focused: true }); h.drainRN();
+    assert.equal(h.result.phase.get(), 'idle');
+    assert.equal(h.style('contentStyle').opacity, 1);
+    assert.equal(h.style('artworkStyle').opacity, 1);
+    assert.equal(h.result.surfaceOffset.get(), 0);
+    assert.deepEqual(h.finishes, []);
+  });
+
+  it('abandons invalid drag geometry on rotation or track replacement without accidentally closing the route', () => {
+    for (const change of [{ width: 800, height: 400 }, { artworkIdentity: 'track-B' }]) {
+      const w = world(); const h = w.mount({ fromMini: false }); h.offset.set(0);
+      h.result.beginDrag(); h.result.updateDrag(210); h.result.cancelDrag(); h.flushUI();
+      const staleReturn = h.progress().animation?.done;
+      h.render(change);
+      assert.equal(h.result.phase.get(), 'idle');
+      assert.equal(h.progress().animation, undefined);
+      assert.equal(h.offset.get(), 0);
+      assert.equal(w.bus.playerArtworkFlight.get(), null);
+      assert.equal(h.style('artworkStyle').opacity, 1);
+      staleReturn?.(true); h.flushUI(); h.drainRN();
+      assert.equal(h.result.phase.get(), 'idle');
+      assert.deepEqual(h.finishes, []);
+    }
+  });
+
+  it('keeps retired drag and cancellation scenes hidden before passive mapper teardown', () => {
+    for (const cancel of [false, true]) {
+      const w = world(); const h = w.mount({ fromMini: false }); h.offset.set(0);
+      h.result.beginDrag(); h.result.updateDrag(210);
+      if (cancel) h.result.cancelDrag();
+      h.flushUI();
+      const staleReturn = h.progress().animation?.done;
+      h.cleanupLayoutEffects();
+      assert.equal(h.style('contentStyle').opacity, 0);
+      assert.equal(h.style('artworkStyle').opacity, 0);
+      assert.equal(w.clips.at(-1)?.[6], 0);
+      assert.equal(w.bus.playerArtworkFlight.get(), null);
+      const lastPaints = w.clips.length;
+      h.flushUI(); assert.equal(w.clips.length, lastPaints);
+      staleReturn?.(true); h.flushUI(); h.drainRN();
+      assert.deepEqual(h.finishes, []);
+    }
+  });
+
+  it('clips content and background to the same morph while only the glass handoff background fades near mini', () => {
+    const w = world(); const h = w.mount();
+    h.result.onClipHostReady({ nativeEvent: { hostId: 71, cornerRadius: 44 } });
+    h.result.onContentClipHostReady({ nativeEvent: { hostId: 72 } }); h.flushUI(); h.frame();
+    h.advance(h.progress(), .05);
+    const background = w.clips.findLast((clip) => clip[0] === 71)!;
+    const content = w.clips.findLast((clip) => clip[0] === 72)!;
+    assert.deepEqual(background.slice(1, 6), content.slice(1, 6));
+    assert.ok(background[6] > 0 && background[6] < 1);
+    assert.equal(content[6], 1);
+    h.advance(h.progress(), 1, true); h.drainRN();
+    assert.deepEqual(w.clips.findLast((clip) => clip[0] === 71), [71, 0, 0, 400, 800, 0, 1]);
+    assert.deepEqual(w.clips.findLast((clip) => clip[0] === 72), [72, 0, 0, 400, 800, 0, 1]);
   });
 });

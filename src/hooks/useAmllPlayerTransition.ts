@@ -14,7 +14,7 @@ import { createPlayerSurfaceOwner, playerSurfaceHeight, playerSurfaceOffset, pla
 import { isAmllPlayerHeaderTouch, type AmllPlayerHeaderArea } from '@/lib/amllPlayerLayout';
 import { motion } from '@/theme/motion';
 import { useAppleMusicPlayerMotion } from './useAppleMusicPlayerMotion';
-import { appleMusicPlayerDrag, shouldDismissAppleMusicPlayer, type AppleMusicRect } from '@/lib/appleMusicPlayerTransition';
+import type { AppleMusicRect } from '@/lib/appleMusicPlayerTransition';
 
 const RETURN_SPRING = { damping: 20, stiffness: 200, mass: 1, reduceMotion: motion.reduceMotion.essential };
 
@@ -59,7 +59,8 @@ export function useAmllPlayerTransition({ width = 0, height, focused, enabled = 
     fromMini: entry.fromMini, revealing: entry.revealing, readArtwork, offset, finish, controlsHeight, focused, artworkIdentity });
   const { running: artworkRunning, surfaceOffset: artworkSurfaceOffset,
     beginClose: beginArtworkClose, cancelDrag: cancelArtworkDrag, available: artworkAvailable,
-    phase: artworkPhase, abandon: abandonArtwork } = apple;
+    phase: artworkPhase, beginDrag: beginArtworkDrag, updateDrag: updateArtworkDrag,
+    shouldDismissDrag: shouldDismissArtworkDrag, abandon: abandonArtwork } = apple;
 
   useLayoutEffect(() => {
     scheduleOnUI(() => {
@@ -103,6 +104,7 @@ export function useAmllPlayerTransition({ width = 0, height, focused, enabled = 
         scheduleOnUI(() => {
           closingUI.set(false);
           dragging.set(false);
+          cancelArtworkDrag();
           offset.set(withSpring(0, RETURN_SPRING));
         });
       }
@@ -115,7 +117,7 @@ export function useAmllPlayerTransition({ width = 0, height, focused, enabled = 
       if (playerSurfaceOwner.get() !== surfaceOwner) return;
       closingUI.set(true);
       dragging.set(false);
-      if (beginArtworkClose(generation)) return;
+      if (beginArtworkClose(generation, source === 'handle')) return;
       abandonArtwork();
       // A mini-player pull may still own the root's position. Transfer it
       // without briefly falling back to the fully-open local offset.
@@ -133,7 +135,7 @@ export function useAmllPlayerTransition({ width = 0, height, focused, enabled = 
         if (finished) scheduleOnRN(finish, generation);
       }));
     });
-  }, [height, offset, closingUI, dragging, finish, surfaceOwner, beginArtworkClose, abandonArtwork]);
+  }, [height, offset, closingUI, dragging, finish, surfaceOwner, beginArtworkClose, abandonArtwork, cancelArtworkDrag]);
   const close = useCallback(() => requestClose('button'), [requestClose]);
 
   // Native-stack removal must be prevented through its supported hook; a raw
@@ -192,10 +194,12 @@ export function useAmllPlayerTransition({ width = 0, height, focused, enabled = 
     .failOffsetX([-24, 24])
     .onTouchesDown((event, manager) => {
       const touch = event.allTouches[0];
-      if (artworkPhase.get() !== 'idle' || !touch || !isAmllPlayerHeaderTouch(headerArea, touch.x, touch.y, headerScrollOffset.get())) manager.fail();
+      const phase = artworkPhase.get();
+      if ((phase !== 'idle' && phase !== 'opening' && phase !== 'cancelling') || !touch || !isAmllPlayerHeaderTouch(headerArea, touch.x, touch.y, headerScrollOffset.get())) manager.fail();
     })
     .onStart(() => {
       if (closingUI.get() || playerSurfaceOwner.get() !== surfaceOwner) return;
+      if (beginArtworkDrag()) { dragging.set(true); return; }
       cancelAnimation(offset);
       const revealed = revealOffset.get();
       dragStart.set(revealed >= 0 ? revealed : offset.get());
@@ -205,14 +209,13 @@ export function useAmllPlayerTransition({ width = 0, height, focused, enabled = 
     })
     .onUpdate((event) => {
       if (!dragging.get() || closingUI.get()) return;
-      offset.set(dragStart.get() + (artworkAvailable ? appleMusicPlayerDrag(event.translationY, height).offsetY
-        : amllPlayerDragOffset(event.translationY, height)));
+      if (!updateArtworkDrag(event.translationY)) offset.set(dragStart.get() + amllPlayerDragOffset(event.translationY, height));
     })
     // eslint-disable-next-line react-hooks/refs -- RNGH runs this worklet only after a native gesture ends.
     .onEnd((event, success) => {
       if (!dragging.get() || closingUI.get()) return;
       dragging.set(false);
-      if (success && (artworkAvailable ? shouldDismissAppleMusicPlayer(event.translationY, event.velocityY, height)
+      if (success && (artworkPhase.get() === 'dragging' ? shouldDismissArtworkDrag(event.translationY, event.velocityY)
         : shouldCloseAmllPlayer(event.translationY, event.velocityY))) {
         closingUI.set(true);
         scheduleOnRN(requestClose, 'handle');
@@ -224,7 +227,7 @@ export function useAmllPlayerTransition({ width = 0, height, focused, enabled = 
       dragging.set(false);
       if (artworkAvailable) cancelArtworkDrag();
       else offset.set(withSpring(0, RETURN_SPRING));
-    }), [focused, enabled, allowRemoval, height, headerArea, headerScrollOffset, closingUI, dragging, offset, dragStart, requestClose, surfaceOwner, artworkPhase, artworkAvailable, cancelArtworkDrag]);
+    }), [focused, enabled, allowRemoval, height, headerArea, headerScrollOffset, closingUI, dragging, offset, dragStart, requestClose, surfaceOwner, artworkPhase, artworkAvailable, cancelArtworkDrag, beginArtworkDrag, updateArtworkDrag, shouldDismissArtworkDrag]);
   const rootStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: artworkRunning.get() ? 0 : revealOffset.get() >= 0 ? revealOffset.get() : offset.get() }],
   }));
@@ -232,5 +235,6 @@ export function useAmllPlayerTransition({ width = 0, height, focused, enabled = 
   return { rootStyle, handleGesture, close, closing, entryReady: apple.entryReady,
     contentStyle: apple.contentStyle, artworkStyle: apple.artworkStyle,
     controlsMotionStyle: apple.controlsStyle,
-    onArtworkLayout: apple.onArtworkLayout, onClipHostReady: apple.onClipHostReady };
+    onArtworkLayout: apple.onArtworkLayout, onClipHostReady: apple.onClipHostReady,
+    onContentClipHostReady: apple.onContentClipHostReady };
 }

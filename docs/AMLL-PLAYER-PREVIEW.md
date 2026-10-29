@@ -1,8 +1,18 @@
 # AMLL 播放器预览 / AMLL player preview
 
-`0.8.4.1-amll.24` · Android `versionCode 107` · `preview/amll-player`
+`0.8.4.1-amll.25` · Android `versionCode 108` · `preview/amll-player`
 
-## 当前 `.24` / Current `.24`
+## 当前 `.25` / Current `.25`
+
+新增 [LNPopup 风格展开／收合预览](./LNPOPUP-TRANSITION.md)：容器、封面和底栏使用统一进度，Mini 点按／上拉 Snap 展开，大播放器下拉跟手并在松手后收合或回弹。保留现有静止布局、图标、玻璃参数以及 `.24` 自动底色与后台图层修复。三星本版本的外观和交互验收待测试，不能沿用 `.24` 实机结果作为新动效通过依据。
+
+Adds an [LNPopup-style presentation preview](./LNPOPUP-TRANSITION.md): container, artwork and dock share progress; tapping/pulling up the mini snaps open, and dragging down tracks interactively before completion/rebound. Settled layout, icons, glass profiles and `.24` appearance/background fixes remain. Device appearance and interaction acceptance for this new animation remain pending; `.24` results do not validate `.25`.
+
+618 项应用测试、147 项原生测试、类型及翻译检查通过，ARM64 Release APK 已构建并核对 `.25` / `108`、原包名和原签名。本轮按要求交付安装包，未安装到三星。
+
+All 618 app tests, 147 native tests, typechecking and translation checks pass. The ARM64 release APK is built with `.25` / `108`, its existing package ID and original signing certificate verified. This round delivers the APK as requested, without installing it on Samsung.
+
+## `.24` 实机记录 / `.24` device record
 
 保留 `.23` 的材质提交后刷新，并修复 Android 后台任务预览的播放器图层重叠。Android 进入后台时不再对整个 Stack 和全局浮层启用 Suspense 冻结，避免其隐藏过程运行播放器的布局清理、提前清除独立背景与封面转场状态。页面继续挂载，既有前台工作暂停与导航 `freezeOnBlur` 保留；iOS 与 Web 的原后台冻结行为不变。
 

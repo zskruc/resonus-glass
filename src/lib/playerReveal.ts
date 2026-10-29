@@ -23,7 +23,7 @@ export type MiniArtworkMetrics = {
 };
 export type PlayerArtworkFlight = {
   owner: number;
-  phase: 'opening' | 'closing' | 'handoff';
+  phase: 'opening' | 'dragging' | 'cancelling' | 'closing' | 'handoff';
   frame: AppleMusicPlayerTransitionFrame;
 };
 /** Measured native coordinates; hidden retained mini layouts stay measurable. */

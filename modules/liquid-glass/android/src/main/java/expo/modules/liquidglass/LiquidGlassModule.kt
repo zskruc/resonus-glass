@@ -124,6 +124,7 @@ class LiquidGlassModule : Module() {
       Name("PlayerSurfaceClip")
       Events("onClipHostReady")
       Prop("initialOpacity") { view: PlayerSurfaceClipView, value: Double -> view.setInitialOpacity(value) }
+      Prop("interactive") { view: PlayerSurfaceClipView, value: Boolean -> view.setInteractive(value) }
     }
 
   }

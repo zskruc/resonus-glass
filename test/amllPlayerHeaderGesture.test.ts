@@ -33,6 +33,9 @@ const compiled = ts.transpileModule(source, { compilerOptions: {
 const revealCompiled = ts.transpileModule(readFileSync(new URL('../src/lib/playerReveal.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
+const artworkCompiled = ts.transpileModule(readFileSync(new URL('../src/hooks/useAppleMusicPlayerMotion.ts', import.meta.url), 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText;
 const mutable = (initial: unknown): Mutable => ({ value: initial,
   get() { return this.value; },
   set(next) {
@@ -44,11 +47,13 @@ const mutable = (initial: unknown): Mutable => ({ value: initial,
 // Execute the production transition hook and its actual native callbacks.
 // The harness supplies hook storage, a native failure manager and explicit
 // animation completions; it does not replace the header/close policy.
-function harness(width = 412, height = 840, lyrics = false, fontScale = 1) {
+function harness(width = 412, height = 840, lyrics = false, fontScale = 1, nativeArtwork = false) {
   let cursor = 0;
   const slots: any[] = [];
   const effects: (() => void)[] = [];
   const queued: (() => void)[] = [];
+  const frames: (() => void)[] = [];
+  const clips: number[][] = [];
   const values: Mutable[] = [];
   const reactions = new Set<{ prepare: () => any; react: (value: any, previous: any) => void; previous: any }>();
   const flushUI = () => {
@@ -94,18 +99,27 @@ function harness(width = 412, height = 840, lyrics = false, fontScale = 1) {
   const navigation = { canGoBack: () => true, goBack: () => { navigations++; }, dispatch: () => { navigations++; } };
   const bus: Record<string, any> = {};
   runInNewContext(revealCompiled, { exports: bus, require: () => ({ makeMutable: mutable }) });
+  if (nativeArtwork) {
+    bus.playerCanReturnToMini.set(true);
+    bus.miniArtworkMetrics.set({ viewportWidth: width, viewportHeight: height,
+      miniPlayer: { x: 12, y: height - 140, width: width - 24, height: 56 },
+      miniArtwork: { x: 20, y: height - 132, width: 40, height: 40 } });
+  }
   const headerScrollOffset = mutable(0);
   const layout = layoutRules.amllPlayerLayout({ width, height, fontScale, showVolume: true, showQuality: true });
   const headerArea = layoutRules.amllPlayerHeaderArea(layout, lyrics, 30, 0);
-  const props = { height, focused: true, enabled: true, headerArea, headerScrollOffset };
+  let measurements = 0;
+  const props = { width, height, focused: true, enabled: true, headerArea, headerScrollOffset,
+    readArtwork: nativeArtwork ? () => { measurements++; return { x: 28, y: 100, width: width - 56, height: width - 56 }; } : undefined };
   const exports: Record<string, any> = {};
+  const artworkExports: Record<string, any> = {};
   const artworkFallbacks = new WeakMap<object, object>();
   runInNewContext(compiled.outputText, { exports,
-    require(name: string) {
+    require: function requireModule(name: string): any {
       if (name === 'react') return react;
       if (name === 'expo-router') return {
         useRouter: () => ({ replace: () => { navigations++; } }),
-        useNavigation: () => navigation, useLocalSearchParams: () => ({ reveal: '1' }),
+        useNavigation: () => navigation, useLocalSearchParams: () => nativeArtwork ? { artwork: '1' } : { reveal: '1' },
         useFocusEffect: (callback: () => (() => void) | void) => effect(callback, [callback]),
       };
       if (name === 'expo-router/react-navigation') return { usePreventRemove(_prevent: boolean, callback: (event: unknown) => void) { preventRemove = callback; } };
@@ -119,6 +133,10 @@ function harness(width = 412, height = 840, lyrics = false, fontScale = 1) {
       };
       if (name === 'react-native-reanimated') return {
         useSharedValue: (initial: unknown) => slot(() => { const value = mutable(initial); values.push(value); return value; }),
+        useDerivedValue: (updater: () => unknown) => {
+          const value = slot(() => ({ updater, get() { return this.updater(); } }));
+          value.updater = updater; return value;
+        },
         useAnimatedStyle: (updater: () => unknown) => ({ updater }),
         useAnimatedReaction: (prepare: () => any, react: (value: any, previous: any) => void) => {
           const reaction = slot(() => { const value = { prepare, react, previous: undefined as any }; reactions.add(value); return value; });
@@ -127,11 +145,23 @@ function harness(width = 412, height = 840, lyrics = false, fontScale = 1) {
         cancelAnimation: (value: Mutable) => { value.animation = undefined; },
         withTiming: (target: number, options: unknown, done: (finished: boolean) => void) => ({ kind: 'timing', target, options, done }),
         withSpring: (target: number, options: unknown, done: (finished: boolean) => void) => ({ kind: 'spring', target, options, done }),
+        Easing: { out: (value: unknown) => value, cubic: 'cubic' },
       };
       if (name === '@/lib/amllPlayerLayout') return layoutRules;
       if (name === '@/lib/amllPlayerTransition') return transitionRules;
       if (name === '@/lib/playerReveal') return bus;
       if (name === '@/lib/appleMusicPlayerTransition') return artworkRules;
+      if (name === '../../modules/liquid-glass') return {
+        isNativePlayerSurfaceClipAvailable: nativeArtwork,
+        updateNativePlayerSurfaceClip: (...values: number[]) => { clips.push(values); },
+      };
+      if (name === './useAppleMusicPlayerMotion' && nativeArtwork) {
+        if (!artworkExports.useAppleMusicPlayerMotion) runInNewContext(artworkCompiled, {
+          exports: artworkExports, require: requireModule,
+          requestAnimationFrame: (callback: () => void) => { frames.push(callback); },
+        });
+        return artworkExports;
+      }
       if (name === './useAppleMusicPlayerMotion') return {
         // This suite exercises the existing header/navigation fallback when no
         // artwork reader or native clip host was supplied. The new hook has
@@ -141,9 +171,11 @@ function harness(width = 412, height = 840, lyrics = false, fontScale = 1) {
           if (!artworkFallbacks.has(offset)) artworkFallbacks.set(offset, {
             running: { get: () => false }, phase: { get: () => 'idle' },
             surfaceOffset: { get: () => bus.revealOffset.get() >= 0 ? bus.revealOffset.get() : offset.get() },
-            beginClose: () => false, abandon() {}, cancelDrag() { assert.fail('unavailable artwork cannot own a header drag'); },
+            beginClose: () => false, beginDrag: () => false, updateDrag: () => false,
+            shouldDismissDrag() { assert.fail('unavailable artwork cannot decide a morph dismissal'); },
+            abandon() {}, cancelDrag() { assert.fail('unavailable artwork cannot own a header drag'); },
             available: false, handlesEntry: false, entryReady: true,
-            contentStyle: {}, artworkStyle: {}, controlsStyle: {}, onArtworkLayout() {}, onClipHostReady() {},
+            contentStyle: {}, artworkStyle: {}, controlsStyle: {}, onArtworkLayout() {}, onClipHostReady() {}, onContentClipHostReady() {},
           });
           return artworkFallbacks.get(offset);
         },
@@ -181,6 +213,21 @@ function harness(width = 412, height = 840, lyrics = false, fontScale = 1) {
     return true;
   };
   return { layout, headerArea, headerScrollOffset, accepts, drag, pan, render, bus, flushUI,
+    clips, measurements: () => measurements,
+    style: () => result.rootStyle.updater(),
+    motionAnimation: () => values.find((value) => value.animation?.kind === 'spring')?.animation,
+    frame() {
+      if (nativeArtwork && !clips.length) { result.onClipHostReady({ nativeEvent: { hostId: 1, cornerRadius: 40 } }); flushUI(); }
+      const pending = frames.splice(0); for (const callback of pending) callback(); flushUI();
+    },
+    advanceMotion(position: number, complete = false) {
+      const progress = values.find((value) => value.animation?.kind === 'spring');
+      assert.ok(progress, `missing motion spring for ${position}`);
+      const animation = progress.animation;
+      progress.value = position;
+      if (complete) { progress.animation = undefined; animation?.done?.(true); }
+      flushUI();
+    },
     close: () => result.close(), back: () => back(),
     navigateBack: () => preventRemove({ data: { action: { type: 'GO_BACK' } } }),
     unmount() { for (const value of slots) value?.cleanup?.(); reactions.clear(); },
@@ -365,5 +412,101 @@ describe('AMLL visible header dismissal gesture', () => {
     assert.equal(h.bus.playerSurfaceOffset.get(), 420);
     assert.equal(h.bus.playerSurfaceHeight.get(), 412);
     assert.equal(h.navigations(), 0);
+  });
+});
+
+describe('mounted player header and LNPopup motion coordination', () => {
+  function open(lyrics = false) {
+    const h = harness(412, 840, lyrics, 1, true);
+    h.frame(); h.advanceMotion(1, true); h.drain(); h.render();
+    assert.equal(h.bus.playerArtworkFlight.get(), null);
+    assert.equal(h.root().get(), 0);
+    return h;
+  }
+
+  it('uses the shared morph while a cover or lyric-header finger moves, keeping the root fixed until one final route commit', () => {
+    for (const lyrics of [false, true]) {
+      const h = open(lyrics);
+      const y = lyrics ? h.headerArea.bottom - 1
+        : h.headerArea.handleBottom + h.layout.largeCover.y + h.layout.largeCover.size / 2;
+      assert.equal(h.accepts(200, y), true);
+      h.pan().callbacks.start(); h.pan().callbacks.update({ translationY: 140, velocityY: 300 }); h.flushUI();
+      const dragged = h.bus.playerArtworkFlight.get();
+      assert.equal(dragged.phase, 'dragging');
+      assert.ok(dragged.frame.artwork.rect.width < 356);
+      assert.ok(dragged.frame.background.rect.y > 0);
+      assert.ok(dragged.frame.miniContentOpacity > 0);
+      assert.equal(h.root().get(), 0, 'the parent cannot add its old page translation to the morph');
+      assert.equal(h.style().transform[0].translateY, 0);
+      assert.equal(h.measurements(), 2, 'one entry capture and one drag capture');
+      assert.equal(h.navigations(), 0);
+      h.pan().callbacks.end({ translationY: 140, velocityY: 300 }, true);
+      h.pan().callbacks.finalize({ translationY: 140, velocityY: 300 }, true);
+      assert.equal(h.queued(), 1, 'only the final close request crosses to RN');
+      h.drain(); h.render();
+      assert.equal(h.bus.playerArtworkFlight.get().phase, 'closing');
+      assert.equal(h.navigations(), 0);
+      assert.equal(h.style().transform[0].translateY, 0);
+      h.advanceMotion(0, true);
+      assert.equal(h.bus.playerArtworkFlight.get().phase, 'handoff');
+      assert.equal(h.navigations(), 0, 'native progress completion must still pass the removal gate');
+      h.drain(); h.render();
+      assert.equal(h.navigations(), 1);
+      h.drain(); h.render(); assert.equal(h.navigations(), 1);
+    }
+  });
+
+  it('returns a short reversed gesture to the full player without sending a close request or moving the page root', () => {
+    const h = open(true);
+    h.pan().callbacks.start(); h.pan().callbacks.update({ translationY: 140, velocityY: -50 }); h.flushUI();
+    const before = JSON.stringify(h.bus.playerArtworkFlight.get().frame);
+    h.pan().callbacks.end({ translationY: 140, velocityY: -50 }, true);
+    h.pan().callbacks.finalize({ translationY: 140, velocityY: -50 }, true); h.flushUI();
+    assert.equal(h.bus.playerArtworkFlight.get().phase, 'cancelling');
+    assert.equal(JSON.stringify(h.bus.playerArtworkFlight.get().frame), before);
+    assert.equal(h.queued(), 0);
+    assert.equal(h.style().transform[0].translateY, 0);
+    h.advanceMotion(1, true); h.drain(); h.render();
+    assert.equal(h.bus.playerArtworkFlight.get(), null);
+    assert.equal(h.bus.playerSurfaceOffset.get(), 0);
+    assert.equal(h.style().transform[0].translateY, 0);
+    assert.equal(h.navigations(), 0);
+  });
+
+  it('admits an opening interruption, carries its painted frame into Back and ignores a late opening completion', () => {
+    const h = harness(412, 840, false, 1, true);
+    h.frame();
+    const oldOpening = h.motionAnimation()?.done;
+    h.advanceMotion(.6);
+    const before = JSON.stringify(h.bus.playerArtworkFlight.get().frame);
+    assert.equal(h.accepts(200, h.headerArea.bottom - 1), true);
+    h.pan().callbacks.start(); h.flushUI();
+    assert.equal(h.bus.playerArtworkFlight.get().phase, 'dragging');
+    assert.equal(JSON.stringify(h.bus.playerArtworkFlight.get().frame), before);
+    assert.equal(h.style().transform[0].translateY, 0);
+    assert.equal(h.back(), true); h.flushUI();
+    assert.equal(h.bus.playerArtworkFlight.get().phase, 'closing');
+    oldOpening?.(true); h.flushUI();
+    assert.equal(h.bus.playerArtworkFlight.get().phase, 'closing');
+    assert.equal(h.navigations(), 0);
+    h.advanceMotion(0, true); h.drain(); h.render();
+    assert.equal(h.navigations(), 1);
+  });
+
+  it('keeps a missing-endpoint slide at its current position when Back arrives before entry has finished', () => {
+    const h = harness(412, 840, false, 1, true);
+    h.bus.miniArtworkMetrics.set(null);
+    for (let attempt = 0; attempt < 4; attempt++) h.frame();
+    assert.equal(h.root().animation?.kind, 'timing');
+    assert.equal(h.root().animation?.target, 0);
+    h.root().value = 200; h.flushUI();
+    assert.equal(h.style().transform[0].translateY, 200);
+    h.back(); h.flushUI();
+    assert.equal(h.root().get(), 200, 'fallback closing starts from the already painted slide position');
+    assert.equal(h.root().animation?.target, 840);
+    assert.equal(h.bus.playerArtworkFlight.get(), null);
+    assert.equal(h.navigations(), 0);
+    h.finish(); h.drain(); h.render();
+    assert.equal(h.navigations(), 1);
   });
 });

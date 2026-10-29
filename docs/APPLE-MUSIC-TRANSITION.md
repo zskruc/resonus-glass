@@ -1,6 +1,12 @@
 # Apple Music 风格播放器转场 / Apple Music style player transition
 
-## 当前 `.19` / Current `.19`
+## 当前 `.25` / Current `.25`
+
+当前测试版按用户选择切换至 [LNPopup 展开／收合模型](./LNPOPUP-TRANSITION.md)，静止播放器布局和玻璃参数保留。下方 AppleMusicStylePlayer 参数、窗口景深及实机记录属于此前版本；共享封面、端点与路由交接基础继续复用，但新动效不能套用旧版帧率或视觉验收结论。
+
+The current preview switches presentation to the selected [LNPopup model](./LNPOPUP-TRANSITION.md), retaining settled player layout and glass tuning. AppleMusicStylePlayer timing, depth transforms and device records below are historical. Shared artwork, endpoints and route handoff remain, but their earlier visual/performance acceptance does not establish acceptance of this new animation.
+
+## `.19` 历史记录 / `.19` historical record
 
 `.19` / Android `versionCode 101` 保留 `.18` 扩展的封面模式下拉入口，包含播放控件上方的封面和歌曲信息；原播放控制区不参与收合手势。仅向下移动激活，保留短屏向上滚动、文字点击及既有收合阈值。歌词区的滚动和点按播放边界不变。共享封面与背景转场的几何、参数和交接逻辑继续沿用 `.17`。
 

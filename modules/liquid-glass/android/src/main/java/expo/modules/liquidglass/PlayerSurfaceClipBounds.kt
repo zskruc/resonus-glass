@@ -40,6 +40,18 @@ internal class PlayerSurfaceClipBounds {
     left = 0f; top = 0f; right = 0f; bottom = 0f; radius = 0f; opacity = 0f
   }
 
+  /** Match the painted rounded outline for admission of a new native gesture. */
+  fun contains(x: Float, y: Float): Boolean {
+    if (!hasFrame || opacity <= 0f || !x.isFinite() || !y.isFinite() ||
+      x < left || x >= right || y < top || y >= bottom) return false
+    if (radius <= 0f) return true
+    val nearestX = x.coerceIn(left + radius, right - radius)
+    val nearestY = y.coerceIn(top + radius, bottom - radius)
+    val dx = x - nearestX
+    val dy = y - nearestY
+    return dx * dx + dy * dy <= radius * radius
+  }
+
   companion object {
     const val INVALID = -1
     const val CLIP = 1

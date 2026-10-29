@@ -2,17 +2,23 @@ import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { Easing, cancelAnimation, useAnimatedReaction, useAnimatedStyle, useDerivedValue, useSharedValue, withSpring, withTiming, type SharedValue } from 'react-native-reanimated';
 import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 
-import { APPLE_MUSIC_PLAYER_MOTION, appleMusicUnderlayFrame, isAppleMusicTransitionSnapshotValid, resolveAppleMusicPlayerTransition,
+import { LNPOPUP_PLAYER_MOTION, isAppleMusicTransitionSnapshotValid, lnPopupPlayerDrag, resolveLnPopupPlayerTransition, shouldDismissLnPopupPlayer,
   type AppleMusicRect, type AppleMusicTransitionSnapshot } from '@/lib/appleMusicPlayerTransition';
 import { miniArtworkMetrics, playerArtworkFlight, playerCanReturnToMini, playerSurfaceOwner, playerUnderlayFrame, playerUnderlayRouteKey, revealOffset } from '@/lib/playerReveal';
 import { motion } from '@/theme/motion';
 import { isNativePlayerSurfaceClipAvailable, updateNativePlayerSurfaceClip } from '../../modules/liquid-glass';
 
-// SwiftUI smooth(.3, extraBounce: 0) is a separate solver. Reanimated's
-// perceptual duration is converted to its 300ms settling duration, critically damped.
-const SMOOTH = { duration: APPLE_MUSIC_PLAYER_MOTION.durationMs / 1.5,
-  dampingRatio: 1, reduceMotion: motion.reduceMotion.essential };
-type Phase = 'idle' | 'preparing' | 'opening' | 'closing' | 'handoff';
+// LNPopupController uses a .5s UIKit spring (tap 1.0, gesture .87). Reanimated
+// duration is perceptual and settles over 1.5x that value; its solver remains
+// Android's, while all visible layers use one progress value on the UI thread.
+const popupSpring = (gesture = false) => {
+  'worklet';
+  return { duration: LNPOPUP_PLAYER_MOTION.durationMs / 1.5,
+    dampingRatio: gesture ? LNPOPUP_PLAYER_MOTION.gestureDampingRatio : LNPOPUP_PLAYER_MOTION.tapDampingRatio,
+    reduceMotion: motion.reduceMotion.essential };
+};
+type Phase = 'idle' | 'preparing' | 'opening' | 'dragging' | 'cancelling' | 'closing' | 'handoff';
+type OpacityAnchor = { progress: number; fullContentOpacity: number; miniContentOpacity: number };
 
 /** Shared artwork flight; routing, header admission and close ownership stay in the parent hook. */
 export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, revealing, readArtwork, offset, finish, controlsHeight = 0, focused = true, artworkIdentity }: {
@@ -37,10 +43,16 @@ export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, reve
   const entryIsPull = useSharedValue(revealing);
   const focusedUI = useSharedValue(focused);
   const closeGeneration = useSharedValue(0);
-  const stackProgress = useSharedValue(1);
   const entryAttemptQueued = useSharedValue(false);
   const originRoute = useSharedValue<{ owner: number; key: string | null }>({ owner, key: null });
   const retired = useSharedValue(false);
+  const direction = useSharedValue<'opening' | 'closing'>('opening');
+  const opacityAnchor = useSharedValue<OpacityAnchor | null>(null);
+  const dragStartProgress = useSharedValue(1);
+  const contentClipHost = useSharedValue(0);
+  const lastContentClip = useSharedValue<number[]>([]);
+  const animationRevision = useSharedValue(0);
+  const artworkAnchor = useSharedValue<{ progress: number; rect: AppleMusicRect } | null>(null);
   const notifyReady = useCallback(() => { if (live.current) setEntryReady(true); }, []);
   useLayoutEffect(() => { focusedUI.set(focused); }, [focused, focusedUI]);
 
@@ -50,10 +62,10 @@ export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, reve
   const frame = useDerivedValue(() => {
     const p = phase.get();
     if (p === 'idle' || p === 'preparing') return null;
-    return resolveAppleMusicPlayerTransition({ snapshot: snapshot.get(), viewportWidth: width, viewportHeight: height,
+    return resolveLnPopupPlayerTransition({ snapshot: snapshot.get(), viewportWidth: width, viewportHeight: height,
       progress: effectiveProgress.get(), dragOffsetY: entryIsPull.get() && revealOffset.get() >= 0 ? 0 : offset.get(),
       deviceCornerRadius: corner.get(), controlsHeight,
-      stackProgress: p === 'closing' || p === 'handoff' ? stackProgress.get() : effectiveProgress.get() });
+      direction: direction.get(), opacityAnchor: opacityAnchor.get(), artworkAnchor: artworkAnchor.get() });
   });
   const surfaceOffset = useDerivedValue(() => {
     if (retired.get()) return height;
@@ -84,15 +96,17 @@ export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, reve
       return;
     }
     snapshot.set(next);
+    direction.set('opening'); opacityAnchor.set(null); artworkAnchor.set(null);
     offset.set(0);
     progress.set(revealing ? 1 : 0);
     phase.set('opening');
-    if (!revealing) progress.set(withSpring(1, SMOOTH, (finished) => {
-      if (!finished || retired.get() || playerSurfaceOwner.get() !== owner || phase.get() !== 'opening') return;
+    const revision = animationRevision.get() + 1; animationRevision.set(revision);
+    if (!revealing) progress.set(withSpring(1, popupSpring(), (finished) => {
+      if (!finished || retired.get() || animationRevision.get() !== revision || playerSurfaceOwner.get() !== owner || phase.get() !== 'opening') return;
       phase.set('idle');
       scheduleOnRN(notifyReady);
     }));
-  }, [phase, readArtwork, width, height, owner, retries, revealing, offset, progress, snapshot, notifyReady, clipHost, entryAttemptQueued, retired]);
+  }, [phase, readArtwork, width, height, owner, retries, revealing, offset, progress, snapshot, notifyReady, clipHost, entryAttemptQueued, retired, direction, opacityAnchor, artworkAnchor, animationRevision]);
 
   useLayoutEffect(() => {
     live.current = true;
@@ -110,8 +124,8 @@ export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, reve
         // Layout cleanup can reach the UI before passive mapper cleanup or
         // native detach. Keep the old surface hidden through that interval.
         retired.set(true);
+        animationRevision.set(animationRevision.get() + 1);
         cancelAnimation(progress);
-        cancelAnimation(stackProgress);
         entryAttemptQueued.set(false);
         if (playerArtworkFlight.get()?.owner === owner) playerArtworkFlight.set(null);
         if (playerUnderlayFrame.get()?.owner === owner) playerUnderlayFrame.set(null);
@@ -136,16 +150,16 @@ export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, reve
     if (origin.owner !== owner) origin = { owner, key: null };
     if (!origin.key && isFocused && routeKey) origin = { owner, key: routeKey };
     if (origin !== previousOrigin) originRoute.set(origin);
-    playerArtworkFlight.set(isFocused && value && (p === 'opening' || p === 'closing' || p === 'handoff')
+    playerArtworkFlight.set(isFocused && value && (p === 'opening' || p === 'dragging' || p === 'cancelling' || p === 'closing' || p === 'handoff')
       ? { owner, phase: p, frame: value } : null);
-    const depth = value?.underlay ?? (p === 'idle' && drag > 0 ? appleMusicUnderlayFrame(1 - drag / height) : null);
+    const depth = value?.underlay ?? null;
     playerUnderlayFrame.set(isFocused && origin.key && depth ? { owner, routeKey: origin.key, ...depth } : null);
   });
   useAnimatedReaction(() => {
     const value = frame.get();
     const rect = value?.background.rect;
     return [clipHost.get(), rect?.x ?? 0, rect?.y ?? 0, rect?.width ?? width, rect?.height ?? height,
-      value?.background.cornerRadius ?? 0, retired.get() || phase.get() === 'preparing' ? 0 : value ? effectiveProgress.get() : 1];
+      value?.background.cornerRadius ?? 0, retired.get() || phase.get() === 'preparing' ? 0 : value?.surfaceOpacity ?? 1];
   }, (values) => {
     if (values[0] <= 0 || !updateNativePlayerSurfaceClip) return;
     const previous = lastClip.get();
@@ -154,70 +168,138 @@ export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, reve
     lastClip.set(values);
   });
 
-  const beginClose = useCallback((generation: number): boolean => {
+  useAnimatedReaction(() => {
+    const value = frame.get();
+    const rect = value?.background.rect;
+    return [contentClipHost.get(), rect?.x ?? 0, rect?.y ?? 0, rect?.width ?? width, rect?.height ?? height,
+      value?.background.cornerRadius ?? 0, retired.get() || phase.get() === 'preparing' ? 0 : 1];
+  }, (values) => {
+    if (values[0] <= 0 || !updateNativePlayerSurfaceClip) return;
+    const previous = lastContentClip.get();
+    if (previous.length === values.length && previous.every((value, index) => value === values[index])) return;
+    updateNativePlayerSurfaceClip(values[0], values[1], values[2], values[3], values[4], values[5], values[6]);
+    lastContentClip.set(values);
+  });
+
+  const returnSnapshot = useCallback((): AppleMusicTransitionSnapshot | null => {
+    'worklet';
+    const mini = miniArtworkMetrics.get();
+    const actual = readArtwork?.();
+    return mini && actual ? { ...mini, miniArtwork: mini.restingArtwork ?? mini.miniArtwork,
+      playerArtwork: { ...actual } } : null;
+  }, [readArtwork]);
+  const retainPaintedAppearance = useCallback(() => {
+    'worklet';
+    const painted = frame.get();
+    opacityAnchor.set(painted ? { progress: effectiveProgress.get(),
+      fullContentOpacity: painted.fullContentOpacity, miniContentOpacity: painted.miniContentOpacity } : null);
+  }, [frame, opacityAnchor, effectiveProgress]);
+  const returnEndpoint = useCallback((next: AppleMusicTransitionSnapshot, p: number) => {
+    'worklet';
+    const rest = miniArtworkMetrics.get()?.restingArtwork;
+    const painted = frame.get()?.artwork.rect;
+    if (!rest || !painted) return next;
+    // Anchor the currently painted pose while keeping both REAL endpoints.
+    // A cancelled reversal must return to the actual full cover, not a virtual
+    // endpoint extrapolated from the mini's transient elastic press.
+    artworkAnchor.set(p > 0 && p < 1 ? { progress: p, rect: painted } : null);
+    return { ...next, miniArtwork: rest };
+  }, [frame, artworkAnchor]);
+
+  const beginDrag = useCallback((): boolean => {
     'worklet';
     if (retired.get() || !available || clipHost.get() <= 0 || !playerCanReturnToMini.get() || playerSurfaceOwner.get() !== owner) return false;
-    const currentPhase = phase.get();
-    if (currentPhase === 'preparing') return false;
-    let next = snapshot.get();
-    if (currentPhase === 'idle') {
-      const mini = miniArtworkMetrics.get();
-      const actual = readArtwork?.();
-      next = mini && actual ? { ...mini, miniArtwork: mini.restingArtwork ?? mini.miniArtwork,
-        playerArtwork: { ...actual, y: actual.y - offset.get() } } : null;
-    }
+    const current = phase.get();
+    if (current === 'idle' && offset.get() !== 0) return false;
+    if (current !== 'idle' && current !== 'opening' && current !== 'cancelling') return false;
+    let next = current === 'idle' ? returnSnapshot() : snapshot.get();
     if (!isAppleMusicTransitionSnapshotValid(next, width, height)) return false;
-    const carriedProgress = currentPhase === 'idle' ? 1 : effectiveProgress.get();
-    if (currentPhase === 'opening' && carriedProgress > 0) {
-      const rest = miniArtworkMetrics.get()?.restingArtwork;
-      const painted = frame.get()?.artwork.rect;
-      if (rest && painted) {
-        // Opening starts at the actual pressed image. Closing must land at
-        // idle geometry, even if that press spring has not settled yet.
-        // Rebase only the unused full endpoint so a fast reversal is continuous.
-        const p = carriedProgress;
-        const drag = entryIsPull.get() && revealOffset.get() >= 0 ? 0 : offset.get();
-        const end = (value: number, start: number) => (value - start * (1 - p)) / p;
-        const rebased = { ...next, miniArtwork: rest, playerArtwork: {
-          x: end(painted.x, rest.x), y: end(painted.y - drag, rest.y),
-          width: end(painted.width, rest.width), height: end(painted.height, rest.height),
-          cornerRadius: Math.max(0, end(painted.cornerRadius ?? 0, rest.cornerRadius ?? 0)),
-        } };
-        if (isAppleMusicTransitionSnapshotValid(rebased, width, height)) next = rebased;
-      }
-    }
-    const carriedStack = currentPhase === 'idle' ? 1 - Math.min(1, Math.max(0, offset.get() / height))
-      : frame.get()?.underlay ? (1 - frame.get()!.underlay.scale) / APPLE_MUSIC_PLAYER_MOTION.windowScaleDrop : carriedProgress;
+    const carried = current === 'idle' ? 1 : effectiveProgress.get();
+    if (current === 'idle') artworkAnchor.set(null);
+    retainPaintedAppearance();
+    if (current === 'opening') next = returnEndpoint(next, carried);
+    animationRevision.set(animationRevision.get() + 1);
+    cancelAnimation(progress); cancelAnimation(offset); cancelAnimation(revealOffset);
+    snapshot.set(next); progress.set(carried); dragStartProgress.set(carried);
+    offset.set(0); revealOffset.set(-1); entryIsPull.set(false);
+    direction.set('closing'); phase.set('dragging');
+    return true;
+  }, [available, clipHost, owner, phase, returnSnapshot, snapshot, width, height, effectiveProgress,
+    retainPaintedAppearance, returnEndpoint, progress, offset, dragStartProgress, entryIsPull, direction, retired, animationRevision, artworkAnchor]);
+  const updateDrag = useCallback((translationY: number): boolean => {
+    'worklet';
+    if (retired.get() || phase.get() !== 'dragging' || playerSurfaceOwner.get() !== owner) return false;
+    const travel = Math.max(1, snapshot.get()?.miniPlayer.y ?? height);
+    const down = (1 - dragStartProgress.get()) * travel + translationY;
+    progress.set(lnPopupPlayerDrag(down, travel).progress);
+    return true;
+  }, [phase, owner, snapshot, height, dragStartProgress, progress, retired]);
+  const shouldDismissDrag = useCallback((translationY: number, velocityY: number): boolean => {
+    'worklet';
+    const travel = Math.max(1, snapshot.get()?.miniPlayer.y ?? height);
+    const down = phase.get() === 'dragging' ? (1 - effectiveProgress.get()) * travel : translationY;
+    return shouldDismissLnPopupPlayer(down, velocityY, travel);
+  }, [snapshot, height, phase, effectiveProgress]);
+  const beginClose = useCallback((generation: number, gesture = false): boolean => {
+    'worklet';
+    if (retired.get() || !available || clipHost.get() <= 0 || !playerCanReturnToMini.get() || playerSurfaceOwner.get() !== owner) return false;
+    const current = phase.get();
+    // A slide fallback still entering is owned by the parent offset clock.
+    // Let that same slide close it; changing to a full-screen morph would jump.
+    if (current === 'idle' && offset.get() !== 0) return false;
+    if (current === 'preparing' || current === 'closing' || current === 'handoff') return false;
+    let next = current === 'idle' ? returnSnapshot() : snapshot.get();
+    if (!isAppleMusicTransitionSnapshotValid(next, width, height)) return false;
+    const carried = current === 'idle' ? 1 : effectiveProgress.get();
+    if (current === 'idle') artworkAnchor.set(null);
+    retainPaintedAppearance();
+    if (current === 'opening') next = returnEndpoint(next, carried);
     cancelAnimation(progress); cancelAnimation(offset); cancelAnimation(revealOffset);
     snapshot.set(next);
     if (entryIsPull.get() && revealOffset.get() >= 0) offset.set(0);
     entryIsPull.set(false); revealOffset.set(-1);
-    progress.set(carriedProgress);
-    closeGeneration.set(generation);
-    stackProgress.set(carriedStack);
-    stackProgress.set(withSpring(0, SMOOTH));
-    phase.set('closing');
-    offset.set(withSpring(0, SMOOTH));
-    progress.set(withSpring(0, SMOOTH, (finished) => {
-      if (!finished || retired.get() || playerSurfaceOwner.get() !== owner || phase.get() !== 'closing') return;
-      phase.set('handoff');
-      scheduleOnRN(finish, generation);
+    progress.set(carried); closeGeneration.set(generation);
+    direction.set('closing'); phase.set('closing');
+    const revision = animationRevision.get() + 1; animationRevision.set(revision);
+    if (carried <= 0) {
+      phase.set('handoff'); scheduleOnRN(finish, generation);
+    } else progress.set(withSpring(0, popupSpring(gesture), (finished) => {
+      if (!finished || retired.get() || animationRevision.get() !== revision || playerSurfaceOwner.get() !== owner || phase.get() !== 'closing') return;
+      phase.set('handoff'); scheduleOnRN(finish, generation);
     }));
     return true;
-  }, [available, width, height, owner, readArtwork, offset, progress, snapshot, phase, entryIsPull, effectiveProgress, finish, closeGeneration, stackProgress, frame, clipHost, retired]);
+  }, [available, width, height, owner, returnSnapshot, snapshot, phase, effectiveProgress, retainPaintedAppearance,
+    returnEndpoint, progress, offset, entryIsPull, closeGeneration, direction, finish, clipHost, retired, animationRevision, artworkAnchor]);
   const cancelDrag = useCallback(() => {
     'worklet';
-    if (retired.get()) return;
-    offset.set(withSpring(0, SMOOTH));
-  }, [offset, retired]);
+    if (retired.get() || playerSurfaceOwner.get() !== owner || phase.get() === 'closing' || phase.get() === 'handoff') return;
+    if (phase.get() !== 'dragging' && phase.get() !== 'cancelling') {
+      offset.set(withSpring(0, popupSpring(true))); return;
+    }
+    cancelAnimation(progress); phase.set('cancelling');
+    const revision = animationRevision.get() + 1; animationRevision.set(revision);
+    progress.set(withSpring(1, popupSpring(true), (finished) => {
+      if (!finished || retired.get() || animationRevision.get() !== revision || playerSurfaceOwner.get() !== owner || phase.get() !== 'cancelling') return;
+      phase.set('idle');
+      // An interrupted entry no longer owns its original completion callback.
+      // Returning fully open must also unlock the unchanged player controls.
+      scheduleOnRN(notifyReady);
+    }));
+  }, [offset, retired, owner, phase, progress, animationRevision, notifyReady]);
+  useLayoutEffect(() => {
+    if (!focused) scheduleOnUI(() => {
+      // A child route taking focus must not retain a half-dragged player.
+      if (phase.get() === 'dragging' || phase.get() === 'cancelling') cancelDrag();
+    });
+  }, [focused, phase, cancelDrag]);
   const abandon = useCallback(() => {
     'worklet';
+    animationRevision.set(animationRevision.get() + 1);
     cancelAnimation(progress);
-    cancelAnimation(stackProgress);
-    phase.set('idle'); snapshot.set(null); entryIsPull.set(false);
+    phase.set('idle'); snapshot.set(null); artworkAnchor.set(null); opacityAnchor.set(null); entryIsPull.set(false);
     if (playerArtworkFlight.get()?.owner === owner) playerArtworkFlight.set(null);
     if (playerUnderlayFrame.get()?.owner === owner) playerUnderlayFrame.set(null);
-  }, [progress, phase, snapshot, entryIsPull, owner, stackProgress]);
+  }, [progress, phase, snapshot, entryIsPull, owner, animationRevision, artworkAnchor, opacityAnchor]);
   const viewport = useRef({ width, height });
   const completeInvalidatedFlight = useCallback(() => {
     'worklet';
@@ -267,6 +349,7 @@ export function useAppleMusicPlayerMotion({ width, height, owner, fromMini, reve
       requestAnimationFrame(() => { entryAttemptQueued.set(false); tryStartEntry(); });
     });
   }, [clipHost, corner, handlesEntry, tryStartEntry, phase, entryAttemptQueued, retired]);
-  return { available, handlesEntry, entryReady, running, surfaceOffset, phase, beginClose, cancelDrag,
-    abandon, contentStyle, artworkStyle, controlsStyle, onArtworkLayout, onClipHostReady };
+  return { available, handlesEntry, entryReady, running, surfaceOffset, phase, beginClose, beginDrag, updateDrag, shouldDismissDrag, cancelDrag,
+    abandon, contentStyle, artworkStyle, controlsStyle, onArtworkLayout, onClipHostReady,
+    onContentClipHostReady: (event: { nativeEvent: { hostId: number } }) => { contentClipHost.set(event.nativeEvent.hostId); } };
 }

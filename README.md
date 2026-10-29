@@ -61,7 +61,7 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 
 `.4` 让全部播放页共用 Resonus 歌词模糊与过渡，按真实视口限制滤镜；恢复底栏点按的完整按压／移动／释放动画，并在设置的外观首页组加入首页标题自定义。共享玻璃记录与透镜只在交互期间运行，背景采样排除缓存透镜，页面导航查找跳过列表内容。歌曲缩略图使用静态首帧，磁盘预取只下载文件并清理请求，避免额外动画解码；播放器动画能力与暂停状态独立保留。
 
-转场继承 `.13` 采用的 [f728743/AppleMusicStylePlayer](https://github.com/f728743/AppleMusicStylePlayer) 结构：一张共享封面在 mini player 和大封面的实测位置之间移动，背景保持固定全屏布局并独立裁切；来源页面单独产生景深，不缩放整个导航 Stack 或播放器。300ms、无额外弹跳的意图以 Reanimated 近似；保留现有路由交接、取消回弹和 mini 上拉扩展，Primuse 整页形变仍已移除。实现、MIT 归属与验证边界见 [Apple Music 转场说明](./docs/APPLE-MUSIC-TRANSITION.md)。
+当前 `.25` 测试版采用 [LNPopupUI / LNPopupController](https://github.com/LeoNatan/LNPopupUI) 的展开／收合模型：容器、共享封面与底栏由同一进度协调，Mini 点按／上拉完整展开，大播放器下拉跟手并收合或回弹。保留当前播放器静止布局和全部玻璃参数，复用既有端点及路由交接保护。Android 重实现不包含 UIKit 的 Portal／原生玻璃，也不承诺逐帧相同；本版本三星验收待测试。实现与归属见 [LNPopup 转场说明](./docs/LNPOPUP-TRANSITION.md)，此前动效记录见 [历史说明](./docs/APPLE-MUSIC-TRANSITION.md)。
 
 播放器布局参考用户三星上的 Apple Music：暂停时封面缩至 0.85，使用易读的白色 SVG，歌曲信息行带收藏星标和更多入口；当前仅显示上一首、播放／暂停、下一首三个按钮，保留原位置和短按压／释放反馈。播放进度与音量轨道继续跟随封面主题色。参考截图属于私有测试资料，不公开上传。
 
@@ -136,6 +136,7 @@ bash scripts/build-glass-preview.sh
 - [sdegenaar/liquid_glass_widgets](https://github.com/sdegenaar/liquid_glass_widgets)：**MIT**，Copyright © 2024–2026 Sebastian Degenaar。参考并适配其联动布局和最小化控制器；未引入 Flutter 引擎；[许可证](./modules/liquid-glass/LIQUID_GLASS_WIDGETS_LICENSE)。
 - Primuse：歌词动效的部分实现遵循 **MIT**，详见 [第三方声明](./THIRD_PARTY_NOTICES.md)。
 - [f728743/AppleMusicStylePlayer](https://github.com/f728743/AppleMusicStylePlayer)：**MIT**，Copyright © 2025 Alexey Vorobyov。适配共享封面转场、背景轮廓与下拉规则；[完整许可证](./licenses/APPLE-MUSIC-STYLE-PLAYER-MIT.txt)及[实现范围](./docs/APPLE-MUSIC-TRANSITION.md)。
+- [LNPopupController](https://github.com/LeoNatan/LNPopupController)：**MIT**，Copyright © 2015-2025 Léo Natan；[完整许可](./licenses/LNPOPUPCONTROLLER-MIT.txt)与[适配范围](./docs/LNPOPUP-TRANSITION.md)。
 - [AMLL](https://github.com/amll-dev/applemusic-like-lyrics)：播放控件及选定 SVG 派生自固定版本，保留 **AGPL-3.0-only**、[完整许可证](./licenses/AMLL-AGPL-3.0.txt) 与 [文件来源／组合分发要求](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference)。封面网格背景独立实现，未嵌入其 Web 运行库、着色器或动画引擎；不将图标来源声明为 Apple 授权。
 
 原项目图标、其他依赖和原有第三方声明继续保留各自权利与许可。

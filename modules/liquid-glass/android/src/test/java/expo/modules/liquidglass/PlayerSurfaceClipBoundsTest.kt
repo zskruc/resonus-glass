@@ -70,6 +70,35 @@ class PlayerSurfaceClipBoundsTest {
     assertTrue(b.hasFrame)
   }
 
+  @Test fun newGesturesMatchTheVisibleRoundedOutlineInPixelCoordinates() {
+    val b = PlayerSurfaceClipBounds()
+    assertFalse(b.contains(100f, 100f))
+    b.update(2f, 10.0, 20.0, 200.0, 100.0, 20.0, 1.0)
+    assertTrue(b.contains(220f, 140f))
+    assertTrue(b.contains(60f, 40f))
+    assertFalse(b.contains(20f, 40f)) // A clipped corner is not a child hit target.
+    assertFalse(b.contains(19f, 140f))
+    assertFalse(b.contains(420f, 140f))
+    assertFalse(b.contains(220f, 240f))
+    assertFalse(b.contains(Float.NaN, 140f))
+    assertFalse(b.contains(220f, Float.POSITIVE_INFINITY))
+    // Geometry may shrink during a gesture; new downs follow the latest mask.
+    b.update(2f, 10.0, 120.0, 200.0, 20.0, 10.0, 1.0)
+    assertFalse(b.contains(220f, 140f))
+    assertTrue(b.contains(220f, 260f))
+  }
+
+  @Test fun hiddenAndDetachedSurfacesCannotAdmitNewNativeTouches() {
+    val b = PlayerSurfaceClipBounds()
+    b.update(1f, 0.0, 0.0, 400.0, 800.0, 0.0, 1.0)
+    assertTrue(b.contains(0f, 0f))
+    b.update(1f, 0.0, 0.0, 400.0, 800.0, 0.0, 0.0)
+    assertFalse(b.contains(100f, 100f))
+    b.update(1f, 0.0, 0.0, 400.0, 800.0, 0.0, 1.0)
+    b.clear()
+    assertFalse(b.contains(100f, 100f))
+  }
+
   @Test fun staleAttachmentTokensCannotFindANewOrReattachedBackground() {
     val registry = PlayerSurfaceClipRegistry<Any>()
     val a = Any(); val b = Any()

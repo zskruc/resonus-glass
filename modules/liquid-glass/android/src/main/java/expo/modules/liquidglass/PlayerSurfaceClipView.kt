@@ -16,11 +16,12 @@ import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
 
-/** Decorative background only: fixed RN child layout, no player/content transform. */
+/** Fixed RN child layout with a native outline; background hosts ignore all input. */
 class PlayerSurfaceClipView(context: Context, appContext: AppContext) : ExpoView(context, appContext), ReactPointerEventsView {
-  // RN and RNGH consult this before Android dispatchTouchEvent. Never let a
-  // background mask, including its descendants, intercept player/mini controls.
-  override val pointerEvents: PointerEvents get() = PointerEvents.NONE
+  // RN and RNGH consult this before Android dispatchTouchEvent. Only the
+  // explicitly interactive content host may expose its children as targets.
+  override val pointerEvents: PointerEvents get() = if (interactive) PointerEvents.BOX_NONE else PointerEvents.NONE
+  private var interactive = false
   private val onClipHostReady by EventDispatcher()
   private val bounds = PlayerSurfaceClipBounds()
   private val clipRect = RectF()
@@ -36,6 +37,13 @@ class PlayerSurfaceClipView(context: Context, appContext: AppContext) : ExpoView
     isFocusable = false
     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
     setWillNotDraw(false)
+  }
+
+  internal fun setInteractive(value: Boolean) {
+    if (interactive == value) return
+    interactive = value
+    importantForAccessibility = if (value) View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+      else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
   }
 
   internal fun setInitialOpacity(value: Double) {
@@ -108,7 +116,7 @@ class PlayerSurfaceClipView(context: Context, appContext: AppContext) : ExpoView
 
   @SuppressLint("MissingSuperCall")
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-    // Fabric owns child positions. Both host and background remain full-screen.
+    // Fabric owns child positions. The host and all children retain full layout.
   }
 
   override fun draw(canvas: Canvas) {
@@ -124,7 +132,14 @@ class PlayerSurfaceClipView(context: Context, appContext: AppContext) : ExpoView
     }
   }
 
-  override fun dispatchTouchEvent(event: MotionEvent): Boolean = false
+  override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+    if (!interactive) return false
+    // A new native gesture must start inside the currently painted outline.
+    // Do not recheck MOVE/UP: a captured pull must finish even as the outline
+    // contracts or the finger crosses its edge.
+    if (event.actionMasked == MotionEvent.ACTION_DOWN && !bounds.contains(event.x, event.y)) return false
+    return super.dispatchTouchEvent(event)
+  }
 }
 
 /** No posted frame queue and no strong route/view ownership. */
