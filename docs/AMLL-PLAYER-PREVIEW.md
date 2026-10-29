@@ -1,8 +1,18 @@
 # AMLL 播放器预览 / AMLL player preview
 
-`0.8.4.1-amll.25` · Android `versionCode 108` · `preview/amll-player`
+`0.8.4.1-amll.26` · Android `versionCode 109` · `preview/amll-player`
 
-## 当前 `.25` / Current `.25`
+## 当前 `.26` / Current `.26`
+
+修复三星实测发现的 Mini 上拉无法展开：Android Pan 激活时位移归零，旧逻辑立即锁为横向。现在等待有效移动后再单次锁轴，保留横滑切歌、传统播放器上拉和既有布局／玻璃参数。`.25` 的点按、下拉收合、取消回弹与输出／队列触摸已完成有限实机检查；`.26` 上拉及最终包实测待手机重新连接，见 [详细范围](./LNPOPUP-TRANSITION.md)。
+
+Fixes the mini upward-open failure found on Samsung: Android Pan activation resets translation, and the old start-time comparison immediately locked horizontally. Direction now locks once after meaningful movement, retaining horizontal skip, legacy upward reveal and existing layout/glass tuning. `.25` received limited device checks of tap opening, drag dismissal, cancellation and output/queue input; `.26` upward admission and its final package await reconnection. See [validation scope](./LNPOPUP-TRANSITION.md).
+
+625 项应用测试、类型和翻译检查通过，`.26` / `109` ARM64 Release 已构建并核对原签名。三星断开前已安装的是 `.25`；`.26` 尚未安装，待用户重新连接后覆盖更新和实测。
+
+All 625 app tests, typechecking and translation checks pass; the `.26` / `109` ARM64 release is built with its original certificate verified. Samsung received `.25` before disconnection; `.26` is not installed and awaits the user's reconnection for update and device testing.
+
+## `.25` 初版 / `.25` initial preview
 
 新增 [LNPopup 风格展开／收合预览](./LNPOPUP-TRANSITION.md)：容器、封面和底栏使用统一进度，Mini 点按／上拉 Snap 展开，大播放器下拉跟手并在松手后收合或回弹。保留现有静止布局、图标、玻璃参数以及 `.24` 自动底色与后台图层修复。三星本版本的外观和交互验收待测试，不能沿用 `.24` 实机结果作为新动效通过依据。
 

@@ -1,6 +1,6 @@
 # Apple Music 风格播放器转场 / Apple Music style player transition
 
-## 当前 `.25` / Current `.25`
+## 当前 `.26` / Current `.26`
 
 当前测试版按用户选择切换至 [LNPopup 展开／收合模型](./LNPOPUP-TRANSITION.md)，静止播放器布局和玻璃参数保留。下方 AppleMusicStylePlayer 参数、窗口景深及实机记录属于此前版本；共享封面、端点与路由交接基础继续复用，但新动效不能套用旧版帧率或视觉验收结论。
 

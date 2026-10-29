@@ -51,6 +51,8 @@ const DISMISS_Y = 80;
 const SWIPE_RETURN = { duration: 180, easing: motion.easing.move, reduceMotion: motion.reduceMotion.decorative };
 /** How far up the finger goes before the player starts coming up after it. */
 const REVEAL_START = 12;
+/** Ignore zeroed activation coordinates and tiny post-activation jitter. */
+const AXIS_LOCK_DISTANCE = 2;
 /** Past this share of the screen, letting go finishes opening it. */
 const REVEAL_COMMIT = 0.2;
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -222,9 +224,10 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
       buttonOffsetY.set(0);
       buttonPressProgress.set(withSpring(1, MINI_PRESS_SPRING));
     })
-    .onStart((e) => {
-      // Lock once: a diagonal finger path cannot alternate between skip and reveal.
-      gestureAxis.value = Math.abs(e.translationX) >= Math.abs(e.translationY) ? 1 : 2;
+    .onStart(() => {
+      // Android RNGH resets translation when Pan becomes ACTIVE. Choose the
+      // dominant axis on its first real update instead of treating 0/0 as X.
+      gestureAxis.value = 0;
       dragging.value = true;
       cancelAnimation(translateX);
       cancelAnimation(translateY);
@@ -241,6 +244,13 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
       if (revealing.value) {
         revealOffset.value = Math.min(screenH, Math.max(0, screenH + e.translationY + REVEAL_START));
         return;
+      }
+      if (gestureAxis.value === 0) {
+        const x = Math.abs(e.translationX);
+        const y = Math.abs(e.translationY);
+        if (Math.max(x, y) <= AXIS_LOCK_DISTANCE) return;
+        // Lock once: a later diagonal path cannot change skip into reveal.
+        gestureAxis.value = x >= y ? 1 : 2;
       }
       if (gestureAxis.value === 1) {
         translateX.value = miniSwipeOffset(e.translationX);
