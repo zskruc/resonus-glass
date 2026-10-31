@@ -24,6 +24,8 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 
 需要自行验证时，可进入 **Actions → Glass ARM64 test APK → Run workflow** 手动构建测试 APK。每次任务使用随机生成的一次性测试签名，不能覆盖当前手机上已有的 Glass 安装，也不能保证与前一次 CI 构建互相覆盖；请使用独立测试设备或模拟器。正式下载以 Releases 中明确标注的安装包为准。
 
+当前三星测试版本可从 **[0.8.5.1-preview.6 测试版 Release](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1-preview.6)** 下载，APK 为 `Resonus-Glass-v0.8.5.1-preview.6-arm64-v8a.apk`。测试预发布不触发 App 的正式更新提示；可手动覆盖安装，保留原有资料。
+
 ## Glass 的主要改动
 
 - 使用 [AndroidLiquidGlass / Backdrop](https://github.com/Kyant0/AndroidLiquidGlass) 实现屏幕背景采样、折射、模糊和边缘高光，多个控件共享采样。
@@ -36,12 +38,31 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 
 以上介绍已发布 Glass 基线的功能。开发预览可能调整材质和控件实现；请同时查看下面的版本说明。更详细的实现和限制见 [Glass 说明](./docs/LIQUID-GLASS-PREVIEW.md) 与 [原生模块说明](./modules/liquid-glass/README.md)。原项目功能和说明保存在 [上游 README](./docs/UPSTREAM-README.md)。
 
+## 界面预览
+
+以下为 Samsung 实机上的 Resonus Glass 近期截图，展示当前版本沿用的页面与可选布局；不同截图的主题、歌曲和玻璃参数可能不同，曲库内容仅为示例。艺人／专辑图为截图中展示的媒体内容，不随 App 分发。
+
+<table>
+  <tr>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/artist-page.jpg" width="230" alt="Resonus Glass 艺人页：满幅照片、渐变衔接与播放操作" /><br /><strong>艺人页</strong><br />满幅照片与取色背景</td>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/album-artist-layout.jpg" width="230" alt="Resonus Glass 专辑页的艺人式满幅布局" /><br /><strong>艺人式专辑页</strong><br />与艺人、歌单共用页头风格</td>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/playlist-collapsed-dock.jpg" width="230" alt="Resonus Glass 歌单滚动后的小标题及折叠玻璃底栏" /><br /><strong>歌单与折叠底栏</strong><br />滚动顶栏与 Mini Player 联动</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/player.jpg" width="230" alt="Resonus Glass 播放页：专辑封面、主题色背景与播放控件" /><br /><strong>播放器</strong><br />封面主题色与易读控件</td>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/appearance-options.jpg" width="230" alt="Resonus Glass 外观设置中的 Apple Music、Spotify 以及专辑布局选项" /><br /><strong>可切换布局</strong><br />Apple Music／Spotify、专辑与歌单样式</td>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/download-manager.jpg" width="230" alt="Resonus Glass 下载管理空队列及全部开始、暂停、取消操作" /><br /><strong>下载管理</strong><br />队列总览与批量操作</td>
+  </tr>
+</table>
+
+专辑页可在 **设置 → 外观 → 专辑页风格** 选择「艺人页布局」、Volta 或 Minidisc；歌单页可选「艺人页布局」或「紧凑布局」。截图仅展示部分选项，更多功能见下方版本说明。
+
 ## 版本与上游同步
 
 | 渠道 | 版本 | Android 更新编号 | 获取方式 |
 | --- | --- | --- | --- |
 | 正式发布 | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest)，App 内检查更新 |
-| 开发预览 | `0.8.5.1-preview.6` | `128` | 尚未发布；[艺人式专辑页及样式回切](./docs/ALBUM-ARTIST-PREVIEW-6.md) |
+| 测试预发布 | `0.8.5.1-preview.6` | `128` | [Release 与 APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1-preview.6) · [改动与验证](./docs/ALBUM-ARTIST-PREVIEW-6.md) |
 
 `.preview.6` 让专辑也可使用与艺人、歌单一致的满幅页头、封面取色与滚动衔接。**设置 → 外观 → 专辑页风格 → 艺人页布局**进入预览，Volta／Minidisc 可立即回切；已有账户保留原选择。此前[歌单页预览](./docs/PLAYLIST-ARTIST-PREVIEW-5.md)继续保留，播放器和玻璃参数不变。详见[预览说明](./docs/ALBUM-ARTIST-PREVIEW-6.md)及[动效方案调研](./docs/MOTION-OPTIONS-20261101.md)。
 
@@ -69,7 +90,7 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 
 `.27` 新增参考 [Volta](https://github.com/countervolts/Volta) 的 **Apple Music风格**，可在 **设置 → 外观 → 界面风格** 与 **Spotify风格** 之间切换。首页、资料库、艺人和专辑／歌单详情采用可切换的页面布局，保留现有播放器、玻璃参数及用户资料。范围和验证限制见 [双风格预览说明](./docs/VOLTA-UI-PREVIEW.md)。下方早期版本说明保留为开发历史。
 
-当前开发预览位于 `feature/playlist-and-music-tools-20261031` 分支。播放页结合 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 派生的原生控件与 SVG，以及独立实现的封面／歌词界面和网格流动背景。「设置 → 播放器 → 播放器布局」可切回 Resonus 原有布局；下方「播放器背景」仅影响原有布局。控件与 SVG 的 **AGPL-3.0-only** 来源、保留的原有许可证和实现范围见 [第三方声明](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) 与 [预览说明](./docs/AMLL-PLAYER-PREVIEW.md)。
+当前已发布测试版为 `v0.8.5.1-preview.6`，源码同步至 `glass` 分支；该 tag 固定对应发布时的源码。播放页结合 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 派生的原生控件与 SVG，以及独立实现的封面／歌词界面和网格流动背景。「设置 → 播放器 → 播放器布局」可切回 Resonus 原有布局；下方「播放器背景」仅影响原有布局。控件与 SVG 的 **AGPL-3.0-only** 来源、保留的原有许可证和实现范围见 [第三方声明](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) 与 [预览说明](./docs/AMLL-PLAYER-PREVIEW.md)。
 
 `.15` 保留 `.14` 的五项修改：移除播放／歌词页顶部白条，保留原高度、顶部下拉和封面无障碍关闭；移除随机／循环按钮，仅保留原位置的上一首、播放／暂停、下一首，播放模式仍可在菜单设置；返回时冻结底栏已绘制进度，等来源页面状态恢复就绪后再交接，并保留来源页选中透镜透明度；逐字歌词只预备当前与下一行遮罩，下一行延后 720ms 准备，不改模糊、光学或歌词计时；有完整歌单镜像时先显示保存内容并在后台请求服务器，离线复用元数据避免重复 SQL，本地只查询当前歌单的歌曲 ID。没有缓存的首次打开仍可能等待，不能保证所有歌单立即出现。
 

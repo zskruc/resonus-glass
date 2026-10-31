@@ -24,6 +24,8 @@ In **Settings → About**, the GitHub link, release notes, and update check all 
 
 For independent testing, open **Actions → Glass ARM64 test APK → Run workflow**. Each run creates a random, disposable test signing key. Its APK cannot update an existing Glass installation and is not guaranteed to update an APK from an earlier CI run. Use a separate test device or emulator. Use explicitly identified APKs in Releases for normal installation.
 
+The current Samsung-tested build is available from the **[0.8.5.1-preview.6 prerelease](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1-preview.6)** as `Resonus-Glass-v0.8.5.1-preview.6-arm64-v8a.apk`. Prereleases do not trigger stable update prompts; manually install over the existing Glass app to retain data.
+
 ## Glass features
 
 - [AndroidLiquidGlass / Backdrop](https://github.com/Kyant0/AndroidLiquidGlass) provides shared background capture, refraction, blur, and edge highlights across controls.
@@ -36,12 +38,31 @@ For independent testing, open **Actions → Glass ARM64 test APK → Run workflo
 
 These features describe the released Glass baseline. Development previews may change materials and control implementations; see the version information below. Implementation details and limits are documented in the [Glass guide](./docs/LIQUID-GLASS-PREVIEW.md) and [native module README](./modules/liquid-glass/README.md). Original features and documentation are preserved in the [upstream README](./docs/UPSTREAM-README.md).
 
+## UI preview
+
+Recent Resonus Glass screenshots captured on a Samsung device, showing pages and optional layouts retained in the current version. Theme, song and glass settings vary between captures; library content is illustrative. Artist/album imagery is media shown in the screenshots and is not bundled with the app.
+
+<table>
+  <tr>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/artist-page.jpg" width="230" alt="Resonus Glass artist page with full-width photo, color transition and playback actions" /><br /><strong>Artist page</strong><br />Full-width photo and artwork-derived background</td>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/album-artist-layout.jpg" width="230" alt="Resonus Glass album page using the full-width artist-style layout" /><br /><strong>Artist-style album</strong><br />A shared header language for artists and playlists</td>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/playlist-collapsed-dock.jpg" width="230" alt="Resonus Glass playlist with compact scroll title and collapsed glass dock" /><br /><strong>Playlist and compact dock</strong><br />Scroll-linked title, tabs and Mini Player</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/player.jpg" width="230" alt="Resonus Glass player with album art, artwork-colored background and playback controls" /><br /><strong>Player</strong><br />Artwork colors and readable controls</td>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/appearance-options.jpg" width="230" alt="Resonus Glass Appearance settings with Apple Music, Spotify and album layout choices" /><br /><strong>Layout choices</strong><br />Apple Music/Spotify, album and playlist styles</td>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/download-manager.jpg" width="230" alt="Resonus Glass download manager showing an empty queue and batch start, pause and cancel actions" /><br /><strong>Download manager</strong><br />Queue overview and batch actions</td>
+  </tr>
+</table>
+
+Choose Artist page layout, Volta or Minidisc under **Settings → Appearance → Album page style**. Playlist pages offer Artist page layout and Compact layout. These screenshots show a subset of the available options; see the version notes below for more features.
+
 ## Versions and upstream updates
 
 | Channel | Version | Android version code | Availability |
 | --- | --- | --- | --- |
 | Stable | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest), in-app update checks |
-| Development preview | `0.8.5.1-preview.6` | `128` | Unpublished; [artist-style album header and reversible styles](./docs/ALBUM-ARTIST-PREVIEW-6.md) |
+| Test prerelease | `0.8.5.1-preview.6` | `128` | [Release and APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1-preview.6) · [Changes and validation](./docs/ALBUM-ARTIST-PREVIEW-6.md) |
 
 `.preview.6` adds the shared artist/playlist full-width hero, cover palette and scroll transition to albums. Select **Settings → Appearance → Album page style → Artist page layout**; Volta/Minidisc remain immediate rollback choices. Existing profiles retain their explicit preference. The earlier [playlist preview](./docs/PLAYLIST-ARTIST-PREVIEW-5.md) remains; player/glass tuning is unchanged. See [preview notes](./docs/ALBUM-ARTIST-PREVIEW-6.md) and [motion research](./docs/MOTION-OPTIONS-20261101.md).
 
@@ -69,7 +90,7 @@ The current preview updates artist navigation transitions and name artwork, Volt
 
 `.27` adds an optional [Volta](https://github.com/countervolts/Volta)-inspired **Apple Music style** under **Settings → Appearance → UI style**, alongside **Spotify style**. Home, Library, artist and album/playlist pages use alternate layouts while retaining the existing player, glass profiles and user data. See the [dual UI preview scope and validation](./docs/VOLTA-UI-PREVIEW.md). Earlier preview notes below remain development history.
 
-The current preview is on `feature/playlist-and-music-tools-20261031`. Its native player combines [AMLL](https://github.com/amll-dev/applemusic-like-lyrics)-derived controls and SVGs with independently implemented cover/lyric views and a moving artwork-field background. Settings → Player → Player layout restores the previous Resonus layout; the Player background option below applies only to that layout. See the [third-party notices](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) and [preview guide](./docs/AMLL-PLAYER-PREVIEW.md) for the controls/assets’ **AGPL-3.0-only** provenance, retained original licenses and implementation boundaries.
+The published preview is `v0.8.5.1-preview.6`; its source is synchronized to `glass`, with the tag preserving the release snapshot. Its native player combines [AMLL](https://github.com/amll-dev/applemusic-like-lyrics)-derived controls and SVGs with independently implemented cover/lyric views and a moving artwork-field background. Settings → Player → Player layout restores the previous Resonus layout; the Player background option below applies only to that layout. See the [third-party notices](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) and [preview guide](./docs/AMLL-PLAYER-PREVIEW.md) for the controls/assets’ **AGPL-3.0-only** provenance, retained original licenses and implementation boundaries.
 
 `.15` retains five changes from `.14`: remove the player/lyric top handle while retaining header space, pull-down dismissal and accessible closing on the artwork; remove shuffle/repeat buttons while leaving previous/play-pause/next in their original positions, with modes still in More; retain painted dock progress until its origin scope is restored and preserve the origin's selected-lens opacity; prepare word masks only for the current and next lyric rows, delaying next-row preparation by 720ms without changing blur, optics or lyric timing; show a complete saved playlist mirror while refreshing HTTP in the background, reuse offline metadata without duplicate SQL and limit local queries to the current playlist IDs. A first opening without saved data can still wait; instant loading is not guaranteed.
 

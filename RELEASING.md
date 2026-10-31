@@ -4,6 +4,12 @@
 
 目前正式 APK 在维护者本机使用既有签名构建，再上传到 GitHub Release。保留的上游 `Release APK` 和 iOS IPA 工作流只在原项目仓库运行，不负责发布 Glass。`Glass ARM64 test APK` 工作流每次生成临时测试签名，**不能替代当前手机安装使用的签名，也不能作为覆盖更新的正式安装包**。
 
+## 当前测试版
+
+2026-11-01 发布 `v0.8.5.1-preview.6`，Android `versionCode 128`，使用现有 Glass 包名及签名。它是测试预发布，APK 已完成三星短时交互验证；不会被 `/releases/latest` 选作正式更新。源码及实际范围见 [本轮说明](./docs/ALBUM-ARTIST-PREVIEW-6.md) 与 [Changelog](./CHANGELOG.md)。下文 `v0.8.4` 命令保留为旧正式版流程示例，不代表当前预发布。
+
+预发布使用相应真实版本 tag、`--prerelease` 与版本匹配的 APK；不得把未做三星验收的本地动效实验放进该 tag 或附件。
+
 ## 版本与更新内容
 
 - 本次版本为 `0.8.4`，Android `versionCode` 为 `67`，Git tag 为 `v0.8.4`。

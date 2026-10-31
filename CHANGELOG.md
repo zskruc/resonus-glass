@@ -13,6 +13,42 @@ preserved upstream history.
 Releases before 0.2.1 are only listed on the
 [GitHub releases page](https://github.com/juananzzz/resonus/releases).
 
+## [0.8.5.1-preview.6] - 2026-11-01
+
+### Added
+
+- 专辑与歌单新增艺人页式满幅封面、局部取色和滚动顶栏；外观设置可立即切回 Volta／Minidisc 专辑或紧凑歌单布局。
+- 手动／封面自动主题色、紧凑首页和统一设置行高。
+- 歌词校时与 PNG 歌词海报、M3U／M3U8／JSON 歌单交换、真实听歌统计与年度回顾、规则智能歌单、只读重复／多版本检查。
+- 默认关闭的本地首尾静音分析与跳过；兼容三星 ALAC/M4A 的有限片段识别和定位。
+- 中英 README 增加近期真实 App 界面截图与功能入口介绍。
+
+### Changed
+
+- 选择性适配已审查的上游 0.8.5 播放加载优先级、网络错误本地化、搜索网格、歌单成员管理和外部媒体切歌指令；不是上游全部变更的整体合并。
+- 艺人页优先使用目标尺寸图片与缓存，减少低清缩略图再替换高清的跳变；继承官方名字图、下载管理和批量封面／歌词缓存。
+- 保留目前播放器布局、LNPopup 风格展开／收合、底栏交互、保存的玻璃参数和离线文件。
+
+### Fixed
+
+- 详情页局部取色下的文字、歌曲行、流派和版权信息对比；共享页头保留艺人跳转及封面查看。
+- 歌单布局回切与主题变化保留列表、滚动宿主、重复条目身份及选择；顶栏同源副本在搜索收合时保持挂载。
+- 已适配的上游请求与播放修正、专辑队列播放／暂停归属，以及三星静音分析兼容问题。
+
+### Notes
+
+- ARM64 测试预发布，Android `versionCode 128`；包名 `com.zskruc.resonus.glasspreview`、签名与现有 Samsung Glass 安装一致，可覆盖更新。请勿卸载以免丢失资料。
+- 当前源码 980 项测试、类型与翻译检查通过。三星已验证艺人式歌单／专辑页、滚动顶栏、搜索、艺人跳转、封面查看及旧布局回切；此前工具及 ALAC/M4A 验证见对应预览文档。短时检查不代表持续 120 fps 或长期稳定性承诺。
+- 统计从启用后真实播放开始；首尾静音仅分析本地／已下载音频。音频未完成下载队列仍为会话级，已有完整下载保留。
+- 本版未包含 React Native Screen Transitions 或 Gorhom Bottom Sheet；这两项将在独立本地实验版验证。
+
+### English
+
+- Adds reversible artist-style album/playlist heroes, artwork-based local colors, compact Home, manual/artwork accents, lyric timing and PNG posters, playlist exchange, listening statistics, smart playlists, duplicate inspection and opt-in local silence trimming.
+- Selectively adapts reviewed upstream 0.8.5 playback/network/search/membership/media-command changes; this is not a full upstream merge. Artist image loading is refined. Existing player layout, dock/glass profiles and downloaded music remain.
+- All 980 tests, type and translation checks pass. Samsung checks cover the new headers, scrolling, search, artist links, artwork viewer and layout rollback. This ARM64 prerelease uses code 128 and the existing package/signature. Short tests do not establish sustained 120 fps or long-session stability.
+- Statistics start with real playback after enabling; silence analysis requires local/downloaded audio. Unfinished audio queues remain session-only. The new Screen Transitions / Gorhom motion experiment is excluded from this release.
+
 ## [0.8.4.1-amll.38] - 2026-10-31
 
 ### Added
