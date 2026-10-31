@@ -54,6 +54,9 @@ import { useAuthStore } from './auth';
 import { useLibraryMirror } from './libraryMirror';
 import { useSettings } from './settings';
 import { useToast } from './toast';
+import { createDownloadQueue, DownloadInterrupted, type DownloadContext, type DownloadQueueItem } from '@/lib/downloadQueue';
+import { useNetworkType } from './networkType';
+export type { DownloadQueueItem } from '@/lib/downloadQueue';
 
 const ROOT_DIR = FileSystem.documentDirectory + 'downloads/';
 
@@ -63,29 +66,6 @@ const ROOT_DIR = FileSystem.documentDirectory + 'downloads/';
 // reconciles was two groups, so six songs at a time, and on a server that
 // transcodes each one that is six ffmpeg processes (#83). These slots are the
 // whole app's budget, whatever is downloading and however it started.
-
-/** Transfers in flight right now, across every group. */
-let slotsInUse = 0;
-/** Workers waiting for one, woken in order. */
-const slotQueue: (() => void)[] = [];
-
-function maxSlots(): number {
-  return useSettings.getState().downloadConcurrency;
-}
-
-async function takeSlot(): Promise<void> {
-  // Re-checked after waking: the limit can have been lowered in the meantime,
-  // and waking one too many is then harmless, it just waits again.
-  while (slotsInUse >= maxSlots()) {
-    await new Promise<void>((resolve) => slotQueue.push(resolve));
-  }
-  slotsInUse++;
-}
-
-function freeSlot(): void {
-  slotsInUse = Math.max(0, slotsInUse - 1);
-  slotQueue.shift()?.();
-}
 
 /**
  * A server saying "not now" is not a song that cannot be downloaded, and until
@@ -114,7 +94,7 @@ class TransferError extends Error {
 interface GroupProgress {
   done: number;
   total: number;
-  /** Fraction (0..1) of the current file, so the progress bar advances between songs. */
+  /** Sum of real partial fractions across the group's unfinished songs. */
   fraction: number;
 }
 
@@ -602,15 +582,19 @@ function toLocalAlbum(
  * ones grayed out. Skips those already in the mirror to avoid repeated requests.
  */
 async function mirrorAlbumTracklists(auth: SubsonicAuth, songs: Song[]): Promise<void> {
+  const current = () => useAuthStore.getState().auth === auth && !useAuthStore.getState().offline;
   const mirror = useLibraryMirror.getState();
   const dir = activeServerDir();
   const ids = [...new Set(songs.map((s) => s.albumId).filter((id): id is string => !!id))];
   let refreshed = false;
   for (const id of ids) {
+    if (!current()) return;
     // Already mirrored: asked one at a time, which is a row lookup.
     if (await mirror.albumDetail(id)) continue;
+    if (!current()) return;
     try {
       const res = await getAlbum(auth, id);
+      if (!current()) return;
       mirror.saveAlbum(id, res.album, res.songs, useDownloads.getState());
       if (dir) refreshed = (await refreshCatalogAlbum(auth, dir, res.album)) || refreshed;
     } catch {
@@ -666,9 +650,11 @@ async function refreshCatalogAlbum(
  * nothing to ask for. The row is still worth writing: opening the artist while
  * online fills the rest in (see `noteDownloadedArtist`).
  */
-async function saveAlbumArtist(auth: SubsonicAuth, dir: string, album: Album): Promise<void> {
+async function saveAlbumArtist(auth: SubsonicAuth, dir: string, album: Album, current: () => boolean = () => true): Promise<void> {
+  if (!current()) throw new DownloadInterrupted('Artist metadata interrupted');
   const key = normKey(album.artist || UNKNOWN_ARTIST);
-  const art = album.artistId ? await downloadArtistArt(auth, dir, key, album.artistId) : undefined;
+  const art = album.artistId ? await downloadArtistArt(auth, dir, key, album.artistId, current) : undefined;
+  if (!current()) throw new DownloadInterrupted('Artist metadata interrupted');
   await Db.saveArtists(dir, [
     {
       id: key,
@@ -695,11 +681,13 @@ function albumFromSong(song: Song): Album {
  * file, so the local profile finds them without network (lyrics phase 2).
  * Without lyrics (or without the songLyrics extension on the server) nothing happens.
  */
-async function cacheLyricsForDownload(auth: SubsonicAuth, song: Song, audioFile: string): Promise<void> {
+async function cacheLyricsForDownload(auth: SubsonicAuth, song: Song, audioFile: string, current: () => boolean = () => true): Promise<void> {
   try {
     let lyrics: SongLyrics | null = null;
+    if (!current()) return;
     try {
       lyrics = await getLyricsBySongId(auth, song.id);
+      if (!current()) return;
       // It answered, and it has nothing. The classic endpoint reads the same
       // place, so asking it too is a second request per song for an answer
       // already given, and downloading a library makes thousands of them queue
@@ -707,8 +695,10 @@ async function cacheLyricsForDownload(auth: SubsonicAuth, song: Song, audioFile:
       // doing this; the download path had been left behind.
       if (!lyrics) return;
     } catch {
+      if (!current()) return;
       // Server without the songLyrics extension: try the classic endpoint.
       const plain = await getLyrics(auth, song.artist ?? '', song.title);
+      if (!current()) return;
       if (plain) lyrics = { synced: false, lines: plain.split('\n').map((value) => ({ value })) };
     }
     if (!lyrics) return;
@@ -761,8 +751,9 @@ function downloadCover(
   auth: SubsonicAuth,
   dir: string,
   album: Album,
+  current: () => boolean = () => true,
 ): Promise<{ uri: string; bytes: number } | undefined> {
-  return downloadArt(auth, dir, `${dir}covers/${hashKey(album.id)}.jpg`, album.coverArt ?? album.id);
+  return downloadArt(auth, dir, `${dir}covers/${hashKey(album.id)}.jpg`, album.coverArt ?? album.id, current);
 }
 
 /**
@@ -779,8 +770,9 @@ function downloadTrackArt(
   auth: SubsonicAuth,
   dir: string,
   coverId: string,
+  current: () => boolean = () => true,
 ): Promise<{ uri: string; bytes: number } | undefined> {
-  return downloadArt(auth, dir, `${dir}covers/track_${hashKey(coverId)}.jpg`, coverId);
+  return downloadArt(auth, dir, `${dir}covers/track_${hashKey(coverId)}.jpg`, coverId, current);
 }
 
 /**
@@ -795,8 +787,9 @@ function downloadArtistArt(
   dir: string,
   artistKey: string,
   coverId: string,
+  current: () => boolean = () => true,
 ): Promise<{ uri: string; bytes: number } | undefined> {
-  return downloadArt(auth, dir, `${dir}covers/artist_${hashKey(artistKey)}.jpg`, coverId);
+  return downloadArt(auth, dir, `${dir}covers/artist_${hashKey(artistKey)}.jpg`, coverId, current);
 }
 
 async function downloadArt(
@@ -804,15 +797,18 @@ async function downloadArt(
   dir: string,
   file: string,
   coverId: string,
+  current: () => boolean = () => true,
 ): Promise<{ uri: string; bytes: number } | undefined> {
   const url = coverArtUrl(auth, coverId, COVER.card);
-  if (!url) return undefined;
+  if (!url || !current()) return undefined;
   try {
     const existing = await FileSystem.getInfoAsync(file);
+    if (!current()) return undefined;
     if (existing.exists) {
       return { uri: file, bytes: (existing as { size?: number }).size ?? 0 };
     }
     await FileSystem.makeDirectoryAsync(`${dir}covers/`, { intermediates: true }).catch(() => {});
+    if (!current()) return undefined;
     netTally('coverArt.view (download)');
     const res = await FileSystem.downloadAsync(url, file);
     // Same care as with audio, and we also need to delete: the download writes
@@ -840,6 +836,11 @@ interface DownloadsState {
   dlBitRates: Record<string, number>;
   /** Progress per ongoing group: `album:<id>` / `playlist:<id>` / `artist:<id>`. */
   active: Record<string, GroupProgress>;
+  queue: DownloadQueueItem[];
+  queuePaused: boolean;
+  pauseAll: () => Promise<void>;
+  resumeAll: () => Promise<void>;
+  cancelAll: () => Promise<void>;
   /**
    * `files` has been read from disk. Until then it is empty, which reads the
    * same as "nothing is downloaded" — and whoever decides something by that
@@ -912,250 +913,263 @@ async function onMobileData(): Promise<boolean> {
 }
 
 export const useDownloads = create<DownloadsState>((set, get) => {
-  // Groups with a stop requested: workers check this and stop picking new
-  // songs. Already downloaded items are kept.
-  const cancelling = new Set<string>();
-  // Ongoing downloads per group, to abort them on stop (instant stop).
-  const activeTasks = new Map<
-    string,
-    Set<ReturnType<typeof FileSystem.createDownloadResumable>>
-  >();
+  const groupRuns = new Map<string, { token: object; keys: string[]; cancel: () => void }>();
+  let sequence = 0;
+  const scope = (auth: SubsonicAuth) => hashKey(`${primaryUrl(auth)}|${auth.username}`);
+  const allowed = () => {
+    const state = useAuthStore.getState();
+    return !!state.auth && !state.offline && useNetworkType.getState().connected
+      && !(useSettings.getState().downloadWifiOnly && useNetworkType.getState().cellular);
+  };
+  const queue = createDownloadQueue({ owner: () => useAuthStore.getState().auth, profile: scope, allowed,
+    limit: () => useSettings.getState().downloadConcurrency,
+    update: (items, paused) => {
+      const active: Record<string, GroupProgress> = {};
+      const groups = new Map<string, GroupProgress & { pending: boolean }>();
+      for (const item of items) for (const key of item.groups) {
+        let group = groups.get(key);
+        if (!group) { group = { done: 0, total: 0, fraction: 0, pending: false }; groups.set(key, group); }
+        group.total++;
+        if (item.status === 'completed') group.done++;
+        if (item.status === 'queued' || item.status === 'downloading' || item.status === 'paused') {
+          group.pending = true;
+          if (item.bytesTotal > 0) group.fraction += Math.min(1, item.bytesWritten / item.bytesTotal);
+        }
+      }
+      for (const [key, group] of groups) if (group.pending) active[key] = { done: group.done, total: group.total, fraction: group.fraction };
+      set({ queue: items, queuePaused: paused, active });
+    },
+  });
+  useAuthStore.subscribe((state, previous) => {
+    if (previous.auth && !state.auth) {
+      const old = scope(previous.auth);
+      for (const [key, group] of groupRuns) if (key.startsWith(old + '|')) { group.cancel(); groupRuns.delete(key); }
+      void queue.removeProfile(old);
+    }
+    for (const removed of previous.profiles ?? []) if (removed._type === 'server'
+      && !(state.profiles ?? []).some((profile) => profile._type === 'server' && scope(profile) === scope(removed))) {
+      void queue.removeProfile(scope(removed));
+    }
+    queue.sync();
+  });
+  useNetworkType.subscribe(() => queue.sync());
+  useSettings.subscribe((state, previous) => {
+    if (state.downloadConcurrency !== previous.downloadConcurrency || state.downloadWifiOnly !== previous.downloadWifiOnly) queue.sync();
+  });
 
-  /** Downloads a group of songs and updates catalog + progress. */
+  /** Existing group entry points all feed one per-account, per-song queue. */
   async function downloadGroup(groupKey: string, songs: Song[], albums: Album[]): Promise<void> {
-    const { auth, offline } = useAuthStore.getState();
-    if (!auth) return;
-    // A download is a transfer, and offline mode makes none. It goes through
-    // expo-file-system rather than the API, so the gate under the API layer
-    // (see `api/netGate`) cannot see it: this is that same rule, said here.
-    if (offline) return;
-    if (get().active[groupKey]) return; // already in progress
-    // No duplicates (a playlist may have the same song twice) nor
-    // already downloaded, radio songs (url), or songs already local.
-    const seen = new Set<string>();
-    const pending = songs.filter((s) => {
-      if (get().files[s.id] || s.url || s.localUri || seen.has(s.id)) return false;
-      seen.add(s.id);
-      return true;
-    });
-    if (pending.length === 0) return;
-
-    // "Wi-Fi only" mode: don't start on mobile data.
-    if (useSettings.getState().downloadWifiOnly && (await onMobileData())) {
-      useToast.getState().show(tg('Connect to Wi-Fi to download'));
+    const intent = useAuthStore.getState().auth;
+    if (!intent || useAuthStore.getState().offline) return;
+    if (useSettings.getState().downloadWifiOnly && await onMobileData()) {
+      if (useAuthStore.getState().auth === intent) useToast.getState().show(tg('Connect to Wi-Fi to download'));
       return;
     }
-
-    const dir = serverDir(auth);
-    set((st) => ({ active: { ...st.active, [groupKey]: { done: 0, total: pending.length, fraction: 0 } } }));
-
-    try {
-      await FileSystem.makeDirectoryAsync(`${dir}files/`, { intermediates: true }).catch(() => {});
-
-      // The cover and album entry are downloaded the first time one of their
-      // songs appears, not all at once at the start. This way the download
-      // begins immediately (without "scanning" all albums first) and the
-      // stop is also responsive during that phase.
-      const albumById = new Map(albums.map((a) => [a.id, a]));
-      const albumDone = new Set<string>();
-      const artistDone = new Set<string>();
-      /**
-       * Cover id of a track that has its own picture, and where it landed.
-       *
-       * Filled album by album in `ensureAlbum` rather than track by track as
-       * the audio arrives: the distinct ids are known from the song list, one
-       * album's worth is a handful of them at most, and doing it there is what
-       * lets the bytes go into the album's own total instead of being spent
-       * without anything counting them.
-       */
-      const trackArt = new Map<string, string>();
-      /** Who the record is by, once per artist while this group runs. */
-      const ensureArtist = async (album: Album): Promise<void> => {
+    if (useAuthStore.getState().auth !== intent || !allowed()) return;
+    const groupId = `${scope(intent)}|${groupKey}`;
+    if (groupRuns.has(groupId)) return;
+    const seen = new Set<string>();
+    const pending = songs.filter((song) => {
+      if (get().files[song.id] || song.url || song.localUri || seen.has(song.id)) return false;
+      seen.add(song.id); return true;
+    });
+    if (!pending.length) return;
+    let cancel!: () => void;
+    const stopped = new Promise<'cancelled'>((resolve) => { cancel = () => resolve('cancelled'); });
+    const group = { token: {}, keys: pending.map((song) => song.id), cancel };
+    groupRuns.set(groupId, group);
+    const dir = serverDir(intent);
+    const albumById = new Map(albums.map((album) => [album.id, album]));
+    const albumWork = new Map<string, Promise<void>>(), artistWork = new Map<string, Promise<void>>();
+    const trackArt = new Map<string, string>();
+    const ensureAlbum = async (song: Song, context: DownloadContext) => {
+      const album = song.albumId ? albumById.get(song.albumId) : albumById.get(`dl-${hashKey(song.album || song.id)}`);
+      if (!album) return;
+      const existing = albumWork.get(album.id);
+      if (existing) {
+        try { await existing; return; }
+        catch (error) {
+          context.check();
+          if (!(error instanceof DownloadInterrupted)) throw error;
+          if (albumWork.get(album.id) === existing) albumWork.delete(album.id);
+          return ensureAlbum(song, context);
+        }
+      }
+      const work = (async () => {
+        context.check();
+        const cover = await downloadCover(context.auth, dir, album, context.current); context.check();
+        const coverId = album.coverArt ?? album.id;
+        const own = new Set(pending.filter((track) => track.albumId === album.id && track.coverArt && track.coverArt !== coverId).map((track) => track.coverArt!));
+        const [old] = own.size ? await Db.albumsByIds(dir, [album.id]) : [];
+        context.check();
+        const trackCovers: Record<string, string> = { ...old?.trackCovers }; let artBytes = 0;
+        for (const id of own) {
+          context.check(); const art = await downloadTrackArt(context.auth, dir, id, context.current); context.check();
+          if (art) { trackArt.set(id, art.uri); trackCovers[id] = art.uri; registerCover(id, art.uri); artBytes += art.bytes; }
+        }
+        context.check();
+        await Db.addToCatalog(dir, { albums: [toLocalAlbum(album, cover?.uri, (cover?.bytes ?? 0) + artBytes,
+          Object.keys(trackCovers).length ? trackCovers : undefined)] });
+        context.check();
         const key = normKey(album.artist || UNKNOWN_ARTIST);
-        if (artistDone.has(key)) return;
-        artistDone.add(key);
-        await saveAlbumArtist(auth, dir, album);
-      };
-
-      const ensureAlbum = async (song: Song): Promise<void> => {
-        const album = song.albumId ? albumById.get(song.albumId) : undefined;
-        if (!album || albumDone.has(album.id)) return;
-        albumDone.add(album.id); // mark before await: so another worker won't repeat it
-        const cover = await downloadCover(auth, dir, album);
-
-        // The pictures that are not the album's, which is how a compilation or
-        // a set of singles keeps a different sleeve per track (#214). Only the
-        // ones that name something else: on an ordinary record every track
-        // names the album's id and this set comes out empty, so the usual
-        // download pays nothing for this at all.
-        const albumCoverId = album.coverArt ?? album.id;
-        const own = new Set<string>();
-        for (const track of pending) {
-          if (track.albumId !== album.id) continue;
-          if (track.coverArt && track.coverArt !== albumCoverId) own.add(track.coverArt);
+        let artist = artistWork.get(key);
+        if (!artist) { artist = saveAlbumArtist(context.auth, dir, album, context.current); artistWork.set(key, artist);
+          void artist.catch(() => { if (artistWork.get(key) === artist) artistWork.delete(key); }); }
+        await artist; context.check();
+      })();
+      albumWork.set(album.id, work);
+      void work.catch(() => { if (albumWork.get(album.id) === work) albumWork.delete(album.id); });
+      return work;
+    };
+    const promises = pending.map((song) => {
+      const suffix = ++sequence;
+      let transfer: ReturnType<typeof FileSystem.createDownloadResumable> | undefined;
+      let transferAuth: SubsonicAuth | undefined, transferUrl = '', resume = false, offset = 0;
+      let response: FileSystem.FileSystemDownloadResult | undefined;
+      let part = '', final = '', dlBitRate: number | undefined, moved = false, committed = false, ownsFinal = false, expectedTotal = 0;
+      const cleanup = async () => {
+        if (part) await FileSystem.deleteAsync(part, { idempotent: true }).catch(() => {});
+        const lrc = part ? siblingLrcUri(part) : null;
+        if (lrc) await FileSystem.deleteAsync(lrc, { idempotent: true }).catch(() => {});
+        if (moved && ownsFinal && !committed) {
+          await FileSystem.deleteAsync(final, { idempotent: true }).catch(() => {});
+          const ownLrc = siblingLrcUri(final);
+          if (ownLrc) await FileSystem.deleteAsync(ownLrc, { idempotent: true }).catch(() => {});
+          moved = false; ownsFinal = false; response = undefined; transfer = undefined; resume = false; offset = 0; expectedTotal = 0;
         }
-        // Kept from an earlier download of this album, which replacing the
-        // row would otherwise forget.
-        const [existing] = own.size > 0 ? await Db.albumsByIds(dir, [album.id]) : [];
-        const trackCovers: Record<string, string> = { ...existing?.trackCovers };
-        let artBytes = 0;
-        for (const coverId of own) {
-          if (cancelling.has(groupKey)) break;
-          const art = await downloadTrackArt(auth, dir, coverId);
-          if (!art) continue;
-          trackArt.set(coverId, art.uri);
-          trackCovers[coverId] = art.uri;
-          registerCover(coverId, art.uri);
-          artBytes += art.bytes;
-        }
-
-        await Db.addToCatalog(dir, {
-          // The album's own row carries what its artwork costs, this included:
-          // a song's `dlBytes` is the size of its audio and is read back as
-          // such (see the Size row of `SongInfoSheet`), so a picture cannot go
-          // in there.
-          albums: [
-            toLocalAlbum(
-              album,
-              cover?.uri,
-              (cover?.bytes ?? 0) + artBytes,
-              Object.keys(trackCovers).length > 0 ? trackCovers : undefined,
-            ),
-          ],
-        });
-        await ensureArtist(album);
       };
-
-      // Ongoing tasks, aborted on stop (instant stop).
-      const tasks = new Set<ReturnType<typeof FileSystem.createDownloadResumable>>();
-      activeTasks.set(groupKey, tasks);
-
-      /** One attempt at one song. Throws, so the caller decides about trying again. */
-      const fetchSong = async (song: Song): Promise<void> => {
-        const { url, ext, bitRate: dlBitRate } = songFileUrl(auth, song);
-        const file = `${dir}files/${hashKey(song.id)}.${ext}`;
-        const task = FileSystem.createDownloadResumable(url, file, {}, (p) => {
-          if (p.totalBytesExpectedToWrite > 0) {
-            const fraction = p.totalBytesWritten / p.totalBytesExpectedToWrite;
-            const cur = get().active[groupKey];
-            // Updates coarsely to avoid continuous re-renders.
-            if (cur && fraction - cur.fraction > 0.05) {
-              set((st) => ({
-                active: { ...st.active, [groupKey]: { ...cur, fraction } },
-              }));
-            }
-          }
-        });
-        tasks.add(task);
+      return queue.add(song, groupKey, async (context) => {
         try {
-          const res = await task.downloadAsync();
-          // The one request in the app that is measured in megabytes. Counted
-          // here rather than guessed at from the catalog, so a report can say
-          // whether the traffic was music or something asking again and again.
-          netTally('stream.view (download)', Number(header(res?.headers, 'content-length')) || 0);
-          if (!res || res.status !== 200) throw new TransferError(`HTTP ${res?.status}`, res?.status);
-          if (isErrorBody(res.headers)) throw new TransferError('error body, not audio', 200);
-          await cacheLyricsForDownload(auth, song, file);
-          // The size comes from the response, which already counted it. Only
-          // ask the file system when the server sent no length.
-          const bytes = Number(header(res.headers, 'content-length')) || (await fileSize(file));
-          // Each song is persisted on completion: if the app dies mid-album,
-          // already downloaded items survive a restart.
-          await Db.addToCatalog(dir, {
-            songs: [
-              toLocalSong(song, file, dlBitRate, bytes, song.coverArt ? trackArt.get(song.coverArt) : undefined),
-            ],
-          });
-          set((st) => {
-            const cur = st.active[groupKey];
-            return {
-              files: { ...st.files, [song.id]: file },
-              dlBitRates:
-                dlBitRate != null ? { ...st.dlBitRates, [song.id]: dlBitRate } : st.dlBitRates,
-              active: cur
-                ? { ...st.active, [groupKey]: { ...cur, done: cur.done + 1, fraction: 0 } }
-                : st.active,
-            };
-          });
-        } catch (e) {
-          // Whatever arrived is not a song: half a file, or the server's excuse
-          // for not sending one.
-          await FileSystem.deleteAsync(file, { idempotent: true }).catch(() => {});
-          throw e;
-        } finally {
-          tasks.delete(task);
-        }
-      };
-
-      let failed = 0;
-      let next = 0;
-      // As many workers as slots at most: more would only queue up on the way in.
-      const workers = Array.from({ length: Math.min(maxSlots(), pending.length) }, async () => {
-        while (next < pending.length) {
-          if (cancelling.has(groupKey)) break; // stop requested by user
-          const song = pending[next++];
+          context.check();
+          await FileSystem.makeDirectoryAsync(`${dir}files/`, { intermediates: true }); context.check();
+          await ensureAlbum(song, context); context.check();
           for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
-            // Held across the whole song, cover and lyrics included: they are
-            // requests to the same server as the audio.
-            await takeSlot();
             try {
-              if (cancelling.has(groupKey)) break;
-              await ensureAlbum(song);
-              if (cancelling.has(groupKey)) break; // may have stopped during the cover
-              await fetchSong(song);
-              break; // done
-            } catch (e) {
-              // A stop is not a failure; the toast already says it stopped.
-              if (cancelling.has(groupKey)) break;
-              const status = e instanceof TransferError ? e.status : undefined;
-              if (attempt === ATTEMPTS || !worthRetrying(status)) {
-                failed++;
-                break;
+              const source = songFileUrl(context.auth, song);
+              const destination = `${dir}files/${hashKey(song.id)}.${source.ext}`;
+              if (!part) { final = destination; part = `${dir}files/${hashKey(song.id)}.queue-${suffix}.${source.ext}`; dlBitRate = source.bitRate; }
+              if (!response) {
+                // A changed source/codec cannot be appended to an old partial.
+                if (transfer && (source.url !== transferUrl || transferAuth !== context.auth)) {
+                  transfer = undefined; resume = false; offset = 0; await cleanup(); context.check();
+                  final = destination; part = `${dir}files/${hashKey(song.id)}.queue-${suffix}.${source.ext}`; dlBitRate = source.bitRate;
+                }
+                if (!transfer) {
+                  transferUrl = source.url; transferAuth = context.auth;
+                  transfer = FileSystem.createDownloadResumable(source.url, part, {}, (progress) => {
+                    context.progress(progress.totalBytesWritten, progress.totalBytesExpectedToWrite);
+                  });
+                }
+                // Recreate the callback on resume: the old callback belongs to
+                // the previous run's owner, and must remain inert after pause.
+                else if (resume) {
+                  const saved = transfer.savable();
+                  // Native pause returns before its last IO callback settles.
+                  // This run starts only after the old run ended, so its real
+                  // file length is now the authoritative Android Range offset.
+                  if (/^\d+$/.test(saved.resumeData ?? '')) { offset = await fileSize(part); saved.resumeData = String(offset); context.check(); }
+                  transfer = FileSystem.createDownloadResumable(source.url, part, saved.options, (progress) => {
+                    context.progress(progress.totalBytesWritten, progress.totalBytesExpectedToWrite);
+                  }, saved.resumeData);
+                }
+                const currentTransfer = transfer;
+                const unbind = context.transfer({
+                  pause: async () => {
+                    const saved = await currentTransfer.pauseAsync(); resume = true;
+                    offset = /^\d+$/.test(saved.resumeData ?? '') ? Number(saved.resumeData) : await fileSize(part);
+                  },
+                  cancel: async () => { await currentTransfer.cancelAsync(); await cleanup(); },
+                });
+                const wasResume = resume;
+                try { response = await (wasResume ? currentTransfer.resumeAsync() : currentTransfer.downloadAsync()); }
+                finally { unbind(); }
+                context.check();
+                // Android's native downloader appends for every resumeData.
+                // A server ignoring Range must restart, never concatenate two
+                // full audio files and register corrupt offline media.
+                if (wasResume && response) {
+                  const range = header(response.headers, 'content-range');
+                  const start = /^bytes (\d+)-(\d+)\/(\d+)$/i.exec(range ?? '');
+                  if (response.status !== 206 || !start || Number(start[1]) !== offset || Number(start[2]) !== Number(start[3]) - 1) {
+                    response = undefined; transfer = undefined; resume = false; offset = 0;
+                    await cleanup(); context.check();
+                    if (attempt === ATTEMPTS) throw new TransferError('Invalid resumed response', 416);
+                    continue;
+                  }
+                  expectedTotal = Number(start[3]);
+                } else if (response) {
+                  if (response.status === 206) throw new TransferError('Unexpected partial response', 416);
+                  expectedTotal = header(response.headers, 'content-encoding') ? 0 : Number(header(response.headers, 'content-length')) || 0;
+                }
               }
-            } finally {
-              // Freed before the pause, so somebody else can use the server
-              // while this one waits for it to calm down.
-              freeSlot();
+              if (!response || (response.status !== 200 && response.status !== 206)) throw new TransferError(`HTTP ${response?.status}`, response?.status);
+              if (isErrorBody(response.headers)) throw new TransferError('error body, not audio', 200);
+              context.check();
+              const bytes = moved ? await fileSize(final) : await fileSize(part); context.check();
+              if (bytes <= 0 || expectedTotal > 0 && bytes !== expectedTotal) throw new TransferError('incomplete audio file', 200);
+              netTally('stream.view (download)', bytes);
+              context.progress(bytes, bytes);
+              await cacheLyricsForDownload(context.auth, song, moved ? final : part, context.current); context.check();
+              if (!moved) {
+                ownsFinal = !(await FileSystem.getInfoAsync(final)).exists; context.check();
+                await FileSystem.moveAsync({ from: part, to: final }); moved = true; context.check();
+              }
+              const sourceLrc = siblingLrcUri(part), targetLrc = siblingLrcUri(final);
+              if (sourceLrc && targetLrc && (await FileSystem.getInfoAsync(sourceLrc)).exists) {
+                context.check(); await FileSystem.moveAsync({ from: sourceLrc, to: targetLrc }); context.check();
+              }
+              context.check();
+              await Db.addToCatalog(dir, { songs: [toLocalSong(song, final, dlBitRate, bytes,
+                song.coverArt ? trackArt.get(song.coverArt) : undefined)] }); committed = true; context.check();
+              set((state) => ({ files: { ...state.files, [song.id]: final }, dlBitRates: dlBitRate != null
+                ? { ...state.dlBitRates, [song.id]: dlBitRate } : state.dlBitRates }));
+              resetCatalogCache();
+              return;
+            } catch (error) {
+              if (!context.current()) throw new DownloadInterrupted('Download paused or cancelled');
+              const status = error instanceof TransferError ? error.status : undefined;
+              if (!moved) { response = undefined; transfer = undefined; resume = false; offset = 0; await cleanup(); }
+              if (attempt === ATTEMPTS || !worthRetrying(status)) throw error;
+              await new Promise((resolve) => setTimeout(resolve, RETRY_PAUSE_MS * attempt)); context.check();
             }
-            await new Promise((r) => setTimeout(r, RETRY_PAUSE_MS * attempt));
           }
+        } catch (error) {
+          // Paused partial audio remains resumable. Cancellation removes only
+          // this run's temporary file, never a completed canonical download.
+          if (context.current() || context.cancelled()) await cleanup();
+          throw error;
         }
-      });
-      await Promise.all(workers);
-
+      }, true, cleanup);
+    });
+    queue.sync();
+    try {
+      const result = await Promise.race([Promise.all(promises), stopped]);
+      if (useAuthStore.getState().auth !== intent || groupRuns.get(groupId) !== group) return;
       invalidate();
-      // In the background: mirrors the complete tracklist of touched albums,
-      // to see them in full (with grays) offline even if only one song was downloaded.
-      if (!cancelling.has(groupKey)) void mirrorAlbumTracklists(auth, pending);
-      if (cancelling.has(groupKey)) {
-        useToast.getState().show(tg('Download stopped'));
-      } else if (failed > 0) {
-        useToast.getState().show(tg("{n} songs couldn't be downloaded", { n: failed }));
-      } else {
-        // Confirmation on finish (the initial "Downloading…" doesn't say when it ends).
-        useToast
-          .getState()
-          .show(
-            pending.length === 1
-              ? tg('Song downloaded')
-              : tg('{n} songs downloaded', { n: pending.length }),
-          );
+      if (result === 'cancelled') useToast.getState().show(tg('Download stopped'));
+      else {
+        const failed = result.filter((status) => status === 'failed').length;
+        if (!useAuthStore.getState().offline && result.some((status) => status === 'completed')) void mirrorAlbumTracklists(intent, pending);
+        if (failed) useToast.getState().show(tg("{n} songs couldn't be downloaded", { n: failed }));
+        else if (result.every((status) => status === 'completed')) useToast.getState().show(pending.length === 1
+          ? tg('Song downloaded') : tg('{n} songs downloaded', { n: pending.length }));
       }
     } finally {
-      cancelling.delete(groupKey);
-      activeTasks.delete(groupKey);
-      set((st) => {
-        const active = { ...st.active };
-        delete active[groupKey];
-        return { active };
-      });
+      if (groupRuns.get(groupId) === group) groupRuns.delete(groupId);
+      queue.sync();
     }
   }
 
   return {
     files: {},
     dlBitRates: {},
-    active: {},
+    active: {}, queue: [], queuePaused: false,
+    pauseAll: () => queue.pauseAll(), resumeAll: () => queue.resumeAll(),
+    cancelAll: async () => {
+      const auth = useAuthStore.getState().auth;
+      if (auth) for (const [key, group] of groupRuns) if (key.startsWith(scope(auth) + '|')) group.cancel();
+      await queue.cancelAll();
+    },
     hydrated: false,
 
     hydrate: async () => {
@@ -1235,6 +1249,7 @@ export const useDownloads = create<DownloadsState>((set, get) => {
     },
 
     downloadPlaylist: async (playlist, songs) => {
+      const intentAuth = useAuthStore.getState().auth;
       // Involved albums: those of the songs (partial entry if needed).
       const byId = new Map<string, Album>();
       for (const s of songs) {
@@ -1242,6 +1257,7 @@ export const useDownloads = create<DownloadsState>((set, get) => {
         if (!byId.has(al.id)) byId.set(al.id, al);
       }
       await downloadGroup(`playlist:${playlist.id}`, songs, Array.from(byId.values()));
+      if (useAuthStore.getState().auth !== intentAuth) return;
       // The playlist also exists in the local profile, with its server ids.
       const downloadedIds = songs.map((s) => s.id).filter((id) => get().files[id]);
       if (downloadedIds.length > 0) {
@@ -1279,14 +1295,16 @@ export const useDownloads = create<DownloadsState>((set, get) => {
     },
 
     cancelDownload: (groupKey) => {
-      if (!get().active[groupKey]) return;
-      cancelling.add(groupKey);
-      // Aborts what is currently downloading (doesn't wait for it to finish).
-      const tasks = activeTasks.get(groupKey);
-      if (tasks) for (const t of tasks) void t.cancelAsync().catch(() => {});
+      const auth = useAuthStore.getState().auth;
+      if (!auth) return;
+      const groupId = `${scope(auth)}|${groupKey}`;
+      groupRuns.get(groupId)?.cancel();
+      groupRuns.delete(groupId);
+      queue.cancelGroup(groupKey);
     },
 
     deleteSongs: async (songIds) => {
+      queue.forget(songIds);
       // The state goes first, before touching the disk: deleting used to show
       // nothing at all until the files were gone, and behind an ongoing
       // download that could be a very long while — long enough to look broken
@@ -1351,18 +1369,22 @@ export const useDownloads = create<DownloadsState>((set, get) => {
     },
 
     clearAll: async () => {
-      await locked(async () => {
+      for (const group of groupRuns.values()) group.cancel();
+      groupRuns.clear();
+      await queue.drainAndClear(async () => {
+        await locked(async () => {
         // The databases are closed before their directory goes, or the handles
         // would outlive the files they are pointing at.
         await Db.closeCatalogs();
         await FileSystem.deleteAsync(ROOT_DIR, { idempotent: true }).catch(() => {});
-      });
+        });
       // Local playlists created by downloads no longer resolve songs;
       // they are removed to avoid leaving empty lists.
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       await require('@/lib/localQueries').deleteLocalPlaylistsByPrefix('dl_');
       set({ files: {}, dlBitRates: {}, active: {} });
       invalidate();
+      });
     },
 
     usageBytes: async () => timed('storage used', async () => {

@@ -31,7 +31,7 @@
  */
 import { GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -46,6 +46,8 @@ import { FoldersBrowser } from '@/components/FoldersBrowser';
 import { PlaylistsBrowser } from '@/components/PlaylistsBrowser';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { useAccent } from '@/hooks/useAccent';
+import { useAppleMusicStyle } from '@/hooks/useAppleMusicStyle';
+import { appleMusicStyles } from '@/theme/appleMusic';
 import { useT } from '@/i18n';
 import { useAuthStore } from '@/store/auth';
 import { useSettings, type ExploreSectionKey, type ListLayout } from '@/store/settings';
@@ -72,6 +74,9 @@ export default function ExploreScreen() {
   useTheme();
   const t = useT();
   const accent = useAccent();
+  const appleMusic = useAppleMusicStyle();
+  const { section: requestedSection } = useLocalSearchParams<{ section?: string }>();
+  const router = useRouter();
   const auth = useAuthStore((s) => s.auth);
   const offline = useAuthStore((s) => s.offline);
   const showFolderBrowser = useSettings((s) => s.showFolderBrowser);
@@ -134,6 +139,15 @@ export default function ExploreScreen() {
    * nothing in it at all is worse than a tab showing a section somebody hid.
    */
   const current = sections.includes(section) ? section : (sections[0] ?? 'albums');
+  const requestedIsAvailable = sections.some((key) => key === requestedSection);
+  useEffect(() => {
+    if (requestedSection && requestedIsAvailable) {
+      // Consume this external navigation command once, then clear the URL.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSection(requestedSection as Section);
+      router.setParams({ section: undefined });
+    }
+  }, [requestedSection, requestedIsAvailable, router]);
 
   /** Folders is the one section with no box: it is a handful of server roots. */
   const searchable = current !== 'folders';
@@ -186,8 +200,8 @@ export default function ExploreScreen() {
 
   return (
     <View style={[styles.safe, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <Text style={styles.heading}>{t('Explore')}</Text>
+      <View style={[styles.header, appleMusic && appleMusicStyles.pageHeader]}>
+        <Text style={[styles.heading, appleMusic && appleMusicStyles.pageTitle]}>{t('Explore')}</Text>
         <View style={styles.headerActions}>
           <OfflineIndicator />
           {/* The magnifier of "Your library", to the letter: it becomes the X
@@ -234,7 +248,10 @@ export default function ExploreScreen() {
           return (
             <GlassPressable tint={active ? accent : undefined} variant={active ? 'prominent' : 'regular'}
               key={key}
-              style={[styles.segment, active && { backgroundColor: accent }]}
+              style={[styles.segment, active && { backgroundColor: accent }, appleMusic && {
+                minHeight: 38, justifyContent: 'center', borderRadius: 10,
+                backgroundColor: active ? colors.surfaceHighlight : 'transparent',
+              }]}
               accessibilityRole="button"
               accessibilityState={{ selected: active }}
               onPress={() => {
@@ -245,7 +262,8 @@ export default function ExploreScreen() {
                 setSection(key);
               }}
             >
-              <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
+              <Text style={[styles.segmentText, active && styles.segmentTextActive,
+                appleMusic && { fontSize: 15, color: active ? accent : colors.textSecondary }]}>
                 {t(LABEL[key])}
               </Text>
             </GlassPressable>

@@ -20,6 +20,7 @@ const jsx = (type: unknown, props: object) => ({ type, props });
 // native rendering, animation and RN scheduling boundaries are supplied here;
 // the component itself chooses the axis, navigation and playback action.
 function harness(presentation: 'amll' | 'resonus' = 'amll', amPlus = false) {
+  const appListeners = new Set<(state: string) => void>();
   const callbacks: Record<string, (...args: any[]) => void> = {};
   const pan: Record<string, any> = {};
   for (const name of ['minDistance', 'onBegin', 'onStart', 'onUpdate', 'onEnd', 'onFinalize']) {
@@ -40,9 +41,11 @@ function harness(presentation: 'amll' | 'resonus' = 'amll', amPlus = false) {
   const settings = { playerPresentation: presentation, miniPlayerButtons: 'none', marqueeTitles: false };
   const dependencies: Record<string, any> = {
     react: { useCallback: (callback: unknown) => callback, useRef: (value: unknown) => ({ current: value }),
-      useState: (value: unknown) => [value, () => {}], useLayoutEffect() {} },
+      useState: (value: unknown) => [value, () => {}], useLayoutEffect() {}, useEffect(create: () => void) { create(); } },
     'react/jsx-runtime': { jsx, jsxs: jsx },
-    'react-native': { ActivityIndicator: 'Spinner', I18nManager: { isRTL: false }, Pressable: 'Pressable', Text: 'Text', View: 'View' },
+    'react-native': { AppState: { addEventListener: (_event: string, callback: (state: string) => void) => {
+      appListeners.add(callback); return { remove: () => appListeners.delete(callback) };
+    } }, ActivityIndicator: 'Spinner', I18nManager: { isRTL: false }, Pressable: 'Pressable', Text: 'Text', View: 'View' },
     'react-native-gesture-handler': { Gesture: { Pan: () => pan }, GestureDetector: 'GestureDetector' },
     'react-native-reanimated': { __esModule: true,
       default: { View: 'AnimatedView', createAnimatedComponent: (value: unknown) => value },
@@ -84,6 +87,7 @@ function harness(presentation: 'amll' | 'resonus' = 'amll', amPlus = false) {
   } });
   exports.MiniPlayer();
   return { callbacks, bus, pushes, calls, timings,
+    app(state: string) { appListeners.forEach((listener) => listener(state)); },
     queued: () => queued.length,
     drain() { while (queued.length) queued.shift()!(); },
     begin() { callbacks.onBegin(event()); callbacks.onStart(event()); },
@@ -93,6 +97,28 @@ function harness(presentation: 'amll' | 'resonus' = 'amll', amPlus = false) {
 }
 
 describe('real MiniPlayer Pan activation and axis ownership', () => {
+  it('finishes an already committed dismissal exactly once when Android backgrounds the app', () => {
+    const h = harness(); h.begin(); h.update(event(0, 120)); h.end(event(0, 120, 0, 900));
+    const dismiss = h.timings.findLast((value) => value.target === 800 && value.done);
+    assert.ok(dismiss);
+    h.app('background'); h.drain();
+    assert.equal(h.calls.reset, 1);
+    h.app('active'); dismiss.done?.(true); h.drain();
+    assert.equal(h.calls.reset, 1, 'a delayed animation callback cannot repeat the committed action');
+  });
+
+  it('settles an interrupted legacy reveal without leaving its route at a partial screen offset', () => {
+    const h = harness('resonus'); h.begin(); h.update(event(0, -13)); h.drain();
+    h.update(event(0, -200)); assert.equal(h.bus.revealOffset.get(), 612);
+    h.app('background');
+    assert.equal(h.bus.revealOffset.get(), 0);
+    h.timings.findLast((value) => value.target === 0 && value.done)?.done?.(true);
+    assert.equal(h.bus.revealOffset.get(), -1);
+    h.app('active'); h.end(event(0, -200)); h.drain();
+    assert.equal(h.pushes.length, 1);
+    assert.equal(h.calls.reset, 0);
+  });
+
   for (const amPlus of [false, true]) {
     it(`opens AMLL exactly once after Android's zeroed activation and a vertical pull (${amPlus ? 'AM++' : 'regular'} dock)`, () => {
       const h = harness('amll', amPlus); h.begin();

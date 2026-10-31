@@ -23,6 +23,7 @@ import type { Album, Artist, Playlist, Song, Starred, SubsonicAuth } from '@/api
 import { hashKey } from '@/lib/localLibrary';
 import { whenIdle } from '@/lib/idle';
 import * as Db from '@/lib/mirrorDb';
+import { mediaCacheBytes } from '@/lib/mediaCacheDb';
 import {
   keepMirrorCovers,
   loadMirrorCovers,
@@ -63,7 +64,8 @@ const DIR = FileSystem.documentDirectory + 'library-mirror/';
  * reaching back up for it was a require cycle.
  */
 function keepCovers(profile: string, ids: (string | CoverWant | undefined)[]): void {
-  keepMirrorCovers(profile, useAuthStore.getState().auth, ids);
+  const auth = useAuthStore.getState().auth;
+  keepMirrorCovers(profile, auth, ids, () => useAuthStore.getState().auth === auth);
 }
 
 /** The folder they share and the name that tells this profile apart, or null
@@ -471,6 +473,7 @@ export const useLibraryMirror = create<MirrorState>((set, get) => ({
   stats: () =>
     withMirror(async (dir, profile) => {
       const st = await Db.stats(dir, profile);
+      st.bytes += await mediaCacheBytes(profile);
       // The covers are files of their own, next to the database rather than in
       // it, so `bytes` alone was leaving out most of what the copy takes.
       const covers = await mirrorCoversInfo(profile);

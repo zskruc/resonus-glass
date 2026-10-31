@@ -175,6 +175,12 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
     }
   }
 
+  internal fun restoreDockScrollTarget(scope: String, collapsed: Boolean): Boolean {
+    if (!isAttachedToWindow || scope != dockScrollInputScope || !dockScrollInputEnabled) return false
+    configureDockScrollInput(collapsed = collapsed)
+    return true
+  }
+
   /** Exclude only the visible optical bounds, never the full expanded RN host. */
   internal fun containsDockChromePoint(rawX: Float, rawY: Float): Boolean {
     if (!isAttachedToWindow || !isShown || !glassEnabled || materialPreset != "amPlus" || dockCompactWidth <= 0f) return false
@@ -426,6 +432,22 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
     if (motionHostToken == 0) {
       motionHostToken = TabsMotionHosts.attach(this)
       onMotionHostReady(mapOf("hostId" to motionHostToken))
+    }
+  }
+
+  override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+    super.onWindowFocusChanged(hasWindowFocus)
+    // Window focus can change without a Fabric remount (Home/Recents, lock,
+    // permission windows). Invalidate old writes and publish a fresh readiness
+    // token after layout so both RN foreground and native material replay the
+    // current shared progress. Keep the material's geometry while unfocused.
+    if (motionHostToken != 0) TabsMotionHosts.detach(motionHostToken)
+    motionHostToken = 0
+    if (hasWindowFocus) post {
+      if (isAttachedToWindow && this.hasWindowFocus()) {
+        measureAndLayout()
+        syncMotionHost()
+      }
     }
   }
 

@@ -26,6 +26,7 @@ import { useForegroundEffect } from '@/hooks/useForegroundEffect';
 import { usePlayerStore } from '@/store/player';
 import { radius } from '@/theme';
 import { motion } from '@/theme/motion';
+import { useArtistPagePalette } from '@/components/volta/ArtistPagePalette';
 
 /**
  * One period each, and none of them a multiple of another: bars that share a
@@ -86,6 +87,7 @@ function Bar({ index, playing, color }: { index: number; playing: boolean; color
 
 export function PlayingBars({ size = 16, color }: { size?: number; color?: string }) {
   const accent = useAccent();
+  const pagePalette = useArtistPagePalette();
   // Subscribed here rather than passed in: the row that draws this is memoised
   // on purpose (#50), and play/pause should repaint four bars, not a list.
   const playing = usePlayerStore((s) => s.isPlaying);
@@ -100,7 +102,7 @@ export function PlayingBars({ size = 16, color }: { size?: number; color?: strin
       }}
     >
       {DURATIONS.map((_, i) => (
-        <Bar key={i} index={i} playing={playing} color={color ?? accent} />
+        <Bar key={i} index={i} playing={playing} color={color ?? pagePalette?.accent ?? accent} />
       ))}
     </View>
   );

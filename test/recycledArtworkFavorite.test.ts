@@ -91,6 +91,7 @@ function load(file: string, react: object, imports: Record<string, unknown>) {
 
 function favorite() {
   const runtime = hooks();
+  let pagePalette: { accent: string; textSecondary: string } | undefined;
   type Request = { kind: 'star' | 'unstar'; id: string; type: string;
     resolve(): void; reject(reason: Error): void };
   const requests: Request[] = [];
@@ -110,9 +111,11 @@ function favorite() {
     '@/lib/haptics': { haptic() {} },
     '@/store/auth': { useAuthStore: (select: (state: unknown) => unknown) => select({ auth: true, offline: false }) },
     '@/store/pins': { usePins: { getState: () => ({ unpin() {} }) } },
+    '@/store/playlistPicker': { usePlaylistPicker: { getState: () => ({ open() {} }) } },
     '@/store/toast': { useToast: (select: (state: unknown) => unknown) => select({ show() {} }) },
     '@/i18n': { useT: () => (value: string) => value },
     '@/theme': { colors: { accent: '#123', textSecondary: '#aaa' } },
+    '@/components/volta/ArtistPagePalette': { useArtistPagePalette: () => pagePalette },
   });
   let tree: Element;
   let props: Record<string, unknown>;
@@ -123,6 +126,7 @@ function favorite() {
   };
   render({ id: 'A', starred: false, resetKey: 'row-A' });
   return { render, requests, changes, undos, resyncs: () => resyncs,
+    setPagePalette(value: typeof pagePalette) { pagePalette = value; return render(); },
     tree: () => tree, icon: () => (tree.props.children as Element).props.name,
     iconProps: () => (tree.props.children as Element).props,
     writes: runtime.writes, unmount: runtime.unmount };
@@ -165,6 +169,21 @@ function artwork() {
 }
 
 describe('favorite state in a recycled song row', () => {
+  it('uses scoped artist ink while retaining explicit caller color priority', () => {
+    const h = favorite();
+    h.setPagePalette({ accent: '#F3E9D2', textSecondary: '#D5D1C8' });
+    assert.equal(h.iconProps().color, '#D5D1C8');
+    h.render({ id: 'A', starred: true });
+    assert.equal(h.iconProps().color, '#F3E9D2');
+    h.render({ id: 'A', starred: true, selectedColor: '#123456' });
+    assert.equal(h.iconProps().color, '#123456');
+    h.render({ id: 'A', starred: false, unselectedColor: '#654321' });
+    assert.equal(h.iconProps().color, '#654321');
+    h.render({ id: 'A', starred: false });
+    h.setPagePalette(undefined);
+    assert.equal(h.iconProps().color, '#aaa');
+  });
+
   it('retains default heart artwork, colors and touch bounds for existing callers', () => {
     const h = favorite();
     assert.equal(h.icon(), 'heart-outline');

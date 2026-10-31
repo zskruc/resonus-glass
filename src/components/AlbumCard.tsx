@@ -5,6 +5,9 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { COVER, coverArtUrl, type Album } from '@/api/data';
 import { useMediaMenu } from '@/store/mediaMenu';
+import { useAppleMusicStyle } from '@/hooks/useAppleMusicStyle';
+import { appleMusicStyles } from '@/theme/appleMusic';
+import { useArtistPagePalette } from '@/components/volta/ArtistPagePalette';
 import { haptic } from '@/lib/haptics';
 import { fontSize, lineHeight, spacing, themed, useTheme } from '@/theme';
 import { bump } from '@/lib/perfLog';
@@ -24,6 +27,8 @@ export const AlbumCard = memo(function AlbumCard({ album, width = 150, onPress }
   bump('render · AlbumCard');
   // Memoised, so it has to ask for a repaint on a theme change itself.
   useTheme();
+  const appleMusic = useAppleMusicStyle();
+  const pagePalette = useArtistPagePalette();
   const cover = coverArtUrl(album.coverArt ?? album.id, COVER.card);
   const openMenu = useMediaMenu((s) => s.open);
   const explicit = useExplicitBadge(album.explicitStatus);
@@ -40,15 +45,17 @@ export const AlbumCard = memo(function AlbumCard({ album, width = 150, onPress }
           openMenu({ kind: 'album', album });
         }}
       >
-        <Cover uri={cover} size={width} />
-        <Text style={styles.title} numberOfLines={1}>
+        <Cover uri={cover} size={width} style={appleMusic ? appleMusicStyles.cover : undefined} />
+        <Text style={[styles.title, appleMusic && appleMusicStyles.cardTitle,
+          pagePalette && { color: pagePalette.text }]} numberOfLines={appleMusic ? 2 : 1}>
           {album.name}
         </Text>
         {explicit || album.artist ? (
           <View style={styles.subRow}>
             <ExplicitBadge status={album.explicitStatus} />
             {album.artist ? (
-              <Text style={styles.artist} numberOfLines={1}>
+              <Text style={[styles.artist, appleMusic && appleMusicStyles.cardSubtitle,
+                pagePalette && { color: pagePalette.textSecondary }]} numberOfLines={1}>
                 {album.artist}
               </Text>
             ) : null}

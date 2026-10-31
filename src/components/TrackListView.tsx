@@ -51,8 +51,12 @@ import { useSelectionMenu } from '@/hooks/useSelectionMenu';
 import { useT } from '@/i18n';
 import { artistTargets } from '@/lib/artistNav';
 import { haptic } from '@/lib/haptics';
+import { voltaDetailBackground } from '@/lib/voltaPalette';
+import { minidiscAlbumCoverSize, type MinidiscAlbumPalette } from '@/lib/minidiscAlbumPalette';
+import { MinidiscAlbumHeader } from '@/components/volta/MinidiscAlbumHeader';
 import { useArtistPicker } from '@/store/artistPicker';
 import { usePlayerStore } from '@/store/player';
+import { useSettings } from '@/store/settings';
 import { colors, fontSize, radius, spacing, themed, tracking } from '@/theme';
 import { motion } from '@/theme/motion';
 import { BackChevron } from './BackChevron';
@@ -114,6 +118,10 @@ function normQ(s: string): string {
 }
 
 interface Props {
+  /** Volta album actions keep favorite in the existing overflow menu. */
+  albumActionLayout?: 'volta';
+  /** Album-only Minidisc presentation; playlist and Spotify headers retain their layout. */
+  albumPresentation?: { palette: MinidiscAlbumPalette; meta?: string };
   title: string;
   subtitle?: string;
   /** If provided, the subtitle links to the artist when tapped. */
@@ -217,6 +225,8 @@ interface Props {
 }
 
 export function TrackListView({
+  albumActionLayout,
+  albumPresentation,
   title,
   subtitle,
   artistId,
@@ -255,8 +265,12 @@ export function TrackListView({
   const insets = useSafeAreaInsets();
   const { width: screenW, height: screenH } = useScreenSize();
   const bottomPad = useScreenBottomPadding();
-  const tint = useCoverTint(coverUri, true);
+  const appleMusic = useSettings((s) => s.uiStyle === 'appleMusic');
+  const minidisc = appleMusic ? albumPresentation : undefined;
+  const voltaAlbum = appleMusic && !minidisc && albumActionLayout === 'volta';
+  const tint = useCoverTint(minidisc ? undefined : coverUri, true);
   const dominant = tint.color;
+  const appleBackground = voltaDetailBackground(dominant, colors.background, colors.text, colors.textSecondary);
   // A cover read for the first time fades its tint in over the page, instead
   // of the header being painted the plain grey and jumping to the colour a
   // moment later. One already read is there from the first frame.
@@ -265,7 +279,7 @@ export function TrackListView({
     if (!tint.known) return;
     tintIn.set(withTiming(1, { duration: motion.duration.fade, reduceMotion: motion.reduceMotion.decorative }));
   }, [tint.known, tintIn]);
-  const headerColor = accentColor ?? dominant;
+  const headerColor = minidisc?.palette.backgroundTop ?? (appleMusic ? appleBackground : accentColor ?? dominant);
   const shuffle = usePlayerStore((s) => s.shuffle);
   const queueDealt = usePlayerStore((s) => s.queueDealt);
   // The shuffle button gets tinted only if this list is the one playing;
@@ -516,7 +530,9 @@ export function TrackListView({
 
   // Without cover, the header is shorter: the gradient and bar collapse adjust
   // to a smaller distance so the transition fits.
-  const art = coverSize(screenW, screenH);
+  const art = minidisc ? minidiscAlbumCoverSize(screenW, screenH) : appleMusic
+    ? Math.round(Math.min(screenW * 0.76, screenH * 0.43, 360))
+    : coverSize(screenW, screenH);
   const cover = hideCover ? 0 : art;
   const collapse = hideCover ? 120 : art;
   // Down past the title and the buttons, so the header is the cover's colour
@@ -524,7 +540,7 @@ export function TrackListView({
   const gradientH = insets.top + TOPBAR_H + cover + 280;
   const band = searchable ? SEARCH_H * 4 : 0;
   const coverStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(scrollY.get(), [0, collapse * 0.7], [1, 0], Extrapolation.CLAMP),
+    opacity: appleMusic ? 1 : interpolate(scrollY.get(), [0, collapse * 0.7], [1, 0], Extrapolation.CLAMP),
   }));
   const barContentStyle = useAnimatedStyle(() => ({
     opacity: interpolate(scrollY.get(), [collapse * 0.5, collapse * 0.85], [0, 1], Extrapolation.CLAMP),
@@ -563,11 +579,13 @@ export function TrackListView({
   }
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, appleMusic && { backgroundColor: minidisc?.palette.background ?? appleBackground }]}>
+      {minidisc ? <LinearGradient pointerEvents="none" style={StyleSheet.absoluteFill}
+        colors={[minidisc.palette.backgroundTop, minidisc.palette.background]} /> : null}
       <View style={{ flex: 1 }}>
       {/* Dominant color gradient; scrolls with 1:1 parallax. Hidden in search
           mode to keep the screen flat black. */}
-      {searching ? null : (
+      {searching || appleMusic ? null : (
         <Animated.View
           pointerEvents="none"
           style={[
@@ -679,10 +697,17 @@ export function TrackListView({
             ) : null}
             {/* While searching, the large header is hidden: results stay flush
                 with the bar, which is what Spotify does. */}
-            {searching ? null : (
-          <View style={styles.header}>
+            {searching ? null : minidisc ? (
+              <MinidiscAlbumHeader title={title} subtitle={subtitle} onSubtitlePress={onSubtitlePress}
+                meta={minidisc.meta} explicit={showExplicit} coverUri={coverUri} coverSize={art}
+                onCoverPress={onCoverPress} description={description} genres={genres} palette={minidisc.palette}
+                disabled={songs.length === 0} shuffleActive={shuffleActive} onShuffle={shufflePlay}
+                onPlay={() => { if (songs.length > 0) void onPlay(0); }} download={download}
+                artwork={renderCover?.(art)} />
+            ) : (
+          <View style={[styles.header, appleMusic && voltaStyles.header]}>
             {hideCover ? null : (
-              <Reanimated.View style={[styles.coverCenter, coverStyle]}>
+              <Reanimated.View style={[styles.coverCenter, appleMusic && voltaStyles.coverCenter, coverStyle]}>
                 {onCoverPress ? (
                   <Pressable
                     onPress={onCoverPress}
@@ -698,21 +723,21 @@ export function TrackListView({
                 )}
               </Reanimated.View>
             )}
-            <Text style={styles.title} numberOfLines={2}>
+            <Text style={[styles.title, appleMusic && voltaStyles.title]} numberOfLines={appleMusic ? 3 : 2}>
               {title}
             </Text>
             {subtitle ? (
               onSubtitlePress ? (
-                <GlassPressable buttonMaterial={false} variant="subtle" hitSlop={6} style={styles.subtitleRow} onPress={onSubtitlePress}>
-                  {artistImageUri ? (
+                <GlassPressable buttonMaterial={false} variant="subtle" hitSlop={6} style={[styles.subtitleRow, appleMusic && voltaStyles.subtitleRow]} onPress={onSubtitlePress}>
+                  {artistImageUri && !appleMusic ? (
                     <View style={styles.artistPhoto}>
                       <Cover uri={artistImageUri} size={24} />
                     </View>
                   ) : null}
-                  <Text style={[styles.subtitle, styles.subtitleLink]}>{subtitle}</Text>
+                  <Text style={[styles.subtitle, styles.subtitleLink, appleMusic && voltaStyles.subtitle]}>{subtitle}</Text>
                 </GlassPressable>
               ) : (
-                <Text style={styles.subtitle}>{subtitle}</Text>
+                <Text style={[styles.subtitle, appleMusic && voltaStyles.subtitle]}>{subtitle}</Text>
               )
             ) : null}
             {description?.trim() ? (
@@ -729,7 +754,7 @@ export function TrackListView({
                   {description.trim()}
                 </Text>
                 <Text
-                  style={styles.description}
+                  style={[styles.description, appleMusic && voltaStyles.description]}
                   numberOfLines={descriptionExpanded ? undefined : DESCRIPTION_LINES}
                 >
                   {description.trim()}
@@ -738,7 +763,7 @@ export function TrackListView({
                   <GlassPressable variant="subtle"
                     accessibilityRole="button"
                     onPress={() => setDescriptionExpanded((v) => !v)}
-                    style={styles.descriptionMore}
+                    style={[styles.descriptionMore, appleMusic && voltaStyles.centered]}
                     hitSlop={spacing.sm}
                   >
                     <Text style={styles.descriptionMoreText}>
@@ -749,9 +774,9 @@ export function TrackListView({
               </View>
             ) : null}
             {showExplicit || meta ? (
-              <View style={styles.metaRow}>
+              <View style={[styles.metaRow, appleMusic && voltaStyles.metaRow]}>
                 {showExplicit ? <ExplicitBadge status="explicit" /> : null}
-                {meta ? <Text style={styles.meta}>{meta}</Text> : null}
+                {meta ? <Text style={[styles.meta, appleMusic && voltaStyles.meta]}>{meta}</Text> : null}
               </View>
             ) : null}
             {/* Deliberately quiet: same weight as the metadata line above, so
@@ -775,6 +800,66 @@ export function TrackListView({
               </ScrollView>
             ) : null}
 
+            {appleMusic ? <>
+              <View style={[voltaStyles.actions, voltaAlbum && voltaStyles.albumActions]}>
+                <GlassPressable variant="subtle"
+                  style={[voltaStyles.roundAction, voltaAlbum && voltaStyles.albumRoundAction]}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('Shuffle')}
+                  disabled={songs.length === 0}
+                  onPress={shufflePlay}
+                >
+                  <Icon name="shuffle" size={voltaAlbum ? 16 : 23} color={shuffleActive ? colors.accent : colors.text} />
+                </GlassPressable>
+                <GlassPressable variant="prominent"
+                  style={[voltaStyles.playPill, voltaAlbum && voltaStyles.albumPlayPill, songs.length === 0 && { opacity: 0.45 }]}
+                  accessibilityRole="button" accessibilityLabel={t('Play')}
+                  disabled={songs.length === 0}
+                  onPress={() => songs.length > 0 && onPlay(0)}
+                >
+                  <Icon name="play" size={voltaAlbum ? 14 : 22} color={colors.onInverse} />
+                  <Text style={[voltaStyles.playLabel, voltaAlbum && voltaStyles.albumPlayLabel]}>{t('Play')}</Text>
+                </GlassPressable>
+                {download ? (
+                  <GlassPressable variant="subtle" style={[voltaStyles.roundAction, voltaAlbum && voltaStyles.albumRoundAction]}
+                    accessibilityRole="button"
+                    accessibilityLabel={download.status === 'done' ? t('Remove download') : t('Download')}
+                    accessibilityValue={download.status === 'active' ? { text: `${Math.round(download.progress * 100)}%` } : undefined}
+                    onPress={download.onPress}
+                  >
+                    {download.status === 'active' ? <ActivityIndicator size="small" color={colors.text} /> : (
+                      <Icon name={download.status === 'done' ? 'checkmark-circle' : 'arrow-down-circle-outline'}
+                        size={voltaAlbum ? 20 : 25} color={download.status === 'done' ? colors.accent : colors.text} />
+                    )}
+                  </GlassPressable>
+                ) : voltaAlbum ? (
+                  <GlassPressable variant="subtle" style={[voltaStyles.roundAction, voltaStyles.albumRoundAction, { opacity: 0.35 }]}
+                    accessibilityRole="button" accessibilityLabel={t('Download')} disabled>
+                    <Icon name="arrow-down-circle-outline" size={20} color={colors.text} />
+                  </GlassPressable>
+                ) : favorite ? (
+                  <FavoriteButton id={favorite.id} type={favorite.type} starred={favorite.starred}
+                    size={23} glyph="star" style={voltaStyles.roundAction} />
+                ) : <View style={voltaStyles.roundSpacer} />}
+                {voltaAlbum && onMenu ? (
+                  <GlassPressable variant="subtle" style={[voltaStyles.roundAction, voltaStyles.albumRoundAction]}
+                    accessibilityRole="button" accessibilityLabel={t('More options')} onPress={onMenu}>
+                    <Icon name="ellipsis-horizontal" size={17} color={colors.text} />
+                  </GlassPressable>
+                ) : null}
+              </View>
+              {(!voltaAlbum && favorite && download) || onSort ? (
+                <View style={voltaStyles.secondaryActions}>
+                  {!voltaAlbum && favorite && download ? <FavoriteButton id={favorite.id} type={favorite.type}
+                    starred={favorite.starred} glyph="star" size={23} style={voltaStyles.roundAction} /> : null}
+                  {onSort ? <GlassPressable style={voltaStyles.sortAction} accessibilityRole="button"
+                    accessibilityLabel={t('Sort')} onPress={onSort}>
+                    <Icon name="swap-vertical" size={20} color={colors.textSecondary} />
+                    <Text style={voltaStyles.sortLabel}>{t('Sort')}</Text>
+                  </GlassPressable> : null}
+                </View>
+              ) : null}
+            </> : (
             <View style={styles.actions}>
               <View style={styles.actionsLeft}>
                 {favorite ? (
@@ -864,6 +949,7 @@ export function TrackListView({
                 </GlassPressable>
               </View>
             </View>
+            )}
 
             {addAction ? (
               <GlassPressable variant="regular"
@@ -935,7 +1021,7 @@ export function TrackListView({
           if (!discLabel) return row;
           return (
             <>
-              <DiscHeader label={discLabel} />
+              <DiscHeader label={discLabel} color={minidisc?.palette.textSecondary} />
               {row}
             </>
           );
@@ -987,13 +1073,30 @@ export function TrackListView({
         ) : (
           <>
             <TopBarBackground color={headerColor} opacity={barBgOpacity} />
-            <BackChevron size={28} label={t('Close')} />
+            <BackChevron size={28} label={t('Close')} color={minidisc?.palette.text}
+              style={minidisc ? [voltaStyles.roundAction, { backgroundColor: minidisc.palette.controlFill }] : appleMusic ? voltaStyles.roundAction : undefined} />
             <Reanimated.Text
-              style={[styles.barTitleCentered, { top: insets.top + 10 }, barContentStyle]}
+              style={[styles.barTitleCentered, { top: insets.top + 10 }, appleMusic && { left: minidisc ? 70 : 76, right: minidisc ? 126 : 76 },
+                minidisc && { color: minidisc.palette.text }, barContentStyle]}
               numberOfLines={1}
             >
               {title}
             </Reanimated.Text>
+            {appleMusic ? (
+              <View style={voltaStyles.barActions}>
+                {minidisc ? <View style={[minidiscToolbar.group, { backgroundColor: minidisc.palette.controlFill }]}>
+                  {favorite ? <FavoriteButton id={favorite.id} type={favorite.type} starred={favorite.starred}
+                    size={23} glyph="star" style={minidiscToolbar.button} /> : null}
+                  {onMenu ? <GlassPressable buttonMaterial={false} style={minidiscToolbar.button} accessibilityRole="button"
+                    accessibilityLabel={t('More options')} onPress={onMenu}>
+                    <Icon name="ellipsis-horizontal" size={23} color={minidisc.palette.text} />
+                  </GlassPressable> : null}
+                </View> : onMenu ? <GlassPressable style={voltaStyles.roundAction} accessibilityRole="button"
+                  accessibilityLabel={t('More options')} onPress={onMenu}>
+                  <Icon name="ellipsis-horizontal" size={23} color={colors.text} />
+                </GlassPressable> : null}
+              </View>
+            ) : null}
           </>
         )}
       </View>
@@ -1017,15 +1120,20 @@ export function TrackListView({
 }
 
 /** Disc header (thin separator + label) for multi-disc albums. */
-function DiscHeader({ label }: { label: string }) {
+function DiscHeader({ label, color }: { label: string; color?: string }) {
   return (
     <View style={styles.discHeader}>
-      <Text style={styles.discHeaderText} numberOfLines={1}>
+      <Text style={[styles.discHeaderText, color ? { color } : undefined]} numberOfLines={1}>
         {label}
       </Text>
     </View>
   );
 }
+
+const minidiscToolbar = StyleSheet.create({
+  group: { flexDirection: 'row', borderRadius: 999, paddingHorizontal: 3 },
+  button: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+});
 
 const styles = themed((colors) => ({
   root: {
@@ -1268,6 +1376,41 @@ const styles = themed((colors) => ({
     fontSize: fontSize.md,
     fontWeight: '500',
   },
+}));
+
+/** Volta's centered artwork/title and symmetric action layout, adapted for RN. */
+const voltaStyles = themed((colors) => ({
+  header: { paddingHorizontal: 4, paddingBottom: spacing.xl },
+  coverCenter: { marginTop: spacing.sm, marginBottom: spacing.xl },
+  title: { fontSize: fontSize.xl, lineHeight: 30, textAlign: 'center', letterSpacing: tracking.heading },
+  subtitle: { fontSize: 18, lineHeight: 24, textAlign: 'center', color: colors.textSecondary, fontWeight: '400' },
+  subtitleRow: { alignSelf: 'center', justifyContent: 'center', maxWidth: '100%' },
+  centered: { alignSelf: 'center' },
+  description: { textAlign: 'center', marginTop: spacing.sm },
+  metaRow: { justifyContent: 'center', marginTop: spacing.sm },
+  meta: { textAlign: 'center', fontSize: 13, lineHeight: 19 },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg, marginVertical: spacing.xl },
+  // AlbumDetailView.actionRow: shuffle, play, download, overflow (favorite).
+  // Existing list padding + the 4dp header inset provide its 20dp side margin.
+  albumActions: { gap: 14, marginVertical: 20 },
+  albumRoundAction: { width: 50, height: 50 },
+  albumPlayPill: { height: 'auto' as const, minHeight: 50, paddingVertical: 12, paddingHorizontal: 12, gap: 7 },
+  albumPlayLabel: { fontSize: 17, lineHeight: 22, fontWeight: '600' as const, flexShrink: 1 },
+  secondaryActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.lg,
+    marginTop: -spacing.md, marginBottom: spacing.md },
+  sortAction: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md },
+  sortLabel: { fontSize: fontSize.sm, color: colors.textSecondary },
+  roundAction: {
+    width: 44, height: 44, borderRadius: radius.pill, backgroundColor: colors.highlight,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  roundSpacer: { width: 44 },
+  playPill: {
+    flex: 1, height: 48, borderRadius: radius.pill, backgroundColor: colors.text,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+  },
+  playLabel: { color: colors.onInverse, fontSize: fontSize.md, fontWeight: '500' },
+  barActions: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: spacing.sm },
 }));
 
 /**

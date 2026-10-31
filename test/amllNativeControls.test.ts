@@ -135,7 +135,8 @@ test('lyrics, queue, output and More keep callbacks and use checked artwork rath
 
 test('the player favorite keeps the shared transaction, follows central favorite state and disables hidden entry controls', () => {
   const h = harness();
-  let tree = h.favorite();
+  const song = { id: 'song', title: 'Song' };
+  let tree = h.favorite({ playlistSong: song });
   const shared = () => findAll(tree, (node) => node.type === 'FavoriteButton')[0];
   assert.equal(shared().props.glyph, 'star');
   assert.equal(shared().props.starred, true, 'song.starred remains the pre-query fallback');
@@ -144,6 +145,7 @@ test('the player favorite keeps the shared transaction, follows central favorite
   assert.equal(shared().props.hitSlop, 0);
   assert.equal(shared().props.style.width, 44);
   assert.equal(shared().props.resetKey, 'amll:song', 'existing physical touch ownership stays enabled');
+  assert.equal(shared().props.playlistSong, song, 'the player explicitly opts into holding its current song');
   h.setFavoriteIds(new Set()); tree = h.favorite();
   assert.equal(shared().props.starred, false, 'an empty loaded set overrides stale song metadata');
   h.setFavoriteIds(new Set(['song'])); tree = h.favorite();
@@ -152,6 +154,7 @@ test('the player favorite keeps the shared transaction, follows central favorite
   assert.equal(tree.props.pointerEvents, 'none');
   assert.equal(tree.props.importantForAccessibility, 'no-hide-descendants');
   assert.equal(h.favoriteReads.at(-1), false);
+  assert.equal(shared().props.playlistSong, undefined, 'covered or entering controls cannot retain a long-press playlist action');
 });
 
 test('the actual native button gives short press/release feedback, acts immediately and rejects stale callbacks', () => {

@@ -238,6 +238,7 @@ test('only the full local-song metadata exposes the favorite action while compac
   assert.equal(favorite.length, 1);
   assert.equal(favorite[0].props.id, 'song');
   assert.equal(favorite[0].props.active, true);
+  assert.equal(favorite[0].props.playlistSong, h.player.song, 'the shared favorite hold receives this screen’s exact current song');
   assert.equal(find(tree, 'More').length, 2, 'the retained compact and large metadata keep their own More callback');
   h.player.song!.url = 'https://radio.test/live';
   tree = h.render();

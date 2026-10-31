@@ -17,6 +17,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import type { SubsonicAuth } from '@/api/backend';
 import { closeCatalog } from './downloadsDb';
 import { hashKey } from './localLibrary';
+import { closeMediaCacheFor } from './mediaCacheDb';
 import { closeMirrorFor } from './mirrorDb';
 import { removeMirrorCovers } from './mirrorCovers';
 import { closePodcastDb, podcastDbDir } from './podcastDb';
@@ -59,6 +60,7 @@ export async function deleteProfileData(auth: SubsonicAuth): Promise<void> {
   // that no longer exists.
   await closeCatalog(dir);
   await closeMirrorFor(scope);
+  await closeMediaCacheFor(scope);
   await closePodcastDb(scope);
 
   // The downloads: the audio, the covers and the catalog that indexed them.
@@ -78,6 +80,9 @@ export async function deleteProfileData(auth: SubsonicAuth): Promise<void> {
     `mirror-${scope}.db`,
     `mirror-${scope}.db-wal`,
     `mirror-${scope}.db-shm`,
+    `media-cache-${scope}.db`,
+    `media-cache-${scope}.db-wal`,
+    `media-cache-${scope}.db-shm`,
     `${scope}.json`,
     `${scope}.json.bak`,
   ]) {

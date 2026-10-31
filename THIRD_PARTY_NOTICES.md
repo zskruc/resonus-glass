@@ -1,5 +1,34 @@
 # Third-party notices
 
+## Optional official artist-name artwork
+
+Artist-name wordmarks are optional runtime artwork from the verified artist's
+public Apple Music metadata, not bundled fonts, generated imitations or APK
+assets. Original PNG color, texture and alpha are preserved. A matching photo
+asset or bounded local same-photo verification is required before accepting
+metadata behind a server proxy. Artwork remains the property of its respective
+rights holders; absence or cache/network failure falls back to the normal name.
+The app's independent resolver and renderer are not Apple SDK implementations.
+
+## Volta-inspired optional Apple Music browse style
+
+The optional `Apple Music style` layout references
+[countervolts/Volta](https://github.com/countervolts/Volta), pinned commit
+`c627a89c703e06101e105e672999ae6e6f303e57` (GPL-3.0). The original GPL license
+is retained in [licenses/VOLTA-GPL-3.0.txt](./licenses/VOLTA-GPL-3.0.txt).
+
+Resonus adapts the artwork-led Home and classified Library layout, the
+`ArtistHeroComposition` clear-image/blurred-image/gradient arrangement from
+`Sources/Volta/Views/ArtistDetailView.swift`, and the centered artwork,
+metadata and action hierarchy from `AlbumDetailView.swift` to React Native.
+Implementation lives in the optional branches of the browse routes,
+`TrackListView.tsx` and `src/components/volta/`. The original SwiftUI app and
+its playback, downloads and server implementations are not bundled. Resonus
+retains its own data sources, virtualized lists and existing player/dock.
+No Volta screenshots, artist photos, Apple fonts or Apple image assets are
+included in the APK by this adaptation. Existing third-party notices and
+their licenses remain applicable.
+
 ## Primuse lyric motion and depth effect
 
 The word-level lyric sweep and bounce in `src/components/KaraokeWords.tsx`,
@@ -256,3 +285,28 @@ The above copyright notice and this permission notice shall be included in all c
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
+
+## Optional Minidisc album presentation
+
+The selectable `Minidisc` album page references
+[Loriage/Minidisc](https://github.com/Loriage/Minidisc), pinned commit
+[`09789242135b6f63a51cab1f3f6207986bb72c3d`](https://github.com/Loriage/Minidisc/tree/09789242135b6f63a51cab1f3f6207986bb72c3d),
+`Minidisc/Views/Browse/AlbumDetailView.swift` and
+`Minidisc/DesignSystem/MinidiscSpacing.swift`.
+
+Minidisc is Copyright (c) 2026 NO HIT Dev, based on Cassette,
+Copyright (c) 2024–2026 Mathieu Dubart, and distributed under MPL-2.0.
+The complete license, including its standard exhibits, is preserved in
+[licenses/Minidisc-MPL-2.0.txt](./licenses/Minidisc-MPL-2.0.txt).
+The referenced source does not attach an Incompatible With Secondary
+Licenses notice. The palette/layout adaptations in
+`src/lib/minidiscAlbumPalette.ts` and
+`src/components/volta/MinidiscAlbumHeader.tsx` retain MPL-2.0 notices.
+
+The React Native adaptation preserves the centered artwork, metadata rhythm,
+shuffle/play/download arrangement, grouped favorite/menu toolbar and
+cover-derived gradient. Local text contrast is checked at both gradient ends;
+artwork is sampled once and scrolling uses the existing recycled list.
+No Minidisc image assets, screenshots, app icons, fonts or Swift binaries
+are bundled. Spotify pages, Volta album pages, playback presentation and saved
+glass parameters remain independently selectable.

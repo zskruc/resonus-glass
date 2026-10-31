@@ -151,6 +151,14 @@ export default function DownloadsSettings() {
   return (
     <SettingsPage title={t('Downloads & offline')}>
       <DockScrollView contentContainerStyle={settingsStyles.content}>
+        <SettingsGroup>
+          <SettingRow label={t('Download manager')}
+            description={t('View song progress and pause, start or cancel your download queue.')}
+            icon="download-outline" chevron onPress={() => router.push('/settings/download-manager')} />
+          <SettingRow label={t('Bulk artwork & lyrics')}
+            description={t('Cache artwork and lyrics across your entire library.')}
+            icon="download-outline" chevron onPress={() => router.push('/settings/media-cache')} />
+        </SettingsGroup>
         {/* The first title sticks to the header (no section margin). */}
         <Text style={[settingsStyles.sectionTitle, { marginTop: 0 }]}>{t('Downloading')}</Text>
         {/* Nothing can be downloaded without a server, so offline these are

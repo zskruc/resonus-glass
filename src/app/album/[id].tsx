@@ -15,8 +15,10 @@ import { MoreFromArtist } from '@/components/MoreFromArtist';
 import { PlaylistPickerSheet } from '@/components/PlaylistPickerSheet';
 import { TrackListSkeleton } from '@/components/TrackListSkeleton';
 import { TrackListView } from '@/components/TrackListView';
+import { ArtistPagePaletteProvider } from '@/components/volta/ArtistPagePalette';
 import { useDownloadMessage } from '@/hooks/useDownloadMessage';
 import { useFavoriteIds } from '@/hooks/useFavoriteIds';
+import { useMinidiscAlbumPalette } from '@/hooks/useMinidiscAlbumPalette';
 import { songsLabel, useT } from '@/i18n';
 import { formatTotalDuration } from '@/lib/format';
 import { useAuthStore } from '@/store/auth';
@@ -124,6 +126,8 @@ export default function AlbumScreen() {
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
+  const appleMusic = useSettings((s) => s.uiStyle === 'appleMusic');
+  const minidisc = useSettings((s) => s.albumStyle === 'minidisc') && appleMusic;
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const canFetch = useAuthStore((s) => !!s.auth || s.offline);
@@ -174,6 +178,8 @@ export default function AlbumScreen() {
   const lastGood = useRef(fresh);
   if (fresh && fresh.songs.length > 0) lastGood.current = fresh;
   const data = vanished ? (lastGood.current ?? fresh) : fresh;
+  const displayedCover = data ? coverArtUrl(data.album.coverArt ?? data.album.id, appleMusic ? COVER.full : COVER.card) : undefined;
+  const albumPalette = useMinidiscAlbumPalette(minidisc ? displayedCover : undefined, offline);
 
   const discHeaders = useMemo(
     () =>
@@ -256,14 +262,20 @@ export default function AlbumScreen() {
     data.songs.some((s) => s.explicitStatus === 'explicit');
 
   const totalSec = data.songs.reduce((acc, s) => acc + (s.duration ?? 0), 0);
-  const metaParts = [t('Album')];
-  if (data.album.year) metaParts.push(String(data.album.year));
+  const yearParts: string[] = [];
+  if (data.album.year) yearParts.push(String(data.album.year));
+  const metaParts = [t('Album'), ...yearParts];
   metaParts.push(songsLabel(data.songs.length, lang));
   if (totalSec > 0) metaParts.push(formatTotalDuration(totalSec));
 
   return (
-    <>
+    <ArtistPagePaletteProvider value={minidisc ? albumPalette : undefined}>
       <TrackListView
+        albumActionLayout={appleMusic && !minidisc ? 'volta' : undefined}
+        albumPresentation={minidisc ? {
+          palette: albumPalette,
+          meta: [genres[0], ...yearParts].filter(Boolean).join(' · '),
+        } : undefined}
         title={data.album.name}
         subtitle={data.album.artist}
         description={showDescription ? description : undefined}
@@ -277,7 +289,7 @@ export default function AlbumScreen() {
         meta={metaParts.join(' · ')}
         explicit={explicit}
         genres={genres}
-        coverUri={coverArtUrl(data.album.coverArt ?? data.album.id, COVER.card)}
+        coverUri={displayedCover}
         onCoverPress={() => setCoverOpen(true)}
         // Same sheet as the long-press on cards: play, queue, download,
         // favorite and pin, without duplicating the menu.
@@ -293,8 +305,10 @@ export default function AlbumScreen() {
         }}
         download={!offline ? { ...download, onPress: onDownloadPress } : undefined}
         footer={
-          data.album.artistId || labelText ? (
+          data.album.artistId || labelText || minidisc ? (
             <>
+              {minidisc ? <Text style={{ color: albumPalette.textSecondary, fontSize: fontSize.xs,
+                lineHeight: 19, marginTop: spacing.lg }}>{metaParts.join(' · ')}</Text> : null}
               {data.album.artistId ? (
                 <MoreFromArtist
                   artistId={data.album.artistId}
@@ -305,7 +319,7 @@ export default function AlbumScreen() {
               {labelText ? (
                 <Text
                   style={{
-                    color: colors.textMuted,
+                    color: minidisc ? albumPalette.textSecondary : appleMusic ? colors.textSecondary : colors.textMuted,
                     fontSize: fontSize.xs,
                     marginTop: spacing.lg,
                   }}
@@ -369,6 +383,6 @@ export default function AlbumScreen() {
           cancelDownload(`album:${id}`);
         }}
       />
-    </>
+    </ArtistPagePaletteProvider>
   );
 }

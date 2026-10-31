@@ -37,6 +37,8 @@ import { currentSong, usePlayerStore } from '@/store/player';
 import { useRecentSearches, type RecentItem } from '@/store/recentSearches';
 import { useSettings } from '@/store/settings';
 import { useAccent } from '@/hooks/useAccent';
+import { useAppleMusicStyle } from '@/hooks/useAppleMusicStyle';
+import { appleMusicStyles } from '@/theme/appleMusic';
 import { colors, fontSize, radius, spacing, themed, useTheme, tracking } from '@/theme';
 import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
@@ -74,6 +76,7 @@ export default function SearchScreen() {
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
+  const appleMusic = useAppleMusicStyle();
   useSettings((s) => s.appFont); // re-render when font changes
   // The whole page is one centred column on a wide screen, like the lists and
   // the settings (#131).
@@ -241,8 +244,13 @@ export default function SearchScreen() {
 
   return (
     <View style={[styles.safe, { paddingTop: insets.top }]}>
-      <View collapsable={false} style={styles.searchBar}>
-        <GlassBackdrop radius={radius.pill} tint={colors.surfaceHighlight} variant="regular" />
+      {appleMusic ? <View style={[appleMusicStyles.pageHeader, { paddingHorizontal: pagePad, paddingBottom: 0 }]}>
+        <Text style={appleMusicStyles.pageTitle}>{t('Search')}</Text>
+      </View> : null}
+      <View collapsable={false} style={[styles.searchBar, appleMusic && {
+        marginHorizontal: pagePad, borderRadius: 14, backgroundColor: colors.surfaceHighlight,
+      }]}>
+        {appleMusic ? null : <GlassBackdrop radius={radius.pill} tint={colors.surfaceHighlight} variant="regular" />}
         <Icon name="search" size={20} color={colors.textMuted} />
         <TextInput
           ref={inputRef}
@@ -274,14 +282,18 @@ export default function SearchScreen() {
             return (
               <GlassPressable tint={active ? accent : undefined} variant={active ? 'prominent' : 'regular'}
                 key={f.key}
-                style={[styles.filter, active && { backgroundColor: accent }]}
+                style={[styles.filter, active && { backgroundColor: accent }, appleMusic && {
+                  borderRadius: 10, paddingVertical: 9,
+                  backgroundColor: active ? colors.surfaceHighlight : 'transparent',
+                }]}
                 accessibilityRole="button"
                 accessibilityState={{ selected: active }}
                 // Pressing the one already on goes back to everything, so the
                 // way out is the chip you came in by and not a second target.
                 onPress={() => setFilter(active ? 'all' : f.key)}
               >
-                <Text style={[styles.filterText, active && styles.filterTextActive]}>
+                <Text style={[styles.filterText, active && styles.filterTextActive,
+                  appleMusic && { color: active ? accent : colors.textSecondary }]}>
                   {t(f.label)}
                 </Text>
               </GlassPressable>
@@ -302,7 +314,7 @@ export default function SearchScreen() {
         {showRecent ? (
           <View style={styles.section}>
             <View style={styles.recentHeader}>
-              <Text style={styles.sectionTitle}>{t('Recent searches')}</Text>
+              <Text style={[styles.sectionTitle, appleMusic && appleMusicStyles.sectionTitle]}>{t('Recent searches')}</Text>
               <GlassPressable variant="subtle" hitSlop={8} onPress={() => clearRecent()}>
                 <Text style={styles.clearAll}>{t('Clear all')}</Text>
               </GlassPressable>
@@ -368,7 +380,7 @@ export default function SearchScreen() {
 
         {shows('artists') && data && data.artists.length > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t('Artists')}</Text>
+            <Text style={[styles.sectionTitle, appleMusic && appleMusicStyles.sectionTitle]}>{t('Artists')}</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -410,7 +422,7 @@ export default function SearchScreen() {
 
         {shows('albums') && data && data.albums.length > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t('Albums')}</Text>
+            <Text style={[styles.sectionTitle, appleMusic && appleMusicStyles.sectionTitle]}>{t('Albums')}</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -440,7 +452,7 @@ export default function SearchScreen() {
 
         {shows('songs') && data && data.songs.length > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t('Songs')}</Text>
+            <Text style={[styles.sectionTitle, appleMusic && appleMusicStyles.sectionTitle]}>{t('Songs')}</Text>
             {data.songs.map((song, i) => (
               <TrackRow
                 key={song.id}
@@ -467,7 +479,7 @@ export default function SearchScreen() {
 
         {shows('playlists') && playlistMatches.length > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t('Playlists')}</Text>
+            <Text style={[styles.sectionTitle, appleMusic && appleMusicStyles.sectionTitle]}>{t('Playlists')}</Text>
             {playlistMatches.map((p) => (
               <Link key={p.id} href={`/playlist/${p.id}`} asChild>
                 <Pressable
@@ -493,7 +505,7 @@ export default function SearchScreen() {
 
         {shows('radio') && stationMatches.length > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t('Radio')}</Text>
+            <Text style={[styles.sectionTitle, appleMusic && appleMusicStyles.sectionTitle]}>{t('Radio')}</Text>
             {stationMatches.map((r) => (
               <Pressable
                 key={r.id}

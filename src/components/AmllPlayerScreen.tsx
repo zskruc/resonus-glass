@@ -267,7 +267,8 @@ export function AmllPlayerScreen() {
           </Pressable>
         ) : <Text numberOfLines={1} style={compact ? styles.compactArtist : styles.artist}>{artist}</Text>}
       </View>
-      {!compact && song && !song.url ? <AmllPlayerFavoriteButton id={song.id} starred={!!song.starred} active={interactive} /> : null}
+      {!compact && song && !song.url ? <AmllPlayerFavoriteButton id={song.id} starred={!!song.starred}
+        active={interactive} playlistSong={song} /> : null}
       <AmllPlayerMoreButton label={t('More options')} onPress={showMenu} active={interactive}
         viewportWidth={window.width} viewportHeight={window.height} />
     </View>

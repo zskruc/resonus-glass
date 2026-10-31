@@ -53,6 +53,8 @@ import { currentSong, usePlayerStore } from '@/store/player';
 import { usePlaylistPicker } from '@/store/playlistPicker';
 import { usePlayHistory } from '@/store/playHistory';
 import { useSettings } from '@/store/settings';
+import { useAppleMusicStyle } from '@/hooks/useAppleMusicStyle';
+import { appleMusicStyles } from '@/theme/appleMusic';
 import { useToast } from '@/store/toast';
 import {
   colors,
@@ -113,6 +115,7 @@ export default function BrowseSongsScreen() {
 }
 
 export function SongsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) {
+  const appleMusic = useAppleMusicStyle();
   const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
@@ -298,7 +301,7 @@ export function SongsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
           swap is the one thing the embedded section keeps a header for, since
           the ✕ is the way out of it. */}
       {embedded && !selecting ? null : (
-        <View style={styles.header}>
+        <View style={[styles.header, appleMusic && !selecting && appleMusicStyles.settingsHeader]}>
           {/* While selecting, the ✕ cancels the selection and nothing else: the
               long press out of here belongs to the chevron. */}
           {selecting ? (
@@ -312,7 +315,7 @@ export function SongsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
           ) : embedded ? null : (
             <BackChevron />
           )}
-          <Text style={styles.title} numberOfLines={1}>
+          <Text style={[styles.title, appleMusic && !selecting && appleMusicStyles.settingsTitle]} numberOfLines={1}>
             {selecting ? t('{n} selected', { n: selectedIds.size }) : t('Songs')}
           </Text>
           {/* Embedded, the view menu is drawn by the Explore tab and this slot

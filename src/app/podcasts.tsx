@@ -40,6 +40,8 @@ import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
 import { useListPadding } from '@/hooks/useScreenSize';
 import { episodesLabel, useT } from '@/i18n';
+import { useAppleMusicStyle } from '@/hooks/useAppleMusicStyle';
+import { appleMusicStyles } from '@/theme/appleMusic';
 import type { Language } from '@/i18n/languages';
 import { listPerf } from '@/lib/listPerf';
 import { queryClient } from '@/lib/query';
@@ -75,6 +77,7 @@ function channelSubtitle(
 }
 
 export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) {
+  const appleMusic = useAppleMusicStyle();
   const dockScroll = useLiquidDockScrollHandler();
   useTheme();
   const router = useRouter();
@@ -153,9 +156,9 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
   return (
     <BrowseFrame embedded={embedded}>
       {embedded ? null : (
-        <View style={styles.header}>
+        <View style={[styles.header, appleMusic && appleMusicStyles.settingsHeader]}>
           <BackChevron />
-          <Text style={styles.title}>{t('Podcasts')}</Text>
+          <Text style={[styles.title, appleMusic && appleMusicStyles.settingsTitle]}>{t('Podcasts')}</Text>
           {addButton}
         </View>
       )}

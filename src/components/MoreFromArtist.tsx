@@ -9,6 +9,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { getArtist } from '@/api/data';
 import { AlbumCard } from '@/components/AlbumCard';
+import { useArtistPagePalette } from '@/components/volta/ArtistPagePalette';
 import { useT } from '@/i18n';
 import { useAuthStore } from '@/store/auth';
 import { fontSize, spacing, themed, tracking } from '@/theme';
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export function MoreFromArtist({ artistId, artistName, currentAlbumId }: Props) {
+  const palette = useArtistPagePalette();
   const canFetch = useAuthStore((s) => !!s.auth || s.offline);
   const t = useT();
 
@@ -39,10 +41,10 @@ export function MoreFromArtist({ artistId, artistName, currentAlbumId }: Props) 
     <View style={styles.section}>
       <Link href={`/artist/discography/${artistId}`} asChild>
         <Pressable style={styles.header}>
-          <Text style={styles.title} numberOfLines={1}>
+          <Text style={[styles.title, palette && { color: palette.text }]} numberOfLines={1}>
             {t('More from {artist}', { artist: artistName })}
           </Text>
-          {albums.length > 1 ? <Text style={styles.showAll}>{t('Show all')}</Text> : null}
+          {albums.length > 1 ? <Text style={[styles.showAll, palette && { color: palette.textSecondary }]}>{t('Show all')}</Text> : null}
         </Pressable>
       </Link>
       <ScrollView

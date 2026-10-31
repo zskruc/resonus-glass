@@ -66,7 +66,8 @@ function serverHarness() {
     '@/lib/localQueries': { coverUrl: () => undefined },
   };
   for (const name of ['@/store/libraries', '@/lib/localLibrary', '@/lib/perfLog', '@/lib/storage', '@/store/lastPlayed',
-    '@/store/playHistory', './netGate', '@/lib/localLyrics', './navidrome', './subsonic']) dependencies[name] = {};
+    '@/store/playHistory', './netGate', '@/lib/localLyrics', './navidrome', './subsonic', '@/lib/mediaCacheDb',
+    'expo-file-system/legacy', '@/lib/netBudget']) dependencies[name] = {};
   const data = load('api/data.ts', dependencies);
   return { client, state, request, queue, queried, writes, mirrorSongs, files, settings,
     catalogReads: () => catalogReads, setScope: (value: string) => { scope = value; },

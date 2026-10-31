@@ -282,6 +282,11 @@ describe('background dock lifecycle', () => {
     let withBar = true;
     let keyboardVisible = false;
     const keyboardListeners = new Map<string, () => void>();
+    const appListeners = new Set<(state: string) => void>();
+    const AppState = { currentState: 'active', addEventListener: (_event: string, callback: (state: string) => void) => {
+      appListeners.add(callback);
+      return { remove: () => appListeners.delete(callback) };
+    } };
     let nativeOwner: { host: number; scope: string; serial: number } | null = null;
     const nativeExpansions: number[] = [];
     let springs = 0;
@@ -298,7 +303,7 @@ describe('background dock lifecycle', () => {
     const dependencies = {
       'react/jsx-runtime': { jsx: (type: (props: unknown) => unknown, props: unknown) => type(props) },
       'expo-router': { useIsFocused: () => focused, useSegments: () => segments, usePathname: () => pathname },
-      'react-native': { Keyboard: { isVisible: () => keyboardVisible,
+      'react-native': { AppState, Keyboard: { isVisible: () => keyboardVisible,
         addListener: (event: string, callback: () => void) => {
           keyboardListeners.set(event, callback);
           return { remove() { keyboardListeners.delete(event); } };
@@ -313,7 +318,7 @@ describe('background dock lifecycle', () => {
         },
       },
       'react-native-reanimated': {
-        makeMutable: mutable, ReduceMotion: { System: 0 },
+        makeMutable: mutable, ReduceMotion: { System: 0 }, cancelAnimation() {},
         useSharedValue: <T,>(initial: T) => hooks.react.useRef(mutable(initial)).current,
         useAnimatedScrollHandler: (handlers: unknown) => handlers,
         withSpring: (target: number, config: { stiffness: number; damping: number }) => {
@@ -364,6 +369,7 @@ describe('background dock lifecycle', () => {
       return render();
     };
     return { hooks, render, fold, read, springs: () => springs, springSpecs, nativeExpansions,
+      app(state: string) { AppState.currentState = state; for (const listener of appListeners) listener(state); },
       observeWrites(callback: (shared: unknown, value: unknown) => void) { observeWrite = callback; },
       nativeIntent(host: number, scope: string, serial: number) { nativeOwner = { host, scope, serial }; },
       keyboard(value: boolean) {
@@ -380,6 +386,46 @@ describe('background dock lifecycle', () => {
       bar(value: boolean) { withBar = value; },
     };
   }
+
+  it('resumes the UI collapse target even if React had not received it when Android interrupted the spring', () => {
+    const h = dockHarness(true);
+    const before = h.render();
+    before.uiCompact.set(true);
+    before.progress.set(.4);
+    const oldGeneration = before.generation.get();
+    const expansions = h.nativeExpansions.length;
+    h.app('background');
+    assert.equal(before.uiEnabled.get(), false);
+    h.app('active');
+    const after = h.render();
+    assert.equal(after.uiCompact.get(), true);
+    assert.equal(after.compact, true);
+    assert.equal(after.progress.get(), 1);
+    assert.equal(after.uiEnabled.get(), true);
+    assert.equal(h.nativeExpansions.length, expansions, 'resume must not force native expanded input');
+    after.notifyCompact(false, oldGeneration);
+    assert.equal(h.render().compact, true, 'old queued scroll must not override the resumed target');
+    const generation = after.generation.get();
+    h.app('active');
+    assert.equal(h.read().generation.get(), generation, 'duplicate state has no recovery work');
+  });
+
+  it('keeps the parked underlying compact target across background while the full player covers it', () => {
+    const h = dockHarness();
+    h.render();
+    h.fold();
+    h.navigate('/player', ['player']);
+    h.bar(false);
+    h.render();
+    h.app('background');
+    h.app('active');
+    assert.equal(h.render().progress.get(), 0);
+    h.navigate('/', ['(tabs)']);
+    h.bar(true);
+    const restored = h.render();
+    assert.equal(restored.progress.get(), 1);
+    assert.equal(restored.compact, true);
+  });
 
   it('keeps a folded dock when only frozen children reappear', () => {
     const h = dockHarness();

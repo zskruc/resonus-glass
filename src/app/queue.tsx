@@ -26,7 +26,7 @@ import ReorderableList, {
 } from 'react-native-reorderable-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { COVER, songCoverUrl } from '@/api/data';
+import { COVER, canGoIntoPlaylist, songCoverUrl } from '@/api/data';
 import { type Song } from '@/api/subsonic';
 import { Cover } from '@/components/Cover';
 import { PlayingBars } from '@/components/PlayingBars';
@@ -407,18 +407,18 @@ export default function QueueScreen() {
       <SheetModal openRef={menuRef}>
         {(close) => (
           <>
-            <Pressable
+            {queue.some(canGoIntoPlaylist) ? <Pressable
               style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
               onPress={() => {
                 close(() => {
-                  const q = usePlayerStore.getState().queue;
+                  const q = usePlayerStore.getState().queue.filter(canGoIntoPlaylist);
                   if (q.length > 0) usePlaylistPicker.getState().open(q);
                 });
               }}
             >
               <Icon name="add" size={24} color={colors.text} />
               <Text style={styles.actionText}>{t('Add to a playlist')}</Text>
-            </Pressable>
+            </Pressable> : null}
             {/* The queue is pushed to the server as it changes, but what comes
                 back is only read when this device has none of its own: the copy
                 here is the faithful one and replacing it behind somebody's back

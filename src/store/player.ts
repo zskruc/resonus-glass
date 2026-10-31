@@ -83,6 +83,7 @@ import {
 } from '@/lib/queue';
 import { primaryUrl } from '@/lib/serverUrls';
 import { getItem, setItem } from '@/lib/storage';
+import { StreamWarming } from '@/lib/streamWarming';
 import { useAuthStore } from './auth';
 import { checkAutoUrlNow } from './autoUrl';
 import { castSetState, castSetVolumeLevel, castUpdate, initCastMedia } from './castMedia';
@@ -901,6 +902,18 @@ let loadToken = 0;
  * never do.
  */
 async function loadIndex(index: number, autoplay: boolean, recoveryTicket?: PlaybackRecoveryTicket): Promise<boolean> {
+  const sourceIntent = streamWarming.beginSource();
+  const owner = useAuthStore.getState().auth;
+  try {
+    return await loadIndexSource(index, autoplay, recoveryTicket);
+  } finally {
+    // A queue tap may be overtaken by next/previous/jump without replacing
+    // that queue. Its old finally cannot unhold the newer source request.
+    if (streamWarming.releaseSource(sourceIntent) && useAuthStore.getState().auth === owner) warmUpcoming();
+  }
+}
+
+async function loadIndexSource(index: number, autoplay: boolean, recoveryTicket?: PlaybackRecoveryTicket): Promise<boolean> {
   if (recoveryTicket && recoveryTargetIndex(recoveryTicket) === null) return false;
   const token = ++loadToken;
   // Anything asked to play is the app in use, whoever asked: the button, the
@@ -1352,17 +1365,10 @@ useSongCache.subscribe((s, prev) => {
 // as the one nobody warmed (#137). The queue is watched for that at the bottom
 // of this file.
 const PRELOAD_AHEAD = 5;
-/** Already-warmed ids: as the window slides only the new one entering is warmed
- *  (~1 request per advance), not all five each time. Cleared on queue change
- *  (playQueue). */
-const warmedIds = new Set<string>();
-
-function resetWarmed() {
-  warmedIds.clear();
-}
 
 function warmUpcoming() {
   if (bootQuiet) return; // see the boot window: nothing speculative on the way in
+  if (streamWarming.held) return; // the tapped source must reach the player first
   if (!useSettings.getState().preloadUpcoming) return;
   const auth = useAuthStore.getState().auth;
   if (!auth || useAuthStore.getState().offline) return;
@@ -1376,15 +1382,13 @@ function warmUpcoming() {
     // What plays from disk, and radio, don't go through the server: nothing
     // to warm.
     if (!song || song.url || localSourceFor(song)) continue;
-    if (warmedIds.has(song.id)) continue;
-    warmedIds.add(song.id);
     // Without `maxBitRate`: we warm the ORIGIN, not the transcoding. On an
     // Octo Fiesta-like proxy this still triggers the provider download (which is
     // the slow part), but does NOT lock in the transcoded session that playback
     // later uses, thus preserving seek (with the identical stream URL, that
     // first request would make it non-seekable and dragging would restart the
     // track). On a normal server, it also avoids extra transcodes.
-    warmStream(song.id, streamUrl(auth, song.id));
+    streamWarming.enqueue(song.id, streamUrl(auth, song.id), auth);
   }
 }
 
@@ -1414,40 +1418,31 @@ const WARM_TIMEOUT_MS = 120_000;
  * the screens are waiting for, which is the very thing #50 was about. One at a
  * time, in window order, so the song coming next is the one warming.
  */
-let warmChain: Promise<void> = Promise.resolve();
+const streamWarming = new StreamWarming<SubsonicAuth>({
+  timeoutMs: WARM_TIMEOUT_MS,
+  canRequest: (owner, id) => {
+    const { auth, offline } = useAuthStore.getState();
+    if (bootQuiet || offline || auth !== owner || !useSettings.getState().preloadUpcoming) return false;
+    // A queued task can outlive a reorder, removal, skip or newly downloaded
+    // copy. Recheck this short window after its shared connection slot arrives.
+    const { queue, index, repeat } = usePlayerStore.getState();
+    if (queue.length <= 1) return false;
+    for (let ahead = 1; ahead <= PRELOAD_AHEAD; ahead++) {
+      const next = repeat === 'all' ? (index + ahead) % queue.length : index + ahead;
+      if (next >= queue.length) break;
+      const song = queue[next];
+      if (song?.id === id && !song.url && !localSourceFor(song)) return true;
+    }
+    return false;
+  },
+  // expo/fetch remains available during background audio playback. The
+  // coordinator aborts after headers so an ignored Range never streams a song.
+  request: (url, signal) => expoFetch(url, { headers: { Range: 'bytes=0-1' }, signal }),
+  onEvent: (event) => bump(event === 'asked' ? 'preload · asked the server'
+    : event === 'ready' ? 'preload · server ready' : 'preload · no answer'),
+});
 
-function warmStream(id: string, url: string) {
-  warmChain = warmChain.then(() => warmRequest(id, url));
-}
-
-async function warmRequest(id: string, url: string) {
-  // Nothing is warmed offline: there is no stream to fetch, and the request
-  // would be one more thing reaching the network behind someone's back.
-  if (useAuthStore.getState().offline) return;
-  bump('preload · asked the server');
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), WARM_TIMEOUT_MS);
-  try {
-    // `expoFetch`, not the global one: this runs while a song is playing, which
-    // is exactly when the app is in the background and React Native's stops
-    // answering. See the note in `src/api/subsonic.ts`.
-    await expoFetch(url, { headers: { Range: 'bytes=0-1' }, signal: ctrl.signal });
-    // Headers back: whatever the server had to do to have this track ready is
-    // done, and the file it wrote outlives the connection. `expo/fetch` hands
-    // the body over as a stream nobody reads, so hanging up here is what keeps
-    // a server that ignores `Range` from streaming a whole track at us.
-    ctrl.abort();
-    bump('preload · server ready');
-  } catch {
-    // Best-effort, but not forgotten: a warm that timed out left the server
-    // with nothing cached (it deletes what it had half-written), so the id goes
-    // back in the hat and the next time the window moves it is tried again.
-    bump('preload · no answer');
-    warmedIds.delete(id);
-  } finally {
-    clearTimeout(timer);
-  }
-}
+function resetWarmed() { streamWarming.reset(); }
 
 // ── Autoplay: when nearing the end of the queue, enqueue similar songs ──────
 // (Spotify-like). Online only, with the setting enabled (or in radio mode) and
@@ -3673,7 +3668,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // A new queue starts the artist's catalogue over, even the same artist's:
     // what was handed over before is not in this queue.
     artistFill = null;
-    resetWarmed();
+    const warmIntent = streamWarming.beginQueue();
+    const warmAuth = useAuthStore.getState().auth;
     // Before jumping to another list/album, save the current song in the
     // "back" history so we can return to it (Spotify-style). Starting the list
     // that is already playing is not a jump: there is nowhere to go back to,
@@ -3741,8 +3737,18 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // Only when there was something to go back to: with nothing playing before,
     // an empty queue says less than the one that failed, and the toast has
     // already said what happened.
-    const ok = await loadIndex(at, true);
-    if (!ok && before.queue.length > 0) set(before);
+    let ok = false;
+    let releasedWarming = false;
+    try {
+      ok = await loadIndex(at, true);
+    } finally {
+      releasedWarming = streamWarming.release(warmIntent);
+    }
+    // A later tap owns both playback and its warming hold. Neither a failed
+    // older request nor a profile change may restore the queue it replaced.
+    if (!ok && streamWarming.owns(warmIntent) && useAuthStore.getState().auth === warmAuth
+      && get().queue === queued && get().index === at && before.queue.length > 0) set(before);
+    if (releasedWarming && useAuthStore.getState().auth === warmAuth) warmUpcoming();
     return ok;
   },
 
@@ -4397,6 +4403,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   reset: async (forProfile = false) => {
+    resetWarmed();
     cancelPlaybackRecovery();
     get().cancelSleepTimer();
     clearPlayedHere();
@@ -4470,11 +4477,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 }));
 
+// A task waiting for a speculative slot must not outlive its account, offline
+// mode or opt-in setting. Preserve any currently loading tap's own hold.
+useAuthStore.subscribe((state, previous) => {
+  if (state.auth !== previous.auth || state.offline !== previous.offline) streamWarming.invalidate();
+});
+useSettings.subscribe((state, previous) => {
+  if (state.preloadUpcoming === previous.preloadUpcoming) return;
+  streamWarming.invalidate();
+  if (state.preloadUpcoming) warmUpcoming();
+});
+
 // Gapless: what comes next changes with the queue, the position in it, the
 // repeat mode and the "stop at end of song" timer. Watching the store beats
 // hooking every action that touches them (add to queue, reorder, remove,
 // shuffle, autoplay…), where the queued track would go stale by omission.
 usePlayerStore.subscribe((st, prev) => {
+  if (st.queue.length === 0 && prev.queue.length > 0) resetWarmed();
   if (st.queue[st.index]?.id !== prev.queue[prev.index]?.id) {
     playbackOutage.trackChanged(st.queue[st.index]?.id ?? null);
     if (!playbackOutage.waiting) clearBackgroundRetryTimer();

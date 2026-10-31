@@ -16,6 +16,7 @@ import { Text, View } from 'react-native';
 import { useT } from '@/i18n';
 import { useSettings } from '@/store/settings';
 import { radius, themed } from '@/theme';
+import { useArtistPagePalette } from '@/components/volta/ArtistPagePalette';
 
 /**
  * Whether the badge would draw anything at all.
@@ -32,10 +33,11 @@ export function useExplicitBadge(status?: string): boolean {
 export function ExplicitBadge({ status }: { status?: string }) {
   const t = useT();
   const visible = useExplicitBadge(status);
+  const pagePalette = useArtistPagePalette();
   if (!visible) return null;
   return (
-    <View style={styles.badge} accessibilityLabel={t('Explicit')}>
-      <Text style={styles.letter} allowFontScaling={false}>
+    <View style={[styles.badge, pagePalette && { backgroundColor: pagePalette.textMuted }]} accessibilityLabel={t('Explicit')}>
+      <Text style={[styles.letter, pagePalette && { color: pagePalette.onText }]} allowFontScaling={false}>
         E
       </Text>
     </View>

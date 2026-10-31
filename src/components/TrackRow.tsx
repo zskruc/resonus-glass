@@ -21,6 +21,9 @@ import { colors, fontSize, spacing, themed, useTheme } from '@/theme';
 import { Cover, useCoverRadius } from './Cover';
 import { usePressFeedback } from '@/hooks/usePressFeedback';
 import { bump } from '@/lib/perfLog';
+import { useAppleMusicStyle } from '@/hooks/useAppleMusicStyle';
+import { appleMusicStyles } from '@/theme/appleMusic';
+import { useArtistPagePalette } from '@/components/volta/ArtistPagePalette';
 import { PlayingBars } from './PlayingBars';
 import { ExplicitBadge, useExplicitBadge } from './ExplicitBadge';
 import { FavoriteButton } from './FavoriteButton';
@@ -88,14 +91,15 @@ function SwipeActionPanel({
   /** Side where the strip peeks out: the icon sticks to the edge it enters from. */
   side: 'left' | 'right';
 }) {
+  const pagePalette = useArtistPagePalette();
   return (
     <View
       style={[
         styles.queueAction,
-        { backgroundColor: colors.accent, alignItems: side === 'left' ? 'flex-start' : 'flex-end' },
+        { backgroundColor: pagePalette?.accent ?? colors.accent, alignItems: side === 'left' ? 'flex-start' : 'flex-end' },
       ]}
     >
-      <Icon name={icon} size={22} color={colors.onAccent} />
+      <Icon name={icon} size={22} color={pagePalette?.onText ?? colors.onAccent} />
     </View>
   );
 }
@@ -160,6 +164,9 @@ function TrackRowBase({
   // Memoized below, and with its own `propsEqual` at that: the list repainting
   // does not reach the rows, so each one asks for the appearance itself.
   useTheme();
+  const appleMusic = useAppleMusicStyle();
+  const pagePalette = useArtistPagePalette();
+  const accent = pagePalette?.accent ?? colors.accent;
   const showDuration = useSettings((s) => s.showSongDuration);
   const showRating = useSettings((s) => s.showListRating);
   const swipeAction = useSettings((s) => s.swipeAction);
@@ -249,7 +256,7 @@ function TrackRowBase({
       // selection it behaves normally (long-press enters, tap marks) so it can
       // be added to a list even though it can't be played. One or the other:
       // the press style sets opacity too, and after `dimmed` it undid it.
-      style={[styles.row, unavailable && !selecting ? styles.dimmed : press.style]}
+      style={[styles.row, appleMusic && appleMusicStyles.mediaRow, unavailable && !selecting ? styles.dimmed : press.style]}
       // PressIn can fire again when the same finger re-enters the press rect.
       // Native touch-down, rather than re-entry, owns a recycled row's press.
       onTouchStart={(event) => touchStart(pointer, event)}
@@ -282,7 +289,7 @@ function TrackRowBase({
         <Icon
           name={selected ? 'checkmark-circle' : 'ellipse-outline'}
           size={22}
-          color={selected ? colors.accent : colors.textMuted}
+          color={selected ? accent : pagePalette?.textMuted ?? colors.textMuted}
         />
       ) : null}
       {/* One line whatever happens: the slot fits any track number worth
@@ -296,7 +303,7 @@ function TrackRowBase({
           {isCurrent ? (
             <PlayingBars />
           ) : (
-            <Text style={styles.position} numberOfLines={1}>
+            <Text style={[styles.position, pagePalette && { color: pagePalette.textMuted }]} numberOfLines={1}>
               {position}
             </Text>
           )}
@@ -317,7 +324,8 @@ function TrackRowBase({
 
       <View style={styles.info}>
         <Text
-          style={[styles.title, isCurrent && { color: colors.accent }]}
+          style={[styles.title, appleMusic && appleMusicStyles.rowTitle,
+            pagePalette && { color: pagePalette.text }, isCurrent && { color: accent }]}
           numberOfLines={1}
         >
           {song.title}
@@ -325,14 +333,15 @@ function TrackRowBase({
         {downloaded || explicit || song.artist ? (
           <View style={styles.subRow}>
             {downloaded ? (
-              <Icon name="arrow-down-circle" size={13} color={colors.accent} />
+              <Icon name="arrow-down-circle" size={13} color={accent} />
             ) : null}
             {/* Ahead of the name, like every other player draws it: the badge
                 is about the track, and an artist name long enough to be cut
                 would take the badge off the row with it. */}
             <ExplicitBadge status={song.explicitStatus} />
             {song.artist ? (
-              <Text style={styles.artist} numberOfLines={1}>
+              <Text style={[styles.artist, appleMusic && appleMusicStyles.rowSubtitle,
+                pagePalette && { color: pagePalette.textSecondary }]} numberOfLines={1}>
                 {song.artist}
               </Text>
             ) : null}
@@ -346,11 +355,11 @@ function TrackRowBase({
       {showRating && song.userRating ? (
         <View style={styles.rating} accessibilityLabel={t('Rate {n} stars', { n: song.userRating })}>
           {Array.from({ length: song.userRating }).map((_, i) => (
-            <Icon key={i} name="star" size={12} color={colors.accent} />
+            <Icon key={i} name="star" size={12} color={accent} />
           ))}
         </View>
       ) : null}
-      {showDuration ? <Text style={styles.duration}>{formatDuration(song.duration)}</Text> : null}
+      {showDuration ? <Text style={[styles.duration, pagePalette && { color: pagePalette.textMuted }]}>{formatDuration(song.duration)}</Text> : null}
       {showMenu && !selecting && !unavailable ? (
         <Pressable
           hitSlop={8}
@@ -371,7 +380,7 @@ function TrackRowBase({
             openMenu(song, menuContext);
           }}
         >
-          <Icon name="ellipsis-horizontal" size={18} color={colors.textSecondary} />
+          <Icon name="ellipsis-horizontal" size={18} color={pagePalette?.textSecondary ?? colors.textSecondary} />
         </Pressable>
       ) : null}
     </AnimatedPressable>

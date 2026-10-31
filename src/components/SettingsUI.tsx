@@ -18,6 +18,8 @@ import {
 import { useSafeAreaFrame, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAccent } from '@/hooks/useAccent';
+import { useAppleMusicStyle } from '@/hooks/useAppleMusicStyle';
+import { appleMusicStyles } from '@/theme/appleMusic';
 import { useGlassTuning } from '@/store/glassTuning';
 import { CONTENT_MAX_WIDTH } from '@/hooks/useScreenSize';
 import { colors, fontSize, radius, spacing, SCREEN_BOTTOM_PADDING, themed, tracking, useTheme, useThemeMode } from '@/theme';
@@ -49,10 +51,11 @@ export function SettingsSafeArea({ children }: { children: React.ReactNode }) {
 /** Header with back arrow and centered title. `back={false}` for a screen that
  *  is a tab, with nowhere to go back to. */
 export function ScreenHeader({ title, back = true }: { title: string; back?: boolean }) {
+  const appleMusic = useAppleMusicStyle();
   return (
-    <View style={settingsStyles.header}>
+    <View style={[settingsStyles.header, appleMusic && appleMusicStyles.settingsHeader]}>
       {back ? <BackChevron size={28} /> : <View style={{ width: 28 }} />}
-      <Text style={settingsStyles.headerTitle}>{title}</Text>
+      <Text style={[settingsStyles.headerTitle, appleMusic && appleMusicStyles.settingsTitle]}>{title}</Text>
       <View style={{ width: 28 }} />
     </View>
   );

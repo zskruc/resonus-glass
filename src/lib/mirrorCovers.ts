@@ -25,6 +25,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { COVER, coverArtUrl, type SubsonicAuth } from '@/api/backend';
 import { isOfflineMode } from '@/api/netGate';
 import { whenIdle } from '@/lib/idle';
+import { withSpeculativeSlot } from '@/lib/netBudget';
 import { bump, netTally } from '@/lib/perfLog';
 import { hashKey, localCoverUrl, registerCover } from '@/lib/localLibrary';
 import * as Db from './mirrorDb';
@@ -83,6 +84,25 @@ const FETCH_AT_ONCE = 4;
 
 /** Ids being fetched right now, so two screens don't fetch the same one. */
 const inFlight = new Set<string>();
+// Automatic mirror writes and explicit full-resolution upgrades share the
+// same filename. Serialize each file so an older small download cannot finish
+// after its upgrade and replace it. Other pictures still run independently.
+const fileOperations = new Map<string, Promise<unknown>>();
+function withCoverFile<T>(profile: string, id: string, work: () => Promise<T>): Promise<T> {
+  const key = `${profile}\0${id}`;
+  const previous = fileOperations.get(key) ?? Promise.resolve();
+  const next = previous.catch(() => {}).then(work);
+  fileOperations.set(key, next);
+  void next.finally(() => { if (fileOperations.get(key) === next) fileOperations.delete(key); }).catch(() => {});
+  return next;
+}
+function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(new Error('Media cache stopped'));
+    if (signal.aborted) abort(); else signal.addEventListener('abort', abort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+  });
+}
 
 function indexFile(profile: string): string {
   return `${DIR}${profile}.json`;
@@ -133,6 +153,7 @@ export async function loadMirrorCovers(profile: string): Promise<void> {
   try {
     let rows = await Db.allCovers(BASE, profile);
     if (rows.length === 0) rows = await migrateIndex(profile);
+    if (loaded !== profile) return;
     for (const r of rows) {
       if (r.aliasOf) continue;
       known.add(r.id);
@@ -214,10 +235,11 @@ export function keepMirrorCovers(
   profile: string,
   auth: SubsonicAuth | null,
   ids: (string | CoverWant | undefined)[],
+  stillOwner: () => boolean,
 ): void {
   // Online only: this is a download, and it goes through the file system rather
   // than the API, so the gate that refuses requests offline cannot see it.
-  if (!auth || !profile || isOfflineMode()) return;
+  if (!auth || !profile || isOfflineMode() || !stillOwner()) return;
   // Every fetch that touches the mirror ends up here, and a pull to refresh is
   // several at once: the favourites alone hand over the album of every
   // favourite song, so on a large library that is thousands of wants rebuilt,
@@ -225,8 +247,8 @@ export function keepMirrorCovers(
   // the screen. Measured at thirty five refreshes of the favourites in three
   // minutes. It is catch-up work, so it is gathered and run on a slow clock.
   // A batch belongs to one profile; another profile's wants start a new one.
-  if (pendingFor?.profile !== profile) pending = [];
-  pendingFor = { profile, auth };
+  if (pendingFor?.profile !== profile || pendingFor.auth !== auth) pending = [];
+  pendingFor = { profile, auth, stillOwner };
   for (const want of ids) if (want) pending.push(want);
   if (runScheduled) return;
   runScheduled = true;
@@ -238,14 +260,86 @@ export function keepMirrorCovers(
     const owner = pendingFor;
     pending = [];
     pendingFor = null;
-    if (owner) runCovers(owner.profile, owner.auth, batch);
+    if (owner && owner.stillOwner()) runCovers(owner.profile, owner.auth, batch, owner.stillOwner);
   }, wait);
+}
+
+/** Explicit whole-library caching uses the same durable files/index as the
+ * mirror, with a size marker so a small earlier thumbnail cannot pass for
+ * a cached artist hero. It is awaited to report real success/missing/failure. */
+export async function cacheManagedCover(
+  profile: string,
+  auth: SubsonicAuth,
+  request: { from: string; url?: string; keys: string[]; size: number },
+  stillOwner: () => boolean,
+  signal: AbortSignal,
+): Promise<{ outcome: 'success' | 'cached' | 'missing'; uri?: string }> {
+  return abortable(withCoverFile(profile, request.from, () => cacheManagedCoverFile(profile, auth, request, stillOwner, signal)), signal);
+}
+async function cacheManagedCoverFile(
+  profile: string,
+  auth: SubsonicAuth,
+  request: { from: string; url?: string; keys: string[]; size: number },
+  stillOwner: () => boolean,
+  signal: AbortSignal,
+): Promise<{ outcome: 'success' | 'cached' | 'missing'; uri?: string }> {
+  const current = () => !signal.aborted && !isOfflineMode() && stillOwner() && loaded === profile;
+  if (!stillOwner() || signal.aborted || isOfflineMode()) throw new Error('Media cache stopped');
+  await loadMirrorCovers(profile);
+  if (!current()) throw new Error('Media cache stopped');
+  const id = request.from;
+  const fullMarker = `full-${request.size}|${id}`;
+  const file = fileFor(profile, id);
+  const info = await FileSystem.getInfoAsync(file);
+  if (!current()) throw new Error('Media cache stopped');
+  const register = async (size: number) => {
+    if (!current()) throw new Error('Media cache stopped');
+    const rows: Db.CoverRow[] = [];
+    bytes += size - (known.has(id) && info.exists ? info.size ?? 0 : 0);
+    known.add(id); rows.push({ id, aliasOf: null, bytes: size });
+    registerCover(id, file);
+    aliases.set(fullMarker, id); rows.push({ id: fullMarker, aliasOf: id, bytes: 0 });
+    for (const key of request.keys) {
+      if (key && alias(profile, key, id)) rows.push({ id: key, aliasOf: id, bytes: 0 });
+    }
+    await Db.putCovers(BASE, profile, rows);
+  };
+  if (info.exists && (info.size ?? 0) > 100 && aliases.get(fullMarker) === id) {
+    await register(info.size ?? 0);
+    return { outcome: 'cached', uri: file };
+  }
+  const url = request.url ?? coverArtUrl(auth, request.from, request.size);
+  if (!url) return { outcome: 'missing' };
+  const part = file + '.part';
+  await FileSystem.makeDirectoryAsync(DIR, { intermediates: true });
+  try {
+    const result = await withSpeculativeSlot(current, async () => {
+      const download = FileSystem.createDownloadResumable(url, part);
+      const abort = () => { void download.pauseAsync().catch(() => {}); };
+      signal.addEventListener('abort', abort, { once: true });
+      try { return await download.downloadAsync(); }
+      finally { signal.removeEventListener('abort', abort); }
+    });
+    if (!current()) throw new Error('Media cache stopped');
+    if (result?.status === 404 || result?.status === 410) return { outcome: 'missing' };
+    if (!result || result.status !== 200) throw new Error('Cover download failed');
+    const mime = Object.entries(result.headers ?? {}).find(([key]) => key.toLowerCase() === 'content-type')?.[1];
+    if (mime && !mime.toLowerCase().startsWith('image/')) throw new Error('Invalid cover response');
+    const saved = await FileSystem.getInfoAsync(part);
+    if (!current()) throw new Error('Media cache stopped');
+    if (!saved.exists || (saved.size ?? 0) <= 100) throw new Error('Invalid cover file');
+    await FileSystem.moveAsync({ from: part, to: file });
+    await register(saved.size ?? 0);
+    return { outcome: 'success', uri: file };
+  } finally {
+    await FileSystem.deleteAsync(part, { idempotent: true }).catch(() => {});
+  }
 }
 
 /** How long between runs, however often they are asked for. */
 const MIN_GAP_MS = 30_000;
 let pending: (string | CoverWant)[] = [];
-let pendingFor: { profile: string; auth: SubsonicAuth } | null = null;
+let pendingFor: { profile: string; auth: SubsonicAuth; stillOwner: () => boolean } | null = null;
 let runScheduled = false;
 let lastRun = 0;
 
@@ -253,18 +347,21 @@ function runCovers(
   profile: string,
   auth: SubsonicAuth,
   ids: (string | CoverWant | undefined)[],
+  stillOwner: () => boolean,
 ): void {
   // When the thread is free. This is called from the middle of opening an album
   // or a playlist, and downloading a few hundred covers is not something to
   // start while a transition is still running: nothing here is urgent, and a
   // screen that arrives late is what the user actually notices.
   whenIdle(() => {
+    if (!stillOwner() || isOfflineMode()) return;
     void (async () => {
       // What is already on disk has to be known before deciding what is missing.
       // Online the mirror is opened a few seconds after launch, and the first
       // favourites arrive before that: waiting here instead of giving up is the
       // difference between saving them on the first run and on some later one.
       await loadMirrorCovers(profile);
+      if (isOfflineMode() || !stillOwner() || loaded !== profile) return;
       if (known.size >= MAX) return;
       // Deduplicated by what is being LOOKED UP, not by what is fetched. Twenty
       // favourites off one record ask for twenty different pictures as far as
@@ -294,13 +391,13 @@ function runCovers(
       // what makes running this over a whole library cheap after the first time.
       const wanted = [...byFrom.values()].filter(
         (w) =>
-          !inFlight.has(w.from) &&
+          !inFlight.has(`${profile}\0${w.from}`) &&
           w.keys.some((k) => !localCoverUrl(k)) &&
           !(known.has(w.from) && w.keys.every((k) => localCoverUrl(k))),
       );
       const taking = wanted.slice(0, MAX - known.size);
       if (taking.length === 0) return;
-      for (const w of taking) inFlight.add(w.from);
+      for (const w of taking) inFlight.add(`${profile}\0${w.from}`);
       // What this run has to write down, gathered as it goes and written in one
       // statement at the end rather than a file rewritten per cover.
       const written: Db.CoverRow[] = [];
@@ -308,7 +405,10 @@ function runCovers(
       /** One want: the file if it is missing, the names for it either way. */
       const fetchOne = async (w: CoverWant): Promise<void> => {
         const id = w.from;
+        const stillWanted = () => !isOfflineMode() && stillOwner() && loaded === profile;
         try {
+          await withCoverFile(profile, id, async () => {
+          if (!stillWanted()) return;
           // Already on disk, and only the other names for it were missing: the
           // picture does not need fetching twice.
           if (known.has(id)) {
@@ -321,15 +421,18 @@ function runCovers(
           if (!url) return;
           const file = fileFor(profile, id);
           await FileSystem.makeDirectoryAsync(DIR, { intermediates: true }).catch(() => {});
-          netTally('coverArt.view (mirror)');
-          const res = await FileSystem.downloadAsync(url, file);
-          // A server that answers an error writes that error to the file, and a
-          // broken file on disk would pass for a cover for good.
-          if (res.status !== 200) {
-            await FileSystem.deleteAsync(file, { idempotent: true }).catch(() => {});
-            bump('cover refused by server');
-            return;
-          }
+          const fetched = await withSpeculativeSlot(stillWanted, async () => {
+            netTally('coverArt.view (mirror)');
+            const res = await FileSystem.downloadAsync(url, file);
+            // A server error body is not a valid cover on disk.
+            if (res.status !== 200) {
+              await FileSystem.deleteAsync(file, { idempotent: true }).catch(() => {});
+              bump('cover refused by server');
+              return false;
+            }
+            return true;
+          });
+          if (!fetched || !stillWanted()) return;
           known.add(id);
           registerCover(id, file);
           for (const key of w.keys) {
@@ -339,14 +442,18 @@ function runCovers(
           // Counted as it is written: walking thousands of files to add up
           // what they take is not something a settings screen should do.
           const info = await FileSystem.getInfoAsync(file).catch(() => null);
+          if (loaded !== profile) return;
           const size = info?.exists ? (info.size ?? 0) : 0;
           bytes += size;
-          written.push({ id, aliasOf: null, bytes: size });
+          // Commit the file's size before releasing its write lease; a later
+          // full-size upgrade must not be overwritten by a delayed batch row.
+          await Db.putCovers(BASE, profile, [{ id, aliasOf: null, bytes: size }]);
+          });
         } catch {
           // Network, disk, whatever: it stays unknown and can be tried again.
           bump('cover fetch failed');
         } finally {
-          inFlight.delete(id);
+          inFlight.delete(`${profile}\0${id}`);
         }
       };
 

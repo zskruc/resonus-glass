@@ -6,6 +6,10 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { isValidElement } from 'react';
 
+import { voltaDetailBackground } from '../src/lib/voltaPalette';
+import { buildMinidiscAlbumPalette, minidiscAlbumCoverSize } from '../src/lib/minidiscAlbumPalette';
+import { type UiStyle } from '../src/lib/uiStyle';
+
 const { transformSync } = createRequire(import.meta.url)('@babel/core') as {
   transformSync(source: string, options: Record<string, unknown>): { code?: string | null } | null;
 };
@@ -137,6 +141,7 @@ const songA = { id: 'A', title: 'Àlpha', artist: 'Singer', duration: 123, track
 const songB = { id: 'B', title: 'Beta', artist: 'Other', duration: 99, track: 2 };
 
 function list() {
+  const settings: { uiStyle: UiStyle } = { uiStyle: 'spotify' };
   const timings: { toValue: number; complete(finished?: boolean): void; stops: number }[] = [];
   const listNative = { ...native, Animated: { ...native.Animated, timing: (_value: unknown, config: { toValue: number }) => {
     let callback: ((result: { finished: boolean }) => void) | undefined;
@@ -178,8 +183,12 @@ function list() {
     '@/i18n': { useT: () => (value: string) => value },
     '@/lib/artistNav': { artistTargets: () => [] },
     '@/lib/haptics': { haptic() {} },
+    '@/lib/voltaPalette': { voltaDetailBackground },
+    '@/lib/minidiscAlbumPalette': { minidiscAlbumCoverSize },
+    '@/components/volta/MinidiscAlbumHeader': { MinidiscAlbumHeader: 'MinidiscAlbumHeader' },
     '@/store/artistPicker': { useArtistPicker: (select: (s: unknown) => unknown) => select({ open() {} }) },
     '@/store/player': { usePlayerStore: (select: (s: unknown) => unknown) => select({ shuffle: false, queueDealt: false }) },
+    '@/store/settings': { useSettings: (select: (s: unknown) => unknown) => select(settings) },
     '@/theme': theme,
     '@/theme/motion': { motion: { duration: { fade: 120 }, reduceMotion: { decorative: 'system' } } },
     './BackChevron': { BackChevron: 'Back' }, './BarBlur': { TopBarBackground: 'TopBar' },
@@ -210,7 +219,8 @@ function list() {
   const row = (index: number) => find(recycler().props.renderItem({ item: recycler().props.data[index], index }), (node) => node.type === 'TrackRow')!;
   const search = () => find(recycler().props.ListHeaderComponent, (node) => node.type === 'TextInput')!;
   render();
-  return { render, recycler, row, search, played, removed, gestures, scrolls, dock, timings,
+  return { render, recycler, row, search, played, removed, gestures, scrolls, dock, timings, animatedValues: anim.values,
+    setUiStyle(style: UiStyle) { settings.uiStyle = style; return render(); },
     unmount: runtime.unmount, stateWrites: () => runtime.stateWrites,
     material: () => find(recycler().props.ListHeaderComponent, (node) => node.type === 'GlassBackdrop'),
     detach() { if (typeof mountedRef === 'function') mountedRef(null); else if (mountedRef) mountedRef.current = null; },
@@ -265,10 +275,20 @@ function nativeAnimatedObject() {
 
 function row() {
   const runtime = hooks();
+  let pagePalette: Record<string, string> | undefined;
   const anim = animation(runtime);
   const presses: string[] = [];
   const longs: string[] = [];
   const menus: string[] = [];
+  const settings = { uiStyle: 'spotify' as UiStyle, showSongDuration: true, showListRating: false,
+    swipeAction: 'queue', swipeLeftAction: 'off' };
+  const settingsModule = { useSettings: (select: (s: unknown) => unknown) => select(settings) };
+  const styleModule = load('theme/appleMusic.ts', runtime.react, {
+    'react-native': native, '@/theme': theme,
+  });
+  const styleHookModule = load('hooks/useAppleMusicStyle.ts', runtime.react, {
+    '@/store/settings': settingsModule,
+  });
   const pressModule = load('hooks/usePressFeedback.ts', runtime.react, {
     'react-native-reanimated': anim.api, '@/theme/motion': { motion: { duration: { press: 120, exit: 100 } } },
   });
@@ -284,11 +304,14 @@ function row() {
     '@/store/downloads': { useDownloads: (select: (s: unknown) => unknown) => select({ files: {} }) },
     '@/store/player': { usePlayerStore: (select: (s: unknown) => unknown) => select({ addToQueue() {}, playNext() {} }) },
     '@/store/songMenu': { useSongMenu: (select: (s: unknown) => unknown) => select({ open: (song: any) => menus.push(song.id) }) },
-    '@/store/settings': { useSettings: (select: (s: unknown) => unknown) => select({ showSongDuration: true, showListRating: false, swipeAction: 'queue', swipeLeftAction: 'off' }) },
+    '@/store/settings': settingsModule,
     '@/lib/haptics': { haptic() {} },
     '@/store/toast': { useToast: (select: (s: unknown) => unknown) => select({ show() {} }) },
     '@/i18n': { useT: () => (value: string) => value },
     '@/theme': theme,
+    '@/hooks/useAppleMusicStyle': styleHookModule,
+    '@/theme/appleMusic': styleModule,
+    '@/components/volta/ArtistPagePalette': { useArtistPagePalette: () => pagePalette },
     './Cover': { Cover: 'Cover', useCoverRadius: () => 4 },
     '@/hooks/usePressFeedback': pressModule,
     '@/lib/perfLog': { bump() {} },
@@ -305,12 +328,144 @@ function row() {
   };
   render();
   return { render, presses, longs, menus, props: () => props, equal: module.TrackRow.equal,
+    setUiStyle(style: UiStyle) { settings.uiStyle = style; return render(); },
+    setPagePalette(value: Record<string, string> | undefined) { pagePalette = value; return render(); },
     body: () => find(tree, (node) => node.type === 'Animated:Pressable')!,
     menu: () => find(tree, (node) => node.type === 'Pressable')!,
     tree: () => tree, values: anim.values, unmount: runtime.unmount };
 }
 
 describe('recycled shared playlist rendering and positions', () => {
+  it('applies the artist page foreground after Apple row styling and restores defaults outside its context', () => {
+    const h = row();
+    h.setUiStyle('appleMusic');
+    const palette = { text: '#FAF9F3', textSecondary: '#D5D1C8', textMuted: '#C2BCAF', accent: '#F3E9D2' };
+    h.setPagePalette(palette);
+    const textColor = (text: string | number) => {
+      const node = find(h.tree(), element => element.type === 'Text' && element.props.children === text)!;
+      return Object.assign({}, ...[node.props.style].flat(Infinity).filter(Boolean)).color;
+    };
+    assert.equal(textColor(songA.title), palette.text);
+    assert.equal(textColor(songA.artist), palette.textSecondary);
+    assert.equal(textColor('2:03'), palette.textMuted);
+    assert.equal(h.menu().props.children.props.color, palette.textSecondary);
+    h.render({ isCurrent: true });
+    assert.equal(textColor(songA.title), palette.accent);
+    h.render({ position: 4, isCurrent: false });
+    assert.equal(textColor(4), palette.textMuted);
+    h.setPagePalette(undefined);
+    assert.equal(textColor(songA.title), colors.text);
+    assert.equal(textColor(songA.artist), colors.textSecondary);
+    assert.equal(textColor(4), colors.textMuted);
+    h.body().props.onPress(event(1));
+    assert.deepEqual(h.presses, ['A'], 'the scoped palette never changes the live press binding');
+  });
+
+  it('switches the real header presentation without resetting occurrences, callbacks or duplicate selection', () => {
+    const h = list();
+    const initial = h.recycler().props;
+    const oldPress = h.row(2).props.onPress;
+    const containsPlayLabel = () => !!find(h.recycler().props.ListHeaderComponent,
+      (node) => node.type === 'Text' && node.props.children === 'Play');
+    assert.equal(containsPlayLabel(), false, 'the retained Spotify header has its original icon-only Play');
+    h.setUiStyle('appleMusic');
+    assert.equal(containsPlayLabel(), true, 'the actual optional Apple header has its labeled Play pill');
+    assert.equal(h.recycler().props.data, initial.data);
+    assert.equal(h.recycler().props.ref, initial.ref);
+    assert.equal(h.recycler().props.renderScrollComponent, initial.renderScrollComponent);
+    assert.equal(h.recycler().props.onScroll.handlers[1], h.dock);
+    assert.deepEqual(h.recycler().props.data.map((item: any) => item.rowKey), initial.data.map((item: any) => item.rowKey));
+    oldPress();
+    assert.deepEqual(h.played, [2], 'a pre-switch callback still targets the original duplicate occurrence');
+    h.row(2).props.onLongPress(); h.render();
+    h.setUiStyle('spotify');
+    assert.equal(containsPlayLabel(), false);
+    assert.equal(h.recycler().props.data, initial.data);
+    assert.equal(h.row(2).props.selected, true);
+    assert.equal(h.row(0).props.selected, false);
+    h.selectionBar().props.actions.find((action: any) => action.icon === 'remove-circle-outline').onPress();
+    assert.equal(JSON.stringify(h.removed), '[[12]]', 'switching style must not change the selected server position');
+  });
+
+  it('switches Volta and Minidisc albums without replacing the recycler, scroll owner or duplicate selection', () => {
+    const h = list();
+    h.setUiStyle('appleMusic');
+    const initial = h.recycler();
+    const oldPress = h.row(2).props.onPress;
+    initial.props.onScroll.handlers[0].onScroll({ contentOffset: { y: 420 } });
+    const position = h.animatedValues.find((value) => value.get() === 420);
+    assert.ok(position, 'the production scroll handler must update its real shared value');
+    oldPress();
+    assert.deepEqual(h.played, [2]);
+    h.row(2).props.onLongPress(); h.render();
+
+    const albumPresentation = { palette: buildMinidiscAlbumPalette('#F5B52F', false), meta: 'Electronic · 2026' };
+    for (const presentation of [albumPresentation, undefined, albumPresentation, undefined]) {
+      h.render({ albumPresentation: presentation });
+      const current = h.recycler();
+      assert.equal(!!find(current.props.ListHeaderComponent, (node) => node.type === 'MinidiscAlbumHeader'), !!presentation);
+      assert.equal(current.type, initial.type);
+      assert.equal(current.props.ref, initial.props.ref, 'the same native FlashList owns the scroll position');
+      assert.equal(current.props.renderScrollComponent, initial.props.renderScrollComponent);
+      assert.equal(current.props.data, initial.props.data);
+      assert.equal(current.props.onScroll.handlers[1], h.dock);
+      assert.ok(h.animatedValues.includes(position));
+      assert.equal(position.get(), 420, 'changing only album presentation cannot reset native scrolling');
+      assert.equal(h.row(2).props.selected, true);
+      assert.equal(h.row(0).props.selected, false);
+    }
+    assert.deepEqual(h.scrolls, [], 'no imperative scroll reset is requested');
+    h.render({ albumPresentation });
+    h.setUiStyle('spotify');
+    assert.equal(find(h.recycler().props.ListHeaderComponent, (node) => node.type === 'MinidiscAlbumHeader'), undefined,
+      'the saved album preference never replaces Spotify pages');
+    h.selectionBar().props.actions.find((action: any) => action.icon === 'remove-circle-outline').onPress();
+    assert.equal(JSON.stringify(h.removed), '[[12]]', 'the selected occurrence keeps its original server position');
+  });
+
+  it('uses the original Volta album action row and retains favorite in its existing overflow menu', () => {
+    const h = list();
+    const played: { index: number; shuffled?: boolean }[] = [];
+    let downloads = 0, menus = 0;
+    const album = { albumActionLayout: 'volta', favorite: { id: 'album-one', type: 'album', starred: true },
+      download: { status: 'done', progress: 1, onPress: () => { downloads++; } },
+      onMenu: () => { menus++; }, onPlay: (index: number, options?: { shuffled?: boolean }) => played.push({ index, ...options }) };
+    h.setUiStyle('appleMusic'); h.render(album);
+    const initial = h.recycler().props;
+    const header = () => h.recycler().props.ListHeaderComponent;
+    const buttons: Element[] = [];
+    function collect(tree: unknown) {
+      if (Array.isArray(tree)) { tree.forEach(collect); return; }
+      if (!tree || typeof tree !== 'object' || !('props' in tree)) return;
+      const element = tree as Element;
+      if (element.type === 'GlassPressable' && element.props.accessibilityLabel) buttons.push(element);
+      collect(element.props.children);
+    }
+    collect(header());
+    assert.deepEqual(buttons.map((button) => button.props.accessibilityLabel), ['Shuffle', 'Play', 'Remove download', 'More options']);
+    assert.equal(find(header(), (node) => node.type === 'Favorite'), undefined,
+      'favorite must not occupy a disconnected second row under Play');
+    for (const button of buttons) button.props.onPress();
+    assert.deepEqual(played, [{ index: 0, shuffled: true }, { index: 0 }]);
+    assert.equal(downloads, 1);
+    assert.equal(menus, 1, 'the overflow opens the existing album menu with its favorite action');
+    assert.equal(h.recycler().props.data, initial.data);
+    assert.equal(h.recycler().props.ref, initial.ref);
+    assert.equal(h.recycler().props.renderScrollComponent, initial.renderScrollComponent);
+    h.row(2).props.onLongPress(); h.render();
+    assert.equal(h.row(2).props.selected, true, 'the compact action row must retain batch selection');
+    h.render({ download: undefined });
+    assert.equal(find(header(), (node) => node.props.accessibilityLabel === 'Download')!.props.disabled, true,
+      'offline albums keep a stable four-slot layout without enabling unavailable downloads');
+    assert.ok(find(header(), (node) => node.props.accessibilityLabel === 'More options'));
+    const palette = buildMinidiscAlbumPalette('#F5B52F', false);
+    h.render({ albumPresentation: { palette, meta: 'Electronic · 2026' } });
+    assert.equal(find(header(), (node) => node.type === 'MinidiscAlbumHeader')!.props.palette, palette,
+      'Minidisc keeps its own existing action presentation');
+    h.setUiStyle('spotify');
+    assert.ok(find(header(), (node) => node.type === 'Favorite'), 'Spotify keeps its original favorite control');
+  });
+
   it('passes a stable function ref so installed RN Animated cannot traverse twenty thousand playlist occurrences', () => {
     const h = list();
     h.render({ songs: Array.from({ length: 20_000 }, (_, index) => ({ ...songA, id: String(index) })) });
@@ -563,6 +718,22 @@ describe('collapsed search material capture safety in the actual shared list', (
 });
 
 describe('production recycled row and press feedback ownership', () => {
+  it('keeps a row touch owned by the same song while its presentation switches', () => {
+    const h = row();
+    h.body().props.onTouchStart(event(10));
+    h.body().props.onPressIn(event(10));
+    const resetKey = find(h.tree(), (node) => node.type === 'Cover')!.props.resetKey;
+    h.setUiStyle('appleMusic');
+    assert.equal(find(h.tree(), (node) => node.type === 'Cover')!.props.resetKey, resetKey);
+    h.body().props.onTouchEnd(event(11));
+    h.body().props.onPressOut(event(11));
+    h.body().props.onPress(event(11));
+    assert.deepEqual(h.presses, ['A']);
+    h.setUiStyle('spotify');
+    h.menu().props.onPress(event(20));
+    assert.deepEqual(h.menus, ['A']);
+  });
+
   it('compares duplicate occurrence, playback/server position and list scope even for the same Song object', () => {
     const h = row();
     for (const [field, value] of Object.entries({ rowOccurrenceKey: 'A#1', displayIndex: 1, serverIndex: 12, ownerScope: 'list-two' }))

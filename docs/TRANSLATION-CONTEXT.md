@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 900 of them.
+Every string the app can show, under the screen it shows up on. 975 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -69,7 +69,6 @@ you are actually typing into, which is easier than reading it here.
 | `Genre` | Label of a field in the song information sheet |
 | `Go to album` | Leave this sheet and open the album the song is on |
 | `Go to artist` | Leave this sheet and open the artist |
-| `Library` | The settings section, and a folder in the car |
 | `Mix of “{name}”` | What the player calls the queue once it has grown past its album into songs the app picked itself. `{name}` is the song it was grown from |
 | `Mix started` | The toast that says the app is now picking the songs |
 | `Moods` | Mood tags the server has on the song: mellow, energetic… |
@@ -142,6 +141,7 @@ you are actually typing into, which is easier than reading it here.
 | `DJ-mixes` | Shelf heading: recordings of several tracks blended one into the next by a DJ. Kept as-is in Spanish and Catalan, since the term travels |
 | `Downloaded` | Badge on something whose files are on the phone |
 | `EPs` | Shelf heading: records longer than a single and shorter than an album |
+| `Featured` |  |
 | `Field recordings` | Shelf heading: records made of the world itself, nature or a city, rather than of performed music |
 | `Interviews` | Shelf heading: records of somebody being interviewed, usually the artist |
 | `Live` | Shelf heading: records of a performance in front of an audience. Not the verb, and not “currently playing” |
@@ -196,7 +196,6 @@ you are actually typing into, which is easier than reading it here.
 | --- | --- |
 | `A-Z` | Sort option: the order of a list |
 | `Find an album` | The search box's placeholder on that screen |
-| `Library` | The settings section, and a folder in the car |
 | `New releases` | Home shelf and album sort: albums by the year they came out, newest first. Not "Recently added", which is when the server got hold of them |
 | `No albums yet` | Empty state heading |
 | `Nothing played yet` | Empty state: this phone has not played anything yet |
@@ -330,6 +329,7 @@ you are actually typing into, which is easier than reading it here.
 | `Most played songs` | A section of Home: the songs played most, as songs |
 | `New releases` | Home shelf and album sort: albums by the year they came out, newest first. Not "Recently added", which is when the server got hold of them |
 | `Paused on {player}` |  |
+| `Picks for you` |  |
 | `Play here` |  |
 | `Playing on {player}` | Heading of the card at the top of Home: a song playing right now in another app or on another device of the same account. {player} is that app's name, like Feishin |
 | `Random albums` | A section of Home: albums picked at random, to happen upon something |
@@ -356,6 +356,7 @@ you are actually typing into, which is easier than reading it here.
 | `Playlist` | A list saved on the server. Not the queue |
 | `Playlist created` | The toast after making one |
 | `Public` |  |
+| `Recently added` | A sort order, and a section: newest first (in Favorites, last favorited first) |
 | `Star albums to see them here.` | The line under an empty state, saying how to fill it |
 | `Star artists to see them here.` | The line under an empty state, saying how to fill it |
 | `Your library` | The tab with your albums, artists and playlists |
@@ -713,6 +714,38 @@ you are actually typing into, which is easier than reading it here.
 | `What happened, rather than how long it took.` | The line under `Counted`: that section is a tally of events, next to the sections above it which are timings |
 | `While minimized` | Section header on the Diagnostics screen, over what was measured with the app in the background rather than on screen. Minimized as in put away: the screen off or another app in front, with the music still going |
 
+## Settings › Download manager
+
+| String | What it is |
+| --- | --- |
+| `{bytes} received` |  |
+| `{done} of {total} songs downloaded` |  |
+| `{written} of {total}` |  |
+| `Cancel all` |  |
+| `Cancelled` |  |
+| `Choose Download from a song, album or playlist menu to add it here.` |  |
+| `Couldn't complete the action. Check your connection and try again.` |  |
+| `Download manager` |  |
+| `Downloaded` | Badge on something whose files are on the phone |
+| `Downloaded songs stay on your phone after restarting the app. Add unfinished downloads again.` |  |
+| `Downloading` | Section header over the download settings. A heading, not something happening right now |
+| `Downloads added from songs, albums, playlists and artists appear here. These are audio files kept for offline playback.` |  |
+| `Failed` |  |
+| `No download tasks yet` |  |
+| `Overall progress` |  |
+| `Overall progress is based on songs. When a file size is unknown, only the received data is shown.` |  |
+| `Pause all` |  |
+| `Paused` |  |
+| `Resumes waiting downloads and retries failed songs. Cancelled tasks stay cancelled.` |  |
+| `Return online to start or continue this task.` |  |
+| `Songs in queue` |  |
+| `Start all` |  |
+| `Stops unfinished downloads. Downloaded songs are kept.` | The line under “Cancel all”, explaining it |
+| `Tap Start all to retry this song.` |  |
+| `Unknown title` | Fallback when the file and the server have no title |
+| `Updating download queue…` |  |
+| `Waiting` |  |
+
 ## Settings › Downloads
 
 | String | What it is |
@@ -721,6 +754,8 @@ you are actually typing into, which is easier than reading it here.
 | `Applies to new downloads only.` | The line under “Download quality”, explaining it |
 | `At “Original” quality nothing is transcoded.` |  |
 | `Automatic offline mode` | Fall into offline mode by itself when the server cannot be reached, and come back when it can |
+| `Bulk artwork & lyrics` |  |
+| `Cache artwork and lyrics across your entire library.` | The line under “Bulk artwork & lyrics”, explaining it |
 | `Cache size` |  |
 | `Cache songs you play` |  |
 | `Cached songs` |  |
@@ -729,6 +764,7 @@ you are actually typing into, which is easier than reading it here.
 | `Delete all downloads` |  |
 | `Delete all downloads?` |  |
 | `Download codec` |  |
+| `Download manager` |  |
 | `Download over Wi-Fi only` |  |
 | `Download quality` |  |
 | `Downloading` | Section header over the download settings. A heading, not something happening right now |
@@ -752,6 +788,7 @@ you are actually typing into, which is easier than reading it here.
 | `Songs you stream are kept on this phone and play from it next time, with or without a connection. The next song in the queue is fetched ahead, so it is not streamed at all. When the cache is full, the songs played longest ago make room.` |  |
 | `Storage used` | Section header over the bar showing what is taking up room on the phone |
 | `Transcode lossless files only` |  |
+| `View song progress and pause, start or cancel your download queue.` | The line under “Download manager”, explaining it |
 | `Your server must support it.` |  |
 
 ## Settings › Equalizer
@@ -948,7 +985,6 @@ you are actually typing into, which is easier than reading it here.
 | `Keep at least one folder` | Refusing to remove the last folder of a local profile, which would leave it with no music |
 | `Keep at least one library on` | Toast: at least one of the server's libraries has to stay ticked |
 | `Libraries` | Section header over the server's libraries, when it has more than one |
-| `Library` | The settings section, and a folder in the car |
 | `Library updated` | Toast after the phone finished going through its own files |
 | `Local music` | Music stored on the phone itself |
 | `Music folders` | Settings > Local music: the list of phone folders the local profile reads its music from |
@@ -967,6 +1003,54 @@ you are actually typing into, which is easier than reading it here.
 | `That folder is already there` | The folder just picked is already in the local profile's list |
 | `We need permission to read your device music.` | Android has not granted access to the phone's files yet |
 | `Where should we get your music?` | Heading when choosing where the phone's own music is read from |
+
+## Settings › Media cache
+
+| String | What it is |
+| --- | --- |
+| `{done} of {total}` |  |
+| `Album covers` |  |
+| `Already cached` |  |
+| `Artist portraits` |  |
+| `Bulk artwork & lyrics` |  |
+| `Cache lyrics, album covers and artist portraits from your entire server library for offline use. This does not download audio or delete existing files.` |  |
+| `Caching {type}…` |  |
+| `Caching…` |  |
+| `Cancel task` |  |
+| `Choose at least one item type.` |  |
+| `Connect to a server to start.` |  |
+| `Continue` |  |
+| `Continue keeps the current task selection. Changing the switches affects only your next scan.` |  |
+| `Continue to resume this saved task.` |  |
+| `Couldn't complete the action. Check your connection and try again.` |  |
+| `Couldn't finish this task. Cached files have been kept.` |  |
+| `Current task` |  |
+| `Failed` |  |
+| `Finished. Missing items and failed requests are listed below.` |  |
+| `Loading…` |  |
+| `Lyrics follow your current source settings and keep word-by-word timing when available. Existing cached items are skipped; each scan adds only what is missing.` |  |
+| `Newly cached` |  |
+| `Not selected` |  |
+| `Paused` |  |
+| `Paused after switching accounts. Return to the original account to continue its task.` |  |
+| `Paused by Wi-Fi only. Connect to Wi-Fi, then continue.` |  |
+| `Paused while the app was in the background. Tap Continue when you are ready.` |  |
+| `Paused while the server is unavailable or offline mode is on. Restore the connection, then continue.` |  |
+| `Progress by type` |  |
+| `Ready to scan` |  |
+| `Remaining` |  |
+| `Retry failed items only` |  |
+| `Return online to start or continue this task.` |  |
+| `Scan selected items` |  |
+| `Scanning the entire library…` |  |
+| `Starts an incremental scan of the entire library.` |  |
+| `Stops the remaining work and keeps files already cached.` | The line under “Cancel task”, explaining it |
+| `Task cancelled. Cached files have been kept.` |  |
+| `Total` |  |
+| `Unavailable at source` |  |
+| `Unavailable at source means no matching artwork or lyrics were found. It is counted separately from failed requests and is not retried automatically.` |  |
+| `What to cache` |  |
+| `You can pause this task at any time.` |  |
 
 ## Settings › Navigation bar
 
@@ -999,8 +1083,11 @@ you are actually typing into, which is easier than reading it here.
 
 | String | What it is |
 | --- | --- |
+| `Album page style` |  |
 | `Always show the navigation bar` |  |
 | `Appearance` |  |
+| `Apple Music style` |  |
+| `Applies to album pages in Apple Music style. Spotify style keeps its original album pages. Your player and glass settings stay unchanged.` |  |
 | `At the top of Home, what is playing in your other apps and devices, ready to carry on here.` |  |
 | `Cover corners` |  |
 | `Dark` | The appearance the app has always had, and what it uses unless the other is chosen. |
@@ -1019,6 +1106,7 @@ you are actually typing into, which is easier than reading it here.
 | `Interface` | Section header grouping toggles |
 | `Language` |  |
 | `Light` | The light appearance, in Settings › Theme |
+| `Minidisc` |  |
 | `More rounded` | One of the values of “Cover corners” |
 | `Navigation` | Section header: how you move around the app |
 | `Navigation bar` | Settings screen: which tabs are on the bar at the bottom, and in what order |
@@ -1030,12 +1118,16 @@ you are actually typing into, which is easier than reading it here.
 | `Scheduled` |  |
 | `Show tab names` |  |
 | `Song lists` | The setting for how song lists look |
+| `Spotify style` |  |
 | `Square` | One of the values of “Cover corners” |
 | `Start on your playlists` | A switch: with it on, Your library with no chip pressed shows the Favorites entry and the playlists, the way it used to, instead of albums, artists and playlists mixed together |
 | `Swipe left` | What dragging a song to the left in a list does |
 | `Swipe right` | What dragging a song to the right in a list does. Its values are the actions listed under it |
+| `Switch page layouts instantly. Your playback, downloads, theme and glass settings stay as configured.` |  |
 | `System` | Two places: a theme setting (use whichever appearance the phone itself is set to, light or dark), and `System::section`, the heading in Settings › Quality & playback over Keep screen on and the battery warning. Add `System::section` to your file if one word cannot do both |
 | `Theme` | The screen where the appearance and the accent colour are chosen, and the name of the row that opens it |
+| `UI style` |  |
+| `Volta` |  |
 | `With no chip pressed, Your library shows Favorites and your playlists instead of everything mixed together.` |  |
 | `Your library` | The tab with your albums, artists and playlists |
 
@@ -1302,6 +1394,7 @@ you are actually typing into, which is easier than reading it here.
 | `Favorites` | The songs, albums and artists you starred |
 | `Hold to go back to {tab}` | The hint on holding the back arrow. `{tab}` is Home, Search or Library |
 | `Home` | The first tab, and a folder in the car |
+| `Library` | The settings section, and a folder in the car |
 | `List` | An option in that menu: one row per item, instead of cards |
 | `Lyrics` | The words of the song. Also a line of the storage bar, where it is their size on the phone |
 | `Monospace` | A typeface whose characters all have the same width, in Settings › Font |
@@ -1324,7 +1417,6 @@ you are actually typing into, which is easier than reading it here.
 | `Playlist name` | The name field when making or renaming a playlist |
 | `Playlists` | A section on Home and in the library, and a folder in the car |
 | `Rate {n} stars` | Read out by the screen reader for each star. `{n}` is which star it is |
-| `Recently added` | A sort order, and a section: newest first (in Favorites, last favorited first) |
 | `Remove` | Take something out of a list. Deleting for good is `Delete` |
 | `Remove download` | Delete the downloaded file, keeping the song in the library |
 | `Remove download?` | Dialog title: delete the files of something already downloaded |

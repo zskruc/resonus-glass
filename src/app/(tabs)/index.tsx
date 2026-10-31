@@ -3,7 +3,7 @@ import { GlassBackdrop, GlassPressable, GlassScreen as SafeAreaView } from '@/co
 import Icon from '@/components/Icon';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, router } from 'expo-router';
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useReducer, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -43,12 +43,14 @@ import { PlaylistCard } from '@/components/PlaylistCard';
 import { PodcastEpisodeCard } from '@/components/PodcastEpisodeCard';
 import { TrackRow } from '@/components/TrackRow';
 import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
+import { useDominantColor } from '@/hooks/useDominantColor';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
 import { columnsFor, useScreenSize } from '@/hooks/useScreenSize';
 import { songsLabel, useT } from '@/i18n';
 import { greetingHours } from '@/i18n/languages';
 import { haptic } from '@/lib/haptics';
 import { resolveHomeTitle } from '@/lib/homeTitle';
+import { voltaDetailBackground } from '@/lib/voltaPalette';
 import { listPerf } from '@/lib/listPerf';
 import { bump } from '@/lib/perfLog';
 import { playShuffle } from '@/lib/playShuffle';
@@ -86,10 +88,55 @@ const TILE_IDEAL = 300;
 const SHELF_CARD = 150;
 const SHELF_CARD_WIDE = 190;
 
+/** A presentation choice only: the same sources and user-configured shelves. */
+const AppleHomeContext = createContext(false);
+
+function HomeShelf({ children }: { children: ReactNode }) {
+  const appleMusic = useContext(AppleHomeContext);
+  return <View style={[styles.section, appleMusic && voltaStyles.section]}>{children}</View>;
+}
+
+function HomeShelfTitle({ children }: { children: ReactNode }) {
+  const appleMusic = useContext(AppleHomeContext);
+  return <Text style={[styles.sectionTitle, appleMusic && voltaStyles.sectionTitle]}>{children}</Text>;
+}
+
 /** How big this screen's shelf cards are. */
 function useShelfCard(): number {
-  const { wide } = useScreenSize();
+  const { width, wide } = useScreenSize();
+  const appleMusic = useContext(AppleHomeContext);
+  if (appleMusic) return wide ? 200 : Math.min(176, Math.round(width * 0.42));
   return wide ? SHELF_CARD_WIDE : SHELF_CARD;
+}
+
+/** Volta-style cover + tinted information card. No live blur in a scrolling shelf. */
+function VoltaQuickCard({
+  href, name, cover, subtitle, favorites, width,
+}: {
+  href: string;
+  name: string;
+  cover?: string;
+  subtitle?: string;
+  favorites?: boolean;
+  width: number;
+}) {
+  const t = useT();
+  const tint = useDominantColor(cover);
+  const background = voltaDetailBackground(tint, colors.background, colors.text, colors.textSecondary);
+  return (
+    <Link href={href} asChild>
+      <Pressable style={StyleSheet.flatten([voltaStyles.featureCard, { width, backgroundColor: background }])}>
+        {favorites ? <FavoritesArt size={width} square /> : <Cover uri={cover} size={width} style={voltaStyles.featureCover} />}
+        <View style={voltaStyles.featureInfo}>
+          <Text style={voltaStyles.featureKind} numberOfLines={1}>
+            {t(favorites ? 'Favorites' : href.startsWith('/playlist/') ? 'Playlist' : 'Album')}
+          </Text>
+          <Text style={voltaStyles.featureName} numberOfLines={1}>{name}</Text>
+          {subtitle ? <Text style={voltaStyles.featureSubtitle} numberOfLines={1}>{subtitle}</Text> : null}
+        </View>
+      </Pressable>
+    </Link>
+  );
 }
 
 function QuickTile({
@@ -128,6 +175,7 @@ function QuickGrid() {
   // otherwise turning the phone leaves the tiles at the width they had when
   // the app started (#131).
   const { width } = useScreenSize();
+  const appleMusic = useContext(AppleHomeContext);
   const columns = columnsFor(width, TILE_IDEAL, 2, 4);
   const tile = (width - spacing.lg * 2 - spacing.sm * (columns - 1)) / columns;
   const canFetch = useAuthStore((s) => !!s.auth || s.offline);
@@ -162,7 +210,7 @@ function QuickGrid() {
   // distributed among active sources sorted by last play.
   const dynamicCount = Math.max(0, size - (withFavorites ? 1 : 0));
   const tiles = useMemo(() => {
-    type Item = { key: string; href: string; name: string; cover?: string; ts: number };
+    type Item = { key: string; href: string; name: string; cover?: string; subtitle?: string; ts: number };
     const pl: Item[] = withPlaylists
       ? (playlists ?? []).map((p) => {
           const href = `/playlist/${p.id}`;
@@ -170,6 +218,7 @@ function QuickGrid() {
             key: href,
             href,
             name: p.name,
+            subtitle: p.owner,
             cover: coverArtUrl(p.coverArt ?? p.id, COVER.thumb),
             ts: times[href] ?? 0,
           };
@@ -182,6 +231,7 @@ function QuickGrid() {
             key: href,
             href,
             name: a.name,
+            subtitle: a.artist,
             cover: coverArtUrl(a.coverArt ?? a.id, COVER.thumb),
             ts: times[href] ?? 0,
           };
@@ -215,6 +265,34 @@ function QuickGrid() {
   // decides if the block mounts; this covers "all off" from here).
   if (!withFavorites && tiles.length === 0) return null;
 
+  if (appleMusic) {
+    const card = Math.min(310, Math.round(width * 0.62));
+    const gap = 16;
+    const picks = [
+      ...(withFavorites ? [{ key: '/favorites', href: '/favorites', name: t('Favorites'), favorites: true }] : []),
+      ...tiles.map((item) => ({ ...item, favorites: false })),
+    ];
+    return (
+      <HomeShelf>
+        <HomeShelfTitle>{t('Picks for you')}</HomeShelfTitle>
+        <FlatList
+          horizontal
+          data={picks}
+          keyExtractor={(item) => item.key}
+          initialNumToRender={3}
+          maxToRenderPerBatch={3}
+          windowSize={3}
+          showsHorizontalScrollIndicator={false}
+          decelerationRate="fast"
+          snapToInterval={card + gap}
+          contentContainerStyle={voltaStyles.featureRow}
+          getItemLayout={(_, index) => ({ length: card + gap, offset: (card + gap) * index, index })}
+          renderItem={({ item }) => <VoltaQuickCard {...item} width={card} />}
+        />
+      </HomeShelf>
+    );
+  }
+
   return (
     <View style={styles.grid}>
       {withFavorites ? (
@@ -236,11 +314,12 @@ function QuickGrid() {
  */
 function SectionHeader({ title, href }: { title: string; href: string }) {
   const t = useT();
+  const appleMusic = useContext(AppleHomeContext);
   return (
     <Link href={href} asChild>
-      <Pressable style={styles.sectionHeader}>
-        <Text style={styles.sectionHeaderTitle}>{title}</Text>
-        <Text style={styles.showAll}>{t('Show all')}</Text>
+      <Pressable style={StyleSheet.flatten([styles.sectionHeader, appleMusic && voltaStyles.sectionHeader])}>
+        <Text style={[styles.sectionHeaderTitle, appleMusic && voltaStyles.sectionHeading]}>{title}</Text>
+        {appleMusic ? <Icon name="chevron-forward" size={20} color={colors.textMuted} /> : <Text style={styles.showAll}>{t('Show all')}</Text>}
       </Pressable>
     </Link>
   );
@@ -270,16 +349,16 @@ function AlbumSection({
 
   if (isLoading) {
     return (
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{title}</Text>
+      <HomeShelf>
+        <HomeShelfTitle>{title}</HomeShelfTitle>
         <AlbumCardsSkeleton horizontal />
-      </View>
+      </HomeShelf>
     );
   }
   if (!data || data.length === 0) return null;
 
   return (
-    <View style={styles.section}>
+    <HomeShelf>
       <SectionHeader title={title} href={`/browse/albums?sort=${type}`} />
       <FlatList
         {...listPerf}
@@ -290,7 +369,7 @@ function AlbumSection({
         contentContainerStyle={styles.rowContent}
         renderItem={({ item }) => <AlbumCard album={item} width={card} />}
       />
-    </View>
+    </HomeShelf>
   );
 }
 
@@ -396,19 +475,19 @@ function MostPlayedSongsSection({ title }: { title: string }) {
 
   if (isLoading) {
     return (
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{title}</Text>
+      <HomeShelf>
+        <HomeShelfTitle>{title}</HomeShelfTitle>
         <AlbumCardsSkeleton horizontal />
-      </View>
+      </HomeShelf>
     );
   }
   if (!data || data.length === 0) return null;
 
   return (
-    <View style={styles.section}>
+    <HomeShelf>
       <SectionHeader title={title} href="/browse/songs?sort=frequent" />
       <SongListCarousel songs={data} currentId={currentId} title={title} />
-    </View>
+    </HomeShelf>
   );
 }
 
@@ -430,19 +509,19 @@ function RandomSongsSection({ title }: { title: string }) {
 
   if (isLoading) {
     return (
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{title}</Text>
+      <HomeShelf>
+        <HomeShelfTitle>{title}</HomeShelfTitle>
         <AlbumCardsSkeleton horizontal />
-      </View>
+      </HomeShelf>
     );
   }
   if (!data || data.length === 0) return null;
 
   return (
-    <View style={styles.section}>
+    <HomeShelf>
       <SectionHeader title={title} href="/browse/songs?sort=random" />
       <SongListCarousel songs={data} currentId={currentId} title={title} />
-    </View>
+    </HomeShelf>
   );
 }
 
@@ -459,17 +538,17 @@ function PlaylistsSection({ title }: { title: string }) {
 
   if (isLoading) {
     return (
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{title}</Text>
+      <HomeShelf>
+        <HomeShelfTitle>{title}</HomeShelfTitle>
         <AlbumCardsSkeleton horizontal />
-      </View>
+      </HomeShelf>
     );
   }
   if (!data || data.length === 0) return null;
 
   return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+    <HomeShelf>
+      <HomeShelfTitle>{title}</HomeShelfTitle>
       <FlatList
         {...listPerf}
         horizontal
@@ -479,7 +558,7 @@ function PlaylistsSection({ title }: { title: string }) {
         contentContainerStyle={styles.rowContent}
         renderItem={({ item }) => <PlaylistCard playlist={item} width={card} />}
       />
-    </View>
+    </HomeShelf>
   );
 }
 
@@ -494,17 +573,17 @@ function PodcastEpisodesSection({ title }: { title: string }) {
 
   if (isLoading) {
     return (
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{title}</Text>
+      <HomeShelf>
+        <HomeShelfTitle>{title}</HomeShelfTitle>
         <AlbumCardsSkeleton horizontal />
-      </View>
+      </HomeShelf>
     );
   }
   if (!data || data.length === 0) return null;
 
   return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+    <HomeShelf>
+      <HomeShelfTitle>{title}</HomeShelfTitle>
       <FlatList
         {...listPerf}
         horizontal
@@ -514,7 +593,7 @@ function PodcastEpisodesSection({ title }: { title: string }) {
         contentContainerStyle={styles.rowContent}
         renderItem={({ item }) => <PodcastEpisodeCard item={item} width={card} />}
       />
-    </View>
+    </HomeShelf>
   );
 }
 
@@ -574,16 +653,16 @@ function ArtistSection({ title, reshuffleKey }: { title: string; reshuffleKey: n
   // its place instead of appearing from nowhere four seconds in.
   if (isLoading || (canFetch && !ready)) {
     return (
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{title}</Text>
+      <HomeShelf>
+        <HomeShelfTitle>{title}</HomeShelfTitle>
         <AlbumCardsSkeleton horizontal />
-      </View>
+      </HomeShelf>
     );
   }
   if (artists.length === 0) return null;
 
   return (
-    <View style={styles.section}>
+    <HomeShelf>
       <SectionHeader title={title} href="/browse/artists?sort=random" />
       <FlatList
         {...listPerf}
@@ -594,7 +673,7 @@ function ArtistSection({ title, reshuffleKey }: { title: string; reshuffleKey: n
         contentContainerStyle={styles.rowContent}
         renderItem={({ item }) => <ArtistCard artist={item} width={artistSize} />}
       />
-    </View>
+    </HomeShelf>
   );
 }
 
@@ -607,6 +686,9 @@ const DISCOVER_POOL = 50;
 function DiscoverSection({ title, reshuffleKey }: { title: string; reshuffleKey: number }) {
   const canFetch = useAuthStore((s) => !!s.auth || s.offline);
   const card = useShelfCard();
+  const appleMusic = useContext(AppleHomeContext);
+  const { width } = useScreenSize();
+  const featureWidth = Math.min(340, width - spacing.lg * 2 - 12);
   const { data, isLoading } = useQuery({
     queryKey: ['albumList', 'discover'],
     queryFn: () => getAlbumList('recent', DISCOVER_POOL, DISCOVER_OFFSET),
@@ -621,27 +703,35 @@ function DiscoverSection({ title, reshuffleKey }: { title: string; reshuffleKey:
 
   if (isLoading) {
     return (
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{title}</Text>
+      <HomeShelf>
+        <HomeShelfTitle>{title}</HomeShelfTitle>
         <AlbumCardsSkeleton horizontal />
-      </View>
+      </HomeShelf>
     );
   }
   if (albums.length === 0) return null;
 
   return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+    <HomeShelf>
+      <HomeShelfTitle>{title}</HomeShelfTitle>
       <FlatList
         {...listPerf}
         horizontal
         data={albums}
         keyExtractor={(item: Album) => item.id}
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.rowContent}
-        renderItem={({ item }) => <AlbumCard album={item} width={card} />}
+        contentContainerStyle={appleMusic ? voltaStyles.featureRow : styles.rowContent}
+        {...(appleMusic ? {
+          initialNumToRender: 2, maxToRenderPerBatch: 3, windowSize: 3,
+          decelerationRate: 'fast' as const, snapToInterval: featureWidth + 16,
+          getItemLayout: (_: unknown, index: number) => ({ length: featureWidth + 16, offset: (featureWidth + 16) * index, index }),
+        } : {})}
+        renderItem={({ item }) => appleMusic ? (
+          <VoltaQuickCard href={`/album/${item.id}`} name={item.name} subtitle={item.artist}
+            cover={coverArtUrl(item.coverArt ?? item.id, COVER.card)} width={featureWidth} />
+        ) : <AlbumCard album={item} width={card} />}
       />
-    </View>
+    </HomeShelf>
   );
 }
 
@@ -677,6 +767,7 @@ const OFFLINE_KEYS = new Set<HomeChipKey>([
 
 function HomeChips({ offline }: { offline: boolean }) {
   const t = useT();
+  const appleMusic = useContext(AppleHomeContext);
   const chips = useSettings((s) => s.homeChips).filter(
     (c) => c.enabled && (!offline || OFFLINE_KEYS.has(c.key)),
   );
@@ -703,7 +794,7 @@ function HomeChips({ offline }: { offline: boolean }) {
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      style={styles.chipsRow}
+      style={[styles.chipsRow, appleMusic && voltaStyles.chipsRow]}
       contentContainerStyle={styles.chips}
     >
       {chips.map(({ key }) => {
@@ -715,7 +806,7 @@ function HomeChips({ offline }: { offline: boolean }) {
           return (
             <GlassPressable
               key={key}
-              style={styles.chip}
+              style={[styles.chip, appleMusic && voltaStyles.chip]}
               accessibilityRole="button"
               onPress={onShuffle}
             >
@@ -733,7 +824,7 @@ function HomeChips({ offline }: { offline: boolean }) {
         }
         return (
           <Link key={key} href={cfg.href} asChild>
-            <GlassPressable style={styles.chip}>
+            <GlassPressable style={StyleSheet.flatten([styles.chip, appleMusic && voltaStyles.chip])}>
               {icons ? <Icon name={cfg.icon} size={16} color={colors.text} /> : null}
               <Text style={styles.chipText}>{t(cfg.label)}</Text>
             </GlassPressable>
@@ -819,6 +910,7 @@ const HOME_ALBUM_CONFIG: Record<
  */
 function HomeHeaderButton({ which }: { which: HomeButtonKey }) {
   const t = useT();
+  const appleMusic = useContext(AppleHomeContext);
   if (which === 'search') {
     // Search from here, with the cursor already in the box: the tab is one tap
     // either way, and this saves the tap on the box that came after it. It is
@@ -826,6 +918,7 @@ function HomeHeaderButton({ which }: { which: HomeButtonKey }) {
     // its route.
     return (
       <GlassPressable variant="subtle"
+        style={appleMusic ? voltaStyles.headerButton : undefined}
         hitSlop={10}
         accessibilityLabel={t('Search')}
         onPress={() => {
@@ -848,7 +941,7 @@ function HomeHeaderButton({ which }: { which: HomeButtonKey }) {
         : (['/settings', 'settings-outline', 'Settings'] as const);
   return (
     <Link href={href} asChild>
-      <GlassPressable variant="subtle" hitSlop={10} accessibilityLabel={t(label)}>
+      <GlassPressable variant="subtle" style={appleMusic ? voltaStyles.headerButton : undefined} hitSlop={10} accessibilityLabel={t(label)}>
         <Icon name={icon} size={24} color={colors.text} />
       </GlassPressable>
     </Link>
@@ -857,6 +950,7 @@ function HomeHeaderButton({ which }: { which: HomeButtonKey }) {
 
 export default function HomeScreen() {
   const dockScroll = useLiquidDockScrollHandler();
+  const appleMusic = useSettings((s) => s.uiStyle === 'appleMusic');
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
@@ -949,6 +1043,7 @@ export default function HomeScreen() {
   }
 
   return (
+    <AppleHomeContext.Provider value={appleMusic}>
     <SafeAreaView style={styles.safe} edges={['top']}>
       <Animated.ScrollView
         onScroll={dockScroll}
@@ -963,8 +1058,8 @@ export default function HomeScreen() {
         }
       >
         {/* Scrolls away with the rest: pinned, it only took room. */}
-        <View style={styles.topHeader}>
-          <View style={styles.header}>
+        <View style={[styles.topHeader, appleMusic && voltaStyles.topHeader]}>
+          <View style={[styles.header, appleMusic && voltaStyles.header]}>
             {/* `flexShrink` and `numberOfLines`: the greeting is customizable,
                 and although the setting caps it at GREETING_MAX, those characters
                 measure differently depending on the chosen font. Shrinking and
@@ -979,11 +1074,11 @@ export default function HomeScreen() {
                   different matter and still says so, on the right. */}
               {/* The screen's name when there is no greeting, where Explore and
                   Your library have theirs. */}
-              <Text style={styles.greeting} numberOfLines={1}>
+              <Text style={[styles.greeting, appleMusic && voltaStyles.title]} numberOfLines={1}>
                 {resolveHomeTitle(customHomeTitle, showGreeting, greeting, t('Home'))}
               </Text>
             </View>
-            <View style={styles.headerRight}>
+            <View style={[styles.headerRight, appleMusic && voltaStyles.headerRight]}>
               {/* Before the buttons, and dimmer than them, so it reads as a state
                   and not as something to press. */}
               <OfflineIndicator />
@@ -1052,8 +1147,31 @@ export default function HomeScreen() {
         )}
       </Animated.ScrollView>
     </SafeAreaView>
+    </AppleHomeContext.Provider>
   );
 }
+
+/** Adapted visual rhythm from Volta's Home (GPL-3.0): large type and cover-led shelves. */
+const voltaStyles = themed((colors) => ({
+  topHeader: { paddingTop: 18 },
+  header: { alignItems: 'flex-end', marginBottom: 26 },
+  title: { fontSize: 34, lineHeight: 42, fontWeight: '700', letterSpacing: -0.8 },
+  headerRight: { gap: 8, alignItems: 'center' },
+  headerButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
+  section: { marginBottom: 30 },
+  sectionHeader: { justifyContent: 'flex-start', gap: 5, marginBottom: 14 },
+  sectionHeading: { fontSize: 24, lineHeight: 30, fontWeight: '700', letterSpacing: -0.4, flexShrink: 1 },
+  sectionTitle: { fontSize: 24, lineHeight: 30, fontWeight: '700', letterSpacing: -0.4, marginBottom: 14 },
+  chipsRow: { marginBottom: 26 },
+  chip: { backgroundColor: colors.surface, paddingHorizontal: 14, paddingVertical: 8 },
+  featureRow: { paddingHorizontal: spacing.lg, gap: 16 },
+  featureCard: { borderRadius: 18, overflow: 'hidden' },
+  featureCover: { borderRadius: 0 },
+  featureInfo: { padding: 14, gap: 4, minHeight: 96 },
+  featureKind: { color: colors.textSecondary, fontSize: 12, lineHeight: 16 },
+  featureName: { color: colors.text, fontSize: 18, lineHeight: 24, fontWeight: '600' },
+  featureSubtitle: { color: colors.textSecondary, fontSize: 15, lineHeight: 21 },
+}));
 
 const styles = themed((colors) => ({
   safe: { flex: 1, backgroundColor: colors.background },

@@ -30,6 +30,8 @@ import { Message } from '@/components/Message';
 import { useT } from '@/i18n';
 import { useAuthStore } from '@/store/auth';
 import { useSettings } from '@/store/settings';
+import { useAppleMusicStyle } from '@/hooks/useAppleMusicStyle';
+import { appleMusicStyles } from '@/theme/appleMusic';
 import {
   colors,
   fontSize,
@@ -95,6 +97,7 @@ export default function BrowseAlbumsScreen() {
 }
 
 export function AlbumsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) {
+  const appleMusic = useAppleMusicStyle();
   const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
@@ -210,9 +213,9 @@ export function AlbumsBrowser({ embedded, actionRef, searchOpen }: BrowserProps)
   return (
     <BrowseFrame embedded={embedded}>
       {embedded ? null : (
-        <View style={styles.header}>
+        <View style={[styles.header, appleMusic && appleMusicStyles.settingsHeader]}>
           <BackChevron />
-          <Text style={styles.title}>{t('Albums')}</Text>
+          <Text style={[styles.title, appleMusic && appleMusicStyles.settingsTitle]}>{t('Albums')}</Text>
           {/* Takes the same width as the back chevron so the title stays
               centered; there used to be an empty slot of the same width here. */}
           <View style={styles.headerAction}>{viewButton}</View>

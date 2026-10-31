@@ -86,11 +86,12 @@ type NativeTabsProps = NativeProps & Omit<LiquidGlassTabsProps, keyof LiquidGlas
   tabAccentColor?: number;
 };
 type UpdateTabsMotion = (hostId: number, position: number, progress: number, scaleX: number,
-  scaleY: number, velocity: number, panelOffset: number, opacity: number) => void;
-type UpdateDockProgress = (hostId: number, progress: number) => void;
-type UpdateButtonMotion = (hostId: number, progress: number, x: number, y: number) => void;
+  scaleY: number, velocity: number, panelOffset: number, opacity: number) => boolean;
+type UpdateDockProgress = (hostId: number, progress: number) => boolean;
+type UpdateButtonMotion = (hostId: number, progress: number, x: number, y: number) => boolean;
 type ReadDockScrollIntent = (hostId: number, scope: string) => number;
 type ExpandDockScrollInput = (hostId: number) => void;
+type RestoreDockScrollTarget = (hostId: number, scope: string, compact: boolean) => boolean;
 type UpdatePlayerSurfaceClip = (hostId: number, left: number, top: number, width: number,
   height: number, radius: number, opacity: number) => void;
 
@@ -113,10 +114,12 @@ export type LiquidGlassDiagnostics = {
 };
 
 const nativeModule = Platform.OS === 'android'
-  ? requireOptionalNativeModule<{ isSupported: boolean; themeTraceEnabled?: boolean; getDiagnostics(): Promise<LiquidGlassDiagnostics>;
+  ? requireOptionalNativeModule<{ isSupported: boolean; themeTraceEnabled?: boolean; artistFocusTraceEnabled?: boolean; getDiagnostics(): Promise<LiquidGlassDiagnostics>;
     updateTabsMotion: UpdateTabsMotion; updateDockProgress: UpdateDockProgress;
     updateButtonMotion: UpdateButtonMotion; readDockScrollIntent: ReadDockScrollIntent;
-    expandDockScrollInput: ExpandDockScrollInput; updatePlayerSurfaceClip?: UpdatePlayerSurfaceClip;
+    expandDockScrollInput: ExpandDockScrollInput; restoreDockScrollTarget: RestoreDockScrollTarget;
+    updatePlayerSurfaceClip?: UpdatePlayerSurfaceClip;
+    disableViewFocusHighlight?: (viewTag: number, nativeId: string) => Promise<boolean>;
     setPlayerTransitionTrace?: (enabled: boolean) => void }>('ResonusLiquidGlass')
   : null;
 
@@ -130,10 +133,14 @@ export const updateNativeDockProgress = nativeModule?.updateDockProgress ?? null
 export const updateNativeButtonMotion = nativeModule?.updateButtonMotion ?? null;
 export const readNativeDockScrollIntent = nativeModule?.readDockScrollIntent ?? null;
 export const expandNativeDockScrollInput = nativeModule?.expandDockScrollInput ?? null;
+export const restoreNativeDockScrollTarget = nativeModule?.restoreDockScrollTarget ?? null;
 export const updateNativePlayerSurfaceClip = nativeModule?.updatePlayerSurfaceClip ?? null;
 /** Opt-in bounded geometry diagnostics; the native default is disabled. */
 export const setPlayerTransitionTrace = nativeModule?.setPlayerTransitionTrace ?? null;
 export const isNativePlayerSurfaceClipAvailable = updateNativePlayerSurfaceClip !== null;
+/** One layout-time adjustment for a photographic button; never a motion call. */
+export const disableNativeViewFocusHighlight = nativeModule?.disableViewFocusHighlight ?? null;
+export const isArtistFocusTraceEnabled = Boolean(nativeModule?.artistFocusTraceEnabled);
 
 export type PlayerSurfaceClipViewProps = ViewProps & {
   onClipHostReady?: (event: NativeSyntheticEvent<{ hostId: number; cornerRadius?: number }>) => void;

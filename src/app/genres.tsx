@@ -21,6 +21,8 @@ import { GenreCard } from '@/components/GenreCard';
 import { GenreGridSkeleton } from '@/components/GenreGridSkeleton';
 import { Message } from '@/components/Message';
 import { useT } from '@/i18n';
+import { useAppleMusicStyle } from '@/hooks/useAppleMusicStyle';
+import { appleMusicStyles } from '@/theme/appleMusic';
 import { useAuthStore } from '@/store/auth';
 import {
   colors,
@@ -51,6 +53,7 @@ export default function GenresScreen() {
 }
 
 export function GenresBrowser({ embedded, searchOpen }: BrowserProps) {
+  const appleMusic = useAppleMusicStyle();
   const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
@@ -89,9 +92,9 @@ export function GenresBrowser({ embedded, searchOpen }: BrowserProps) {
   return (
     <BrowseFrame embedded={embedded}>
       {embedded ? null : (
-        <View style={styles.header}>
+        <View style={[styles.header, appleMusic && appleMusicStyles.settingsHeader]}>
           <BackChevron />
-          <Text style={styles.title}>{t('Genres')}</Text>
+          <Text style={[styles.title, appleMusic && appleMusicStyles.settingsTitle]}>{t('Genres')}</Text>
           <View style={{ width: 26 }} />
         </View>
       )}

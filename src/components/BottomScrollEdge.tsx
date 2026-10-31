@@ -94,8 +94,7 @@ export function BottomScrollEdge() {
       if (!state || !updateNativeDockProgress || state[0] <= 0) return;
       const previous = lastNativeMotion.get();
       if (previous[0] === state[0] && previous[1] === state[1]) return;
-      updateNativeDockProgress(state[0], state[1]);
-      lastNativeMotion.set(state);
+      if (updateNativeDockProgress(state[0], state[1])) lastNativeMotion.set(state);
     },
   );
   // The fallback only scales a gradient, retaining fixed native bounds too.
@@ -120,7 +119,10 @@ export function BottomScrollEdge() {
           tintColor={colors.background} tintOpacity={0.46} dark={dark}
           dockExpandedHeight={geometry.expandedHeight}
           dockCompactWidth={geometry.width} dockCompactHeight={geometry.compactHeight} dockCompactOffsetX={0}
-          onMotionHostReady={(event) => nativeHost.set(event.nativeEvent.hostId)} enabled={!underlay.reveal || underlayMaterial} />
+          onMotionHostReady={(event) => {
+            const next = event.nativeEvent.hostId;
+            if (next > nativeHost.get()) nativeHost.set(next);
+          }} enabled={!underlay.reveal || underlayMaterial} />
       ) : (
         <Animated.View pointerEvents="none" style={[styles.fallback, fallbackMorph]}>
           <LinearGradient pointerEvents="none"

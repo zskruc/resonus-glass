@@ -1164,7 +1164,7 @@ function ResonusPlayerScreen() {
             // Swapped: the heart takes the corner. It only reports state here —
             // tapping it still works, it's just the awkward spot to reach.
             <View style={styles.topFavorite}>
-              <FavoriteButton id={song.id} starred={favorited} size={24} />
+              <FavoriteButton id={song.id} starred={favorited} size={24} playlistSong={isFocused ? song : undefined} />
             </View>
           ) : (
             <CircleButton name="ellipsis-horizontal" label={t('More options')} onPress={() => openMenu(song, undefined, menuOptions())} />
@@ -1368,7 +1368,7 @@ function ResonusPlayerScreen() {
                 onPress={() => openMenu(song, undefined, menuOptions())}
               />
             ) : (
-              <FavoriteButton id={song.id} starred={favorited} size={26} />
+              <FavoriteButton id={song.id} starred={favorited} size={26} playlistSong={isFocused ? song : undefined} />
             )}
           </View>
 

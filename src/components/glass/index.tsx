@@ -121,16 +121,16 @@ export function FloatingGlassBackdrop({ radius, tint, blurred = true, appearance
     if (!state || !updateNativeDockProgress || state[0] <= 0) return;
     const last = previous.get();
     if (last[0] === state[0] && last[1] === state[1]) return;
-    updateNativeDockProgress(state[0], state[1]);
-    previous.set(state);
+    // Unattached/replaced native hosts reject the write. Never deduplicate a
+    // value the material has not received; readiness will replay it.
+    if (updateNativeDockProgress(state[0], state[1])) previous.set(state);
   }, [dockProgress, amPlus]);
   useAnimatedReaction(() => amPlus && buttonPressProgress ? [host.get(), buttonPressProgress.get(),
     buttonPressX?.get() ?? 0, buttonPressY?.get() ?? 0] : null, (state) => {
     if (!state || !updateNativeButtonMotion || state[0] <= 0) return;
     const last = previousPress.get();
     if (last.length === state.length && state.every((value, index) => last[index] === value)) return;
-    updateNativeButtonMotion(state[0], state[1], state[2], state[3]);
-    previousPress.set(state);
+    if (updateNativeButtonMotion(state[0], state[1], state[2], state[3])) previousPress.set(state);
   }, [amPlus, buttonPressProgress, buttonPressX, buttonPressY]);
   const fallbackDockStyle = useAnimatedStyle(() => {
     if (!dockProgress || dockExpandedWidth === undefined || dockCompactWidth === undefined) return {};
@@ -167,7 +167,10 @@ export function FloatingGlassBackdrop({ radius, tint, blurred = true, appearance
           preferUnblurredBackdrop={!kyantDefaults && target === 'miniPlayer' && blurred}
           dockCompactWidth={dockCompactWidth} dockCompactHeight={dockCompactHeight} dockCompactOffsetX={dockCompactOffsetX}
           dockRole={dockRole ?? (target === 'miniPlayer' ? 'mini' : 'navigation')} dockRowWidth={dockRowWidth}
-          onMotionHostReady={dockProgress || buttonPressProgress ? (event) => host.set(event.nativeEvent.hostId) : undefined}
+          onMotionHostReady={dockProgress || buttonPressProgress ? (event) => {
+            const next = event.nativeEvent.hostId;
+            if (next > host.get()) host.set(next);
+          } : undefined}
           radius={radius} blur={blurred ? profile.blur : 0} refraction={blurred ? profile.refraction : 0}
           refractionHeight={blurred ? profile.refractionHeight : 0}
           highlightWidth={profile.highlightWidth} highlightOpacity={profile.highlightOpacity}

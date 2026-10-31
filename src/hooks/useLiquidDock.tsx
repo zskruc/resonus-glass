@@ -1,7 +1,7 @@
 import { useIsFocused, usePathname, useSegments } from 'expo-router';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react';
-import { Keyboard } from 'react-native';
-import { makeMutable, ReduceMotion, useAnimatedScrollHandler, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
+import { AppState, Keyboard } from 'react-native';
+import { cancelAnimation, makeMutable, ReduceMotion, useAnimatedScrollHandler, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
 import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 
 import { AMPP_DOCK, amppSpringDamping } from '@/lib/amppDock';
@@ -158,6 +158,29 @@ export function LiquidDockProvider({ children }: PropsWithChildren) {
     if (!enabledRef.current || eventGeneration !== generationRef.current) return;
     setTargetState((previous) => previous.compact === target ? previous : { ...previous, compact: target });
   }, []);
+  useEffect(() => {
+    let previous = AppState.currentState;
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === previous) return;
+      previous = state;
+      const active = state === 'active';
+      const available = active && enabledRef.current;
+      const nextGeneration = ++generationRef.current;
+      scheduleOnUI(() => {
+        generation.set(nextGeneration);
+        nativeIntent.set(0);
+        cancelAnimation(progress);
+        // The UI target can be ahead of React when Android interrupts a drag.
+        // Preserve that target; neither resume nor focus regain means expand.
+        uiEnabled.set(available);
+        if (active) {
+          progress.set(uiCompact.get() ? 1 : 0);
+          scheduleOnRN(notifyCompact, uiCompact.get(), nextGeneration);
+        }
+      });
+    });
+    return () => subscription.remove();
+  }, [generation, nativeIntent, progress, uiEnabled, uiCompact, notifyCompact]);
   const requestNativeCompact = useCallback((target: boolean, eventScope: string) => {
     if (!nativeInput || !enabledRef.current || eventScope !== scopeRef.current) return;
     const expectedGeneration = generationRef.current;

@@ -33,6 +33,7 @@ import {
 import { AlbumRow } from '@/components/AlbumRow';
 import { ArtistRow } from '@/components/ArtistRow';
 import { Cover } from '@/components/Cover';
+import { VoltaLibraryOverview } from '@/components/volta/VoltaLibraryOverview';
 import { useHistoryTimes } from '@/hooks/useHistoryTimes';
 import { Dialog } from '@/components/Dialog';
 import { EmptyState } from '@/components/EmptyState';
@@ -563,7 +564,7 @@ interface LibItem {
  * is the same rows before anybody asked for less. Each says what it is under
  * its name, because in one list a record and a playlist are the same square.
  */
-function AllTab({ query, onNew }: { query: string; onNew?: () => void }) {
+function AllTab({ query, onNew, favoritesOnly = false }: { query: string; onNew?: () => void; favoritesOnly?: boolean }) {
   const dockScroll = useLiquidDockScrollHandler();
   const canFetch = useAuthStore((s) => !!s.auth || s.offline);
   const t = useT();
@@ -579,7 +580,7 @@ function AllTab({ query, onNew }: { query: string; onNew?: () => void }) {
   const lists = useQuery({
     queryKey: ['playlists'],
     queryFn: () => getPlaylists(),
-    enabled: canFetch,
+    enabled: canFetch && !favoritesOnly,
   });
   const starred = useQuery({
     queryKey: ['starred'],
@@ -589,7 +590,7 @@ function AllTab({ query, onNew }: { query: string; onNew?: () => void }) {
 
   const items = useMemo(() => {
     const all: LibItem[] = [
-      ...(lists.data ?? []).map((p) => ({
+      ...(favoritesOnly ? [] : lists.data ?? []).map((p) => ({
         kind: 'playlist' as const,
         id: p.id,
         name: p.name,
@@ -632,7 +633,7 @@ function AllTab({ query, onNew }: { query: string; onNew?: () => void }) {
       (i) => `${i.kind}:${i.id}`,
       pins,
     );
-  }, [lists.data, starred.data, query, sort, times, byAlbum, byArtist, pins]);
+  }, [lists.data, starred.data, query, sort, times, byAlbum, byArtist, pins, favoritesOnly]);
 
   /** "Playlist · juan", "Album · Rojuu", "Artist". */
   const label = (i: LibItem): string => {
@@ -686,7 +687,7 @@ function AllTab({ query, onNew }: { query: string; onNew?: () => void }) {
           <EmptyState
             icon="library-outline"
             title={t('Nothing here yet')}
-            subtitle={t('Your playlists and what you star show up here.')}
+            subtitle={favoritesOnly ? undefined : t('Your playlists and what you star show up here.')}
             action={onNew ? { label: t('New playlist'), onPress: onNew } : undefined}
           />
         )
@@ -830,6 +831,7 @@ export default function LibraryScreen() {
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
+  const appleMusic = useSettings((s) => s.uiStyle === 'appleMusic');
   // Counted, to answer whether a tab you have visited keeps working
   // afterwards: they stay mounted once opened, and freezing them is
   // supposed to stop them rendering while they are not on screen. If this
@@ -849,6 +851,7 @@ export default function LibraryScreen() {
    * nobody had asked for; that is now a setting (#217).
    */
   const [segment, setSegment] = useState<Segment | null>(null);
+  const [appleFavorites, setAppleFavorites] = useState(false);
   const showsPlaylists = useSettings((s) => s.libraryShowsPlaylists);
   /** And which playlists, once that chip is the one pressed. */
   const [owner, setOwner] = useState<Owner | null>(null);
@@ -912,7 +915,21 @@ export default function LibraryScreen() {
   function clearSegment() {
     setSegment(null);
     setOwner(null);
+    setAppleFavorites(false);
   }
+
+  // An Apple library category is a level inside this tab; Back returns to
+  // the classified overview, without adding a second navigation stack.
+  useFocusEffect(useCallback(() => {
+    if (!appleMusic || searchOpen || (!segment && !appleFavorites)) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setSegment(null);
+      setOwner(null);
+      setAppleFavorites(false);
+      return true;
+    });
+    return () => sub.remove();
+  }, [appleMusic, searchOpen, segment, appleFavorites]));
 
   /**
    * A chip is only worth drawing where it leaves something out. On a server
@@ -956,6 +973,11 @@ export default function LibraryScreen() {
   // the status bar and jumped down right after. The context already holds the
   // inset by then, which makes the first frame the right one.
   const insets = useSafeAreaInsets();
+  const appleOverview = appleMusic && segment === null && !appleFavorites && !searchOpen;
+  const appleDetail = appleMusic && (segment !== null || appleFavorites);
+  const appleTitle = segment
+    ? t(SEGMENTS.find((item) => item.key === segment)!.label)
+    : appleFavorites ? t('Favorites') : t('Library');
 
   const segmentChipRow = (segment ? SEGMENTS.filter((s) => s.key === segment) : SEGMENTS).map(
     (s) => {
@@ -1006,11 +1028,21 @@ export default function LibraryScreen() {
       {/* The screen's own chrome follows what it is over: with rows, it lines
           up with the centred column; with a grid, the grid fills the width and
           so does this (#131). */}
-      <View style={[styles.header, { paddingHorizontal: headerPad }]}>
-        <Text style={styles.heading}>{t('Your library')}</Text>
-        <View style={styles.headerActions}>
+      <View style={[styles.header, appleMusic && voltaLibraryStyles.header, { paddingHorizontal: headerPad }]}>
+        {appleMusic ? (
+          <View style={voltaLibraryStyles.titleRow}>
+            {appleDetail ? (
+              <Pressable style={voltaLibraryStyles.back} onPress={clearSegment} accessibilityRole="button" accessibilityLabel={t('Back')}>
+                <Icon name="chevron-back" size={25} color={colors.text} />
+              </Pressable>
+            ) : null}
+            <Text style={voltaLibraryStyles.title} numberOfLines={1}>{appleTitle}</Text>
+          </View>
+        ) : <Text style={styles.heading}>{t('Your library')}</Text>}
+        <View style={[styles.headerActions, appleMusic && voltaLibraryStyles.headerActions]}>
           <OfflineIndicator />
           <GlassPressable variant="subtle"
+            style={appleMusic ? voltaLibraryStyles.headerButton : undefined}
             hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel={searchOpen ? t('Close') : t('Search')}
@@ -1023,6 +1055,7 @@ export default function LibraryScreen() {
             />
           </GlassPressable>
           <GlassPressable variant="subtle"
+            style={appleMusic ? voltaLibraryStyles.headerButton : undefined}
             hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel={t('New playlist')}
@@ -1078,7 +1111,7 @@ export default function LibraryScreen() {
       {/* With a chip pressed the row is that chip and what narrows it further,
           behind an X that gives you the whole library back. The other two are
           not greyed out but gone: they are not narrower, they are elsewhere. */}
-      <ScrollView
+      {!appleOverview ? <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.segments}
@@ -1123,17 +1156,22 @@ export default function LibraryScreen() {
           {shownOwner ? segmentChipRow : ownerChipRow}
         </View>
 
-      </ScrollView>
+      </ScrollView> : null}
 
-      <View style={[styles.controls, { paddingHorizontal: headerPad }]}>
+      {!appleOverview ? <View style={[styles.controls, { paddingHorizontal: headerPad }]}>
         <SortBar onPress={() => setSortOpen(true)} />
         <LayoutToggle />
-      </View>
+      </View> : null}
       <SortSheet visible={sortOpen} onClose={() => setSortOpen(false)} />
 
       <View style={{ flex: 1 }}>
-        {segment === null && !showsPlaylists ? (
-          <AllTab query={filter} onNew={() => setCreating(true)} />
+        {appleOverview ? (
+          <VoltaLibraryOverview
+            onPlaylists={() => setSegment('playlists')}
+            onFavorites={() => { setAppleFavorites(true); setSegment(null); }}
+          />
+        ) : segment === null && (appleMusic || !showsPlaylists) ? (
+          <AllTab query={filter} favoritesOnly={appleMusic && appleFavorites} onNew={appleFavorites && appleMusic ? undefined : () => setCreating(true)} />
         ) : segment === null || segment === 'playlists' ? (
           <PlaylistsTab onNew={() => setCreating(true)} query={filter} owner={shownOwner} />
         ) : segment === 'albums' ? (
@@ -1145,6 +1183,15 @@ export default function LibraryScreen() {
     </View>
   );
 }
+
+const voltaLibraryStyles = themed((colors) => ({
+  header: { paddingTop: 18, paddingBottom: 16 },
+  titleRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4, marginRight: 12 },
+  title: { color: colors.text, fontSize: 34, lineHeight: 42, fontWeight: '700', letterSpacing: -0.8, flexShrink: 1 },
+  back: { width: 30, height: 44, alignItems: 'center', justifyContent: 'center' },
+  headerActions: { gap: 10 },
+  headerButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
+}));
 
 const styles = themed((colors) => ({
   safe: { flex: 1, backgroundColor: colors.background },

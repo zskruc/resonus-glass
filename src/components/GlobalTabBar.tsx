@@ -18,7 +18,7 @@
 import Icon from '@/components/Icon';
 import { useNavigationContainerRef, useRouter, useSegments } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { I18nManager, Pressable, StyleSheet, Text, View, type PressableProps } from 'react-native';
+import { AppState, I18nManager, Pressable, StyleSheet, Text, View, type PressableProps } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useAnimatedReaction,
@@ -34,7 +34,7 @@ import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 
 import { useBarBlur } from '@/components/BarBlur';
 import { FloatingGlassBackdrop } from '@/components/glass';
-import { isLiquidGlassAvailable, LiquidGlassTabsView, updateNativeDockProgress, updateNativeTabsMotion } from '../../modules/liquid-glass';
+import { isLiquidGlassAvailable, LiquidGlassTabsView, restoreNativeDockScrollTarget, updateNativeDockProgress, updateNativeTabsMotion } from '../../modules/liquid-glass';
 
 import { usePlayerDockUnderlay, useTabBarShown } from '@/hooks/useTabBar';
 import { PlayerDockUnderlay, usePlayerDockMaterialReady } from './PlayerDockUnderlay';
@@ -112,7 +112,7 @@ export function GlobalTabBar() {
   const dock = useLiquidDock();
   const { compact: targetCompact, uiCompact: dockCompactTarget,
     expand, hasSearch: dockHasSearch, enabled: dockEnabled, scope: dockScope,
-    nativeInput, nativeInputHost, requestNativeCompact } = dock;
+    nativeInput, nativeInputHost, requestNativeCompact, uiScope: dockUiScope, generation: dockGeneration, notifyCompact } = dock;
   const navigationOverrides = useGlassTuning((s) => s.mode === 'amPlus' ? s.amPlusOverrides.navigation : s.overrides.navigation);
   const glassMode = useGlassTuning((s) => s.mode);
   const amPlus = glassMode === 'amPlus';
@@ -159,6 +159,7 @@ export function GlobalTabBar() {
   // where else it shows.
   const blur = useBarBlur('tabs');
   const bottomTabs = useSettings((s) => s.bottomTabs);
+  const appleMusic = useSettings((s) => s.uiStyle === 'appleMusic');
   const showLabels = useSettings((s) => s.showTabLabels);
   const root = segments[0];
   const inTabs = root === '(tabs)' || root === undefined;
@@ -240,6 +241,7 @@ export function GlobalTabBar() {
   }, []);
   const positioned = useRef(false);
   const nativeMotionHost = useSharedValue(0);
+  const latestMotionHost = useRef(0);
   const lastNativeMotion = useSharedValue<number[]>([]);
   const motionEnabled = useSharedValue(false);
   const { press, release, releasePending, releaseFrameReady } = useLiquidTabsPress({
@@ -321,10 +323,11 @@ export function GlobalTabBar() {
     // Do not create a native mutable snapshot for the same eight tab values.
     let tabsChanged = previous.length !== motionState.length;
     for (let i = 0; !tabsChanged && i < 8; i++) tabsChanged = previous[i] !== motionState[i];
-    if (tabsChanged) updateNativeTabsMotion(motionState[0], motionState[1], motionState[2], motionState[3], motionState[4],
+    const tabsAccepted = !tabsChanged || updateNativeTabsMotion(motionState[0], motionState[1], motionState[2], motionState[3], motionState[4],
       motionState[5], motionState[6], motionState[7]);
-    if (previous[0] !== motionState[0] || previous[8] !== motionState[8]) updateNativeDockProgress?.(motionState[0], motionState[8]);
-    lastNativeMotion.set(motionState);
+    const dockChanged = previous[0] !== motionState[0] || previous[8] !== motionState[8];
+    const dockAccepted = !dockChanged || updateNativeDockProgress?.(motionState[0], motionState[8]);
+    if (tabsAccepted && dockAccepted) lastNativeMotion.set(motionState);
   });
 
   const foregroundShadow = amPlus ? {} : {
@@ -538,6 +541,49 @@ export function GlobalTabBar() {
       if (!panOwnsPress.get() && tapGeneration.get() === geometryGeneration.get()) release();
     });
 
+  /* eslint-disable react-hooks/preserve-manual-memoization -- Reanimated shared values remain mutable on the UI runtime; the React compiler is disabled for this app. */
+  const restoreMotionHost = useCallback((hostId?: number) => {
+    if (hostId !== undefined) {
+      if (hostId <= latestMotionHost.current) return;
+      latestMotionHost.current = hostId;
+    }
+    const nextGeneration = ++geometryGenerationRef.current;
+    scheduleOnUI(() => {
+      // A delayed readiness event must not rebind a host superseded by a
+      // newer focus/attachment cycle. Tokens increase for the native process.
+      if (hostId !== undefined && hostId < nativeMotionHost.get()) return;
+      geometryGeneration.set(nextGeneration);
+      dragging.set(false);
+      panOwnsPress.set(false);
+      dragFinished.set(false);
+      pressProgress.set(0);
+      scaleX.set(1);
+      scaleY.set(1);
+      dragVelocity.set(0);
+      panelOffset.set(0);
+      releasePending.set(false);
+      releaseFrameReady.set(0);
+      selectionDestination.set(routeSelection.get());
+      selectionPosition.set(routeSelection.get());
+      lastNativeMotion.set([]);
+      if (hostId !== undefined) {
+        nativeMotionHost.set(hostId);
+        nativeInputHost.set(hostId);
+        if (nativeInput) restoreNativeDockScrollTarget?.(hostId, dockUiScope.get(), dockCompactTarget.get());
+      }
+      if (dockCompactTarget.get() !== targetCompact)
+        scheduleOnRN(notifyCompact, dockCompactTarget.get(), dockGeneration.get());
+    });
+    setGlassPressed(false);
+  }, [geometryGeneration, dragging, panOwnsPress, dragFinished, pressProgress, scaleX, scaleY,
+    dragVelocity, panelOffset, releasePending, releaseFrameReady, selectionPosition, selectionDestination,
+    lastNativeMotion, nativeMotionHost, nativeInputHost, nativeInput, dockUiScope, dockCompactTarget, dockGeneration, notifyCompact, routeSelection, targetCompact]);
+  /* eslint-enable react-hooks/preserve-manual-memoization */
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', () => restoreMotionHost());
+    return () => subscription.remove();
+  }, [restoreMotionHost]);
+
   if (tabs.length === 0 && !searchTab) return null;
   return (
     <PlayerDockUnderlay active={underlay.reveal}>
@@ -572,10 +618,7 @@ export function GlobalTabBar() {
               tabsCount={tabs.length} tabHorizontalInset={horizontalInset} tabVerticalInset={INNER_GAP}
               dockCompactWidth={compactSize} dockCompactHeight={compactSize}
               dockCompactOffsetX={geometry.compactNavigationOffsetX}
-              onMotionHostReady={(event) => {
-                nativeMotionHost.set(event.nativeEvent.hostId);
-                nativeInputHost.set(event.nativeEvent.hostId);
-              }}
+              onMotionHostReady={(event) => restoreMotionHost(event.nativeEvent.hostId)}
               blur={blur ? glass.blur : 0} refraction={blur ? glass.refraction : 0}
               refractionHeight={blur ? glass.refractionHeight : 0}
               highlightWidth={glass.highlightWidth} highlightOpacity={glass.highlightOpacity}
@@ -615,7 +658,7 @@ export function GlobalTabBar() {
                   // Pressability below remains the accessibility/keyboard path.
                   accessibilityRole="tab"
                   accessibilityState={{ selected: here }}
-                  accessibilityLabel={t(tab.label)}
+                  accessibilityLabel={t(appleMusic && tab.segment === 'library' ? 'Library' : tab.label)}
                   onPress={(event) => {
                     // Physical taps belong to the UI recognizer. Android's
                     // accessibility click has no touch identifier and keeps
@@ -641,7 +684,7 @@ export function GlobalTabBar() {
                   </View>
                   {showLabels ? (
                     <Text style={[styles.label, here && styles.selectedLabel, amPlus && { fontSize: AMPP_DOCK.labelSize, fontWeight: '500' }, { color }, foregroundShadow]} numberOfLines={1}>
-                      {t(tab.label)}
+                      {t(appleMusic && tab.segment === 'library' ? 'Library' : tab.label)}
                     </Text>
                   ) : null}
                 </NavigationItem>
@@ -654,7 +697,7 @@ export function GlobalTabBar() {
             accessibilityElementsHidden={!compactInteractive} importantForAccessibility={compactInteractive ? 'auto' : 'no-hide-descendants'}
             style={[styles.compactContent, { start: rtl ? barWidth - compactSize : 0, width: compactSize, height: compactSize }, compactContentStyle]}>
             <Pressable style={[styles.compactButton, { borderRadius: compactSize / 2 }]} accessibilityRole="button"
-              accessibilityLabel={`${t(compactTab.label)}, ${t('Navigation bar')}`}
+              accessibilityLabel={`${t(appleMusic && compactTab.segment === 'library' ? 'Library' : compactTab.label)}, ${t('Navigation bar')}`}
               onPress={expand}>
               <Icon name={ICONS[compactTab.segment]} size={iconSize} color={amPlus && selectedSegment === 'search' ? colors.text : colors.accent} style={foregroundShadow} />
             </Pressable>

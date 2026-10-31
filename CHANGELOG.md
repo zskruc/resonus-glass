@@ -13,6 +13,44 @@ preserved upstream history.
 Releases before 0.2.1 are only listed on the
 [GitHub releases page](https://github.com/juananzzz/resonus/releases).
 
+## [0.8.4.1-amll.38] - 2026-10-31
+
+### Added
+
+- 可切换的 Apple Music／Spotify 界面风格，Apple Music 风格参考 Volta；专辑页另可选择 Volta／Minidisc。
+- 经官方来源及同图核验的艺人名字图；不可用时回退普通名字。
+- 设置 → 下载与离线新增封面／歌词批量缓存，支持分项扫描、进度、暂停、继续及失败重试。
+- 独立音频下载管理，显示总队列、总进度及逐曲进度，提供全部开始／暂停／取消和 1–20 首并发选择。
+
+### Changed
+
+- 重新整理艺人页取色、照片向下延伸、渐变模糊与滚动顶栏；Volta 专辑操作排为同一行。
+- 选择性适配上游 #304、#302、#301、#299，补充预热与播放请求的并发归属保护，以及播放器收藏按钮长按加入歌单。
+- 保留现有播放器布局、LNPopup 风格展开／收合、玻璃配置及已下载音乐。
+
+### Fixed
+
+- 底栏与 Mini Player 在后台返回后重新同步现有展开／折叠状态，丢弃旧窗口与旧手势的迟到更新。
+- 修复艺人艺术字与普通名字叠加、首帧尺寸不稳定，以及 Android 照片按钮焦点高亮形成整块暗边的问题。
+- 修复空队列离线恢复后，首次主动添加的下载误继承暂停状态；已有手动暂停任务仍需主动继续。
+- 下载取消与重新添加之间等待旧文件写入结束，防止旧任务删除新任务的文件。
+
+### Notes
+
+- ARM64 测试预发布：`0.8.4.1-amll.38` / Android `121`，与现有 Samsung Glass 安装使用相同包名和签名。
+- 已实测艺人页、照片查看、Volta 操作布局、展开／折叠底栏后台返回，以及真实下载进度、暂停、继续和中途取消。未自动启动整库缓存；本记录不代表持续 120 fps 验收。
+- 同步发布前，最终源码的 813 项应用测试及 canonical ID 检查全部通过；类型检查、原生构建及相关静态检查已通过。
+- 音频下载队列暂存于本次 App 会话，重启后未完成任务需重新添加；已完成音频保留。封面／歌词批量任务另有持久检查点。
+- 构建、自动检查与实机证据范围见 [预览记录](./docs/PREVIEW-35-36-CACHE-AND-DOWNLOADS.md)，第三方来源与许可见 [声明](./THIRD_PARTY_NOTICES.md)。
+
+### English
+
+- Adds optional Volta-inspired Apple Music browsing alongside Spotify style, selectable Volta/Minidisc album pages, verified official artist wordmarks, bulk artwork/lyrics caching and a real download manager with overall/per-song progress and 1–20 concurrent downloads.
+- Refines artist colors, photo extension and header transitions, aligns Volta actions, and adapts upstream #304/#302/#301/#299 with extra playback/warming ownership guards. Existing player layout, LNPopup-style presentation, glass profiles and offline files are retained.
+- Fixes dock restoration, duplicate/unstable artist names, Android photo focus dimming, stale idle download pause state and cancellation/file-cleanup races.
+- This ARM64 prerelease uses Android code 121 and the existing Glass signing key. Device checks cover artist/album UI, expanded/compact background restoration and real transfers with pause/resume/cancel. Bulk library caching was not started; sustained 120 fps is not claimed. Unfinished audio queues are session-only; completed audio and separate bulk-cache checkpoints persist.
+- All 813 app tests and canonical ID checks passed on the final source before publication, alongside prior type checks, the native build and scoped static checks.
+
 ## [0.8.4] - 2026-10-26
 
 ### Added

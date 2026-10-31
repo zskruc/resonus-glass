@@ -15,26 +15,34 @@ const mutable = (value: any) => ({ value, get() { return this.value; }, set(next
 // Actual MiniPlayer branching and props; Marquee's internal native identities,
 // measurement state and focus/foreground clocks are tested in marqueeLifecycle.
 function harness() {
+  const appListeners = new Set<(state: string) => void>();
+  const animationReaders: (() => any)[] = [];
   const dock = { amPlus: false, enabled: true, compact: false, hasSearch: false, progress: mutable(0) };
   const song = { id: 'one', title: 'A title longer than the mini player', artist: 'Artist' };
   const player = { song, index: 0, isPlaying: false, isBuffering: false, toggle() {}, next() {}, previous() {}, reset() {} };
   const settings = { playerPresentation: 'amll', miniPlayerButtons: 'none', marqueeTitles: true };
   const pan: Record<string, any> = {};
-  for (const key of ['minDistance', 'onBegin', 'onStart', 'onUpdate', 'onEnd', 'onFinalize']) pan[key] = () => pan;
+  const handlers: Record<string, (...args: any[]) => void> = {};
+  for (const key of ['minDistance', 'onBegin', 'onStart', 'onUpdate', 'onEnd', 'onFinalize']) pan[key] = (callback: any) => {
+    if (typeof callback === 'function') handlers[key] = callback;
+    return pan;
+  };
   const dependencies: Record<string, any> = {
     react: { useCallback: (callback: unknown) => callback, useRef: (value: unknown) => ({ current: value }),
-      useState: (value: unknown) => [value, () => {}], useLayoutEffect() {} },
+      useState: (value: unknown) => [value, () => {}], useLayoutEffect() {}, useEffect(create: () => void) { create(); } },
     'react/jsx-runtime': { jsx, jsxs: jsx },
-    'react-native': { ActivityIndicator: 'Spinner', I18nManager: { isRTL: false }, Pressable: 'Pressable', Text: 'Text', View: 'View' },
+    'react-native': { AppState: { addEventListener: (_event: string, callback: (state: string) => void) => {
+      appListeners.add(callback); return { remove: () => appListeners.delete(callback) };
+    } }, ActivityIndicator: 'Spinner', I18nManager: { isRTL: false }, Pressable: 'Pressable', Text: 'Text', View: 'View' },
     'react-native-gesture-handler': { Gesture: { Pan: () => pan }, GestureDetector: 'GestureDetector' },
     'react-native-reanimated': { __esModule: true,
       default: { View: 'AnimatedView', createAnimatedComponent: (value: unknown) => value },
       useSharedValue: mutable, useAnimatedRef: () => () => null, useDerivedValue: (get: () => unknown) => ({ get }),
-      useAnimatedStyle: (read: () => unknown) => ({ read }), useAnimatedReaction() {}, cancelAnimation() {},
+      useAnimatedStyle: (read: () => unknown) => { animationReaders.push(read); return { read }; }, useAnimatedReaction() {}, cancelAnimation() {},
       withTiming: (value: unknown) => value, withSpring: (value: unknown) => value,
       interpolate: (value: number, [low, high]: number[], [start, end]: number[]) => start + (end - start) * (value - low) / (high - low),
       Extrapolation: { CLAMP: 'clamp' } },
-    'react-native-worklets': { scheduleOnUI() {}, scheduleOnRN() {} },
+    'react-native-worklets': { scheduleOnUI: (callback: () => void) => callback(), scheduleOnRN() {} },
     'expo-router': { router: {} },
     '@/api/data': { COVER: { thumb: 'thumb' }, songCoverUrl: () => 'cover.jpg' },
     '@/hooks/useFavoriteIds': { useFavoriteIds: () => null },
@@ -70,9 +78,27 @@ function harness() {
     return [...(element.type === type ? [{ node: element, path }] : []), ...find(element.props.children, type, `${path}.children`)];
   };
   return { settings, song, dock, find,
+    handlers, app: (state: string) => appListeners.forEach((listener) => listener(state)),
+    cardMotion: () => animationReaders.map((read) => read()).find((style) => style.opacity !== undefined
+      && style.transform?.length === 1 && style.transform[0].translateY !== undefined),
     render(active = true) { return exports.MiniPlayer({ active }); },
   };
 }
+
+test('an interrupted mini drag cannot leave its card offscreen or let a late gesture completion dismiss it', () => {
+  const h = harness();
+  h.render();
+  h.handlers.onStart();
+  h.handlers.onUpdate({ translationX: 0, translationY: 60 });
+  assert.equal(h.cardMotion().transform[0].translateY, 60);
+  h.app('background');
+  assert.equal(h.cardMotion().transform[0].translateY, 0);
+  assert.equal(h.cardMotion().opacity, 1);
+  h.app('active');
+  h.handlers.onEnd({ translationX: 0, translationY: 200, velocityY: 1000 }, true);
+  assert.equal(h.cardMotion().transform[0].translateY, 0, 'old pointer must not move the resumed card offscreen');
+  assert.equal(h.dock.compact, false, 'transient cleanup must not choose another dock shape');
+});
 
 test('the real MiniPlayer retains the same marquee slot across cover and return, changing only its activity', () => {
   const h = harness();
@@ -99,4 +125,13 @@ test('only real compact endpoints or the user setting change the mini title layo
   const tree = h.render();
   assert.equal(h.find(tree, 'MarqueeText').length, 0);
   assert.equal(h.find(tree, 'Text').length, 1, 'the explicit setting still selects ordinary ellipsized text');
+});
+
+test('the real MiniPlayer only offers a playlist hold on its visible expanded favorite control', () => {
+  const h = harness(); h.settings.miniPlayerButtons = 'favorite';
+  const favorite = (active = true) => h.find(h.render(active), 'FavoriteButton')[0].node;
+  assert.equal(favorite().props.playlistSong, h.song);
+  assert.equal(favorite(false).props.playlistSong, undefined, 'covered mini controls must drop the hold capability');
+  h.dock.compact = true; h.dock.progress.set(1);
+  assert.equal(favorite().props.playlistSong, undefined, 'the hidden folded favorite cannot retain a hold');
 });

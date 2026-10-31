@@ -33,9 +33,42 @@ import * as Navidrome from './navidrome';
 import * as Subsonic from './backend';
 import * as Local from '@/lib/localQueries';
 import type { Song } from './subsonic';
+import * as MediaCache from '@/lib/mediaCacheDb';
+import * as FileSystem from 'expo-file-system/legacy';
+import { withSpeculativeSlot } from '@/lib/netBudget';
 
 function isOffline() { return useAuthStore.getState().offline; }
 function auth() { return useAuthStore.getState().auth!; }
+
+const ARTIST_CACHE_AGE = 24 * 60 * 60_000;
+const artistRefreshes = new Map<string, Promise<void>>();
+function currentMediaOwner(owner: Subsonic.SubsonicAuth): boolean { return useAuthStore.getState().auth === owner; }
+async function localArtistInfo(saved: MediaCache.SavedArtist): Promise<Subsonic.ArtistInfo | undefined> {
+  if (!saved.info) return undefined;
+  if (saved.heroUri) {
+    const file = await FileSystem.getInfoAsync(saved.heroUri).catch(() => undefined);
+    if (file?.exists) return { ...saved.info, imageUrl: saved.heroUri };
+  }
+  return isOffline() ? { ...saved.info, imageUrl: undefined } : saved.info;
+}
+function refreshArtistMedia(owner: Subsonic.SubsonicAuth, profile: string, id: string,
+  kind: 'detail' | 'info', load: () => Promise<unknown>): void {
+  const key = `${profile}|${kind}|${id}`;
+  if (artistRefreshes.has(key)) return;
+  const current = () => currentMediaOwner(owner) && !useAuthStore.getState().offline;
+  // Start after the cached query has been committed, so a fast background
+  // response cannot be overwritten by that initial cached result.
+  const work = new Promise<void>((resolve) => setTimeout(resolve, 0)).then(async () => {
+    if (!current()) return;
+    const value = await withSpeculativeSlot(current, load);
+    if (value === undefined || !current()) return;
+    const saved = await MediaCache.readSavedArtist(profile, id);
+    if (!current()) return;
+    const data = kind === 'info' && saved ? await localArtistInfo(saved) : value;
+    if (current() && data) queryClient.setQueryData([kind === 'info' ? 'artistInfo' : 'artist', id], data);
+  }).catch(() => {}).finally(() => { if (artistRefreshes.get(key) === work) artistRefreshes.delete(key); });
+  artistRefreshes.set(key, work);
+}
 
 /** Offline mode WITH a server account (not the local files-only profile):
  *  here the Library is a mirror of the server (see store/libraryMirror). */
@@ -818,12 +851,32 @@ export function getMusicDirectory(id: string): Promise<Subsonic.FolderContents> 
   return Subsonic.getMusicDirectory(auth(), id);
 }
 
-export function getArtist(id: string): Promise<{ artist: Subsonic.Artist; albums: Subsonic.Album[] }> {
+export async function getArtist(id: string): Promise<{ artist: Subsonic.Artist; albums: Subsonic.Album[] }> {
+  const owner = useAuthStore.getState().auth;
+  const profile = owner ? MediaCache.mediaCacheProfile(owner) : undefined;
+  const load = async () => {
+    const result = await getArtistUncached(id, owner!);
+    if (!currentMediaOwner(owner!)) throw new Error('Artist profile changed');
+    await MediaCache.saveArtistDetail(profile!, id, result, () => currentMediaOwner(owner!)).catch(() => {});
+    return result;
+  };
+  if (owner && profile) {
+    const saved = await MediaCache.readSavedArtist(profile, id).catch(() => undefined);
+    if (!currentMediaOwner(owner)) throw new Error('Artist profile changed');
+    if (saved?.detail) {
+      if (!isOffline() && Date.now() - saved.detailAt > ARTIST_CACHE_AGE) refreshArtistMedia(owner, profile, id, 'detail', load);
+      return saved.detail;
+    }
+  }
   if (isOffline()) {
     if (serverOffline()) return mirrorArtist(id);
     return Local.getArtist(id);
   }
-  return Subsonic.getArtist(auth(), id)
+  return owner ? load() : Local.getArtist(id);
+}
+
+function getArtistUncached(id: string, owner: Subsonic.SubsonicAuth): Promise<{ artist: Subsonic.Artist; albums: Subsonic.Album[] }> {
+  return Subsonic.getArtist(owner, id)
     .catch(async (e: unknown) => {
       // An id the server does not know, which happens with an artist opened
       // from something that was written down offline: down there they are
@@ -832,13 +885,15 @@ export function getArtist(id: string): Promise<{ artist: Subsonic.Artist; albums
       // rather than an error message (see `Local.serverArtistId`).
       const mapped = await Local.serverArtistId(id);
       if (!mapped || mapped === id) throw e;
-      return Subsonic.getArtist(auth(), mapped);
+      if (!currentMediaOwner(owner) || isOffline()) throw new Error('Artist profile changed');
+      return Subsonic.getArtist(owner, mapped);
     })
     .then((res) => {
+      if (!currentMediaOwner(owner)) throw new Error('Artist profile changed');
       useLibraryMirror.getState().saveArtist(res.artist.id, res.artist, res.albums);
       // Their picture, for the downloads, while there is a connection to get
       // it with. Only if their music is on the phone; it decides that itself.
-      void noteDownloadedArtist(auth(), res.artist);
+      void noteDownloadedArtist(owner, res.artist);
       return res;
     });
 }
@@ -866,7 +921,26 @@ async function mirrorArtist(
   return Local.getArtist(id);
 }
 
-export function getArtistInfo(id: string): Promise<Subsonic.ArtistInfo> {
+export async function getArtistInfo(id: string): Promise<Subsonic.ArtistInfo> {
+  const owner = useAuthStore.getState().auth;
+  if (owner) {
+    const profile = MediaCache.mediaCacheProfile(owner);
+    const load = async () => {
+      const info = await Subsonic.getArtistInfo(owner, id);
+      if (!currentMediaOwner(owner)) throw new Error('Artist profile changed');
+      await MediaCache.saveArtistInfo(profile, id, info, undefined, () => currentMediaOwner(owner)).catch(() => {});
+      return info;
+    };
+    const saved = await MediaCache.readSavedArtist(profile, id).catch(() => undefined);
+    if (!currentMediaOwner(owner)) throw new Error('Artist profile changed');
+    if (saved?.info) {
+      if (!isOffline() && Date.now() - saved.infoAt > ARTIST_CACHE_AGE) refreshArtistMedia(owner, profile, id, 'info', load);
+      const info = await localArtistInfo(saved);
+      if (!currentMediaOwner(owner)) throw new Error('Artist profile changed');
+      if (info) return info;
+    }
+    if (!isOffline()) return load();
+  }
   if (isOffline()) return Promise.resolve(Local.getArtistInfo(id));
   return Subsonic.getArtistInfo(auth(), id);
 }
@@ -1568,7 +1642,38 @@ export function search(query: string): Promise<Subsonic.SearchResult> {
 export async function getSongLyrics(
   song: Song,
   source: LyricsSource,
+  options: { strict?: boolean; stillCurrent?: () => boolean } = {},
 ): Promise<Subsonic.SongLyrics | null> {
+  const owner = useAuthStore.getState().auth;
+  const current = () => useAuthStore.getState().auth === owner && (!options.stillCurrent || options.stillCurrent());
+  const check = () => { if (!current()) throw new Error('Lyrics profile changed'); };
+  const profile = owner ? MediaCache.mediaCacheProfile(owner) : undefined;
+  if (profile && !song.localUri) {
+    // An explicitly downloaded sidecar/embedded lyric still wins offline.
+    const downloaded = useDownloads.getState().files[song.id] ?? cachedUri(song.id);
+    if (isOffline() && downloaded) {
+      const own = await getLocalLyrics({ ...song, localUri: downloaded }, false); check();
+      if (own) return own;
+    }
+    const saved = await MediaCache.readSavedLyrics(profile, song.id, source).catch(() => undefined); check();
+    if (saved) return saved;
+  }
+  const result = await getSongLyricsUncached(song, source, { ...options, stillCurrent: current }, owner);
+  check();
+  if (profile && result?.lines.length) {
+    const write = MediaCache.saveLyrics(profile, song.id, source, result, current);
+    if (options.strict) await write; else await write.catch(() => {});
+  }
+  return result;
+}
+
+async function getSongLyricsUncached(
+  song: Song,
+  source: LyricsSource,
+  options: { strict?: boolean; stillCurrent?: () => boolean },
+  owner: Subsonic.SubsonicAuth | null,
+): Promise<Subsonic.SongLyrics | null> {
+  const check = () => { if (options.stillCurrent && !options.stillCurrent()) throw new Error('Lyrics profile changed'); };
   const allowOnline = source !== 'off';
   const preferOnline = source === 'online';
   const downloaded = () =>
@@ -1582,7 +1687,7 @@ export async function getSongLyrics(
     const online = allowOnline && !isManualOffline();
     const uri = downloaded();
     if (uri) return getLocalLyrics({ ...song, localUri: uri }, online, preferOnline);
-    return online ? getOnlineLyrics(song) : null;
+    return online ? getOnlineLyrics(song, options) : null;
   }
   // A file already on the phone is read first even online: it is right there,
   // and it is what the person chose to carry.
@@ -1595,27 +1700,34 @@ export async function getSongLyrics(
     // 'online': LRCLIB first (it absorbs its own network errors and answers
     // null), then the server.
     if (preferOnline) {
-      const online = await getOnlineLyrics(song);
+      const online = await getOnlineLyrics(song, options); check();
       if (online) return online;
     }
     try {
-      const structured = await Subsonic.getLyricsBySongId(auth(), song.id);
+      check();
+      const structured = await Subsonic.getLyricsBySongId(owner!, song.id);
+      check();
       if (structured) return structured;
       // It answered, and it has nothing. The classic endpoint reads the same
       // place, so asking it as well was a second request per song for an answer
       // already given: seventy of them in a twenty three minute session, queued
       // in front of what the screens were waiting for (#50). Only a server that
       // rejects the modern one, which throws, gets the old question.
-      return allowOnline && !preferOnline ? getOnlineLyrics(song) : null;
-    } catch {
+      return allowOnline && !preferOnline ? getOnlineLyrics(song, options) : null;
+    } catch (error) {
+      check();
+      if (options.strict && (!(error instanceof Subsonic.SubsonicRequestError) || error.network || error.code !== 0)) throw error;
       // Server without the songLyrics extension: try the classic endpoint.
     }
-    const plain = await Subsonic.getLyrics(auth(), song.artist ?? '', song.title ?? '');
+    check();
+    const plain = await Subsonic.getLyrics(owner!, song.artist ?? '', song.title ?? '');
+    check();
     if (plain) return { synced: false, lines: plain.split('\n').map((value) => ({ value })) };
     // The server has none: LRCLIB if allowed and not already tried above.
-    if (allowOnline && !preferOnline) return getOnlineLyrics(song);
+    if (allowOnline && !preferOnline) return getOnlineLyrics(song, options);
     return null;
   } catch (e) {
+    if (options.strict) throw e;
     if (__DEV__) console.log('[lyrics] the server path threw', e);
     // Only reached with no network: with one, the inner catch has already
     // absorbed a server without the extension. A downloaded song still has the
@@ -1632,6 +1744,11 @@ export function scrobble(id: string): Promise<void> {
   // had: the player is what decides to keep a refused listen, and it does not
   // come through here.
   return Subsonic.scrobble(auth(), id).catch(() => {});
+}
+
+/** Library/local tracks have playlist IDs; direct radio and podcast URLs do not. */
+export function canGoIntoPlaylist(song: Pick<Song, 'url'>): boolean {
+  return !song.url;
 }
 
 export async function addToPlaylist(playlistId: string, songId: string): Promise<void> {

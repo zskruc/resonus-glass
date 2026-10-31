@@ -6,12 +6,14 @@
  * there are no pinned items to show.
  */
 import { Link } from 'expo-router';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 
 import Icon from '@/components/Icon';
 import { COVER, coverArtUrl, type Album } from '@/api/data';
 import { usePressFeedback } from '@/hooks/usePressFeedback';
+import { useAppleMusicStyle } from '@/hooks/useAppleMusicStyle';
+import { appleMusicStyles } from '@/theme/appleMusic';
 import { haptic } from '@/lib/haptics';
 import { useMediaMenu } from '@/store/mediaMenu';
 import { fontSize, spacing, themed, useTheme } from '@/theme';
@@ -33,6 +35,7 @@ export function AlbumRow({ album, pinned }: Props) {
   const { accent } = useTheme();
   const explicit = useExplicitBadge(album.explicitStatus);
   const press = usePressFeedback();
+  const appleMusic = useAppleMusicStyle();
 
   // The fade sits outside the Link: its child is handed to a `Slot`, which
   // refuses an array of styles, and an animated one cannot be flattened into
@@ -41,7 +44,7 @@ export function AlbumRow({ album, pinned }: Props) {
     <Animated.View style={press.style}>
       <Link href={`/album/${album.id}`} asChild>
         <Pressable
-          style={styles.row}
+          style={StyleSheet.flatten([styles.row, appleMusic && appleMusicStyles.mediaRow])}
           onPressIn={press.onPressIn}
           onPressOut={press.onPressOut}
           onLongPress={() => {
@@ -49,9 +52,9 @@ export function AlbumRow({ album, pinned }: Props) {
             openMenu({ kind: 'album', album });
           }}
         >
-          <Cover uri={coverArtUrl(album.coverArt ?? album.id, COVER.thumb)} size={56} />
-          <View style={styles.info}>
-            <Text style={styles.name} numberOfLines={1}>
+          <Cover uri={coverArtUrl(album.coverArt ?? album.id, COVER.thumb)} size={56} style={appleMusic ? appleMusicStyles.cover : undefined} />
+          <View style={[styles.info, appleMusic && appleMusicStyles.rowInfo]}>
+            <Text style={[styles.name, appleMusic && appleMusicStyles.rowTitle]} numberOfLines={1}>
               {album.name}
             </Text>
             {album.artist || pinned || explicit ? (
@@ -61,7 +64,7 @@ export function AlbumRow({ album, pinned }: Props) {
                 ) : null}
                 <ExplicitBadge status={album.explicitStatus} />
                 {album.artist ? (
-                  <Text style={styles.sub} numberOfLines={1}>
+                  <Text style={[styles.sub, appleMusic && appleMusicStyles.rowSubtitle]} numberOfLines={1}>
                     {album.artist}
                   </Text>
                 ) : null}

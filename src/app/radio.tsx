@@ -35,6 +35,8 @@ import { Message } from '@/components/Message';
 import { MenuGlassCardFrame, MenuGlassCardHeader } from '@/components/MenuGlassCard';
 import { RadioEditSheet, type RadioEdit } from '@/components/RadioEditSheet';
 import { useT } from '@/i18n';
+import { useAppleMusicStyle } from '@/hooks/useAppleMusicStyle';
+import { appleMusicStyles } from '@/theme/appleMusic';
 import { queryClient } from '@/lib/query';
 import { useAuthStore } from '@/store/auth';
 import { MAX_PINS, usePins } from '@/store/pins';
@@ -58,6 +60,7 @@ export default function RadioScreen() {
 }
 
 export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) {
+  const appleMusic = useAppleMusicStyle();
   const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
@@ -185,9 +188,9 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
   return (
     <BrowseFrame embedded={embedded}>
       {embedded ? null : (
-        <View style={styles.header}>
+        <View style={[styles.header, appleMusic && appleMusicStyles.settingsHeader]}>
           <BackChevron />
-          <Text style={styles.title}>{t('Radio')}</Text>
+          <Text style={[styles.title, appleMusic && appleMusicStyles.settingsTitle]}>{t('Radio')}</Text>
           {addButton ?? <View style={{ width: 28 }} />}
         </View>
       )}

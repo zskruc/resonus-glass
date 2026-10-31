@@ -3,8 +3,8 @@
  * play/pause button; tapping it opens the player.
  */
 import Icon from '@/components/Icon';
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { ActivityIndicator, I18nManager, Pressable, Text, View } from 'react-native';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ActivityIndicator, AppState, I18nManager, Pressable, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
@@ -203,6 +203,40 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
   // opened with no animation and `revealOffset` places it.
   const revealing = useSharedValue(false);
   const snappingOpen = useSharedValue(false);
+  const dismissing = useSharedValue(false);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', () => {
+      scheduleOnUI(() => {
+        // Android can cancel a pointer without delivering its final frame.
+        // Only clear transient mini gestures, never the full player's reveal.
+        cancelAnimation(translateX);
+        cancelAnimation(translateY);
+        cancelAnimation(contentOpacity);
+        if (dismissing.get()) {
+          dismissing.set(false);
+          scheduleOnRN(reset);
+        }
+        // The legacy player already owns its route after an upward reveal.
+        // Finish that handoff rather than leaving it at a partial screen offset.
+        if (revealing.get()) {
+          cancelAnimation(revealOffset);
+          revealOffset.set(withTiming(0, { duration: 0 }, () => revealOffset.set(-1)));
+        }
+        translateX.set(0);
+        translateY.set(0);
+        contentOpacity.set(1);
+        dragging.set(false);
+        gestureAxis.set(0);
+        revealing.set(false);
+        snappingOpen.set(false);
+        buttonPressProgress.set(0);
+        buttonOffsetX.set(0);
+        buttonOffsetY.set(0);
+      });
+    });
+    return () => subscription.remove();
+  }, [translateX, translateY, contentOpacity, dragging, gestureAxis, revealing, snappingOpen, dismissing, reset,
+    buttonPressProgress, buttonOffsetX, buttonOffsetY]);
   const startReveal = () => pushOnce(playerPresentation === 'amll' ? '/player?reveal=1&artwork=1' : '/player?reveal=1');
   const openPlayer = () => {
     if (playerPresentation === 'amll') scheduleOnUI(recordArtwork);
@@ -231,6 +265,7 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
       dragging.value = true;
       cancelAnimation(translateX);
       cancelAnimation(translateY);
+      dismissing.set(false);
     })
     .onUpdate((e) => {
       if (amPlus) {
@@ -275,7 +310,7 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
       }
     })
     .onEnd((e, success) => {
-      if (!success) return;
+      if (!success || !dragging.get()) return;
       dragging.value = false;
       if (snappingOpen.get()) return;
       const horizontal = !revealing.value && gestureAxis.value === 1;
@@ -301,8 +336,12 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
           });
         }
       } else if (e.translationY > DISMISS_Y || e.velocityY > 800) {
+        dismissing.set(true);
         translateY.value = withTiming(screenH, { duration: motion.duration.move }, (finished) => {
-          if (finished) scheduleOnRN(reset);
+          if (finished && dismissing.get()) {
+            dismissing.set(false);
+            scheduleOnRN(reset);
+          }
         });
       } else {
         translateX.value = withTiming(0, SWIPE_RETURN);
@@ -482,7 +521,8 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
                 pointerEvents={expandedControls ? 'auto' : 'none'} accessibilityElementsHidden={!expandedControls}
                 importantForAccessibility={expandedControls ? 'auto' : 'no-hide-descendants'}>
                 <View style={styles.control}>
-                  <FavoriteButton id={song.id} starred={favorited} size={24} unselectedColor={foreground} />
+                  <FavoriteButton id={song.id} starred={favorited} size={24} unselectedColor={foreground}
+                    playlistSong={props.active === false || !expandedControls ? undefined : song} />
                 </View>
               </Animated.View>
             ) : null}

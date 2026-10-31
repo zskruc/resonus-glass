@@ -9,7 +9,7 @@
 // in `src/api/subsonic.ts`.
 import { File, UploadType, type UploadResult } from 'expo-file-system';
 import { fetch } from 'expo/fetch';
-import { type Album, type Song, type SortDirection, type SubsonicAuth } from './subsonic';
+import { type Album, type Artist, type Song, type SortDirection, type SubsonicAuth } from './subsonic';
 import { DeadlineError, withDeadline } from './deadline';
 import { assertCanRequest } from './netGate';
 import { netTally } from '@/lib/perfLog';
@@ -404,6 +404,16 @@ export async function listSongs(
   for (const id of libraryIds ?? []) q.append('library_id', id);
   const rows = await ndJson<NdSong[]>(auth, `/api/song?${q.toString()}`);
   return Array.isArray(rows) ? rows.map(toSong) : [];
+}
+
+/** Complete native artist catalogue, including non-album-artist credits.
+ * A caller walks to an empty page; no fixed prefetch/search cap applies. */
+export async function listArtistsPage(auth: SubsonicAuth, count = 200, offset = 0): Promise<Artist[]> {
+  const query = new URLSearchParams({ _sort: 'name', _order: 'ASC', _start: String(offset), _end: String(offset + count) });
+  const rows = await ndJson<{ id: string; name?: string; albumCount?: number; imageAbsent?: boolean }[]>(auth, `/api/artist?${query}`);
+  if (!Array.isArray(rows)) throw new Error('Invalid artist catalogue');
+  return rows.filter((row) => typeof row.id === 'string').map((row) => ({ id: row.id,
+    name: row.name ?? '', albumCount: row.albumCount, coverArt: row.imageAbsent ? '' : undefined }));
 }
 
 /**

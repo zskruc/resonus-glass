@@ -15,6 +15,7 @@ import { canBlurBars } from '@/components/BarBlur';
 import { useLocalProfile } from '@/hooks/useLocalProfile';
 import { useT } from '@/i18n';
 import { haptic } from '@/lib/haptics';
+import { type AlbumStyle, type UiStyle } from '@/lib/uiStyle';
 import { useAuthStore } from '@/store/auth';
 import { useTheme } from '@/theme';
 import {
@@ -46,6 +47,10 @@ export default function AppearanceSettings() {
   // switch to un-grey: `getMusicDirectory` has no local side.)
   const canBrowseFolders = !local && (offline || serverType !== 'jellyfin');
   const language = useSettings((s) => s.language);
+  const uiStyle = useSettings((s) => s.uiStyle);
+  const setUiStyle = useSettings((s) => s.setUiStyle);
+  const albumStyle = useSettings((s) => s.albumStyle);
+  const setAlbumStyle = useSettings((s) => s.setAlbumStyle);
   const themeMode = useSettings((s) => s.themeMode);
   const themeModeLabel = {
     system: t('System'),
@@ -80,6 +85,32 @@ export default function AppearanceSettings() {
   return (
     <SettingsPage title={t('Appearance')}>
       <DockScrollView contentContainerStyle={settingsStyles.content}>
+        <Text style={settingsStyles.sectionTitle}>{t('UI style')}</Text>
+        <SelectList<UiStyle>
+          collapsible={false}
+          options={[
+            { value: 'appleMusic', label: t('Apple Music style') },
+            { value: 'spotify', label: t('Spotify style') },
+          ]}
+          value={uiStyle}
+          onChange={setUiStyle}
+        />
+        <Text style={settingsStyles.sectionDescription}>
+          {t('Switch page layouts instantly. Your playback, downloads, theme and glass settings stay as configured.')}
+        </Text>
+        <Text style={settingsStyles.sectionTitle}>{t('Album page style')}</Text>
+        <SelectList<AlbumStyle>
+          collapsible={false}
+          options={[
+            { value: 'volta', label: t('Volta') },
+            { value: 'minidisc', label: t('Minidisc') },
+          ]}
+          value={albumStyle}
+          onChange={setAlbumStyle}
+        />
+        <Text style={settingsStyles.sectionDescription}>
+          {t('Applies to album pages in Apple Music style. Spotify style keeps its original album pages. Your player and glass settings stay unchanged.')}
+        </Text>
         <SettingsGroup>
           <SettingRow
             label={t('Language')}

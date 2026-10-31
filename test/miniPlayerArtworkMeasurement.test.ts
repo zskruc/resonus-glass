@@ -51,7 +51,7 @@ function harness(options: { amPlus?: boolean; rtl?: boolean; progress?: number; 
       useRef: (value: unknown) => slot(() => ({ current: value })),
       useState: (initial: unknown) => { const state = slot(() => ({ value: initial }));
         return [state.value, (next: unknown) => { state.value = next; }]; },
-      useLayoutEffect: (callback: () => void) => { effects.push(callback); } },
+      useEffect() {}, useLayoutEffect: (callback: () => void) => { effects.push(callback); } },
     'react/jsx-runtime': { jsx, jsxs: jsx },
     'react-native': { ActivityIndicator: 'Spinner', I18nManager: { isRTL: options.rtl ?? false }, Pressable: 'Pressable', Text: 'Text', View: 'View' },
     'react-native-gesture-handler': { Gesture: { Pan: () => pan }, GestureDetector: 'GestureDetector' },

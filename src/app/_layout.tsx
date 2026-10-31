@@ -389,6 +389,8 @@ export default function RootLayout() {
                 <Stack.Screen name="history" />
                 <Stack.Screen name="settings/index" />
                 <Stack.Screen name="settings/downloads" />
+                <Stack.Screen name="settings/download-manager" />
+                <Stack.Screen name="settings/media-cache" />
                 <Stack.Screen name="settings/cache" />
                 <Stack.Screen name="settings/library" />
                 <Stack.Screen name="settings/playback" />

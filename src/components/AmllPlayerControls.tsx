@@ -12,6 +12,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { useT } from '@/i18n';
+import type { Song } from '@/api/data';
 import { FavoriteButton } from '@/components/FavoriteButton';
 import { useFavoriteIds } from '@/hooks/useFavoriteIds';
 import {
@@ -221,8 +222,8 @@ export function AmllPlayerMoreButton({ onPress, viewportWidth, viewportHeight, l
 }
 
 /** The shared favorite transaction with a flat player-only star presentation. */
-export function AmllPlayerFavoriteButton({ id, starred, active = true }: {
-  id: string; starred?: boolean; active?: boolean;
+export function AmllPlayerFavoriteButton({ id, starred, active = true, playlistSong }: {
+  id: string; starred?: boolean; active?: boolean; playlistSong?: Song;
 }) {
   const favorites = useFavoriteIds(active);
   return <View pointerEvents={active ? 'auto' : 'none'} accessibilityElementsHidden={!active}
@@ -231,6 +232,7 @@ export function AmllPlayerFavoriteButton({ id, starred, active = true }: {
     <View pointerEvents="none" style={{ position: 'absolute', width: 28, height: 28, borderRadius: 14,
       backgroundColor: 'rgba(255,255,255,0.15)' }} />
     <FavoriteButton id={id} starred={favorites ? favorites.has(id) : starred} glyph="star" size={22}
+      playlistSong={active ? playlistSong : undefined}
       selectedColor={WHITE} unselectedColor={WHITE} resetKey={`amll:${id}`} hitSlop={0}
       style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }} />
   </View>;

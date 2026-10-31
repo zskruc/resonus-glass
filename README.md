@@ -41,7 +41,17 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 | 渠道 | 版本 | Android 更新编号 | 获取方式 |
 | --- | --- | --- | --- |
 | 正式发布 | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest)，App 内检查更新 |
-| 开发预览 | `0.8.4.1-amll.15` | `97` | ARM64 APK 已构建并核对原签名；按用户要求暂不安装，实机验收待重新连接后进行 |
+| 开发预览 | `0.8.4.1-amll.38` | `121` | [预发布 APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.4.1-amll.38)，实机验收范围见预览记录 |
+
+当前预览加入艺人顶栏衔接与名字图修正、Volta 专辑操作排布、后台底栏恢复、批量封面／歌词缓存，以及独立下载管理。下载管理显示总队列和单曲进度，提供全部开始／暂停／取消，允许同时下载 1–20 首歌曲。实现边界及构建、实机记录见[本轮预览说明](./docs/PREVIEW-35-36-CACHE-AND-DOWNLOADS.md)。
+
+`.32` 适配上游 #304、#302、#301、#299，并补充播放／后台预热的并发归属保护。设置 → 外观 →「专辑页样式」可在 **Volta / Minidisc** 之间切换（Apple Music 风格下生效，默认 Volta）。艺人背景改从原图边角取色，照片下方使用连续的静态模糊与渐隐；保留现有播放器和玻璃参数。来源、检查及限制见 [本轮适配记录](./docs/UPSTREAM-PR-ADAPTATION-20261031.md)。
+
+`.33` 保留上述改动，补充官方艺人名字图、代理图片的本地内容核验和离线缓存；没有官方艺术字时仍显示普通名字。按 Ayano Tsuji 对照修正照片额外放大、素色偏色和过短渐隐，照片、模糊场共用单一最终遮罩；不改变标题及按钮位置。
+
+`.34` 根据三星实机对照，仅延后艺人照片的模糊／清晰细节交接并减轻最大模糊，保留已经匹配的底色、人物尺寸、淡出范围及其他控件。
+
+`.27` 新增参考 [Volta](https://github.com/countervolts/Volta) 的 **Apple Music风格**，可在 **设置 → 外观 → 界面风格** 与 **Spotify风格** 之间切换。首页、资料库、艺人和专辑／歌单详情采用可切换的页面布局，保留现有播放器、玻璃参数及用户资料。范围和验证限制见 [双风格预览说明](./docs/VOLTA-UI-PREVIEW.md)。下方早期版本说明保留为开发历史。
 
 当前开发预览位于 `preview/amll-player` 分支。播放页结合 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 派生的原生控件与 SVG，以及独立实现的封面／歌词界面和网格流动背景。「设置 → 播放器 → 播放器布局」可切回 Resonus 原有布局；下方「播放器背景」仅影响原有布局。控件与 SVG 的 **AGPL-3.0-only** 来源、保留的原有许可证和实现范围见 [第三方声明](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) 与 [预览说明](./docs/AMLL-PLAYER-PREVIEW.md)。
 

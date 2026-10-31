@@ -23,6 +23,7 @@ import { useBottomSheetAnim } from '@/hooks/useBottomSheetAnim';
 import { useScreenSize } from '@/hooks/useScreenSize';
 import {
   addToPlaylist,
+  canGoIntoPlaylist,
   coverArtUrl,
   songCoverUrl,
   createPlaylist,
@@ -336,7 +337,7 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
   const { data: playlists, isLoading: loadingPlaylists } = useQuery({
     queryKey: ['playlists'],
     queryFn: () => getPlaylists(),
-    enabled: (!!auth || offline) && mode === 'playlists',
+    enabled: (!!auth || offline) && canGoIntoPlaylist(song) && mode === 'playlists',
   });
 
   const explicit = useExplicitBadge(song?.explicitStatus);
@@ -393,7 +394,7 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
 
   /** Actually adds (without checking duplicates) and closes with a toast. */
   async function doAdd(playlistId: string, playlistName: string, alreadyDismissed = false, ticket?: number) {
-    if (!isOpenSession() || ticket !== undefined && !requests.owns(ticket)) return;
+    if (!canGoIntoPlaylist(song) || !isOpenSession() || ticket !== undefined && !requests.owns(ticket)) return;
     const actionTicket = beginRequest();
     actionClosing.current = true;
     if (alreadyDismissed) closeNow();
@@ -413,7 +414,7 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
   }
 
   async function addTo(playlistId: string, playlistName: string) {
-    if ((!auth && !offline) || !isOpenSession()) return;
+    if ((!auth && !offline) || !canGoIntoPlaylist(song) || !isOpenSession()) return;
     const ticket = beginRequest();
     // Spotify-style duplicate warning: if already present, ask first. If the
     // check fails (network), add without warning: better than blocking.
@@ -431,7 +432,7 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
   }
 
   async function createAndAdd(name: string) {
-    if (creating === null || !ownsConfirmation(creating) || (!auth && !offline) || !name.trim()) return;
+    if (creating === null || !ownsConfirmation(creating) || (!auth && !offline) || !canGoIntoPlaylist(song) || !name.trim()) return;
     const ticket = beginRequest();
     actionClosing.current = true;
     if (isCard) closeNow();
@@ -692,12 +693,12 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
                   onScroll={(e) => { if (!isCard) setAtTop(e.nativeEvent.contentOffset.y <= 0); }}
                 >
                   {extras.playbackModes ? <PlaybackModeActions canChange={isOpenSession} /> : null}
-                  <Action
+                  {canGoIntoPlaylist(song) ? <Action
                     icon="add-circle-outline"
                     label={t('Add to a playlist')}
                     onPress={() => setMode('playlists')}
-                  />
-                  {context ? (
+                  /> : null}
+                  {canGoIntoPlaylist(song) && context ? (
                     <Action
                       icon="remove-circle-outline"
                       label={t('Remove from playlist')}

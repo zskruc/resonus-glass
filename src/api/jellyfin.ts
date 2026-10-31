@@ -21,6 +21,7 @@ import { tg } from '@/i18n';
 import { wordsAt } from '@/lib/lyricWords';
 import {
   CLIENT_NAME,
+  COVER,
   normalizeUrl,
   SubsonicRequestError,
   type Album,
@@ -644,7 +645,7 @@ export async function getArtistInfo(auth: SubsonicAuth, id: string): Promise<Art
   ]);
   return {
     biography: item.Overview?.replace(/<[^>]+>/g, '').trim() || undefined,
-    imageUrl: item.ImageTags?.Primary ? coverArtUrl(auth, item.Id, 600) : undefined,
+    imageUrl: item.ImageTags?.Primary ? coverArtUrl(auth, item.Id, COVER.card) : undefined,
     similarArtists: (similar.Items ?? []).map(toArtist),
   };
 }
@@ -1258,7 +1259,7 @@ export async function reportPlayback(
 export function coverArtUrl(
   auth: SubsonicAuth,
   id: string | undefined,
-  size = 300,
+  size: number = COVER.card,
 ): string | undefined {
   if (!id) return undefined;
   return buildUrl(auth, `/Items/${id}/Images/Primary`, {

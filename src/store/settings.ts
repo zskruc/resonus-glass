@@ -6,6 +6,7 @@ import { isLanguage, LANGUAGE_NAMES, type Language } from '@/i18n/languages';
 import { type TabSegment } from '@/lib/tabOrigin';
 import { hashKey } from '@/lib/localLibrary';
 import { normalizeHomeTitle } from '@/lib/homeTitle';
+import { normalizeAlbumStyle, normalizeUiStyle, type AlbumStyle, type UiStyle } from '@/lib/uiStyle';
 import { setPerfEnabled } from '@/lib/perfLog';
 import { profileScopeGuard } from '@/lib/profileScope';
 import { queryClient } from '@/lib/query';
@@ -87,7 +88,10 @@ export const BITRATE_OPTIONS = [
  * anybody could choose, and on a small server transcoding each one it was too
  * much; two still overlaps one transfer with the next.
  */
-export const DOWNLOAD_CONCURRENCY_OPTIONS = [1, 2, 3];
+export const DOWNLOAD_CONCURRENCY_OPTIONS = Array.from({ length: 20 }, (_, index) => index + 1);
+export function normalizeDownloadConcurrency(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(1, Math.min(20, Math.round(value))) : 2;
+}
 
 /**
  * Codec to request for transcoding (Subsonic `format` parameter).
@@ -1149,6 +1153,10 @@ interface SettingsState extends Omit<AutoSetters, CustomSetter> {
   /** The user's own colour (hex), kept apart so picking one from the palette
    *  does not lose it; '' until one is made. */
   customAccentColor: string;
+  /** Browse-page design; independent from theme, player layout and glass. */
+  uiStyle: UiStyle;
+  /** Album detail presentation within Apple Music style; Spotify is unchanged. */
+  albumStyle: AlbumStyle;
   /** Dark (the app's own look), light, or whichever one the device is in. */
   themeMode: ThemePreference;
   /** With `themeMode` 'schedule': the hour (0–23) light starts, and dark. */
@@ -1375,6 +1383,8 @@ const DEFAULTS = {
   accentColor: DEFAULT_ACCENT,
   accentColorLight: DEFAULT_ACCENT,
   customAccentColor: '',
+  uiStyle: 'spotify' as UiStyle,
+  albumStyle: 'volta' as AlbumStyle,
   // Dark: the appearance the app was designed in. Light is opt-in.
   themeMode: 'dark' as ThemePreference,
   themeLightFrom: 7,
@@ -1397,6 +1407,7 @@ function autoSetters(
   const out: Record<string, (value: unknown) => void> = {};
   for (const key of PERSISTED_KEYS) {
     out[`set${key[0].toUpperCase()}${key.slice(1)}`] = (value) => {
+      if (key === 'downloadConcurrency') value = normalizeDownloadConcurrency(value);
       set({ [key]: value } as Partial<SettingsState>);
       persist(snapshot(get));
     };
@@ -1452,6 +1463,8 @@ function applySaved(raw: unknown, set: (partial: Partial<SettingsState>) => void
     if (typeof DEFAULTS[key] === 'boolean' && typeof value === 'boolean') flags[key] = value;
   }
   set(flags as Partial<SettingsState>);
+  set({ uiStyle: normalizeUiStyle(parsed.uiStyle) });
+  set({ albumStyle: normalizeAlbumStyle(parsed.albumStyle) });
   // One switch used to blur both bars.
   if (typeof parsed.blurMiniPlayer !== 'boolean' && typeof parsed.blurBars === 'boolean') {
     set({ blurMiniPlayer: parsed.blurBars });
@@ -1470,8 +1483,8 @@ function applySaved(raw: unknown, set: (partial: Partial<SettingsState>) => void
   if (typeof parsed.downloadBitRate === 'number') {
     set({ downloadBitRate: parsed.downloadBitRate });
   }
-  if (DOWNLOAD_CONCURRENCY_OPTIONS.includes(parsed.downloadConcurrency as number)) {
-    set({ downloadConcurrency: parsed.downloadConcurrency as number });
+  if (typeof parsed.downloadConcurrency === 'number') {
+    set({ downloadConcurrency: normalizeDownloadConcurrency(parsed.downloadConcurrency) });
   }
   if (TRANSCODE_FORMATS.includes(parsed.streamFormat as TranscodeFormat)) {
     set({ streamFormat: parsed.streamFormat as TranscodeFormat });

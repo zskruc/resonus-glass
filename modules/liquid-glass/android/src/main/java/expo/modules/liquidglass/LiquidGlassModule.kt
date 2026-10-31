@@ -1,6 +1,9 @@
 package expo.modules.liquidglass
 
 import android.os.Build
+import android.util.Log
+import android.view.View
+import com.facebook.react.R
 import expo.modules.kotlin.functions.Queues
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -10,10 +13,45 @@ class LiquidGlassModule : Module() {
     Name("ResonusLiquidGlass")
     Constant("isSupported") { Build.VERSION.SDK_INT >= Build.VERSION_CODES.S }
     Constant("themeTraceEnabled") { GlassThemeTrace.enabled }
+    Constant("artistFocusTraceEnabled") { Log.isLoggable("ResonusArtistFocus", Log.DEBUG) }
     Function("setPlayerTransitionTrace") { enabled: Boolean -> PlayerTransitionTrace.configure(enabled) }
     OnDestroy { PlayerTransitionTrace.configure(false) }
     AsyncFunction("getDiagnostics") {
       WindowBackdrops.diagnostics() + TabsMotionHosts.diagnostics()
+    }.runOnQueue(Queues.MAIN)
+    // Android's default keyboard-focus drawable dims the entire artist photo.
+    // Keep focus/click/accessibility semantics and disable only that drawable.
+    AsyncFunction("disableViewFocusHighlight") { tag: Int, nativeId: String ->
+      val trace = Log.isLoggable("ResonusArtistFocus", Log.DEBUG)
+      if (trace) Log.d("ResonusArtistFocus", "request tag=$tag context=${appContext.reactContext?.javaClass?.simpleName ?: "none"}")
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || tag <= 0 || nativeId.isEmpty()) {
+        if (trace) Log.d("ResonusArtistFocus", "rejected tag=$tag reason=unsupported-or-invalid")
+        false
+      }
+      else try {
+        val view = appContext.findView<View>(tag)
+        val matches = view?.getTag(R.id.view_tag_native_id) == nativeId
+        if (view == null || !view.isAttachedToWindow || !matches) {
+          if (trace) Log.d("ResonusArtistFocus", "rejected tag=$tag found=${view != null} attached=${view?.isAttachedToWindow} idMatch=$matches")
+          false
+        } else {
+          val before = view.defaultFocusHighlightEnabled
+          val focused = view.isFocused
+          view.defaultFocusHighlightEnabled = false
+          // Android's setter only changes a flag. If focus already created
+          // its drawable, invalidate() keeps drawing that cached highlight.
+          // Re-evaluate once on MAIN without changing the final focus owner.
+          val restored = if (before && focused) { view.clearFocus(); view.requestFocus() } else focused
+          view.refreshDrawableState()
+          view.jumpDrawablesToCurrentState()
+          view.invalidate()
+          if (trace) Log.d("ResonusArtistFocus", "applied tag=$tag before=$before after=${view.defaultFocusHighlightEnabled} focused=$focused restored=$restored")
+          !view.defaultFocusHighlightEnabled
+        }
+      } catch (error: Exception) {
+        if (trace) Log.d("ResonusArtistFocus", "rejected tag=$tag error=${error.javaClass.simpleName}")
+        false
+      }
     }.runOnQueue(Queues.MAIN)
     // Scalar-only sync Expo Function is a JSI HostFunction. Installed Worklets
     // shares that raw function into its UI runtime, without a JS bridge or a
@@ -30,6 +68,9 @@ class LiquidGlassModule : Module() {
     }
     Function("readDockScrollIntent") { token: Int, scope: String -> TabsMotionHosts.readDockScrollIntent(token, scope) }
     Function("expandDockScrollInput") { token: Int -> TabsMotionHosts.expandDockScrollInput(token) }
+    Function("restoreDockScrollTarget") { token: Int, scope: String, collapsed: Boolean ->
+      TabsMotionHosts.restoreDockScrollTarget(token, scope, collapsed)
+    }
     Function("updatePlayerSurfaceClip") { token: Int, left: Double, top: Double,
       width: Double, height: Double, radius: Double, opacity: Double ->
       PlayerSurfaceClipHosts.update(token, left, top, width, height, radius, opacity)

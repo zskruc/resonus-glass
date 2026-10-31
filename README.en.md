@@ -41,7 +41,17 @@ These features describe the released Glass baseline. Development previews may ch
 | Channel | Version | Android version code | Availability |
 | --- | --- | --- | --- |
 | Stable | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest), in-app update checks |
-| Development preview | `0.8.4.1-amll.15` | `97` | ARM64 APK built with the original signature verified; not installed as requested; device acceptance awaits reconnection |
+| Development preview | `0.8.4.1-amll.38` | `121` | [Prerelease APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.4.1-amll.38); see preview records for device validation scope |
+
+The current preview updates artist navigation transitions and name artwork, Volta album actions and dock restoration. It also adds bulk artwork/lyrics caching and a download manager with overall/per-song progress, start/pause/cancel controls and 1–20 concurrent song downloads. Implementation limits, builds and device validation are recorded in the [preview notes](./docs/PREVIEW-35-36-CACHE-AND-DOWNLOADS.md).
+
+`.32` adapts upstream #304, #302, #301 and #299, with additional ownership guards for playback and background warming. **Settings → Appearance → Album page style** selects **Volta / Minidisc** within Apple Music style, retaining Volta by default. Artist pages sample the original photo's scene corners and use a continuous static blur/fade. Player layout and stored glass parameters are retained. See the [adaptation and validation record](./docs/UPSTREAM-PR-ADAPTATION-20261031.md).
+
+`.33` retains those changes and adds verified official artist-name artwork, local content verification for proxy images and offline caching. Ordinary names remain when no official wordmark is available. Ayano Tsuji references inform corrected photo framing, neutral-scene color and a longer single-mask fade, keeping title/control positions intact.
+
+`.34` uses Samsung comparison findings to delay the sharp-to-blur handoff and reduce peak artist-photo blur, retaining the matched scene colors, framing, fade extent and other controls.
+
+`.27` adds an optional [Volta](https://github.com/countervolts/Volta)-inspired **Apple Music style** under **Settings → Appearance → UI style**, alongside **Spotify style**. Home, Library, artist and album/playlist pages use alternate layouts while retaining the existing player, glass profiles and user data. See the [dual UI preview scope and validation](./docs/VOLTA-UI-PREVIEW.md). Earlier preview notes below remain development history.
 
 The current preview is on `preview/amll-player`. Its native player combines [AMLL](https://github.com/amll-dev/applemusic-like-lyrics)-derived controls and SVGs with independently implemented cover/lyric views and a moving artwork-field background. Settings → Player → Player layout restores the previous Resonus layout; the Player background option below applies only to that layout. See the [third-party notices](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) and [preview guide](./docs/AMLL-PLAYER-PREVIEW.md) for the controls/assets’ **AGPL-3.0-only** provenance, retained original licenses and implementation boundaries.
 

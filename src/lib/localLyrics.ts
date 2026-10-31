@@ -19,6 +19,7 @@ import { parseLrc } from './lrc';
 import { parseTtml } from './ttml';
 import { isManualOffline } from '@/api/netGate';
 import { PROJECT_NAME, REPOSITORY_URL } from './project';
+import { withDeadline } from '@/api/deadline';
 
 const LRCLIB_CACHE_DIR = FileSystem.documentDirectory + 'lyrics-cache/';
 /** Who is asking, for LRCLIB. Sent as both headers: see `fetchLrclib`. */
@@ -91,12 +92,18 @@ export async function getLocalLyrics(
  * Lyrics from LRCLIB with disk cache. Also serves as last resort for server
  * songs whose server doesn't have lyrics.
  */
-export async function getOnlineLyrics(song: Song): Promise<SongLyrics | null> {
-  const file = `${LRCLIB_CACHE_DIR}${hashKey(song.id)}.lrc`;
+export async function getOnlineLyrics(song: Song, options: { strict?: boolean; stillCurrent?: () => boolean } = {}): Promise<SongLyrics | null> {
+  // IDs can repeat on different servers. A complete recording signature keeps
+  // one account's LRCLIB result from being served for another account's song.
+  const file = `${LRCLIB_CACHE_DIR}v2_${hashKey(JSON.stringify([song.id, song.artist, song.title, song.album, song.duration]))}.lrc`;
   const cached = await readTextIfExists(file);
+  if (options.stillCurrent && !options.stillCurrent()) throw new Error('Lyrics request stopped');
   if (cached) return parseLrc(cached);
-  const text = await fetchLrclib(song);
+  const text = options.strict
+    ? await withDeadline(15000, (signal) => fetchLrclib(song, { ...options, signal }))
+    : await fetchLrclib(song, options);
   if (!text) return null;
+  if (options.stillCurrent && !options.stillCurrent()) throw new Error('Lyrics request stopped');
   try {
     await FileSystem.makeDirectoryAsync(LRCLIB_CACHE_DIR, { intermediates: true }).catch(() => {});
     await FileSystem.writeAsStringAsync(file, text);
@@ -123,7 +130,8 @@ function trace(what: string, song: Song): void {
   if (__DEV__) console.log(`[lyrics] lrclib · ${what} · ${song.artist} — ${song.title}`);
 }
 
-async function fetchLrclib(song: Song): Promise<string | null> {
+async function fetchLrclib(song: Song, options: { strict?: boolean; stillCurrent?: () => boolean; signal?: AbortSignal } = {}): Promise<string | null> {
+  const check = () => { if (options.stillCurrent && !options.stillCurrent()) throw new Error('Lyrics request stopped'); };
   if (!song.title || !song.artist) {
     trace('not asked: the song has no artist or no title', song);
     return null;
@@ -150,6 +158,7 @@ async function fetchLrclib(song: Song): Promise<string | null> {
     'User-Agent': CLIENT_UA,
   };
   try {
+    check();
     // /api/get requires the full signature (album + duration); if we have it,
     // it's the most precise path. If not (or 404), /api/search and the first match.
     if (song.album && song.duration) {
@@ -159,17 +168,19 @@ async function fetchLrclib(song: Song): Promise<string | null> {
         album_name: song.album,
         duration: String(Math.round(song.duration)),
       });
-      const res = await fetch(`https://lrclib.net/api/get?${params}`, { headers });
+      const res = await fetch(`https://lrclib.net/api/get?${params}`, { headers, signal: options.signal });
       trace(`get ${res.status}`, song);
       if (res.ok) {
         const text = pickLrclibText((await res.json()) as LrclibResult);
         if (text) return text;
       }
+      else if (options.strict && res.status !== 404) throw new Error('Lyrics provider failed');
     }
+    check();
     const params = new URLSearchParams({ artist_name: song.artist, track_name: song.title });
-    const res = await fetch(`https://lrclib.net/api/search?${params}`, { headers });
+    const res = await fetch(`https://lrclib.net/api/search?${params}`, { headers, signal: options.signal });
     trace(`search ${res.status}`, song);
-    if (!res.ok) return null;
+    if (!res.ok) { if (options.strict) throw new Error('Lyrics provider failed'); return null; }
     const results = (await res.json()) as LrclibResult[];
     for (const r of results) {
       const text = pickLrclibText(r);
@@ -178,6 +189,7 @@ async function fetchLrclib(song: Song): Promise<string | null> {
     trace(`search matched nothing (${results.length} results)`, song);
     return null;
   } catch (e) {
+    if (options.strict) throw e;
     // No network or the API down: simply no lyrics. Said out loud in
     // development, because a feature that fails in silence cannot be told
     // apart from one that was never asked.

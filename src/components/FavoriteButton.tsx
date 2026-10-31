@@ -4,14 +4,16 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { type GestureResponderEvent, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
 import { GlassPressable } from '@/components/glass';
 
-import { star, unstar, type StarType } from '@/api/data';
+import { canGoIntoPlaylist, star, unstar, type Song, type StarType } from '@/api/data';
 import { applyStarChange, resyncFavorites, unstarWithUndo } from '@/lib/favoritesCache';
 import { haptic } from '@/lib/haptics';
 import { useAuthStore } from '@/store/auth';
 import { usePins } from '@/store/pins';
+import { usePlaylistPicker } from '@/store/playlistPicker';
 import { useToast } from '@/store/toast';
 import { useT } from '@/i18n';
 import { colors } from '@/theme';
+import { useArtistPagePalette } from '@/components/volta/ArtistPagePalette';
 
 interface Props {
   id: string;
@@ -29,25 +31,32 @@ interface Props {
   hitSlop?: PressableProps['hitSlop'];
   /** Recycled list binding; isolates local requests and Undo callbacks. */
   resetKey?: string;
+  /** Player-only opt-in: holding adds this track to a playlist; list rows keep their existing hold. */
+  playlistSong?: Song;
 }
 
 export function FavoriteButton({ id, type = 'song', starred, size = 22, undo, unselectedColor,
-  glyph = 'heart', selectedColor, style, hitSlop = 10, resetKey }: Props) {
+  glyph = 'heart', selectedColor, style, hitSlop = 10, resetKey, playlistSong }: Props) {
   const auth = useAuthStore((s) => s.auth);
   const offline = useAuthStore((s) => s.offline);
   const t = useT();
+  const pagePalette = useArtistPagePalette();
   const toast = useToast((s) => s.show);
   const binding = useMemo(() => ({ id, type, resetKey }), [id, type, resetKey]);
   const favoriteBinding = useMemo(() => ({ binding, starred }), [binding, starred]);
+  const playlistBinding = useMemo(() => ({ binding, song: playlistSong, auth, offline }), [binding, playlistSong, auth, offline]);
   const currentBinding = useRef<object | null>(binding);
   const currentFavorite = useRef<object | null>(favoriteBinding);
+  const currentPlaylist = useRef<object | null>(playlistBinding);
   const operation = useRef(0);
-  const pointer = useRef<{ binding: object; timestamp?: number; touch: boolean } | null>(null);
+  const pointer = useRef<{ binding: object; playlistBinding?: object; timestamp?: number; touch: boolean; held?: boolean } | null>(null);
   const pending = useRef<{ binding: object; serial: number } | null>(null);
   const [favorite, setFavorite] = useState({ binding: favoriteBinding, value: !!starred });
   const [waiting, setWaiting] = useState({ binding, value: false });
   const fav = favorite.binding === favoriteBinding ? favorite.value : !!starred;
   const busy = waiting.binding === binding && waiting.value;
+  const canHold = type === 'song' && playlistSong?.id === id && canGoIntoPlaylist(playlistSong);
+  const trackPointer = resetKey !== undefined || canHold;
 
   // Binding-derived state resets in the first render of a recycled item.
   // Committed ownership guards asynchronous callbacks, including A -> B -> A.
@@ -59,6 +68,10 @@ export function FavoriteButton({ id, type = 'song', starred, size = 22, undo, un
       currentFavorite.current = null;
     };
   }, [binding, favoriteBinding]);
+  useLayoutEffect(() => {
+    currentPlaylist.current = playlistBinding;
+    return () => { currentPlaylist.current = null; };
+  }, [playlistBinding]);
 
   function releasePointer(event: GestureResponderEvent) {
     if (currentBinding.current !== binding) return;
@@ -73,10 +86,10 @@ export function FavoriteButton({ id, type = 'song', starred, size = 22, undo, un
     e?.stopPropagation();
     if (currentBinding.current !== binding) return;
     const pressed = pointer.current;
-    if (resetKey !== undefined && pressed?.timestamp !== undefined && e?.nativeEvent.timestamp !== undefined
+    if (trackPointer && pressed?.timestamp !== undefined && e?.nativeEvent.timestamp !== undefined
       && e.nativeEvent.timestamp < pressed.timestamp) return;
     pointer.current = null;
-    if (resetKey !== undefined && pressed && pressed.binding !== binding) return;
+    if (pressed?.held || trackPointer && pressed && pressed.binding !== binding) return;
     if ((!auth && !offline) || busy
       || pending.current?.binding === binding) return;
     const serial = ++operation.current;
@@ -121,35 +134,52 @@ export function FavoriteButton({ id, type = 'song', starred, size = 22, undo, un
     }
   }
 
+  function held(event: GestureResponderEvent) {
+    event.stopPropagation();
+    if (!canHold || !playlistSong || (!auth && !offline)
+      || currentBinding.current !== binding || currentPlaylist.current !== playlistBinding) return;
+    const pressed = pointer.current;
+    if (pressed && (pressed.binding !== binding || pressed.playlistBinding !== playlistBinding
+      || pressed.held || pressed.timestamp !== undefined && event.nativeEvent.timestamp < pressed.timestamp)) return;
+    // Pressability normally consumes the release after a long press. Keep the
+    // accepted touch marked too, so a queued release cannot toggle a favorite.
+    if (pressed) pressed.held = true;
+    else pointer.current = { binding, playlistBinding, timestamp: event.nativeEvent.timestamp, touch: false, held: true };
+    haptic('medium');
+    usePlaylistPicker.getState().open([playlistSong]);
+  }
+
   return (
     <GlassPressable
       hitSlop={hitSlop}
       style={style}
       // PressIn also fires when one finger reenters the press rect. Only a
       // native touch-down may replace the owner of a recycled cell's touch.
-      onTouchStart={resetKey === undefined ? undefined : (event) => {
+      onTouchStart={!trackPointer ? undefined : (event) => {
         if (currentBinding.current !== binding) return;
         const timestamp = event.nativeEvent.timestamp;
         if (pointer.current?.timestamp !== undefined && timestamp < pointer.current.timestamp) return;
-        pointer.current = { binding, timestamp, touch: true };
+        pointer.current = { binding, playlistBinding, timestamp, touch: true };
       }}
-      onTouchEnd={resetKey === undefined ? undefined : releasePointer}
-      onTouchCancel={resetKey === undefined ? undefined : releasePointer}
-      onPressIn={resetKey === undefined ? undefined : (event) => {
+      onTouchEnd={!trackPointer ? undefined : releasePointer}
+      onTouchCancel={!trackPointer ? undefined : releasePointer}
+      onPressIn={!trackPointer ? undefined : (event) => {
         if (currentBinding.current !== binding || pointer.current) return;
-        pointer.current = { binding, timestamp: event.nativeEvent.timestamp, touch: false };
+        pointer.current = { binding, playlistBinding, timestamp: event.nativeEvent.timestamp, touch: false };
       }}
-      onPressOut={resetKey === undefined ? undefined : (event) => {
+      onPressOut={!trackPointer ? undefined : (event) => {
         if (!pointer.current?.touch) releasePointer(event);
       }}
       onPress={toggle}
+      onLongPress={canHold ? held : undefined}
       accessibilityRole="button"
       accessibilityLabel={fav ? t('Remove from favorites') : t('Add to favorites')}
     >
       <Icon
         name={fav ? glyph : glyph === 'star' ? 'star-outline' : 'heart-outline'}
         size={size}
-        color={fav ? selectedColor ?? colors.accent : unselectedColor ?? colors.textSecondary}
+        color={fav ? selectedColor ?? pagePalette?.accent ?? colors.accent
+          : unselectedColor ?? pagePalette?.textSecondary ?? colors.textSecondary}
       />
     </GlassPressable>
   );
