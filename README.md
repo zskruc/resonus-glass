@@ -41,9 +41,11 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 | 渠道 | 版本 | Android 更新编号 | 获取方式 |
 | --- | --- | --- | --- |
 | 正式发布 | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest)，App 内检查更新 |
-| 开发预览 | `0.8.4.1-preview.6` | `73` | 本地测试 APK，尚未发布为正式 Release |
+| 开发预览 | `0.8.4.1-amll.38` | `121` | [预发布 APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.4.1-amll.38) |
 
-开发预览在 `preview/kyant-defaults` 分支上用于比对 AndroidLiquidGlass 的示例默认材质及页面切换表现。预览版不代表正式版已经具备相同改动，也不构成所有页面持续达到 120 fps 的保证；具体内容以对应源码、APK 版本和验证记录为准。
+当前开发预览源码位于 [preview/amll-player](https://github.com/zskruc/resonus-glass/tree/preview/amll-player)。新增可切换的 Apple Music／Spotify 界面、Volta／Minidisc 专辑页、官方艺人艺术字、下载管理和封面／歌词批量缓存，并修正艺人过渡及底栏后台恢复。构建与实机验证范围见[预览记录](https://github.com/zskruc/resonus-glass/blob/preview/amll-player/docs/PREVIEW-35-36-CACHE-AND-DOWNLOADS.md)。预发布不会触发正式版的 App 内更新提示；持续 120 fps 不作保证。
+
+构建这版预览时，在安装依赖前执行 `git switch preview/amll-player`。
 
 版本号跟随最近审查的上游正式版基线，但 Glass 采用选择性移植，**不等同于完整的上游 0.8.4**，也未包含后者的全部新功能。具体采用的功能以 [Glass 更新日志](./CHANGELOG.md) 和 [上游修复范围](./docs/LIQUID-GLASS-PREVIEW.md#上游修复范围) 为准。
 

@@ -41,9 +41,11 @@ These features describe the released Glass baseline. Development previews may ch
 | Channel | Version | Android version code | Availability |
 | --- | --- | --- | --- |
 | Stable | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest), in-app update checks |
-| Development preview | `0.8.4.1-preview.6` | `73` | Local test APK; not published as a stable release |
+| Development preview | `0.8.4.1-amll.38` | `121` | [Prerelease APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.4.1-amll.38) |
 
-Development previews on `preview/kyant-defaults` compare AndroidLiquidGlass example defaults and page-switching behavior. Preview changes are not necessarily included in the stable release. They do not guarantee sustained 120 fps across every page; consult the corresponding source, APK version, and validation records for their actual scope.
+The current preview source is on [preview/amll-player](https://github.com/zskruc/resonus-glass/tree/preview/amll-player). It adds selectable Apple Music/Spotify layouts, Volta/Minidisc album pages, official artist wordmarks, download management and bulk artwork/lyrics caching, with artist-transition and dock-restoration fixes. See the [build and device-validation record](https://github.com/zskruc/resonus-glass/blob/preview/amll-player/docs/PREVIEW-35-36-CACHE-AND-DOWNLOADS.md). Prereleases do not trigger stable in-app update prompts; sustained 120 fps is not guaranteed.
+
+To build this preview, run `git switch preview/amll-player` before installing dependencies.
 
 The visible version follows the latest reviewed upstream stable baseline. Glass selectively ports changes: it **is not the complete upstream 0.8.4** and does not include all of that release's new features. Consult the [Glass changelog](./CHANGELOG.md) and [upstream fix scope](./docs/LIQUID-GLASS-PREVIEW.md#上游修复范围) for the changes included here.
 
