@@ -1521,10 +1521,10 @@ index 196a5d57f887c2667a88543bd2f6a80044a044f2..f74435f1b33120db3799c7909e198df6
      const val SEEK_INTERVAL_MS = 10000L
    }
 diff --git a/android/src/main/java/expo/modules/audio/service/AudioMediaSessionCallback.kt b/android/src/main/java/expo/modules/audio/service/AudioMediaSessionCallback.kt
-index 839aaef12d7699ea1a89037b31849775daa079f4..1aff5091d68c19523e2374c0231f4c1da1a69163 100644
+index 839aaef12d7699ea1a89037b31849775daa079f4..67fbeecf9e43980ecd82105519aa599dbee8f1ca 100644
 --- a/android/src/main/java/expo/modules/audio/service/AudioMediaSessionCallback.kt
 +++ b/android/src/main/java/expo/modules/audio/service/AudioMediaSessionCallback.kt
-@@ -1,6 +1,9 @@
+@@ -1,46 +1,106 @@
  package expo.modules.audio.service
  
 +import android.content.Intent
@@ -1534,7 +1534,10 @@ index 839aaef12d7699ea1a89037b31849775daa079f4..1aff5091d68c19523e2374c0231f4c1d
  import androidx.media3.common.Player
  import androidx.media3.session.MediaSession
  import androidx.media3.session.SessionCommand
-@@ -10,7 +13,12 @@ import androidx.media3.common.util.UnstableApi
++import androidx.media3.session.SessionError
+ import androidx.media3.session.SessionResult
+ import androidx.annotation.OptIn
+ import androidx.media3.common.util.UnstableApi
  import com.google.common.util.concurrent.ListenableFuture
  
  @OptIn(UnstableApi::class)
@@ -1548,7 +1551,38 @@ index 839aaef12d7699ea1a89037b31849775daa079f4..1aff5091d68c19523e2374c0231f4c1d
    override fun onConnect(
      session: MediaSession,
      controller: MediaSession.ControllerInfo
-@@ -35,6 +43,9 @@ class AudioMediaSessionCallback : MediaSession.Callback {
+   ): MediaSession.ConnectionResult {
+     try {
+-      // Configure commands - custom layout buttons will be rendered from session
++      val playerCommands = MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
++        .add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
++        .add(Player.COMMAND_SEEK_FORWARD)
++        .add(Player.COMMAND_SEEK_BACK)
++      // Notifications use custom skip buttons; other controllers send the
++      // standard commands forwarded below to the queue owned by JavaScript.
++      if (session.isMediaNotificationController(controller)) {
++        playerCommands
++          .remove(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
++          .remove(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
++          .remove(Player.COMMAND_SEEK_TO_PREVIOUS)
++          .remove(Player.COMMAND_SEEK_TO_NEXT)
++      }
+       return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+-        .setAvailablePlayerCommands(
+-          MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
+-            // Keep seek commands for the seek slider
+-            .add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+-            .add(Player.COMMAND_SEEK_FORWARD)
+-            .add(Player.COMMAND_SEEK_BACK)
+-            // Remove track navigation commands
+-            .remove(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+-            .remove(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+-            .remove(Player.COMMAND_SEEK_TO_PREVIOUS)
+-            .remove(Player.COMMAND_SEEK_TO_NEXT)
+-            .build()
+-        )
++        .setAvailablePlayerCommands(playerCommands.build())
+         .setAvailableSessionCommands(
            MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
              .add(SessionCommand(AudioControlsService.ACTION_SEEK_BACKWARD, Bundle.EMPTY))
              .add(SessionCommand(AudioControlsService.ACTION_SEEK_FORWARD, Bundle.EMPTY))
@@ -1558,13 +1592,28 @@ index 839aaef12d7699ea1a89037b31849775daa079f4..1aff5091d68c19523e2374c0231f4c1d
              .build()
          )
          .build()
-@@ -43,6 +54,40 @@ class AudioMediaSessionCallback : MediaSession.Callback {
+     } catch (e: Exception) {
+       return MediaSession.ConnectionResult.reject()
      }
-   }
- 
++  }
++
++  /** The real queue lives in JS; the single native item must not navigate itself. */
++  override fun onPlayerCommandRequest(
++    session: MediaSession,
++    controller: MediaSession.ControllerInfo,
++    playerCommand: Int
++  ): Int {
++    when (playerCommand) {
++      Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> onSkipNext()
++      Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> onSkipPrevious()
++      else -> return super.onPlayerCommandRequest(session, controller, playerCommand)
++    }
++    return SessionError.ERROR_NOT_SUPPORTED
++  }
++
 +  /**
 +   * Hardware / AVRCP / wired media buttons send next & previous as the standard
-+   * SEEK_TO_NEXT/PREVIOUS player commands, which onConnect removes (the ExoPlayer
++   * SEEK_TO_NEXT/PREVIOUS player commands (the ExoPlayer
 +   * holds a single item; the real queue lives in JS). Intercept those keys here
 +   * and route them to the same skip callbacks the notification buttons use, so
 +   * skipping from Bluetooth headphones etc. works. Only ACTION_DOWN, to avoid
@@ -1594,12 +1643,10 @@ index 839aaef12d7699ea1a89037b31849775daa079f4..1aff5091d68c19523e2374c0231f4c1d
 +      }
 +    }
 +    return super.onMediaButtonEvent(session, controllerInfo, intent)
-+  }
-+
+   }
+ 
    override fun onCustomCommand(
-     session: MediaSession,
-     controller: MediaSession.ControllerInfo,
-@@ -56,6 +101,9 @@ class AudioMediaSessionCallback : MediaSession.Callback {
+@@ -56,6 +116,9 @@
        AudioControlsService.ACTION_SEEK_BACKWARD -> {
          session.player.seekTo(session.player.currentPosition - AudioControlsService.SEEK_INTERVAL_MS)
        }

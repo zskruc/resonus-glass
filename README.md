@@ -41,7 +41,9 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 | 渠道 | 版本 | Android 更新编号 | 获取方式 |
 | --- | --- | --- | --- |
 | 正式发布 | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest)，App 内检查更新 |
-| 开发预览 | `0.8.4.1-amll.39` | `122` | 本地 ARM64 测试包，尚未发布；[艺人图片加载优化](./docs/ARTIST-IMAGE-LOADING-39.md) |
+| 开发预览 | `0.8.5.1-preview.1` | `123` | 本地 ARM64 测试包，尚未发布；[上游 0.8.5 选择性适配](./docs/UPSTREAM-0.8.5-ADAPTATION-20261031.md) |
+
+本轮选择性适配上游的播放加载优先级、网络错误本地化、艺人／专辑搜索网格、歌单成员管理及外部媒体切歌指令；其中后两项来自发布后的主分支。保留当前页面布局、玻璃参数和 `.39` 艺人图片优化，未完整合并上游。构建、检查范围与未采用部分见[适配记录](./docs/UPSTREAM-0.8.5-ADAPTATION-20261031.md)。
 
 当前预览加入艺人顶栏衔接与名字图修正、Volta 专辑操作排布、后台底栏恢复、批量封面／歌词缓存，以及独立下载管理。下载管理显示总队列和单曲进度，提供全部开始／暂停／取消，允许同时下载 1–20 首歌曲。实现边界及构建、实机记录见[本轮预览说明](./docs/PREVIEW-35-36-CACHE-AND-DOWNLOADS.md)。
 
@@ -53,7 +55,7 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 
 `.27` 新增参考 [Volta](https://github.com/countervolts/Volta) 的 **Apple Music风格**，可在 **设置 → 外观 → 界面风格** 与 **Spotify风格** 之间切换。首页、资料库、艺人和专辑／歌单详情采用可切换的页面布局，保留现有播放器、玻璃参数及用户资料。范围和验证限制见 [双风格预览说明](./docs/VOLTA-UI-PREVIEW.md)。下方早期版本说明保留为开发历史。
 
-当前开发预览位于 `preview/amll-player` 分支。播放页结合 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 派生的原生控件与 SVG，以及独立实现的封面／歌词界面和网格流动背景。「设置 → 播放器 → 播放器布局」可切回 Resonus 原有布局；下方「播放器背景」仅影响原有布局。控件与 SVG 的 **AGPL-3.0-only** 来源、保留的原有许可证和实现范围见 [第三方声明](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) 与 [预览说明](./docs/AMLL-PLAYER-PREVIEW.md)。
+当前开发预览位于 `update/upstream-0.8.5-20261031` 分支。播放页结合 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 派生的原生控件与 SVG，以及独立实现的封面／歌词界面和网格流动背景。「设置 → 播放器 → 播放器布局」可切回 Resonus 原有布局；下方「播放器背景」仅影响原有布局。控件与 SVG 的 **AGPL-3.0-only** 来源、保留的原有许可证和实现范围见 [第三方声明](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) 与 [预览说明](./docs/AMLL-PLAYER-PREVIEW.md)。
 
 `.15` 保留 `.14` 的五项修改：移除播放／歌词页顶部白条，保留原高度、顶部下拉和封面无障碍关闭；移除随机／循环按钮，仅保留原位置的上一首、播放／暂停、下一首，播放模式仍可在菜单设置；返回时冻结底栏已绘制进度，等来源页面状态恢复就绪后再交接，并保留来源页选中透镜透明度；逐字歌词只预备当前与下一行遮罩，下一行延后 720ms 准备，不改模糊、光学或歌词计时；有完整歌单镜像时先显示保存内容并在后台请求服务器，离线复用元数据避免重复 SQL，本地只查询当前歌单的歌曲 ID。没有缓存的首次打开仍可能等待，不能保证所有歌单立即出现。
 

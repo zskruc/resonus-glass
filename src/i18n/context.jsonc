@@ -278,13 +278,6 @@
     "Add to a playlist": "Menu action: put this song, album or selection into a playlist",
     "New playlist": "Row at the top of the playlist picker, and the button on an empty library: make one",
     "Added to “{name}”": "Toast. `{name}` is the playlist's name",
-    "{n} added to “{name}”": "Toast when several songs went in at once. `{n}` is a count of songs",
-    "Already added": "Title of the dialog that warns the song is in that playlist already",
-    "This song is already in “{name}”.": "The line under that title. `{name}` is the playlist",
-    "{n} of {songs} are already in “{name}”.": "The same warning when adding several at once and only some of them are already there. `{n}` is how many of them are, and `{songs}` already reads as a count (\"12 songs\"), so the sentence is like \"3 of 12 songs are already in “Rock”.\"",
-    "All {songs} are already in “{name}”.": "The same warning when every one of the several being added is already there. `{songs}` already reads as a count (\"12 songs\")",
-    "Add anyway": "The confirm button of that warning: put it in a second time",
-    "Add only the new ones": "The other button of that warning, when some are already in the playlist and some are not: leave the ones that are and add the rest",
     "Couldn't add to the playlist": "Toast: the server refused",
     "Couldn't create the playlist": "Toast: the server refused",
 

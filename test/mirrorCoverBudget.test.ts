@@ -6,6 +6,7 @@ import ts from 'typescript';
 
 import { withSpeculativeSlot } from '../src/lib/netBudget';
 import { createSlots } from '../src/lib/slots';
+import { PlaybackLoadGate } from '../src/lib/playbackLoadGate';
 
 const tick = async () => { for (let i = 0; i < 24; i++) await Promise.resolve(); };
 const executable = ts.transpileModule(readFileSync(new URL('../src/lib/mirrorCovers.ts', import.meta.url), 'utf8'), {
@@ -16,6 +17,7 @@ const executable = ts.transpileModule(readFileSync(new URL('../src/lib/mirrorCov
 // Its deduplication, profile state, idle scheduling and policy are unchanged.
 function harness() {
   const pool = createSlots(4);
+  const playbackGate = new PlaybackLoadGate();
   const state = { offline: false, fail: false, auth: {} };
   const timers: (() => void)[] = [];
   const idle: (() => void)[] = [];
@@ -38,7 +40,8 @@ function harness() {
     '@/api/backend': { COVER: { card: 600 }, coverArtUrl: (_auth: unknown, id: string) => `https://covers.test/${id}` },
     '@/api/netGate': { isOfflineMode: () => state.offline },
     '@/lib/idle': { whenIdle: (callback: () => void) => { if (delayIdle) idle.push(callback); else callback(); } },
-    '@/lib/netBudget': { withSpeculativeSlot: (wanted: () => boolean, work: () => Promise<unknown>) => withSpeculativeSlot(wanted, work, pool) },
+    '@/lib/netBudget': { withSpeculativeSlot: (wanted: () => boolean, work: () => Promise<unknown>, _slots: unknown, gate: PlaybackLoadGate) => withSpeculativeSlot(wanted, work, pool, gate) },
+    '@/lib/playbackLoadGate': { playbackLoadGate: playbackGate },
     '@/lib/perfLog': { bump: () => {}, netTally: () => {} },
     '@/lib/localLibrary': { hashKey: (id: string) => id, localCoverUrl: () => undefined,
       registerCover: (id: string, file: string) => registered.push({ id, file }) },
@@ -47,7 +50,7 @@ function harness() {
   runInNewContext(executable, { exports: exported, Date,
     setTimeout: (callback: () => void) => { timers.push(callback); return timers.length; },
     require(name: string) { assert.ok(Object.hasOwn(dependencies, name), name); return dependencies[name]; } });
-  return { pool, state, downloads, registered,
+  return { pool, playbackGate, state, downloads, registered,
     load: (profile: string) => exported.loadMirrorCovers(profile) as Promise<void>,
     keep: (profile: string, id = 'same-cover') => {
       const owner = state.auth;
@@ -110,4 +113,15 @@ test('a failed mirror download frees the shared slot and its ID can be retried',
   await tick();
   assert.equal(acquired.length, 4);
   for (let index = 0; index < acquired.length; index++) h.pool.release();
+});
+
+test('automatic mirror covers wait for playable audio and recheck offline after that wait', async (t) => {
+  const h = harness(); await h.load('one');
+  const hold = h.playbackGate.hold(); t.after(() => h.playbackGate.release(hold));
+  h.keep('one'); await h.run();
+  assert.equal(h.downloads.length, 0);
+  h.state.offline = true; h.playbackGate.release(hold); await tick();
+  assert.equal(h.downloads.length, 0);
+  h.state.offline = false; h.keep('one'); await h.run();
+  assert.equal(h.downloads.length, 1);
 });

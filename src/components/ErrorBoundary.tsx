@@ -2,6 +2,7 @@
 import { Component, type ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
+import { tg } from '@/i18n';
 import { colors, fontSize, radius, spacing, themed, tracking } from '@/theme';
 
 interface Props {
@@ -24,12 +25,12 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.error) {
       return (
         <View style={styles.container}>
-          <Text style={styles.title}>Algo ha fallado</Text>
+          <Text style={styles.title}>{tg('Something went wrong')}</Text>
           <Text style={styles.message}>{this.state.error.message}</Text>
           {/* Acento inline: el módulo se importa antes de hidratar los ajustes
               y la hoja congelaría el verde por defecto. */}
           <Pressable style={[styles.button, { backgroundColor: colors.accent }]} onPress={this.reset}>
-            <Text style={styles.buttonText}>Reintentar</Text>
+            <Text style={styles.buttonText}>{tg('Try again')}</Text>
           </Pressable>
         </View>
       );

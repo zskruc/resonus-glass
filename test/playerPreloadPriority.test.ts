@@ -49,6 +49,7 @@ function harness(enabled = true) {
   const set = (next: Record<string, unknown>) => { Object.assign(state, next); exported.warmUpcoming(); };
   runInNewContext(executable, {
     exports: exported, streamWarming: warmer, bootQuiet: false, PRELOAD_AHEAD: 5,
+    remoteKind: () => null, awaitingSpeculativeSource: null,
     useAuthStore: { getState: () => authState }, useSettings: { getState: () => settings },
     useToast: { getState: () => ({ show: noop }) }, useLastPlayed: { getState: () => ({ touch: noop }) },
     usePlayerStore: { getState: () => state },

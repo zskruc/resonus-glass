@@ -911,27 +911,20 @@ let playlistCacheKey: string | null = null;
 
 async function loadPlaylists(): Promise<LocalPlaylistRec[]> {
   const key = playlistsKey();
+  const profile = profileScopeId();
   if (playlistCache && playlistCacheKey === key) return playlistCache;
-  playlistCacheKey = key;
+  let list: LocalPlaylistRec[];
   try {
     const raw = await getItem(key);
-    if (raw) {
-      playlistCache = JSON.parse(raw) as LocalPlaylistRec[];
-    } else {
-      // Migration from the old (shared global key) version: each profile
-      // inherits only its own by id prefix — the local one the hand-made ones
-      // (`lp_`), the server account those downloaded from its playlists (`dl_`).
+    if (raw) list = JSON.parse(raw) as LocalPlaylistRec[];
+    else {
       const legacy = await getItem(PLAYLISTS_KEY);
       const all = legacy ? (JSON.parse(legacy) as LocalPlaylistRec[]) : [];
-      const local = profileScopeId() === 'local';
-      playlistCache = all.filter((p) =>
-        local ? p.id.startsWith('lp_') : p.id.startsWith('dl_'),
-      );
+      list = all.filter((playlist) => profile === 'local' ? playlist.id.startsWith('lp_') : playlist.id.startsWith('dl_'));
     }
-  } catch {
-    playlistCache = [];
-  }
-  return playlistCache;
+  } catch { list = []; }
+  if (playlistsKey() === key) { playlistCache = list; playlistCacheKey = key; }
+  return list;
 }
 
 async function savePlaylists(list: LocalPlaylistRec[]) {
@@ -994,6 +987,30 @@ async function playlistSongs(requestedIds?: string[]): Promise<Map<string, Song>
   return new Map((c?.songs ?? []).map((song) => [song.id, song]));
 }
 
+/** Unfiltered local IDs for membership; missing files must not shift positions. */
+export async function playlistTracklists(): Promise<Map<string, string[]>> {
+  const profile = profileScopeId();
+  const list = await loadPlaylists();
+  if (profileScopeId() !== profile) throw new Error('Playlist profile changed');
+  return new Map(list.map((playlist) => [playlist.id, [...playlist.songIds]]));
+}
+
+/** Edits raw IDs so missing local files cannot shift a removal to another song. */
+export async function editPlaylistTracklist(id: string, edit: (ids: string[]) => string[], current: () => boolean): Promise<string[]> {
+  const key = playlistsKey();
+  const list = await loadPlaylists();
+  if (!current() || playlistsKey() !== key) throw new Error('Playlist profile changed');
+  const found = list.find((playlist) => playlist.id === id);
+  if (!found) throw new Error('Playlist changed. Reopen it and try again.');
+  const ids = edit([...found.songIds]);
+  const next = list.map((playlist) => playlist.id === id ? { ...playlist, songIds: ids } : playlist);
+  // Capture the storage key before the write. A profile switch during native
+  // persistence cannot write these IDs into the replacement account.
+  await setItem(key, JSON.stringify(next));
+  if (current() && playlistsKey() === key) { playlistCache = next; playlistCacheKey = key; }
+  return ids;
+}
+
 /** The local playlists (in creation order, newest first). */
 export async function getPlaylists(): Promise<Playlist[]> {
   const [list, byId] = await Promise.all([loadPlaylists(), playlistSongs()]);
@@ -1015,9 +1032,13 @@ export async function getPlaylist(id: string): Promise<{ playlist: Playlist; son
 }
 
 export async function createPlaylist(name: string): Promise<string> {
+  const key = playlistsKey();
   const list = await loadPlaylists();
+  if (playlistsKey() !== key) throw new Error('Playlist profile changed');
   const id = newPlaylistId();
-  await savePlaylists([{ id, name, songIds: [], createdAt: Date.now() }, ...list]);
+  const next = [{ id, name, songIds: [], createdAt: Date.now() }, ...list];
+  await setItem(key, JSON.stringify(next));
+  if (playlistsKey() === key) { playlistCache = next; playlistCacheKey = key; }
   return id;
 }
 

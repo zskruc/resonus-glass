@@ -84,6 +84,7 @@ import {
 import { primaryUrl } from '@/lib/serverUrls';
 import { getItem, setItem } from '@/lib/storage';
 import { StreamWarming } from '@/lib/streamWarming';
+import { playbackLoadGate } from '@/lib/playbackLoadGate';
 import { useAuthStore } from './auth';
 import { checkAutoUrlNow } from './autoUrl';
 import { castSetState, castSetVolumeLevel, castUpdate, initCastMedia } from './castMedia';
@@ -217,6 +218,7 @@ function abortSleepFade() {
 
 /** Pause due to expired sleep timer (from the timeout or onStatus). */
 function fireSleepTimer() {
+  cancelSpeculativePriority();
   cancelPlaybackRecovery();
   if (sleepTimeout) clearTimeout(sleepTimeout);
   sleepTimeout = null;
@@ -892,6 +894,40 @@ function consumeQueuedOnIndexChange(next: number) {
 
 /** Which load is in charge, so an older one can tell it has been overtaken. */
 let loadToken = 0;
+let awaitingSpeculativeSource: {
+  source: object; load: number; owner: SubsonicAuth | null; player: AudioPlayer; songId: string;
+} | null = null;
+
+function cancelSpeculativePriority() {
+  awaitingSpeculativeSource = null;
+  streamWarming.cancelSourcePriority();
+}
+
+/** Ignore a queued pause from the source replaced by a later playback tap. */
+function nativePauseIsCurrent(): boolean {
+  const p = activePlayer(), waiting = awaitingSpeculativeSource;
+  // A source waiting on audio setup has not installed its native item yet.
+  // The previous item's paused state is no evidence about that new request.
+  if (!p || (streamWarming.held && !waiting)) return false;
+  if (waiting && (waiting.load !== loadToken || waiting.player !== p
+    || useAuthStore.getState().auth !== waiting.owner
+    || currentSong(usePlayerStore.getState())?.id !== waiting.songId)) return false;
+  try { return p.currentStatus.playing === false; } catch { return false; }
+}
+
+/** A delayed old ready beat is not proof that the replacement is playable. */
+function releaseLoadedSpeculation(status: AudioStatus) {
+  const waiting = awaitingSpeculativeSource;
+  if (!waiting || waiting.load !== loadToken || activePlayer() !== waiting.player
+    || useAuthStore.getState().auth !== waiting.owner
+    || currentSong(usePlayerStore.getState())?.id !== waiting.songId
+    || !status.isLoaded || status.isBuffering || status.error || status.didJustFinish) return;
+  let live: AudioStatus;
+  try { live = waiting.player.currentStatus; } catch { return; }
+  if (!live.isLoaded || live.isBuffering || live.error || live.didJustFinish) return;
+  awaitingSpeculativeSource = null;
+  streamWarming.sourceReady(waiting.source);
+}
 
 /**
  * Loads the track at `index` and (optionally) plays it.
@@ -902,18 +938,28 @@ let loadToken = 0;
  * never do.
  */
 async function loadIndex(index: number, autoplay: boolean, recoveryTicket?: PlaybackRecoveryTicket): Promise<boolean> {
-  const sourceIntent = streamWarming.beginSource();
   const owner = useAuthStore.getState().auth;
+  const candidate = usePlayerStore.getState().queue[index];
+  const priority = !!owner && !useAuthStore.getState().offline && autoplay && !remoteKind()
+    && !!candidate && !candidate.url && !localSourceFor(candidate);
+  const sourceIntent = streamWarming.beginSource(priority);
+  let installed = false;
   try {
-    return await loadIndexSource(index, autoplay, recoveryTicket);
+    installed = await loadIndexSource(index, autoplay, recoveryTicket, sourceIntent, owner);
+    return installed;
   } finally {
+    if (!installed) {
+      if (awaitingSpeculativeSource?.source === sourceIntent) awaitingSpeculativeSource = null;
+      streamWarming.sourceReady(sourceIntent);
+    }
     // A queue tap may be overtaken by next/previous/jump without replacing
     // that queue. Its old finally cannot unhold the newer source request.
     if (streamWarming.releaseSource(sourceIntent) && useAuthStore.getState().auth === owner) warmUpcoming();
   }
 }
 
-async function loadIndexSource(index: number, autoplay: boolean, recoveryTicket?: PlaybackRecoveryTicket): Promise<boolean> {
+async function loadIndexSource(index: number, autoplay: boolean, recoveryTicket?: PlaybackRecoveryTicket,
+  sourceIntent?: object, requestOwner = useAuthStore.getState().auth): Promise<boolean> {
   if (recoveryTicket && recoveryTargetIndex(recoveryTicket) === null) return false;
   const token = ++loadToken;
   // Anything asked to play is the app in use, whoever asked: the button, the
@@ -963,6 +1009,7 @@ async function loadIndexSource(index: number, autoplay: boolean, recoveryTicket?
   // that does — the report was tapping a song and being shown a different one,
   // with the right audio. Whoever came last owns playback; this one is done.
   if (token !== loadToken) return true;
+  if (useAuthStore.getState().auth !== requestOwner) return false;
   if (recoveryTicket) {
     const target = recoveryTargetIndex(recoveryTicket);
     if (target === null) return false;
@@ -979,6 +1026,13 @@ async function loadIndexSource(index: number, autoplay: boolean, recoveryTicket?
     );
   }
   const p = ensurePlayer(activeIdx);
+  const waitsForStream = !!requestOwner && !useAuthStore.getState().offline && autoplay
+    && !song.url && !localSourceFor(song);
+  if (sourceIntent && waitsForStream) {
+    awaitingSpeculativeSource = { source: sourceIntent, load: token, owner: requestOwner, player: p, songId: song.id };
+  } else if (sourceIntent) {
+    streamWarming.sourceReady(sourceIntent);
+  }
   // The player may have just been created, so the reset above had nothing to
   // reach: this source starts at the beginning either way.
   setStreamOffset(0, p);
@@ -1420,6 +1474,7 @@ const WARM_TIMEOUT_MS = 120_000;
  */
 const streamWarming = new StreamWarming<SubsonicAuth>({
   timeoutMs: WARM_TIMEOUT_MS,
+  gate: playbackLoadGate,
   canRequest: (owner, id) => {
     const { auth, offline } = useAuthStore.getState();
     if (bootQuiet || offline || auth !== owner || !useSettings.getState().preloadUpcoming) return false;
@@ -1442,7 +1497,9 @@ const streamWarming = new StreamWarming<SubsonicAuth>({
     : event === 'ready' ? 'preload · server ready' : 'preload · no answer'),
 });
 
-function resetWarmed() { streamWarming.reset(); }
+playbackLoadGate.onOpen(() => warmUpcoming());
+
+function resetWarmed() { awaitingSpeculativeSource = null; streamWarming.reset(); }
 
 // ── Autoplay: when nearing the end of the queue, enqueue similar songs ──────
 // (Spotify-like). Online only, with the setting enabled (or in radio mode) and
@@ -2442,6 +2499,7 @@ function recoveryTargetIndex(ticket: PlaybackRecoveryTicket) {
 
 /** This stop records a failed connection; a later network edge may resume it. */
 function stopFailedPlayback() {
+  cancelSpeculativePriority();
   stoppingFailedPlayback = true;
   try {
     usePlayerStore.setState({ isPlaying: false, isBuffering: false });
@@ -2555,6 +2613,7 @@ function onPlaybackError(message: string, wasPlaying: boolean): void {
   );
   if (errorAttempts >= MAX_ERROR_ATTEMPTS) {
     bump('player · gave up on the track');
+    cancelSpeculativePriority();
     saveQueueLocal(true);
     // A paused/local/broken file is not a network outage. Leave automatic
     // recovery only to an online stream the user actually wanted to hear.
@@ -2630,7 +2689,11 @@ function onStatus(status: AudioStatus & { playWhenReady?: boolean }, live = fals
   // system pause has no new isPlaying transition. The patched native listener
   // marks that explicit pause; a network stall and source replacement do not.
   const nativePaused = status.playWhenReady === false;
-  if (nativePaused && !stoppingFailedPlayback) cancelPlaybackRecovery();
+  if (nativePaused) {
+    if (!nativePauseIsCurrent()) return;
+    cancelSpeculativePriority();
+    if (!stoppingFailedPlayback) cancelPlaybackRecovery();
+  }
   // Sleep timer fallback: if setTimeout got frozen in background, the
   // native player heartbeat fires it here.
   const endsAt = sleepDeadline();
@@ -2683,6 +2746,7 @@ function onStatus(status: AudioStatus & { playWhenReady?: boolean }, live = fals
     onPlaybackError(status.error, intendPlay);
     return;
   }
+  releaseLoadedSpeculation(status);
   // Sound: whatever it took, this track is not the failing one any more.
   if (playbackIsRunning(status) && errorTrackId) {
     errorTrackId = null;
@@ -3890,6 +3954,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // Effective volume of the current track (user × ReplayGain).
     const vol = effectiveVolume(currentSong(get()));
     if (get().isPlaying) {
+      cancelSpeculativePriority();
       // Pausing mid-fade cuts the outgoing: on resume only the current track
       // should play, at normal volume.
       cutCrossfade();
@@ -4480,7 +4545,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 // A task waiting for a speculative slot must not outlive its account, offline
 // mode or opt-in setting. Preserve any currently loading tap's own hold.
 useAuthStore.subscribe((state, previous) => {
-  if (state.auth !== previous.auth || state.offline !== previous.offline) streamWarming.invalidate();
+  if (state.auth !== previous.auth || state.offline !== previous.offline) {
+    cancelSpeculativePriority();
+    streamWarming.invalidate();
+  }
 });
 useSettings.subscribe((state, previous) => {
   if (state.preloadUpcoming === previous.preloadUpcoming) return;
@@ -4493,6 +4561,7 @@ useSettings.subscribe((state, previous) => {
 // hooking every action that touches them (add to queue, reorder, remove,
 // shuffle, autoplay…), where the queued track would go stale by omission.
 usePlayerStore.subscribe((st, prev) => {
+  if (!st.isPlaying && prev.isPlaying) cancelSpeculativePriority();
   if (st.queue.length === 0 && prev.queue.length > 0) resetWarmed();
   if (st.queue[st.index]?.id !== prev.queue[prev.index]?.id) {
     playbackOutage.trackChanged(st.queue[st.index]?.id ?? null);

@@ -1795,15 +1795,20 @@ export async function addToPlaylist(playlistId: string, songId: string): Promise
 }
 
 /** Creates an empty playlist and returns its id (temporary if offline). */
-export function createPlaylist(name: string): Promise<string> {
-  if (isOffline()) {
-    if (!serverOffline()) return Local.createPlaylist(name);
+export async function createPlaylist(name: string): Promise<string> {
+  const context = playlistEditContext();
+  if (context.offline) {
+    if (!context.owner) {
+      const { PlaylistEditQueue } = await import('@/lib/playlistMembership');
+      playlistEditQueue ??= new PlaylistEditQueue();
+      return playlistEditQueue.run(JSON.stringify([context.profile, 'local-playlists']), () => { context.check(); return Local.createPlaylist(name); });
+    }
     // Temporary id: on reconnect it's created on the server and gets its real id.
     const tmpId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     useOfflineQueue.getState().setPlaylist(tmpId, { created: true, name, songIds: [] });
     return Promise.resolve(tmpId);
   }
-  return Subsonic.createPlaylist(auth(), name);
+  return Subsonic.createPlaylist(context.owner!, name);
 }
 
 export async function deletePlaylist(id: string): Promise<void> {
@@ -1923,6 +1928,175 @@ export async function reorderPlaylist(id: string, songIds: string[]): Promise<vo
     return;
   }
   return Subsonic.reorderPlaylist(auth(), id, songIds);
+}
+
+/** The picker checks editability both before offering a row and on its fresh mutation snapshot. */
+export function canEditPlaylist(playlist: Subsonic.Playlist): boolean {
+  return !playlist.readonly && (!playlist.owner || playlist.owner === useAuthStore.getState().auth?.username);
+}
+
+function playlistEditContext() {
+  const owner = useAuthStore.getState().auth;
+  const profile = profileScopeId();
+  const offline = isOffline();
+  const current = () => useAuthStore.getState().auth === owner && profileScopeId() === profile && isOffline() === offline;
+  const check = () => { if (!current()) throw new Error('Playlist profile changed'); };
+  return { owner, profile, offline, current, check };
+}
+let playlistEditQueue: import('@/lib/playlistMembership').PlaylistEditQueue | undefined;
+
+/** Cached marks are only a preview; every edit reads a fresh, unfiltered tracklist. */
+export async function playlistMembership(
+  lists: Subsonic.Playlist[], songIds: string[],
+  report: (playlistId: string, present: string[]) => void, stop: () => boolean, options: { fresh?: boolean } = {},
+): Promise<void> {
+  const context = playlistEditContext();
+  const { presentIn } = await import('@/lib/playlistMembership');
+  const current = () => context.current() && !stop();
+  const publish = (id: string, ids: string[]) => { if (current()) report(id, presentIn(ids, songIds)); };
+  if (!current()) return;
+  if (context.offline && !context.owner) {
+    const stored = await Local.playlistTracklists();
+    for (const playlist of lists) publish(playlist.id, stored.get(playlist.id) ?? []);
+    return;
+  }
+  await loadMirror();
+  if (!current()) return;
+  const mirror = useLibraryMirror.getState();
+  const stored = await mirror.playlistSongIds();
+  if (!current()) return;
+  if (context.offline) {
+    const edits = useOfflineQueue.getState().data.playlists ?? {};
+    for (const playlist of lists) publish(playlist.id, edits[playlist.id]?.songIds ?? stored.get(playlist.id) ?? []);
+    return;
+  }
+  const versions = await mirror.playlistVersions();
+  if (!current()) return;
+  const stale = lists.filter((playlist) => options.fresh || !(playlist.id in versions)
+    || playlist.changed != null && versions[playlist.id] !== playlist.changed);
+  const pending = new Set(stale.map((playlist) => playlist.id));
+  for (const playlist of lists) {
+    if (!options.fresh && (!pending.has(playlist.id) || playlist.id in versions)) publish(playlist.id, stored.get(playlist.id) ?? []);
+  }
+  for (let index = 0; index < stale.length && current(); index += 3) {
+    await Promise.all(stale.slice(index, index + 3).map(async (playlist) => {
+      if (!current()) return;
+      try {
+        const result = await Subsonic.getPlaylist(context.owner!, playlist.id);
+        if (!current()) return;
+        if (result.playlist.id !== playlist.id) return;
+        mirror.savePlaylistDetail(playlist.id, result.playlist, result.songs);
+        publish(playlist.id, result.songs.map((song) => song.id));
+      } catch { publish(playlist.id, stored.get(playlist.id) ?? []); }
+    }));
+  }
+}
+
+async function editableOfflineTracklist(id: string, context: ReturnType<typeof playlistEditContext>): Promise<string[]> {
+  await loadMirror(); context.check();
+  const mirror = useLibraryMirror.getState();
+  const lists = await mirror.playlists(); context.check();
+  const detail = await mirror.playlistDetail(id); context.check();
+  const edit = useOfflineQueue.getState().data.playlists?.[id];
+  const playlist = detail?.playlist ?? lists?.find((item) => item.id === id);
+  if (playlist && !canEditPlaylist(playlist)) throw new Error('This playlist cannot be edited.');
+  if (edit?.deleted) throw new Error('Playlist changed. Reopen it and try again.');
+  if (edit?.songIds) return [...edit.songIds];
+  if (detail) {
+    const { completeTracklist } = await import('@/lib/playlistMembership'); context.check();
+    const ids = detail.songs.map((song) => song.id);
+    if (!completeTracklist(detail.playlist, ids)) throw new Error('Playlist changed. Reopen it and try again.');
+    return ids;
+  }
+  if (edit?.created) return [];
+  throw new Error('Playlist changed. Reopen it and try again.');
+}
+
+function savePickerTracklist(id: string, playlist: Subsonic.Playlist, songs: Subsonic.Song[], current: () => boolean) {
+  if (!current()) return;
+  const detail = { ...playlist, songCount: songs.length };
+  const mirror = useLibraryMirror.getState();
+  mirror.savePlaylistDetail(id, detail, songs);
+  void mirror.flush();
+  queryClient.setQueryData<Subsonic.Playlist[]>(['playlists'], (lists) => lists?.map((item) => item.id === id ? { ...item, songCount: songs.length } : item));
+  void queryClient.invalidateQueries({ queryKey: ['playlist', id] });
+  void queryClient.invalidateQueries({ queryKey: ['playlists'] });
+}
+
+/** Only missing selected songs are added. Opening another menu cannot retarget a committed batch. */
+export async function addSongsToPlaylist(id: string, songs: Subsonic.Song[], options: { stillCurrent?: () => boolean } = {}): Promise<string[]> {
+  const context = playlistEditContext();
+  const rules = await import('@/lib/playlistMembership');
+  playlistEditQueue ??= new rules.PlaylistEditQueue();
+  return playlistEditQueue.run(JSON.stringify([context.profile, context.offline && !context.owner ? 'local-playlists' : id]), async () => {
+    context.check();
+    const wanted = [...new Set(songs.map((song) => song.id))];
+    if (songs.some((song) => !canGoIntoPlaylist(song))) throw new Error('These items cannot be added to a playlist');
+    const ready = () => { context.check(); if (options.stillCurrent && !options.stillCurrent()) throw new Error('Playlist menu changed'); };
+    if (context.offline && !context.owner) {
+      ready();
+      const ids = await Local.editPlaylistTracklist(id, (current) => [...current, ...rules.missingFrom(current, songs).map((song) => song.id)], () => context.current() && (!options.stillCurrent || options.stillCurrent()));
+      context.check(); return rules.presentIn(ids, wanted);
+    }
+    if (context.offline) {
+      const current = await editableOfflineTracklist(id, context); ready();
+      const adding = rules.missingFrom(current, songs);
+      useOfflineQueue.getState().rememberSongs(adding);
+      useOfflineQueue.getState().setPlaylist(id, { songIds: [...current, ...adding.map((song) => song.id)] });
+      return wanted;
+    }
+    const result = await Subsonic.getPlaylist(context.owner!, id); ready();
+    if (result.playlist.id !== id || !rules.canEditTracks(result.playlist, context.owner?.username)) throw new Error('This playlist cannot be edited.');
+    if (!rules.completeTracklist(result.playlist, result.songs.map((song) => song.id))) throw new Error('Playlist changed. Reopen it and try again.');
+    const adding = rules.missingFrom(result.songs.map((song) => song.id), songs);
+    for (const song of adding) { context.check(); await Subsonic.addToPlaylist(context.owner!, id, song.id); }
+    context.check(); savePickerTracklist(id, result.playlist, [...result.songs, ...adding], context.current);
+    return wanted;
+  });
+}
+
+/** Remove matching entries by fresh server positions, never by rewriting the rest of the playlist. */
+export async function removeSongsFromPlaylist(id: string, songIds: string[], options: { stillCurrent?: () => boolean } = {}): Promise<string[]> {
+  const context = playlistEditContext();
+  const rules = await import('@/lib/playlistMembership');
+  playlistEditQueue ??= new rules.PlaylistEditQueue();
+  return playlistEditQueue.run(JSON.stringify([context.profile, context.offline && !context.owner ? 'local-playlists' : id]), async () => {
+    context.check();
+    const drop = new Set(songIds);
+    const ready = () => { context.check(); if (options.stillCurrent && !options.stillCurrent()) throw new Error('Playlist menu changed'); };
+    if (context.offline && !context.owner) {
+      ready(); await Local.editPlaylistTracklist(id, (ids) => ids.filter((sid) => !drop.has(sid)), () => context.current() && (!options.stillCurrent || options.stillCurrent()));
+      context.check(); return [];
+    }
+    if (context.offline) {
+      const ids = await editableOfflineTracklist(id, context); ready();
+      useOfflineQueue.getState().setPlaylist(id, { songIds: ids.filter((sid) => !drop.has(sid)) });
+      return [];
+    }
+    // Never read the UI/multilibrary-filtered data facade to determine indices.
+    let snapshot = await Subsonic.getPlaylist(context.owner!, id); ready();
+    const checkSnapshot = (value: typeof snapshot) => {
+      context.check();
+      if (value.playlist.id !== id || !rules.canEditTracks(value.playlist, context.owner?.username)) throw new Error('This playlist cannot be edited.');
+      if (!rules.completeTracklist(value.playlist, value.songs.map((song) => song.id))) throw new Error('Playlist changed. Reopen it and try again.');
+    };
+    checkSnapshot(snapshot);
+    let expected = [...snapshot.songs];
+    const positions = rules.indicesToRemove(expected.map((song) => song.id), songIds);
+    for (let step = 0; step < positions.length; step++) {
+      if (step > 0) {
+        snapshot = await Subsonic.getPlaylist(context.owner!, id); checkSnapshot(snapshot);
+        if (!rules.sameTracklist(snapshot.songs.map((song) => song.id), expected.map((song) => song.id))) throw new Error('Playlist changed. Reopen it and try again.');
+      }
+      context.check();
+      const position = positions[step];
+      if (!drop.has(expected[position]?.id)) throw new Error('Playlist changed. Reopen it and try again.');
+      await Subsonic.removeFromPlaylist(context.owner!, id, position);
+      expected.splice(position, 1);
+    }
+    context.check(); savePickerTracklist(id, snapshot.playlist, expected, context.current);
+    return rules.presentIn(expected.map((song) => song.id), songIds);
+  });
 }
 
 // ── Multi-library merging (subset mode) ──

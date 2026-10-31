@@ -13,6 +13,7 @@ import * as Crypto from 'expo-crypto';
 // This one answers there, and honours `AbortSignal` properly with it.
 import { fetch } from 'expo/fetch';
 
+import { tg } from '@/i18n';
 import { markAbsentCovers, omitsAbsentCovers } from '@/lib/absentCovers';
 import { inTimeOrder, wordsFromCues } from '@/lib/lyricWords';
 import { canonicalId, idWouldChange } from '@/lib/navidromeIds';
@@ -317,6 +318,8 @@ export interface Playlist {
   public?: boolean;
   /** Playlist owner ("System" for Ampache stock smartlists). */
   owner?: string;
+  /** OpenSubsonic smart/synced or otherwise non-editable playlists. */
+  readonly?: boolean;
   /** Creation date (ISO); sent by Navidrome/Subsonic and the local profile. */
   created?: string;
   /** Last modification (ISO). */
@@ -538,9 +541,9 @@ async function request<T>(
     // is one of the two shapes this report exists to tell apart.
     netTally(`${endpoint} (no answer)`);
     if (controller.signal.aborted) {
-      throw new SubsonicRequestError('Server took too long to respond', true);
+      throw new SubsonicRequestError(tg('Server took too long to respond'), true);
     }
-    throw new SubsonicRequestError('Could not connect to the server', true);
+    throw new SubsonicRequestError(tg('Could not connect to the server'), true);
   } finally {
     if (agent) agentSlots.release();
   }
@@ -550,7 +553,7 @@ async function request<T>(
   netTally(endpoint, Number(res.headers.get('content-length')) || 0);
   if (!res.ok) {
     clearTimeout(timer);
-    throw new SubsonicRequestError(`Network error (${res.status})`, false);
+    throw new SubsonicRequestError(tg('Network error ({status})', { status: res.status }), false);
   }
   // Apart from the request: this is the part that runs on the JS thread, and
   // it grows with the size of the answer.
@@ -576,21 +579,21 @@ async function request<T>(
     });
   } catch (e) {
     if (controller.signal.aborted) {
-      throw new SubsonicRequestError('Server took too long to respond', true);
+      throw new SubsonicRequestError(tg('Server took too long to respond'), true);
     }
     throw e;
   } finally {
     clearTimeout(timer);
   }
   const sub = json['subsonic-response'];
-  if (!sub) throw new SubsonicRequestError('Unexpected server response', false);
+  if (!sub) throw new SubsonicRequestError(tg('Unexpected server response'), false);
   if (sub.status === 'failed') {
     const code = typeof sub.error?.code === 'number' ? sub.error.code : undefined;
     if (!retried && code === ERR_NOT_FOUND) {
       const again = await retryWithCanonicalId<T>(auth, endpoint, extra, allowOffline);
       if (again) return again;
     }
-    throw new SubsonicRequestError(sub.error?.message ?? 'Subsonic error', false, code);
+    throw new SubsonicRequestError(sub.error?.message ?? tg('Subsonic error'), false, code);
   }
   if (omitsAbsentCovers(sub)) markAbsentCovers(sub);
   return sub as T;
@@ -936,7 +939,7 @@ export async function createPlaylist(
   // Some servers don't return the created playlist: look it up by name.
   const lists = await getPlaylists(auth);
   const created = lists.find((p) => p.name === name);
-  if (!created) throw new Error('Created playlist not found');
+  if (!created) throw new Error(tg('Created playlist not found'));
   return created.id;
 }
 
@@ -985,13 +988,13 @@ export async function reorderPlaylist(
       body: params.toString(),
       signal,
     });
-    if (!res.ok) throw new Error(`Error de red (${res.status})`);
+    if (!res.ok) throw new Error(tg('Network error ({status})', { status: res.status }));
     return res.json();
   }).catch((e) => {
-    throw e instanceof DeadlineError ? new SubsonicRequestError(e.message, true) : e;
+    throw e instanceof DeadlineError ? new SubsonicRequestError(tg('Server took too long to respond'), true) : e;
   });
   const sub = json['subsonic-response'];
-  if (sub?.status === 'failed') throw new Error(sub.error?.message ?? 'Error de Subsonic');
+  if (sub?.status === 'failed') throw new Error(sub.error?.message ?? tg('Subsonic error'));
 }
 
 /** Removes a song from a playlist by its index (position in the list). */
@@ -1912,7 +1915,7 @@ export async function createShare(
     { id, description, expires: expiresAt ? Math.round(expiresAt) : undefined },
   );
   const share = res.shares?.share?.[0];
-  if (!share?.url) throw new SubsonicRequestError('The server did not return a link', false);
+  if (!share?.url) throw new SubsonicRequestError(tg('The server did not return a link'), false);
   // The id comes back too, and it is what lets Navidrome's own API be asked for
   // the one thing Subsonic left out (see `setShareDownloadable`).
   return { id: share.id, url: share.url };

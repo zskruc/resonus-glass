@@ -3,7 +3,7 @@ import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useFocusEffect, useNavigation } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
@@ -25,13 +25,15 @@ import { Cover } from '@/components/Cover';
 import { EmptyState } from '@/components/EmptyState';
 import { Message } from '@/components/Message';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
+import { SearchResultGrid } from '@/components/SearchResultGrid';
 import { TrackRow } from '@/components/TrackRow';
 import { useDebounce } from '@/hooks/useDebounce';
 import { songsLabel, useT } from '@/i18n';
 import { haptic } from '@/lib/haptics';
 import { onTabReselect, takeSearchFocus } from '@/lib/tabOrigin';
 import { bump } from '@/lib/perfLog';
-import { useAuthStore } from '@/store/auth';
+import { profileScopeId, useAuthStore } from '@/store/auth';
+import { currentSearchData, readCurrentSearch, searchGridGeometry, searchGridItems, searchRequestKey } from '@/lib/searchGrid';
 import { useMediaMenu } from '@/store/mediaMenu';
 import { currentSong, usePlayerStore } from '@/store/player';
 import { useRecentSearches, type RecentItem } from '@/store/recentSearches';
@@ -85,6 +87,7 @@ export default function SearchScreen() {
   const offline = useAuthStore((s) => s.offline);
   const canSearch = useAuthStore((s) => !!s.auth || s.offline);
   const auth = useAuthStore((s) => s.auth);
+  const profile = profileScopeId();
   const t = useT();
   const lang = useSettings((s) => s.language);
   const bottomPad = useScreenBottomPadding();
@@ -166,11 +169,17 @@ export default function SearchScreen() {
     }, []),
   );
 
-  const { data, isFetching, isError, refetch } = useQuery({
-    queryKey: ['search', debouncedQuery],
-    queryFn: () => search(debouncedQuery),
+  const { data: response, isFetching: queryFetching, isError: queryError, refetch } = useQuery({
+    queryKey: searchRequestKey(profile, offline, debouncedQuery),
+    queryFn: ({ signal }) => readCurrentSearch(debouncedQuery, () => !signal.aborted
+      && profileScopeId() === profile && useAuthStore.getState().auth === auth
+      && useAuthStore.getState().offline === offline, search),
     enabled: canSearch && debouncedQuery.length > 1,
   });
+  const queryMatches = query.trim() === debouncedQuery;
+  const data = currentSearchData(query, debouncedQuery, response);
+  const isFetching = query.trim().length > 1 && (!queryMatches || queryFetching);
+  const isError = queryMatches && queryError;
 
   const openMediaMenu = useMediaMenu((s) => s.open);
   // Playlists: Subsonic's search3 doesn't return them, so they're filtered by
@@ -181,7 +190,7 @@ export default function SearchScreen() {
     enabled: canSearch && debouncedQuery.length > 1,
   });
   const playlistMatches =
-    debouncedQuery.length > 1
+    queryMatches && debouncedQuery.length > 1
       ? (playlists ?? []).filter((p) =>
           p.name.toLowerCase().includes(debouncedQuery.toLowerCase()),
         )
@@ -197,7 +206,7 @@ export default function SearchScreen() {
     enabled: canSearchStations && debouncedQuery.length > 1,
   });
   const stationMatches =
-    debouncedQuery.length > 1
+    queryMatches && debouncedQuery.length > 1
       ? (stations ?? []).filter((r) =>
           r.name.toLowerCase().includes(debouncedQuery.toLowerCase()),
         )
@@ -230,6 +239,17 @@ export default function SearchScreen() {
   // With the box empty the screen is what was opened from it before. Genres
   // are Explore's, and were a second Explore here.
   const showRecent = isEmpty && recent.length > 0;
+  const gridKind = filter === 'artists' || filter === 'albums' ? filter : undefined;
+  const grid = searchGridGeometry(width - pagePad * 2, gridKind ?? 'albums', spacing.md);
+  const gridItems = useMemo(() => gridKind ? searchGridItems(gridKind, data) : [], [gridKind, data]);
+  const feedback = isFetching ? (
+    <ActivityIndicator style={{ marginTop: spacing.xl }} color={colors.accent} />
+  ) : isError ? (
+    <Message text={t("Couldn't reach the server. Check your connection.")} onRetry={() => refetch()} />
+  ) : data && shownCount === 0 ? (
+    <EmptyState icon="search-outline" title={t('No results')}
+      subtitle={t('No results for “{q}”', { q: debouncedQuery })} />
+  ) : null;
 
   /** Recent item subtitle: type (+ artist for albums/songs). */
   const recentLabel = (item: RecentItem): string => {
@@ -302,7 +322,19 @@ export default function SearchScreen() {
         </View>
       )}
 
-      <AnimatedScrollView
+      {gridKind && !isEmpty ? <SearchResultGrid
+        identity={JSON.stringify([profile, offline, gridKind, query.trim()])}
+        items={gridItems}
+        columns={grid.columns}
+        cardWidth={grid.cardWidth}
+        pagePadding={pagePad}
+        bottomPadding={bottomPad}
+        title={t(gridKind === 'artists' ? 'Artists' : 'Albums')}
+        feedback={feedback}
+        appleMusic={appleMusic}
+        onScroll={dockScroll}
+        addRecent={addRecent}
+      /> : <AnimatedScrollView
         onScroll={dockScroll}
         scrollEventThrottle={16}
         contentContainerStyle={[
@@ -358,25 +390,7 @@ export default function SearchScreen() {
           />
         ) : null}
 
-        {isFetching ? (
-          <ActivityIndicator style={{ marginTop: spacing.xl }} color={colors.accent} />
-        ) : isError ? (
-          <Message
-            text={t("Couldn't reach the server. Check your connection.")}
-            onRetry={() => refetch()}
-          />
-        ) : data && debouncedQuery.length > 1 && shownCount === 0 ? (
-          <EmptyState
-            icon="search-outline"
-            title={t('No results')}
-            // The same sentence whichever chip is pressed. Naming the kind in
-            // it would read better and would mean dropping a translated word
-            // into the middle of a translated sentence, which is a gender and
-            // a case nobody here can get right for every language. The chip is
-            // on screen and lit, which is what says the answer is narrowed.
-            subtitle={t('No results for “{q}”', { q: debouncedQuery })}
-          />
-        ) : null}
+        {feedback}
 
         {shows('artists') && data && data.artists.length > 0 ? (
           <View style={styles.section}>
@@ -550,7 +564,7 @@ export default function SearchScreen() {
             ))}
           </View>
         ) : null}
-      </AnimatedScrollView>
+      </AnimatedScrollView>}
     </View>
   );
 }

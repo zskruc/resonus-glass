@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 975 of them.
+Every string the app can show, under the screen it shows up on. 988 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -104,12 +104,14 @@ you are actually typing into, which is easier than reading it here.
 | `Sleep timer ({n} min left)` | The menu row while it is counting down. `{n}` is minutes still to go |
 | `Sleep timer (end of song)` | The same row when it is set to stop at the end of this song |
 | `Sleep timer off` | The toast that says it was turned off |
+| `Something went wrong` |  |
 | `Song information` | The menu action and the sheet's title: what is known about the track |
 | `Start mix` | Start an auto-generated radio mix from this song |
 | `The link expires in` | Heading over the choices below. They are spans from the moment the link is made, not times of day |
 | `This download is a {n} kbps copy, not the original file.` | Shown before exporting: the file on the phone was transcoded when it was downloaded. `{n}` is a bitrate |
 | `This song carries no information.` | Empty state: the file and the server had nothing to say |
 | `Track` | The track number on its album. Not the song itself |
+| `Try again` |  |
 | `Turn off` | Turn off the sleep timer |
 | `Unknown title` | Fallback when the file and the server have no title |
 | `Unpin` | Stop keeping it at the top of its list |
@@ -343,6 +345,7 @@ you are actually typing into, which is easier than reading it here.
 | String | What it is |
 | --- | --- |
 | `Artist` | In search results, the little word under a result saying what kind of thing it is |
+| `Couldn't create the playlist` | Toast: the server refused |
 | `Couldn't load artists.` | Error on the screen, with a Retry button |
 | `Couldn't load playlists.` | Error on the screen, with a Retry button |
 | `Couldn't load your library.` |  |
@@ -481,6 +484,7 @@ you are actually typing into, which is easier than reading it here.
 | `{n} removed from playlist` | `{n}` is a plain number, with no word for songs attached: English reads "3 removed from playlist". Put in whatever your language needs around it |
 | `Add an optional description` | Placeholder in the empty description box |
 | `Add songs from the ⋯ menu of any song.` | The line under an empty playlist, saying how to fill it |
+| `Added to “{name}”` | Toast. `{name}` is the playlist's name |
 | `Artwork upload is disabled on the server` | The server can do it but has it turned off |
 | `Auto-download` | Keep this playlist downloaded by itself as songs are added to it |
 | `Auto-download off` | The toast that says it was turned off |
@@ -595,20 +599,27 @@ you are actually typing into, which is easier than reading it here.
 | `Confirm your password` | Changing a cover on the server needs the password again. It is not a new password being set |
 | `Couldn't load radio stations.` | Error on the screen, with a Retry button |
 | `Couldn't update the cover` | Toast: the upload failed |
+| `Cover uploads are disabled` |  |
 | `Delete` | The confirm button of a delete dialog, for a playlist or a radio station |
 | `Delete station` | Menu action, in red |
 | `Edit station` | Title of the same sheet when changing one |
 | `Find a station` | The search box's placeholder on the radio screen |
+| `Invalid artist catalogue` |  |
 | `Name` | The Name field when editing a playlist or a station |
+| `No permission` |  |
 | `No radio stations` | Empty state heading |
+| `No saved password` |  |
 | `Password` | The password field, on the login screen and wherever the server asks again |
 | `Pin to top` | Keep this at the top of its list, above everything else. `Unpin` undoes it |
 | `Radio` | Internet radio stations. Most languages keep the word |
 | `Remove “{name}” from your server?` | Dialog title: stations live on the server, so this deletes it for everybody |
 | `Remove cover` | Screen reader label for the small x on a chosen picture |
+| `Server error ({status})` |  |
 | `Station name` | The name field when adding an internet radio station |
 | `Stream URL` | Field when adding a radio station |
 | `Tap + to add an internet radio station.` | The line under an empty state, pointing at the + button |
+| `The server does not support cover art` |  |
+| `The server does not support this` |  |
 | `The stream URL must start with http:// or https://` | Validation message under the address field |
 | `Unpin` | Stop keeping it at the top of its list |
 | `Website (optional)` | Field when adding a radio station |
@@ -1336,10 +1347,9 @@ you are actually typing into, which is easier than reading it here.
 | String | What it is |
 | --- | --- |
 | `“{name}” will no longer be available offline.` | The line under that title. `{name}` is the album, artist or playlist |
-| `{n} added to “{name}”` | Toast when several songs went in at once. `{n}` is a count of songs |
 | `{n} columns` | The other options in that menu: cards, this many across. `{n}` is 2, 3 or 4, so it is always plural |
 | `{n} of {m} songs exported` | Toast when only some of them made it |
-| `{n} of {songs} are already in “{name}”.` | The same warning when adding several at once and only some of them are already there. `{n}` is how many of them are, and `{songs}` already reads as a count ("12 songs"), so the sentence is like "3 of 12 songs are already in “Rock”." |
+| `{n} of {songs}` |  |
 | `{n} removed from favorites` | Toast. `{n}` is a count of songs |
 | `{n} selected` | How many songs are ticked right now |
 | `{n} songs couldn't be downloaded` | Toast: some failed, the rest are there |
@@ -1349,19 +1359,15 @@ you are actually typing into, which is easier than reading it here.
 | `{songs} need about {size}, but only {free} is free. The download may stop partway.` | The same line when the phone is nearly full |
 | `{songs} will be saved to this device (about {size}).` | The same line when the size is known. `{size}` is like "340 MB" |
 | `{songs} will be saved to this device.` | The line under that title. `{songs}` is already worded and inflected, "12 songs" |
-| `Add anyway` | The confirm button of that warning: put it in a second time |
-| `Add only the new ones` | The other button of that warning, when some are already in the playlist and some are not: leave the ones that are and add the rest |
+| `Add missing songs or remove all matching entries from a selected playlist.` |  |
 | `Add to a playlist` | Menu action: put this song, album or selection into a playlist |
 | `Add to favorites` | Menu action and screen reader label for the heart. A verb |
 | `Add to queue` | Action: put this song at the end of the queue |
-| `Added to “{name}”` | Toast. `{name}` is the playlist's name |
 | `Added to favorites` | Toast |
 | `Added to queue` | The toast that says it worked |
 | `Album` | In search results, the little word under a result saying what kind of thing it is |
 | `Albums` | A heading over a list of them, never a count |
-| `All {songs} are already in “{name}”.` | The same warning when every one of the several being added is already there. `{songs}` already reads as a count ("12 songs") |
 | `Alphabetical` | Sort option: the order of a list |
-| `Already added` | Title of the dialog that warns the song is in that playlist already |
 | `Ascending` | Sort option: the order of a list |
 | `Back` | Screen reader label for the back arrow. A direction, not a verb |
 | `Cancel` | The button that closes a dialog without doing anything, and the one beside a search box |
@@ -1375,11 +1381,11 @@ you are actually typing into, which is easier than reading it here.
 | `Could not connect to the server` |  |
 | `Couldn't add to the playlist` | Toast: the server refused |
 | `Couldn't complete the action` | What the app says when it does not know what went wrong. Deliberately vague |
-| `Couldn't create the playlist` | Toast: the server refused |
 | `Couldn't load albums.` | Error on the screen, with a Retry button |
 | `Couldn't load songs.` | Error on the screen, with a Retry button |
 | `Couldn't play the song` | Toast: the app could not start it at all |
 | `Create` | The confirm button of the new-playlist dialog. A verb |
+| `Created playlist not found` |  |
 | `Default` | Sorting pill: what you get when nothing is sorted, which is the order the server keeps its songs in. Not alphabetical, and not Resonus deciding. On a playlist it is the order the list came in, which is the one you made by dragging the songs if it is an ordinary playlist and the one its rules produced if it is a smart one — hence a word that is true of both rather than "custom" or "pre-defined" |
 | `Delete downloads` | Menu action: delete the downloaded files of everything here |
 | `Descending` | Sort option: the order of a list |
@@ -1397,9 +1403,11 @@ you are actually typing into, which is easier than reading it here.
 | `Library` | The settings section, and a folder in the car |
 | `List` | An option in that menu: one row per item, instead of cards |
 | `Lyrics` | The words of the song. Also a line of the storage bar, where it is their size on the phone |
+| `Manage playlists` |  |
 | `Monospace` | A typeface whose characters all have the same width, in Settings › Font |
 | `More` | A "see more" action, and the third button of the selection bar, the one that opens the rest of what it can do |
 | `More options` | Read out by the screen reader for the three-dot button, which is ⋮ on a song row and in the player and ⋯ in a screen's header |
+| `Network error ({status})` |  |
 | `New playlist` | Row at the top of the playlist picker, and the button on an empty library: make one |
 | `Next` | Player control: the next track (accessibility label) |
 | `No results` | Nothing matched what was typed |
@@ -1414,10 +1422,13 @@ you are actually typing into, which is easier than reading it here.
 | `Play` | Read out by the screen reader for the play button. A verb |
 | `Play next` | Action: put this song right after the one playing, without clearing the rest |
 | `Playing next` | The toast that says `Play next` worked. Not the same string, and not a heading |
+| `Playlist changed. Reopen it and try again.` |  |
 | `Playlist name` | The name field when making or renaming a playlist |
 | `Playlists` | A section on Home and in the library, and a folder in the car |
 | `Rate {n} stars` | Read out by the screen reader for each star. `{n}` is which star it is |
+| `Read-only playlist` |  |
 | `Remove` | Take something out of a list. Deleting for good is `Delete` |
+| `Remove all matching entries` |  |
 | `Remove download` | Delete the downloaded file, keeping the song in the library |
 | `Remove download?` | Dialog title: delete the files of something already downloaded |
 | `Remove from favorites` | The same button when it is already a favourite, and the menu entry that takes a whole selection out |
@@ -1442,8 +1453,10 @@ you are actually typing into, which is easier than reading it here.
 | `Sort by` | Heading over the sort options |
 | `Stop` | Stop a download that is running. Not stop playback |
 | `Stop download?` | Dialog title: stop a download that is running |
+| `Subsonic error` |  |
+| `The server did not return a link` |  |
+| `This playlist cannot be edited.` |  |
 | `This song can't be cast` | Toast: the speaker or TV will not take this file |
-| `This song is already in “{name}”.` | The line under that title. `{name}` is the playlist |
 | `Undo` | The button in a toast that takes back what just happened. It is there for a few seconds |
 | `Unexpected server response` |  |
 | `Unknown album` | Fallback when the file and the server have no album |

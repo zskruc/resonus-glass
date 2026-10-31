@@ -1,10 +1,9 @@
 /** Shared floating card with actions for a song (⋯ menu). */
 import Icon from '@/components/Icon';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  ActivityIndicator,
   Modal,
   Platform,
   Pressable,
@@ -22,13 +21,8 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { useBottomSheetAnim } from '@/hooks/useBottomSheetAnim';
 import { useScreenSize } from '@/hooks/useScreenSize';
 import {
-  addToPlaylist,
   canGoIntoPlaylist,
-  coverArtUrl,
   songCoverUrl,
-  createPlaylist,
-  getPlaylist,
-  getPlaylists,
   removeFromPlaylist,
   reorderPlaylist,
   star,
@@ -46,7 +40,7 @@ import { normKey, pickFolder } from '@/lib/localLibrary';
 import { MenuRequestScope } from '@/lib/menuRequest';
 import { useArtistPicker } from '@/store/artistPicker';
 import { useAuthStore } from '@/store/auth';
-import { useAutoDownloads } from '@/store/autoDownloads';
+import { usePlaylistPicker } from '@/store/playlistPicker';
 import { useDownloads } from '@/store/downloads';
 import { usePlayerStore } from '@/store/player';
 import { useSongInfo } from '@/store/songInfo';
@@ -80,14 +74,6 @@ function MenuContent({ card, maxHeight, contentKey, children }: {
 /** Keep the sheet's existing lists; the card's outer scroll owns their drag. */
 function MenuList({ card, ...props }: ScrollViewProps & { card: boolean }) {
   return card ? <View>{props.children}</View> : <ScrollView {...props} />;
-}
-
-/** Maximum height of the playlist list: proportional to the screen so it
- *  doesn't look cramped on large phones (previously a fixed 360). Measured
- *  while rendering, or a phone turned on its side gets a menu taller than the
- *  screen it is on (#131). */
-function playlistsMaxH(height: number): number {
-  return Math.round(height * 0.6);
 }
 
 /** Height of one action row: its vertical padding plus the icon, the tallest
@@ -294,29 +280,22 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
   const favIds = useFavoriteIds(!!song);
   const favorited = song ? (favIds ? favIds.has(song.id) : !!song.starred) : false;
 
-  const [mode, updateMode] = useState<'actions' | 'playlists' | 'sleep' | 'rating' | 'export'>(
+  const [mode, updateMode] = useState<'actions' | 'sleep' | 'rating' | 'export'>(
     startInSleep ? 'sleep' : 'actions',
   );
-  const [creating, setCreating] = useState<number | null>(null);
   // The action list is scrolled to the top: only then does a downward drag
   // belong to the sheet (see the `pan` below).
   const [atTop, setAtTop] = useState(true);
-  // "Already in the playlist" prompt pending confirmation (Spotify style).
-  const [dupPrompt, setDupPrompt] = useState<{ playlistId: string; name: string; ticket: number } | null>(null);
   // Removing a download asks first, like albums and playlists do.
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const beginRequest = () => {
     actionClosing.current = false;
-    setCreating(null);
-    setDupPrompt(null);
     setConfirmDelete(null);
     return requests.begin();
   };
   const cancelConfirmation = () => {
     if (!isOpenSession()) return;
     requests.invalidate();
-    setCreating(null);
-    setDupPrompt(null);
     setConfirmDelete(null);
     setAtTop(true);
   };
@@ -333,12 +312,6 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
     cancelConfirmation();
     updateMode(next);
   };
-
-  const { data: playlists, isLoading: loadingPlaylists } = useQuery({
-    queryKey: ['playlists'],
-    queryFn: () => getPlaylists(),
-    enabled: (!!auth || offline) && canGoIntoPlaylist(song) && mode === 'playlists',
-  });
 
   const explicit = useExplicitBadge(song?.explicitStatus);
 
@@ -392,65 +365,6 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
     }
   }
 
-  /** Actually adds (without checking duplicates) and closes with a toast. */
-  async function doAdd(playlistId: string, playlistName: string, alreadyDismissed = false, ticket?: number) {
-    if (!canGoIntoPlaylist(song) || !isOpenSession() || ticket !== undefined && !requests.owns(ticket)) return;
-    const actionTicket = beginRequest();
-    actionClosing.current = true;
-    if (alreadyDismissed) closeNow();
-    else dismiss(() => {
-      if (requests.owns(actionTicket)) closeNow();
-    });
-    try {
-      // A selected mutation finishes for this song, even if another menu opens.
-      await addToPlaylist(playlistId, song.id);
-      queryClient.invalidateQueries({ queryKey: ['playlist', playlistId] });
-      // If the list has auto-download, fetch the newly added song now.
-      void useAutoDownloads.getState().reconcile(playlistId, true);
-      if (requests.owns(actionTicket)) toast(t('Added to “{name}”', { name: playlistName }));
-    } catch {
-      if (requests.owns(actionTicket)) toast(t("Couldn't add to the playlist"));
-    }
-  }
-
-  async function addTo(playlistId: string, playlistName: string) {
-    if ((!auth && !offline) || !canGoIntoPlaylist(song) || !isOpenSession()) return;
-    const ticket = beginRequest();
-    // Spotify-style duplicate warning: if already present, ask first. If the
-    // check fails (network), add without warning: better than blocking.
-    try {
-      const { songs } = await getPlaylist(playlistId);
-      if (!ownsConfirmation(ticket)) return;
-      if (songs.some((s) => s.id === song.id)) {
-        setDupPrompt({ playlistId, name: playlistName, ticket });
-        return;
-      }
-    } catch {
-      // ignore
-    }
-    if (ownsConfirmation(ticket)) await doAdd(playlistId, playlistName, false, ticket);
-  }
-
-  async function createAndAdd(name: string) {
-    if (creating === null || !ownsConfirmation(creating) || (!auth && !offline) || !canGoIntoPlaylist(song) || !name.trim()) return;
-    const ticket = beginRequest();
-    actionClosing.current = true;
-    if (isCard) closeNow();
-    else dismiss(() => {
-      if (requests.owns(ticket)) closeNow();
-    });
-    try {
-      const id = await createPlaylist(name.trim());
-      // Creating and adding are one accepted transaction: never leave the
-      // user's new playlist empty just because they opened another menu.
-      await addToPlaylist(id, song.id);
-      queryClient.invalidateQueries({ queryKey: ['playlists'] });
-      if (requests.owns(ticket)) toast(t('Added to “{name}”', { name: name.trim() }));
-    } catch {
-      if (requests.owns(ticket)) toast(t("Couldn't create the playlist"));
-    }
-  }
-
   function removeFromList() {
     if ((!auth && !offline) || !context) return;
     close();
@@ -500,12 +414,12 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
 
   return (
     <Modal transparent animationType="none" visible onRequestClose={() => {
-      if (creating !== null || confirmDelete !== null || dupPrompt) cancelConfirmation();
+      if (confirmDelete !== null) cancelConfirmation();
       else close();
     }}>
       {/* Gestures inside an RN Modal need a root view of their own: the
           Modal renders in a native hierarchy outside the app's. */}
-      {!(creating || confirmDelete || dupPrompt) && <MenuGlassCardFrame onClose={close}
+      {confirmDelete === null && <MenuGlassCardFrame onClose={close}
         backdropStyle={backdropStyle} cardStyle={[sheetStyle, { padding: 0 }]} onLayout={onSheetLayout}>
           <MenuCardContext.Provider value={isCard}>
           <MenuContent card={isCard} maxHeight={cardMaxHeight} contentKey={`${song.id}:${mode}`}>
@@ -545,50 +459,9 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
             </View>
           </GestureDetector>
 
-          <GestureDetector gesture={pan.enabled(!isCard && mode !== 'playlists' && atTop)}>
+          <GestureDetector gesture={pan.enabled(!isCard && atTop)}>
             <View>
-              {mode === 'playlists' ? (
-                <View style={!isCard && { maxHeight: playlistsMaxH(screenH) }}>
-                  <Pressable
-                    style={actionStyle}
-                    onPress={() => setMode('actions')}
-                  >
-                    <Icon name="chevron-back" size={rowIconSize} color={colors.text} />
-                    <Text style={actionTextStyle}>{t('Add to a playlist')}</Text>
-                  </Pressable>
-                  <Pressable
-                    style={({ pressed }) => [...actionStyle, pressed && { opacity: 0.6 }]}
-                    onPress={() => {
-                      if (isOpenSession()) setCreating(beginRequest());
-                    }}
-                  >
-                    <View style={[styles.newPlaylistIcon, isCard && styles.cardNewPlaylistIcon]}>
-                      <Icon name="add" size={rowIconSize} color={colors.text} />
-                    </View>
-                    <Text style={actionTextStyle}>{t('New playlist')}</Text>
-                  </Pressable>
-                  {loadingPlaylists ? (
-                    <ActivityIndicator style={{ marginVertical: spacing.lg }} color={colors.accent} />
-                  ) : (
-                    <MenuList card={isCard}>
-                      {(playlists ?? []).map((p) => (
-                        <Pressable
-                          key={p.id}
-                          accessibilityRole="button"
-                          accessibilityLabel={p.name}
-                          style={({ pressed }) => [...actionStyle, pressed && { opacity: 0.6 }]}
-                          onPress={() => addTo(p.id, p.name)}
-                        >
-                          <Cover uri={coverArtUrl( p.coverArt ?? p.id, COVER.thumb)} size={isCard ? 32 : 40} />
-                          <Text style={actionTextStyle} numberOfLines={1}>
-                            {p.name}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </MenuList>
-                  )}
-                </View>
-              ) : mode === 'sleep' ? (
+              {mode === 'sleep' ? (
                 <View>
                   <Pressable style={actionStyle} onPress={() => setMode('actions')}>
                     <Icon name="chevron-back" size={rowIconSize} color={colors.text} />
@@ -696,7 +569,13 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
                   {canGoIntoPlaylist(song) ? <Action
                     icon="add-circle-outline"
                     label={t('Add to a playlist')}
-                    onPress={() => setMode('playlists')}
+                    onPress={() => {
+                      const owner = useAuthStore.getState().auth;
+                      const wasOffline = useAuthStore.getState().offline;
+                      dismissAction(() => {
+                        if (useAuthStore.getState().auth === owner && useAuthStore.getState().offline === wasOffline) usePlaylistPicker.getState().open([song]);
+                      });
+                    }}
                   /> : null}
                   {canGoIntoPlaylist(song) && context ? (
                     <Action
@@ -941,32 +820,6 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
         }}
       />
 
-      <Dialog
-        inlineMenu
-        visible={creating !== null}
-        title={t('New playlist')}
-        input={{ placeholder: t('Playlist name') }}
-        confirmLabel={t('Create')}
-        onCancel={() => {
-          if (creating !== null && ownsConfirmation(creating)) cancelConfirmation();
-        }}
-        onConfirm={createAndAdd}
-      />
-
-      <Dialog
-        inlineMenu
-        visible={!!dupPrompt}
-        title={t('Already added')}
-        message={dupPrompt ? t('This song is already in “{name}”.', { name: dupPrompt.name }) : undefined}
-        confirmLabel={t('Add anyway')}
-        onCancel={() => {
-          if (dupPrompt && ownsConfirmation(dupPrompt.ticket)) cancelConfirmation();
-        }}
-        onConfirm={() => {
-          const d = dupPrompt;
-          if (d && ownsConfirmation(d.ticket)) void doAdd(d.playlistId, d.name, isCard, d.ticket);
-        }}
-      />
     </Modal>
   );
 }

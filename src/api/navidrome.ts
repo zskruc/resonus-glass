@@ -13,6 +13,7 @@ import { type Album, type Artist, type Song, type SortDirection, type SubsonicAu
 import { DeadlineError, withDeadline } from './deadline';
 import { assertCanRequest } from './netGate';
 import { netTally } from '@/lib/perfLog';
+import { tg } from '@/i18n';
 
 /** Typed error to provide useful messages in the UI. */
 export class NavidromeError extends Error {
@@ -49,7 +50,7 @@ async function ndWithin<T>(work: (signal: AbortSignal) => Promise<T>): Promise<T
   try {
     return await withDeadline(ND_TIMEOUT_MS, work);
   } catch (e) {
-    if (e instanceof DeadlineError) throw new NavidromeError('Server took too long to respond', 'other');
+    if (e instanceof DeadlineError) throw new NavidromeError(tg('Server took too long to respond'), 'other');
     throw e;
   }
 }
@@ -63,7 +64,7 @@ async function ndLogin(auth: SubsonicAuth, fresh = false): Promise<string> {
   // `password` is there when the profile authenticates in cleartext, and it is
   // the same password: no reason to ask for it twice.
   const password = auth.ndPassword ?? auth.password;
-  if (!password) throw new NavidromeError('Sin contraseña guardada', 'auth');
+  if (!password) throw new NavidromeError(tg('No saved password'), 'auth');
   const key = tokenKey(auth);
   if (!fresh && cached?.key === key && Date.now() - cached.at < TOKEN_TTL) return cached.token;
   // Offline mode stops here, before the socket (see netGate).
@@ -78,25 +79,25 @@ async function ndLogin(auth: SubsonicAuth, fresh = false): Promise<string> {
         signal,
       });
     } catch {
-      throw new NavidromeError('No se pudo conectar con el servidor', 'other');
+      throw new NavidromeError(tg('Could not connect to the server'), 'other');
     }
-    if (res.status === 401) throw new NavidromeError('Credenciales incorrectas', 'auth');
-    if (!res.ok) throw new NavidromeError(`Error de red (${res.status})`, 'other');
+    if (res.status === 401) throw new NavidromeError(tg('Wrong username or password'), 'auth');
+    if (!res.ok) throw new NavidromeError(tg('Network error ({status})', { status: res.status }), 'other');
     return (await res.json()) as { token?: string };
   });
-  if (!json.token) throw new NavidromeError('Respuesta inesperada del servidor', 'other');
+  if (!json.token) throw new NavidromeError(tg('Unexpected server response'), 'other');
   cached = { key, token: json.token, at: Date.now() };
   return json.token;
 }
 
 /** What an answer from the native API means, for the paths that write. */
 function ndStatusError(status: number): NavidromeError {
-  if (status === 401) return new NavidromeError('Credenciales incorrectas', 'auth');
-  if (status === 403) return new NavidromeError('Subida de carátulas deshabilitada', 'forbidden');
+  if (status === 401) return new NavidromeError(tg('Wrong username or password'), 'auth');
+  if (status === 403) return new NavidromeError(tg('Cover uploads are disabled'), 'forbidden');
   if (status === 404 || status === 405) {
-    return new NavidromeError('El servidor no soporta carátulas', 'unsupported');
+    return new NavidromeError(tg('The server does not support cover art'), 'unsupported');
   }
-  return new NavidromeError(`Error del servidor (${status})`, 'other', status);
+  return new NavidromeError(tg('Server error ({status})', { status }), 'other', status);
 }
 
 /** Authenticated request to the native API, with errors mapped to NavidromeError. */
@@ -112,7 +113,7 @@ async function ndFetch(auth: SubsonicAuth, path: string, init: RequestInit): Pro
       });
       return res.ok ? 0 : res.status;
     } catch {
-      throw new NavidromeError('No se pudo conectar con el servidor', 'other');
+      throw new NavidromeError(tg('Could not connect to the server'), 'other');
     }
   });
   if (status) throw ndStatusError(status);
@@ -191,7 +192,7 @@ export async function uploadCoverImage(
       },
     );
   } catch {
-    throw new NavidromeError('No se pudo conectar con el servidor', 'other');
+    throw new NavidromeError(tg('Could not connect to the server'), 'other');
   }
   if (result.status < 200 || result.status >= 300) throw ndStatusError(result.status);
 }
@@ -349,21 +350,21 @@ async function ndJson<T>(auth: SubsonicAuth, path: string): Promise<T> {
           signal,
         });
       } catch {
-        throw new NavidromeError('No se pudo conectar con el servidor', 'other');
+        throw new NavidromeError(tg('Could not connect to the server'), 'other');
       }
       // A token this old server no longer accepts: drop it and ask for another,
       // once. Anything else is an answer, good or bad.
       if (res.status === 401 && !fresh) return { retry: true as const };
-      if (res.status === 401) throw new NavidromeError('Credenciales incorrectas', 'auth');
-      if (res.status === 403) throw new NavidromeError('Sin permiso', 'forbidden');
-      if (res.status === 404) throw new NavidromeError('El servidor no lo soporta', 'unsupported');
-      if (!res.ok) throw new NavidromeError(`Error del servidor (${res.status})`, 'other');
+      if (res.status === 401) throw new NavidromeError(tg('Wrong username or password'), 'auth');
+      if (res.status === 403) throw new NavidromeError(tg('No permission'), 'forbidden');
+      if (res.status === 404) throw new NavidromeError(tg('The server does not support this'), 'unsupported');
+      if (!res.ok) throw new NavidromeError(tg('Server error ({status})', { status: res.status }), 'other');
       return { retry: false as const, value: (await res.json()) as T };
     });
     if (answer.retry) continue;
     return answer.value;
   }
-  throw new NavidromeError('Credenciales incorrectas', 'auth');
+  throw new NavidromeError(tg('Wrong username or password'), 'auth');
 }
 
 /**
@@ -411,7 +412,7 @@ export async function listSongs(
 export async function listArtistsPage(auth: SubsonicAuth, count = 200, offset = 0): Promise<Artist[]> {
   const query = new URLSearchParams({ _sort: 'name', _order: 'ASC', _start: String(offset), _end: String(offset + count) });
   const rows = await ndJson<{ id: string; name?: string; albumCount?: number; imageAbsent?: boolean }[]>(auth, `/api/artist?${query}`);
-  if (!Array.isArray(rows)) throw new Error('Invalid artist catalogue');
+  if (!Array.isArray(rows)) throw new Error(tg('Invalid artist catalogue'));
   return rows.filter((row) => typeof row.id === 'string').map((row) => ({ id: row.id,
     name: row.name ?? '', albumCount: row.albumCount, coverArt: row.imageAbsent ? '' : undefined }));
 }

@@ -26,6 +26,7 @@ import { COVER, coverArtUrl, type SubsonicAuth } from '@/api/backend';
 import { isOfflineMode } from '@/api/netGate';
 import { whenIdle } from '@/lib/idle';
 import { withSpeculativeSlot } from '@/lib/netBudget';
+import { playbackLoadGate } from '@/lib/playbackLoadGate';
 import { bump, netTally } from '@/lib/perfLog';
 import { hashKey, localCoverUrl, registerCover } from '@/lib/localLibrary';
 import * as Db from './mirrorDb';
@@ -407,48 +408,63 @@ function runCovers(
         const id = w.from;
         const stillWanted = () => !isOfflineMode() && stillOwner() && loaded === profile;
         try {
-          await withCoverFile(profile, id, async () => {
-          if (!stillWanted()) return;
-          // Already on disk, and only the other names for it were missing: the
-          // picture does not need fetching twice.
-          if (known.has(id)) {
-            for (const key of w.keys) {
-              if (alias(profile, key, id)) written.push({ id: key, aliasOf: id, bytes: 0 });
-            }
-            return;
-          }
-          const url = coverArtUrl(auth, id, SIZE);
-          if (!url) return;
-          const file = fileFor(profile, id);
-          await FileSystem.makeDirectoryAsync(DIR, { intermediates: true }).catch(() => {});
-          const fetched = await withSpeculativeSlot(stillWanted, async () => {
-            netTally('coverArt.view (mirror)');
-            const res = await FileSystem.downloadAsync(url, file);
-            // A server error body is not a valid cover on disk.
-            if (res.status !== 200) {
-              await FileSystem.deleteAsync(file, { idempotent: true }).catch(() => {});
-              bump('cover refused by server');
-              return false;
-            }
-            return true;
-          });
-          if (!fetched || !stillWanted()) return;
-          known.add(id);
-          registerCover(id, file);
-          for (const key of w.keys) {
-            if (alias(profile, key, id)) written.push({ id: key, aliasOf: id, bytes: 0 });
-          }
-          bump('cover saved');
-          // Counted as it is written: walking thousands of files to add up
-          // what they take is not something a settings screen should do.
-          const info = await FileSystem.getInfoAsync(file).catch(() => null);
-          if (loaded !== profile) return;
-          const size = info?.exists ? (info.size ?? 0) : 0;
-          bytes += size;
-          // Commit the file's size before releasing its write lease; a later
-          // full-size upgrade must not be overwritten by a delayed batch row.
-          await Db.putCovers(BASE, profile, [{ id, aliasOf: null, bytes: size }]);
-          });
+          let retryAfterPlayback: boolean;
+          do {
+            retryAfterPlayback = false;
+            // Do not own the per-file write lease while waiting for audio: an
+            // explicit full-size cache request must still be able to use it.
+            await playbackLoadGate.wait();
+            if (!stillWanted()) return;
+            await withCoverFile(profile, id, async () => {
+              if (!stillWanted()) return;
+              if (playbackLoadGate.held) { retryAfterPlayback = true; return; }
+              // Already on disk, and only the other names for it were missing: the
+              // picture does not need fetching twice.
+              if (known.has(id)) {
+                for (const key of w.keys) {
+                  if (alias(profile, key, id)) written.push({ id: key, aliasOf: id, bytes: 0 });
+                }
+                return;
+              }
+              const url = coverArtUrl(auth, id, SIZE);
+              if (!url) return;
+              const file = fileFor(profile, id);
+              await FileSystem.makeDirectoryAsync(DIR, { intermediates: true }).catch(() => {});
+              let blockedByPlayback = false;
+              const canRequest = () => {
+                if (playbackLoadGate.held) { blockedByPlayback = true; return false; }
+                return stillWanted();
+              };
+              const fetched = await withSpeculativeSlot(canRequest, async () => {
+                netTally('coverArt.view (mirror)');
+                const res = await FileSystem.downloadAsync(url, file);
+                // A server error body is not a valid cover on disk.
+                if (res.status !== 200) {
+                  await FileSystem.deleteAsync(file, { idempotent: true }).catch(() => {});
+                  bump('cover refused by server');
+                  return false;
+                }
+                return true;
+              });
+              if (!fetched && blockedByPlayback && stillWanted()) { retryAfterPlayback = true; return; }
+              if (!fetched || !stillWanted()) return;
+              known.add(id);
+              registerCover(id, file);
+              for (const key of w.keys) {
+                if (alias(profile, key, id)) written.push({ id: key, aliasOf: id, bytes: 0 });
+              }
+              bump('cover saved');
+              // Counted as it is written: walking thousands of files to add up
+              // what they take is not something a settings screen should do.
+              const info = await FileSystem.getInfoAsync(file).catch(() => null);
+              if (loaded !== profile) return;
+              const size = info?.exists ? (info.size ?? 0) : 0;
+              bytes += size;
+              // Commit the file's size before releasing its write lease; a later
+              // full-size upgrade must not be overwritten by a delayed batch row.
+              await Db.putCovers(BASE, profile, [{ id, aliasOf: null, bytes: size }]);
+            });
+          } while (retryAfterPlayback && stillWanted());
         } catch {
           // Network, disk, whatever: it stays unknown and can be tried again.
           bump('cover fetch failed');

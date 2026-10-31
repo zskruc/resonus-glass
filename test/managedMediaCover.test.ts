@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { withSpeculativeSlot } from '../src/lib/netBudget';
 import { createSlots } from '../src/lib/slots';
+import { PlaybackLoadGate } from '../src/lib/playbackLoadGate';
 
 const executable = ts.transpileModule(readFileSync(new URL('../src/lib/mirrorCovers.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -14,6 +15,7 @@ function deferred<T>() { let resolve!: (value: T) => void;
   const promise = new Promise<T>((yes) => { resolve = yes; }); return { promise, resolve }; }
 function harness() {
   const pool = createSlots(4), files = new Map<string, number>(), rows = new Map<string, any>();
+  const playbackGate = new PlaybackLoadGate();
   const registrations = new Map<string, string>(), downloads: string[] = [], timers: (() => void)[] = [];
   const state = { owner: {}, offline: false, status: 200, mime: 'image/webp', size: 2200, paused: 0 };
   let smallGate: Promise<void> | undefined, fullGate: Promise<void> | undefined;
@@ -42,6 +44,7 @@ function harness() {
     '@/api/backend': { COVER: { card: 600 }, coverArtUrl: (_auth: unknown, id: string, size: number) => `https://covers.test/${id}?size=${size}` },
     '@/api/netGate': { isOfflineMode: () => state.offline }, '@/lib/idle': { whenIdle: (callback: () => void) => callback() },
     '@/lib/netBudget': { withSpeculativeSlot: (current: () => boolean, work: () => Promise<unknown>) => withSpeculativeSlot(current, work, pool) },
+    '@/lib/playbackLoadGate': { playbackLoadGate: playbackGate },
     '@/lib/perfLog': { bump: () => {}, netTally: () => {} },
     '@/lib/localLibrary': { hashKey: (id: string) => id, localCoverUrl: (id: string) => registrations.get(id),
       registerCover: (id: string, file: string) => registrations.set(id, file) },
@@ -55,7 +58,7 @@ function harness() {
     require(name: string) { assert.ok(Object.hasOwn(dependencies, name), name); return dependencies[name]; } });
   const owner = state.owner;
   const current = () => state.owner === owner;
-  return { pool, state, files, rows, registrations, downloads,
+  return { pool, playbackGate, state, files, rows, registrations, downloads,
     smallGate: (gate: Promise<void>) => { smallGate = gate; }, fullGate: (gate: Promise<void>) => { fullGate = gate; },
     load: () => exported.loadMirrorCovers('one'),
     keep: () => exported.keepMirrorCovers('one', owner, ['cover'], current),
@@ -118,4 +121,17 @@ test('cancelling an active full cover pauses the transfer and releases its slot 
   for (let index = 0; index < 4; index++) void h.pool.take().then(() => acquired.push(index));
   await tick(); assert.equal(acquired.length, 4);
   for (let index = 0; index < 4; index++) h.pool.release();
+});
+
+test('an automatic cover waiting for playback cannot lock out an explicit full-size cache request', async (t) => {
+  const h = harness(); await h.load();
+  const hold = h.playbackGate.hold(); t.after(() => h.playbackGate.release(hold));
+  h.keep(); await h.flush(); assert.equal(h.downloads.length, 0);
+  const result = await h.full();
+  assert.equal(result.outcome, 'success');
+  assert.equal(h.downloads.length, 1);
+  assert.ok(h.downloads[0].startsWith('full:'));
+  h.playbackGate.release(hold); await tick();
+  assert.equal(h.downloads.length, 1, 'the later automatic pass sees the completed full file');
+  assert.equal(h.files.get(result.uri!), 2200);
 });

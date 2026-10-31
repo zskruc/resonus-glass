@@ -1,4 +1,5 @@
 import { createSlots } from '@/lib/slots';
+import type { PlaybackLoadGate } from '@/lib/playbackLoadGate';
 
 export type RequestSlots = ReturnType<typeof createSlots>;
 
@@ -15,13 +16,20 @@ export async function withSpeculativeSlot<T>(
   stillWanted: () => boolean,
   work: () => Promise<T>,
   slots: RequestSlots = speculativeSlots,
+  gate?: PlaybackLoadGate,
 ): Promise<T | undefined> {
-  if (!stillWanted()) return undefined;
-  await slots.take();
-  try {
-    if (!stillWanted()) return undefined;
-    return await work();
-  } finally {
-    slots.release();
+  while (stillWanted()) {
+    // No connection permit is occupied while playback has priority. The gate
+    // can close while this task waits for a slot, so check it again afterward.
+    if (gate?.held) { await gate.wait(); continue; }
+    await slots.take();
+    try {
+      if (!stillWanted()) return undefined;
+      if (gate?.held) continue;
+      return await work();
+    } finally {
+      slots.release();
+    }
   }
+  return undefined;
 }

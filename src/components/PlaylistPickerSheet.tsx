@@ -1,6 +1,6 @@
 /**
- * Bottom sheet to pick a target playlist and add songs in bulk (multi-select).
- * Allows creating a new playlist. Handles the addition and toasts itself, so
+ * Floating playlist membership picker for individual songs or a multi-selection.
+ * Adds missing songs or removes all selected instances, and creates playlists, so
  * it can be reused from any screen.
  *
  * Favorites is not a row here any more: it is a property of the song rather
@@ -10,16 +10,18 @@
 import { MenuGlassCardFrame, MenuGlassCardHeader } from '@/components/MenuGlassCard';
 import Icon from '@/components/Icon';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 
-import { addToPlaylist, COVER, coverArtUrl, createPlaylist, getPlaylist, getPlaylists } from '@/api/data';
+import { addSongsToPlaylist, canEditPlaylist, COVER, coverArtUrl, createPlaylist, getPlaylists, playlistMembership, removeSongsFromPlaylist } from '@/api/data';
 import { useScreenSize } from '@/hooks/useScreenSize';
 import { type Song } from '@/api/subsonic';
 import { useBottomSheetAnim } from '@/hooks/useBottomSheetAnim';
 import { songsLabel, useT } from '@/i18n';
 import { MenuRequestScope } from '@/lib/menuRequest';
+import { membershipOf } from '@/lib/playlistMembership';
+import { profileScopeId, useAuthStore } from '@/store/auth';
 import { useAutoDownloads } from '@/store/autoDownloads';
 import { usePlaylistPicker } from '@/store/playlistPicker';
 import { useSettings } from '@/store/settings';
@@ -55,9 +57,14 @@ type PlaylistPickerProps = {
 };
 
 function pickerOwner(songs: Song[] | null, session: number | undefined, key: number) {
+  const auth = useAuthStore.getState().auth;
+  const offline = useAuthStore.getState().offline;
+  const profile = profileScopeId();
   return {
-    songs, session, key,
-    request: new MenuRequestScope(() => session === undefined || usePlaylistPicker.getState().session === session),
+    songs, session, key, auth, offline, profile,
+    request: new MenuRequestScope(() => useAuthStore.getState().auth === auth
+      && useAuthStore.getState().offline === offline && profileScopeId() === profile
+      && (session === undefined || usePlaylistPicker.getState().session === session)),
   };
 }
 
@@ -74,6 +81,8 @@ class PickerLifetime {
 
 /** Local callers also receive a fresh state and scope when their song batch changes. */
 export function PlaylistPickerSheet(props: PlaylistPickerProps) {
+  const auth = useAuthStore((state) => state.auth);
+  const offline = useAuthStore((state) => state.offline);
   const [lifetime] = useState(() => new PickerLifetime(props.songs));
   const [owner, setOwner] = useState(() => pickerOwner(props.songs, props.session, 0));
   useEffect(() => {
@@ -85,6 +94,12 @@ export function PlaylistPickerSheet(props: PlaylistPickerProps) {
     owner.request.dispose();
     setOwner(pickerOwner(props.songs, props.session, owner.key + 1));
   }
+  const profileChanged = owner.auth !== auth || owner.offline !== offline || owner.profile !== profileScopeId();
+  const { songs: selectedSongs, onClose, session } = props;
+  useEffect(() => {
+    if (profileChanged && selectedSongs && (session === undefined || usePlaylistPicker.getState().session === session)) onClose();
+  }, [profileChanged, selectedSongs, onClose, session]);
+  if (profileChanged) return null;
   const canNotifyAfterClose = () => {
     if (props.session === undefined) return lifetime.ownsClosed(owner.key);
     const current = usePlaylistPicker.getState();
@@ -94,39 +109,37 @@ export function PlaylistPickerSheet(props: PlaylistPickerProps) {
     canNotifyAfterClose={canNotifyAfterClose} />;
 }
 
-function PlaylistPickerSession({ songs, excludeId, onClose, request, canNotifyAfterClose }: PlaylistPickerProps & {
+function PlaylistPickerSession({ songs, excludeId, onClose, request }: PlaylistPickerProps & {
   request: MenuRequestScope;
   canNotifyAfterClose: () => boolean;
 }) {
   const { height: screenH } = useScreenSize();
   const queryClient = useQueryClient();
-  const toast = useToast((s) => s.show);
+  const toast = useToast((state) => state.show);
   const t = useT();
-  const lang = useSettings((s) => s.language);
+  const lang = useSettings((state) => state.language);
   const mounted = useRef(false);
   const closing = useRef(false);
   const gestureTicket = useRef<number | null>(null);
+  const busyRow = useRef<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [creating, setCreating] = useState<number | null>(null);
+  const [present, setPresent] = useState<Record<string, string[]>>({});
+  const touched = useRef(new Set<string>());
+  const completedReads = useRef(new Map<string, string | undefined>());
+  const visible = !!songs?.length;
+  const wanted = useMemo(() => [...new Set((songs ?? []).map((song) => song.id))], [songs]);
   useEffect(() => {
     mounted.current = true;
-    return () => {
-      mounted.current = false;
-      request.invalidate();
-    };
+    return () => { mounted.current = false; request.invalidate(); };
   }, [request]);
   const owns = (ticket: number) => mounted.current && request.owns(ticket);
   const closeAfterGesture = () => {
     const ticket = gestureTicket.current;
     if (ticket === null || !owns(ticket)) return;
-    closing.current = true;
-    request.invalidate();
-    onClose();
+    closing.current = true; request.invalidate(); onClose();
   };
-  const visible = !!songs && songs.length > 0;
-  const { dismiss, dismissing, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
-    visible,
-    closeAfterGesture,
-    'card',
-  );
+  const { dismiss, dismissing, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(visible, closeAfterGesture, 'card');
   const canAct = () => mounted.current && !closing.current && !dismissing.value && request.isActive();
   const close = () => {
     if (!canAct()) return;
@@ -134,263 +147,129 @@ function PlaylistPickerSession({ songs, excludeId, onClose, request, canNotifyAf
     const ticket = request.begin();
     dismiss(() => { if (owns(ticket)) onClose(); });
   };
-  const [creating, setCreating] = useState<number | null>(null);
-  // "Already in the playlist" prompt pending confirmation (Spotify style).
-  const [dupPrompt, setDupPrompt] = useState<{
-    ticket: number;
-    playlistId: string;
-    name: string;
-    /** The ones not in that playlist yet. Empty when every one of them is. */
-    fresh: Song[];
-  } | null>(null);
+  const { data: playlists, isLoading } = useQuery({ queryKey: ['playlists'], queryFn: () => getPlaylists(), enabled: visible });
+  const targets = useMemo(() => (playlists ?? []).filter((playlist) => playlist.id !== excludeId), [playlists, excludeId]);
+  useEffect(() => {
+    if (!visible) return;
+    let active = true;
+    const lists = targets.filter((playlist) => canEditPlaylist(playlist) && !touched.current.has(playlist.id)
+      && (!completedReads.current.has(playlist.id) || completedReads.current.get(playlist.id) !== playlist.changed));
+    const current = () => active && mounted.current && request.isActive() && !closing.current;
+    void playlistMembership(lists, wanted, (id, ids) => {
+      if (!current() || touched.current.has(id)) return;
+      completedReads.current.set(id, lists.find((playlist) => playlist.id === id)?.changed);
+      setPresent((previous) => ({ ...previous, [id]: ids }));
+    }, () => !current()).catch(() => {
+      if (!current()) return;
+      // The mutation itself reads fresh data and fails closed; a failed mark
+      // lookup may offer a safe add attempt, never an unverified removal.
+      setPresent((previous) => {
+        const next = { ...previous };
+        for (const playlist of lists) next[playlist.id] ??= [];
+        return next;
+      });
+    });
+    return () => { active = false; };
+  }, [visible, targets, wanted, request]);
 
-  const { data: playlists, isLoading } = useQuery({
-    queryKey: ['playlists'],
-    queryFn: () => getPlaylists(),
-    enabled: visible,
-  });
-
-  if (!songs || songs.length === 0) return null;
-
-  const beginAction = () => {
-    if (!canAct()) return null;
+  if (!visible || !songs) return null;
+  const refresh = (id: string) => {
+    void queryClient.invalidateQueries({ queryKey: ['playlist', id] });
+    void queryClient.invalidateQueries({ queryKey: ['playlists'] });
+  };
+  const failure = (error: unknown, removing = false) => {
+    const message = error instanceof Error ? error.message : '';
+    toast(message === 'This playlist cannot be edited.' ? t('This playlist cannot be edited.')
+      : message === 'Playlist changed. Reopen it and try again.' ? t('Playlist changed. Reopen it and try again.')
+      : removing ? t("Couldn't complete the action") : t("Couldn't add to the playlist"));
+  };
+  async function toggle(id: string) {
+    const playlist = targets.find((item) => item.id === id);
+    if (!canAct() || busyRow.current || !playlist || !canEditPlaylist(playlist) || !present[id]) return;
     const ticket = request.begin();
-    setCreating(null);
-    setDupPrompt(null);
-    return ticket;
-  };
-  const cancelCreating = (ticket: number | null) => {
-    if (ticket === null || !owns(ticket)) return;
-    request.invalidate();
-    setCreating(null);
-  };
-  const cancelDuplicate = (ticket: number | undefined) => {
-    if (ticket === undefined || !owns(ticket)) return;
-    request.invalidate();
-    setDupPrompt(null);
-  };
-
-  /** A mutation keeps its batch; only its own close and notices remain cancellable. */
-  function transactionUi(ticket: number) {
-    let closeTicket: number | null = null;
-    let closed = false;
-    return {
-      current: () => closed ? canNotifyAfterClose() : owns(closeTicket ?? ticket),
-      close: () => {
-        if (!canAct() || !owns(ticket)) return;
-        closing.current = true;
-        closeTicket = request.begin();
-        const expected = closeTicket;
-        dismiss(() => {
-          if (!owns(expected)) return;
-          closed = true;
-          onClose();
-        });
-      },
-    };
-  }
-
-  async function addBatch(playlistId: string, name: string, adding: Song[], ui: ReturnType<typeof transactionUi>) {
-    ui.close();
+    busyRow.current = id; setBusy(id); touched.current.add(id);
+    const removing = membershipOf(present[id], wanted) === 'all';
     try {
-      for (const s of adding) await addToPlaylist(playlistId, s.id);
-      // Optimistic count in the Library (`songsLabel`): without this the
-      // subtitle doesn't update until that screen is reloaded.
-      queryClient.setQueryData<{ id: string; songCount?: number }[]>(['playlists'], (list) =>
-        list?.map((p) =>
-          p.id === playlistId ? { ...p, songCount: (p.songCount ?? 0) + adding.length } : p,
-        ),
-      );
-      queryClient.invalidateQueries({ queryKey: ['playlist', playlistId] });
-      queryClient.invalidateQueries({ queryKey: ['playlists'] });
-      // If the list has auto-download, fetch the newly added songs now.
-      void useAutoDownloads.getState().reconcile(playlistId, true);
-      if (ui.current()) toast(
-        adding.length === 1
-          ? t('Added to “{name}”', { name })
-          : t('{n} added to “{name}”', { n: adding.length, name }),
-      );
-    } catch {
-      if (ui.current()) toast(t("Couldn't add to the playlist"));
-    }
-  }
-
-  /** Duplicate confirmation has not committed anything until this guard passes. */
-  async function doAdd(playlistId: string, name: string, ticket: number, which?: Song[]) {
-    if (!canAct() || !owns(ticket)) return;
-    const adding = [...(which ?? songs ?? [])];
-    if (adding.length === 0) return;
-    await addBatch(playlistId, name, adding, transactionUi(ticket));
-  }
-
-  async function addAllTo(playlistId: string, name: string, currentTicket?: number) {
-    const ticket = currentTicket ?? beginAction();
-    if (ticket === null || !songs || !owns(ticket)) return;
-    // Spotify-style duplicate warning: if any already present, ask first. If
-    // the check fails (network), add without warning: better than blocking.
-    try {
-      const { songs: existing } = await getPlaylist(playlistId);
+      const ids = removing
+        ? await removeSongsFromPlaylist(id, wanted, { stillCurrent: () => owns(ticket) })
+        : await addSongsToPlaylist(id, songs!, { stillCurrent: () => owns(ticket) });
       if (!owns(ticket)) return;
-      const have = new Set(existing.map((s) => s.id));
-      const fresh = songs.filter((s) => !have.has(s.id));
-      if (fresh.length < songs.length) {
-        setCreating(null);
-        setDupPrompt({ ticket, playlistId, name, fresh });
-        return;
-      }
-    } catch {
-      // ignore
+      setPresent((previous) => ({ ...previous, [id]: ids }));
+      refresh(id);
+      if (!removing) void useAutoDownloads.getState().reconcile(id, true);
+    } catch (error) {
+      if (!owns(ticket)) return;
+      failure(error, removing); refresh(id);
+      // A batch may have partly committed before a network error. Re-read
+      // membership rather than pretending the old checkbox is still exact.
+      touched.current.delete(id); completedReads.current.delete(id);
+      await playlistMembership([playlist], wanted, (target, ids) => {
+        if (owns(ticket)) setPresent((previous) => ({ ...previous, [target]: ids }));
+      }, () => !owns(ticket), { fresh: true }).catch(() => {});
+    } finally {
+      busyRow.current = null;
+      if (owns(ticket)) setBusy(null);
     }
-    if (!owns(ticket)) return;
-    await doAdd(playlistId, name, ticket);
   }
-
-  /** The warning has something to offer besides adding them all again. */
-  const hasFresh = !!dupPrompt && dupPrompt.fresh.length > 0;
-
-  async function createAndAdd(name: string, expectedTicket: number | null) {
-    if (expectedTicket === null || !owns(expectedTicket)) return;
-    const ticket = beginAction();
-    if (ticket === null) return;
-    const playlistName = name.trim();
-    const adding = [...(songs ?? [])];
-    if (!playlistName || adding.length === 0) return;
-    const ui = transactionUi(ticket);
+  const cancelCreating = () => {
+    if (creating === null || !owns(creating) || !canAct()) return;
+    request.invalidate(); setCreating(null);
+  };
+  async function createAndAdd(name: string) {
+    const expected = creating;
+    if (expected === null || !owns(expected) || !canAct() || busyRow.current || !name.trim()) return;
+    const ticket = request.begin();
+    const owner = useAuthStore.getState().auth, profile = profileScopeId(), offline = useAuthStore.getState().offline;
+    const sameProfile = () => useAuthStore.getState().auth === owner && profileScopeId() === profile && useAuthStore.getState().offline === offline;
+    busyRow.current = 'create'; setBusy('create'); setCreating(null);
     try {
-      // Creating commits the complete transaction. A new playlist is empty,
-      // so its originally confirmed songs need no duplicate preflight.
-      const id = await createPlaylist(playlistName);
-      await addBatch(id, playlistName, adding, ui);
-    } catch {
-      if (!ui.current()) return;
-      ui.close();
-      if (ui.current()) toast(t("Couldn't create the playlist"));
-    }
+      const id = await createPlaylist(name.trim());
+      if (!sameProfile()) return;
+      const ids = await addSongsToPlaylist(id, songs!, { stillCurrent: sameProfile });
+      if (!owns(ticket)) return;
+      touched.current.add(id); setPresent((previous) => ({ ...previous, [id]: ids })); refresh(id);
+      void useAutoDownloads.getState().reconcile(id, true);
+    } catch (error) { if (owns(ticket)) failure(error); }
+    finally { busyRow.current = null; if (owns(ticket)) setBusy(null); }
   }
-
-  return (
-    <Modal transparent animationType="none" visible onRequestClose={() => {
-      if (creating !== null) cancelCreating(creating);
-      else if (dupPrompt) cancelDuplicate(dupPrompt.ticket);
-      else close();
-    }}>
-      {/* Gestures inside an RN Modal need a root view of their own: the Modal
-          renders in a native hierarchy outside the app's. */}
-      {creating === null && !dupPrompt && <MenuGlassCardFrame onClose={close}
-        backdropStyle={backdropStyle} cardStyle={sheetStyle} onLayout={onSheetLayout}>
-          <MenuGlassCardHeader title={t('Add to a playlist')} onClose={close} />
-          <View style={{ maxHeight: playlistsMaxH(screenH), flexShrink: 1, minHeight: 0 }}>
-              <Pressable
-                style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
-                onPress={() => {
-                  const ticket = beginAction();
-                  if (ticket === null) return;
-                  setCreating(ticket);
-                }}
-              >
-                <View style={styles.newPlaylistIcon}>
-                  <Icon name="add" size={24} color={colors.text} />
+  return <Modal transparent animationType="none" visible onRequestClose={() => creating !== null ? cancelCreating() : close()}>
+    {creating === null && <MenuGlassCardFrame onClose={close} backdropStyle={backdropStyle} cardStyle={sheetStyle} onLayout={onSheetLayout}>
+      <MenuGlassCardHeader title={t('Manage playlists')} onClose={close} />
+      <Text style={styles.description}>{t('Add missing songs or remove all matching entries from a selected playlist.')}</Text>
+      <View style={{ maxHeight: playlistsMaxH(screenH), flexShrink: 1, minHeight: 0 }}>
+        <Pressable disabled={!!busy} accessibilityRole="button" style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
+          onPress={() => { if (!canAct() || busyRow.current) return; setCreating(request.begin()); }}>
+          <View style={styles.newPlaylistIcon}><Icon name="add" size={24} color={colors.text} /></View>
+          <Text style={styles.rowText}>{t('New playlist')}</Text>
+          {busy === 'create' && <ActivityIndicator size="small" color={colors.accent} />}
+        </Pressable>
+        {isLoading ? <ActivityIndicator style={{ marginVertical: spacing.lg }} color={colors.accent} /> :
+          <ScrollView style={{ flexShrink: 1, minHeight: 0 }} keyboardShouldPersistTaps="handled">
+            {targets.map((playlist) => {
+              const ids = present[playlist.id];
+              const editable = canEditPlaylist(playlist);
+              const state = ids ? membershipOf(ids, wanted) : null;
+              return <Pressable key={playlist.id} disabled={!editable || !ids || !!busy}
+                accessibilityRole="checkbox" accessibilityState={{ checked: state === 'some' ? 'mixed' : state === 'all', disabled: !editable || !ids || !!busy }}
+                style={({ pressed }) => [styles.row, !editable && { opacity: 0.55 }, pressed && { opacity: 0.6 }]}
+                onPress={() => void toggle(playlist.id)}>
+                <Cover uri={coverArtUrl(playlist.coverArt ?? playlist.id, COVER.thumb)} size={40} />
+                <View style={styles.rowBody}><Text style={styles.rowText} numberOfLines={1}>{playlist.name}</Text>
+                  {!editable ? <Text style={styles.rowCount}>{t('Read-only playlist')}</Text>
+                    : state === 'some' ? <Text style={styles.rowCount}>{t('{n} of {songs}', { n: ids!.length, songs: songsLabel(wanted.length, lang) })}</Text>
+                    : state === 'all' ? <Text style={styles.rowCount}>{t('Remove all matching entries')}</Text> : null}
                 </View>
-                <Text style={styles.rowText}>{t('New playlist')}</Text>
-              </Pressable>
-              {isLoading ? (
-                <ActivityIndicator style={{ marginVertical: spacing.lg }} color={colors.accent} />
-              ) : (
-                <ScrollView
-                  style={{ flexShrink: 1, minHeight: 0 }}
-                  keyboardShouldPersistTaps="handled"
-                >
-                  {(playlists ?? [])
-                    .filter((p) => p.id !== excludeId)
-                    .map((p) => (
-                      <Pressable
-                        key={p.id}
-                        style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
-                        onPress={() => addAllTo(p.id, p.name)}
-                      >
-                        <Cover uri={coverArtUrl(p.coverArt ?? p.id, COVER.thumb)} size={40} />
-                        <Text style={styles.rowText} numberOfLines={1}>
-                          {p.name}
-                        </Text>
-                      </Pressable>
-                    ))}
-                </ScrollView>
-              )}
-          </View>
-      </MenuGlassCardFrame>}
-
-      <Dialog
-        inlineMenu
-        visible={creating !== null}
-        title={t('New playlist')}
-        input={{ placeholder: t('Playlist name') }}
-        confirmLabel={t('Create')}
-        onCancel={() => cancelCreating(creating)}
-        onConfirm={(name) => createAndAdd(name, creating)}
-      />
-
-      {/* Three ways out rather than a switch inside the dialog (#132). A switch
-          would be state to read and understand before pressing a button that no
-          longer does what it says; each of these says what it does. With none
-          of them new there is nothing to skip, so the pair collapses back into
-          the single button it always was. */}
-      <Dialog
-        inlineMenu
-        visible={!!dupPrompt}
-        title={t('Already added')}
-        // The counts are in the sentence because the two cases used to be one
-        // word apart ("some of these" against "these"), and the one where none
-        // of them are new drops the second button as well, so it came out
-        // looking like the old warning that could only be answered by putting
-        // every song in again (#132). "All" rather than "12 of 12": nothing to
-        // skip should read as its own sentence, not as arithmetic.
-        message={
-          dupPrompt
-            ? songs.length === 1
-              ? t('This song is already in “{name}”.', { name: dupPrompt.name })
-              : hasFresh
-                ? t('{n} of {songs} are already in “{name}”.', {
-                    n: songs.length - dupPrompt.fresh.length,
-                    songs: songsLabel(songs.length, lang),
-                    name: dupPrompt.name,
-                  })
-                : t('All {songs} are already in “{name}”.', {
-                    songs: songsLabel(songs.length, lang),
-                    name: dupPrompt.name,
-                  })
-            : undefined
-        }
-        // Adding only the new ones is the confirm, in the corner and in the
-        // accent: it is the one nearly everybody wants and the only one that
-        // cannot go wrong. Adding them all again sits right on top of it, not
-        // off in the left corner where "Don't remind me" goes: these two are
-        // both answers to the same question and get read one against the
-        // other, so they belong in the same column.
-        neutral={
-          hasFresh
-            ? {
-                label: t('Add anyway'),
-                align: 'end',
-                onPress: () => {
-                  const d = dupPrompt;
-                  if (!d || !owns(d.ticket)) return;
-                  setDupPrompt(null);
-                  void doAdd(d.playlistId, d.name, d.ticket);
-                },
-              }
-            : undefined
-        }
-        confirmLabel={hasFresh ? t('Add only the new ones') : t('Add anyway')}
-        onCancel={() => cancelDuplicate(dupPrompt?.ticket)}
-        onConfirm={() => {
-          const d = dupPrompt;
-          if (!d || !owns(d.ticket)) return;
-          setDupPrompt(null);
-          void doAdd(d.playlistId, d.name, d.ticket, hasFresh ? d.fresh : undefined);
-        }}
-      />
-    </Modal>
-  );
+                {busy === playlist.id || !ids && editable ? <ActivityIndicator size="small" color={colors.textMuted} />
+                  : <Icon name={!editable ? 'lock-closed-outline' : state === 'all' ? 'checkmark-circle' : state === 'some' ? 'remove-circle-outline' : 'ellipse-outline'}
+                    size={24} color={state === 'all' || state === 'some' ? colors.accent : colors.textMuted} />}
+              </Pressable>;
+            })}
+          </ScrollView>}
+      </View>
+    </MenuGlassCardFrame>}
+    <Dialog inlineMenu visible={creating !== null} title={t('New playlist')} input={{ placeholder: t('Playlist name') }} confirmLabel={t('Create')}
+      onCancel={cancelCreating} onConfirm={createAndAdd} />
+  </Modal>;
 }
 
 const styles = themed((colors) => ({
@@ -429,7 +308,10 @@ const styles = themed((colors) => ({
     gap: spacing.lg,
     paddingVertical: spacing.md,
   },
-  rowText: { color: colors.text, fontSize: fontSize.md, flex: 1 },
+  rowText: { color: colors.text, fontSize: fontSize.md, flexShrink: 1 },
+  rowBody: { flex: 1 },
+  rowCount: { color: colors.textSecondary, fontSize: fontSize.sm, marginTop: 4 },
+  description: { color: colors.textSecondary, fontSize: fontSize.sm, marginBottom: spacing.sm },
   newPlaylistIcon: {
     width: 40,
     height: 40,
