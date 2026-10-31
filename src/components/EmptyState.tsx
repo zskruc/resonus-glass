@@ -1,6 +1,7 @@
 /** Rich empty state: icon, title, subtitle, and optional action. */
 import { GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
+import { useArtistPagePalette } from '@/components/volta/ArtistPagePalette';
 import { Text, View } from 'react-native';
 
 import { colors, fontSize, radius, spacing, themed, tracking } from '@/theme';
@@ -13,13 +14,14 @@ interface Props {
 }
 
 export function EmptyState({ icon, title, subtitle, action }: Props) {
+  const palette = useArtistPagePalette();
   return (
     <View style={styles.container}>
       <View style={styles.iconWrap}>
-        <Icon name={icon} size={40} color={colors.textSecondary} />
+        <Icon name={icon} size={40} color={palette?.textSecondary ?? colors.textSecondary} />
       </View>
-      <Text style={styles.title}>{title}</Text>
-      {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+      <Text style={[styles.title, palette && { color: palette.text }]}>{title}</Text>
+      {subtitle ? <Text style={[styles.subtitle, palette && { color: palette.textSecondary }]}>{subtitle}</Text> : null}
       {action ? (
         <GlassPressable variant="prominent" tint={colors.accent} style={[styles.button, { backgroundColor: colors.accent }]} onPress={action.onPress}>
           <Text style={styles.buttonText}>{action.label}</Text>

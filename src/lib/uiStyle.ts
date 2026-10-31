@@ -3,6 +3,13 @@ export const UI_STYLES = ['spotify', 'appleMusic'] as const;
 export type UiStyle = (typeof UI_STYLES)[number];
 export const ALBUM_STYLES = ['volta', 'minidisc'] as const;
 export type AlbumStyle = (typeof ALBUM_STYLES)[number];
+export const PLAYLIST_STYLES = ['artist', 'compact'] as const;
+export type PlaylistStyle = (typeof PLAYLIST_STYLES)[number];
+
+/** Preview the artist-page header while retaining the compact layout as a reversible choice. */
+export function normalizePlaylistStyle(value: unknown): PlaylistStyle {
+  return value === 'compact' ? 'compact' : 'artist';
+}
 
 /** Existing Apple Music profiles retain their Volta album presentation. */
 export function normalizeAlbumStyle(value: unknown): AlbumStyle {

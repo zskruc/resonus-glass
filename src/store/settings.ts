@@ -7,7 +7,7 @@ import { type TabSegment } from '@/lib/tabOrigin';
 import { hashKey } from '@/lib/localLibrary';
 import { normalizeHomeTitle } from '@/lib/homeTitle';
 import { normalizeAccentSource, type AccentSource } from '@/lib/appAccent';
-import { normalizeAlbumStyle, normalizeUiStyle, type AlbumStyle, type UiStyle } from '@/lib/uiStyle';
+import { normalizeAlbumStyle, normalizePlaylistStyle, normalizeUiStyle, type AlbumStyle, type PlaylistStyle, type UiStyle } from '@/lib/uiStyle';
 import { setPerfEnabled } from '@/lib/perfLog';
 import { profileScopeGuard } from '@/lib/profileScope';
 import { queryClient } from '@/lib/query';
@@ -1161,6 +1161,8 @@ interface SettingsState extends Omit<AutoSetters, CustomSetter> {
   uiStyle: UiStyle;
   /** Album detail presentation within Apple Music style; Spotify is unchanged. */
   albumStyle: AlbumStyle;
+  /** Playlist header choice; the previous compact layout stays immediately available. */
+  playlistStyle: PlaylistStyle;
   /** Dark (the app's own look), light, or whichever one the device is in. */
   themeMode: ThemePreference;
   /** With `themeMode` 'schedule': the hour (0–23) light starts, and dark. */
@@ -1391,6 +1393,7 @@ const DEFAULTS = {
   customAccentColor: '',
   uiStyle: 'spotify' as UiStyle,
   albumStyle: 'volta' as AlbumStyle,
+  playlistStyle: 'artist' as PlaylistStyle,
   // Dark: the appearance the app was designed in. Light is opt-in.
   themeMode: 'dark' as ThemePreference,
   themeLightFrom: 7,
@@ -1414,6 +1417,7 @@ function autoSetters(
   for (const key of PERSISTED_KEYS) {
     out[`set${key[0].toUpperCase()}${key.slice(1)}`] = (value) => {
       if (key === 'downloadConcurrency') value = normalizeDownloadConcurrency(value);
+      if (key === 'playlistStyle') value = normalizePlaylistStyle(value);
       set({ [key]: value } as Partial<SettingsState>);
       persist(snapshot(get));
     };
@@ -1471,6 +1475,7 @@ function applySaved(raw: unknown, set: (partial: Partial<SettingsState>) => void
   set(flags as Partial<SettingsState>);
   set({ uiStyle: normalizeUiStyle(parsed.uiStyle) });
   set({ albumStyle: normalizeAlbumStyle(parsed.albumStyle) });
+  set({ playlistStyle: normalizePlaylistStyle(parsed.playlistStyle) });
   // One switch used to blur both bars.
   if (typeof parsed.blurMiniPlayer !== 'boolean' && typeof parsed.blurBars === 'boolean') {
     set({ blurMiniPlayer: parsed.blurBars });

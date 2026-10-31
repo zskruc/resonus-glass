@@ -1122,5 +1122,9 @@
   "Playlist file is too large": "歌单文件过大",
   "Playlist has too many tracks": "歌单歌曲数量过多",
   "Playlist contains no valid tracks": "歌单没有有效歌曲",
-  "Unsupported playlist file": "不支持此歌单文件"
+  "Unsupported playlist file": "不支持此歌单文件",
+  "Playlist page style": "歌单页风格",
+  "Artist page layout": "艺人页布局",
+  "Compact layout": "紧凑布局",
+  "Use the artist-page header for playlists. Compact layout restores the previous playlist layout instantly.": "歌单沿用当前主题的艺人页式页头；选择紧凑布局可立即恢复之前的歌单排版。"
 }

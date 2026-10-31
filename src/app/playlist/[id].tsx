@@ -2,10 +2,12 @@
 import { GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
+import { StatusBar } from 'expo-status-bar';
+import { NavigationBar } from 'expo-navigation-bar';
 import { useShallow } from 'zustand/react/shallow';
 
 import {
@@ -369,6 +371,9 @@ export default function PlaylistScreen() {
   const lang = useSettings((s) => s.language);
   const showListArtwork = useSettings((s) => s.showListArtwork);
   const showPlaylistDescription = useSettings((s) => s.showPlaylistDescription);
+  const playlistStyle = useSettings((s) => s.playlistStyle);
+  const appleMusic = useSettings((s) => s.uiStyle === 'appleMusic');
+  const focused = useIsFocused();
   const queryClient = useQueryClient();
   const toast = useToast((s) => s.show);
   const canShare = useCanShare();
@@ -650,13 +655,14 @@ export default function PlaylistScreen() {
 
   return (
     <>
+      {playlistStyle === 'artist' && appleMusic && focused ? <><StatusBar style="light" /><NavigationBar style="light" /></> : null}
       <TrackListView
         playlistPresentation
         title={data.playlist.name}
         subtitle={data.playlist.owner}
         description={showPlaylistDescription ? data.playlist.comment : undefined}
         meta={metaParts.join(' · ')}
-        coverUri={coverArtUrl(data.playlist.coverArt ?? data.playlist.id, COVER.card)}
+        coverUri={coverArtUrl(data.playlist.coverArt ?? data.playlist.id, playlistStyle === 'artist' ? COVER.full : COVER.card)}
         onCoverPress={
           data.playlist.coverArt || data.songs.length > 0 ? () => setCoverOpen(true) : undefined
         }

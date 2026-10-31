@@ -15,7 +15,7 @@ import { canBlurBars } from '@/components/BarBlur';
 import { useLocalProfile } from '@/hooks/useLocalProfile';
 import { useT } from '@/i18n';
 import { haptic } from '@/lib/haptics';
-import { type AlbumStyle, type UiStyle } from '@/lib/uiStyle';
+import { type AlbumStyle, type PlaylistStyle, type UiStyle } from '@/lib/uiStyle';
 import { useAuthStore } from '@/store/auth';
 import { useTheme } from '@/theme';
 import {
@@ -51,6 +51,8 @@ export default function AppearanceSettings() {
   const setUiStyle = useSettings((s) => s.setUiStyle);
   const albumStyle = useSettings((s) => s.albumStyle);
   const setAlbumStyle = useSettings((s) => s.setAlbumStyle);
+  const playlistStyle = useSettings((s) => s.playlistStyle);
+  const setPlaylistStyle = useSettings((s) => s.setPlaylistStyle);
   const themeMode = useSettings((s) => s.themeMode);
   const themeModeLabel = {
     system: t('System'),
@@ -110,6 +112,19 @@ export default function AppearanceSettings() {
         />
         <Text style={settingsStyles.sectionDescription}>
           {t('Applies to album pages in Apple Music style. Spotify style keeps its original album pages. Your player and glass settings stay unchanged.')}
+        </Text>
+        <Text style={settingsStyles.sectionTitle}>{t('Playlist page style')}</Text>
+        <SelectList<PlaylistStyle>
+          collapsible={false}
+          options={[
+            { value: 'artist', label: t('Artist page layout') },
+            { value: 'compact', label: t('Compact layout') },
+          ]}
+          value={playlistStyle}
+          onChange={setPlaylistStyle}
+        />
+        <Text style={settingsStyles.sectionDescription}>
+          {t('Use the artist-page header for playlists. Compact layout restores the previous playlist layout instantly.')}
         </Text>
         <SettingsGroup>
           <SettingRow

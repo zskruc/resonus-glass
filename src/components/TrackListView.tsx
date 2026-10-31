@@ -55,6 +55,13 @@ import { voltaDetailBackground } from '@/lib/voltaPalette';
 import { minidiscAlbumCoverSize, type MinidiscAlbumPalette } from '@/lib/minidiscAlbumPalette';
 import { MinidiscAlbumHeader } from '@/components/volta/MinidiscAlbumHeader';
 import { PlaylistDetailHeader, playlistCoverSize } from '@/components/PlaylistDetailHeader';
+import { PlaylistArtistHeader, playlistArtistHeaderHeight } from '@/components/PlaylistArtistHeader';
+import { VoltaArtistHeaderBackdrop } from '@/components/volta/VoltaArtistHeaderBackdrop';
+import { ArtistPagePaletteProvider, useArtistPagePalette } from '@/components/volta/ArtistPagePalette';
+import { useVoltaArtistArtwork } from '@/hooks/useVoltaArtistArtwork';
+import { artistHeroGeometry } from '@/lib/artistHeroGeometry';
+import { artistHeaderFromLayout, artistPhotoParallax } from '@/lib/artistHeaderTransition';
+import { useAuthStore } from '@/store/auth';
 import { useArtistPicker } from '@/store/artistPicker';
 import { usePlayerStore } from '@/store/player';
 import { useSettings } from '@/store/settings';
@@ -271,9 +278,21 @@ export function TrackListView({
   const { width: screenW, height: screenH } = useScreenSize();
   const bottomPad = useScreenBottomPadding();
   const appleMusic = useSettings((s) => s.uiStyle === 'appleMusic');
+  const playlistStyle = useSettings((s) => s.playlistStyle);
+  const artistPlaylist = !!playlistPresentation && playlistStyle !== 'compact' && !hideCover;
+  const offline = useAuthStore((s) => s.offline);
+  const inheritedPalette = useArtistPagePalette();
+  const artistHeaderH = playlistArtistHeaderHeight(screenW, screenH, appleMusic);
+  const artistGeometry = artistHeroGeometry(artistHeaderH, 72 + spacing.xl + 56);
+  const artistArtwork = useVoltaArtistArtwork(artistPlaylist && appleMusic ? coverUri : undefined,
+    offline, screenW / artistHeaderH, artistGeometry.extensionHeight / artistHeaderH);
+  const artistPalette = artistPlaylist && appleMusic ? artistArtwork.palette : undefined;
+  const pagePalette = artistPalette ?? inheritedPalette;
+  const sidePadding = centredPadding(screenW, spacing.lg);
+  const searchTopInset = artistPlaylist ? insets.top + TOPBAR_H + spacing.md : 0;
   const minidisc = appleMusic ? albumPresentation : undefined;
   const voltaAlbum = appleMusic && !minidisc && albumActionLayout === 'volta';
-  const tint = useCoverTint(minidisc ? undefined : coverUri, true);
+  const tint = useCoverTint(minidisc || artistPalette ? undefined : coverUri, true);
   const dominant = tint.color;
   const appleBackground = voltaDetailBackground(dominant, colors.background, colors.text, colors.textSecondary);
   // A cover read for the first time fades its tint in over the page, instead
@@ -284,7 +303,7 @@ export function TrackListView({
     if (!tint.known) return;
     tintIn.set(withTiming(1, { duration: motion.duration.fade, reduceMotion: motion.reduceMotion.decorative }));
   }, [tint.known, tintIn]);
-  const headerColor = minidisc?.palette.backgroundTop ?? (appleMusic ? appleBackground : accentColor ?? dominant);
+  const headerColor = artistPalette?.background ?? minidisc?.palette.backgroundTop ?? (appleMusic ? appleBackground : accentColor ?? dominant);
   const shuffle = usePlayerStore((s) => s.shuffle);
   const queueDealt = usePlayerStore((s) => s.queueDealt);
   // The shuffle button gets tinted only if this list is the one playing;
@@ -313,7 +332,21 @@ export function TrackListView({
         ? () => router.push(`/artist/${subtitleTargets[0].id}`)
         : undefined;
 
+  const sourceHref = usePlayerStore((state) => state.sourceHref);
+  const isPlaying = usePlayerStore((state) => state.isPlaying);
+  const togglePlayback = usePlayerStore((state) => state.toggle);
+  const currentPlaylistQueue = !!playlistId && sourceHref === `/playlist/${playlistId}`;
   const scrollY = useSharedValue(0);
+  const artistNameLayout = useSharedValue({ y: 0, height: 0 });
+  const artistHeader = useDerivedValue(() => artistHeaderFromLayout(scrollY.get(), insets.top + TOPBAR_H,
+    artistNameLayout.get(), screenW, 0, 0));
+  const artistNameStyle = useAnimatedStyle(() => ({
+    opacity: appleMusic ? artistHeader.get().largeOpacity
+      : interpolate(scrollY.get(), [0, artistHeaderH * .55], [1, 0], Extrapolation.CLAMP),
+  }));
+  const artistImageStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: artistPhotoParallax(scrollY.get(), artistHeaderH) }],
+  }));
   const headerScroll = useAnimatedScrollHandler({
     onScroll: (event) => { scrollY.set(event.contentOffset.y); },
   });
@@ -385,7 +418,7 @@ export function TrackListView({
     revealedRef.current = true;
     haptic('light');
     setRevealed(true);
-    animateSearchBar(SEARCH_H);
+    animateSearchBar(SEARCH_H + searchTopInset);
   }
 
   function collapseSearchBar() {
@@ -535,7 +568,7 @@ export function TrackListView({
 
   // Without cover, the header is shorter: the gradient and bar collapse adjust
   // to a smaller distance so the transition fits.
-  const art = playlistPresentation ? playlistCoverSize(screenW, screenH, appleMusic) : minidisc ? minidiscAlbumCoverSize(screenW, screenH) : appleMusic
+  const art = artistPlaylist ? artistHeaderH : playlistPresentation ? playlistCoverSize(screenW, screenH, appleMusic) : minidisc ? minidiscAlbumCoverSize(screenW, screenH) : appleMusic
     ? Math.round(Math.min(screenW * 0.76, screenH * 0.43, 360))
     : coverSize(screenW, screenH);
   const cover = hideCover ? 0 : art;
@@ -548,10 +581,15 @@ export function TrackListView({
     opacity: appleMusic ? 1 : interpolate(scrollY.get(), [0, collapse * 0.7], [1, 0], Extrapolation.CLAMP),
   }));
   const barContentStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(scrollY.get(), playlistPresentation ? [art + 16, art + 52] : [collapse * 0.5, collapse * 0.85], [0, 1], Extrapolation.CLAMP),
+    opacity: artistPlaylist && searchMaterialMounted ? (searching ? 1 : 0)
+      : artistPlaylist && appleMusic ? artistHeader.get().compactOpacity
+      : interpolate(scrollY.get(), artistPlaylist ? [art * .45, art * .75]
+        : playlistPresentation ? [art + 16, art + 52] : [collapse * .5, collapse * .85], [0, 1], Extrapolation.CLAMP),
   }));
-  const barBgOpacity = useDerivedValue(() =>
-    interpolate(scrollY.get(), [0, collapse * 0.85], [0, 1], Extrapolation.CLAMP));
+  const barBgOpacity = useDerivedValue(() => artistPlaylist && searchMaterialMounted ? 1
+    : artistPlaylist && appleMusic ? artistHeader.get().backgroundOpacity
+      : interpolate(scrollY.get(), [0, collapse * .85], [0, 1], Extrapolation.CLAMP));
+  const artistCopyOpacity = useDerivedValue(() => searchMaterialMounted ? 0 : barBgOpacity.get());
   const gradientStyle = useAnimatedStyle(() => ({
     opacity: tintIn.get(), transform: [{ translateY: -Math.max(scrollY.get(), 0) }],
   }));
@@ -584,13 +622,14 @@ export function TrackListView({
   }
 
   return (
-    <View style={[styles.root, appleMusic && { backgroundColor: minidisc?.palette.background ?? appleBackground }]}>
+    <ArtistPagePaletteProvider value={pagePalette}>
+    <View style={[styles.root, appleMusic && { backgroundColor: artistPalette?.background ?? minidisc?.palette.background ?? appleBackground }]}>
       {minidisc ? <LinearGradient pointerEvents="none" style={StyleSheet.absoluteFill}
         colors={[minidisc.palette.backgroundTop, minidisc.palette.background]} /> : null}
       <View style={{ flex: 1 }}>
       {/* Dominant color gradient; scrolls with 1:1 parallax. Hidden in search
           mode to keep the screen flat black. */}
-      {searching || appleMusic ? null : (
+      {searching || appleMusic || artistPlaylist ? null : (
         <Animated.View
           pointerEvents="none"
           style={[
@@ -650,12 +689,12 @@ export function TrackListView({
         contentContainerStyle={[
           styles.list,
           {
-            paddingTop: insets.top + TOPBAR_H + spacing.md,
+            paddingTop: artistPlaylist ? 0 : insets.top + TOPBAR_H + spacing.md,
             paddingBottom: bottomPad,
             // Centred on a wide screen instead of stretched across it: a row
             // whose title is at one edge and whose duration is at the other,
             // a hand's width apart, is a phone screen that was pulled (#131).
-            paddingHorizontal: centredPadding(screenW, spacing.lg),
+            paddingHorizontal: sidePadding,
           },
         ]}
         scrollEventThrottle={16}
@@ -667,14 +706,14 @@ export function TrackListView({
                  goes in a no-padding container: any padding would impose a
                  minimum height and show a sliver. */
               <Animated.View style={[styles.searchClip, { height: searchH }]}>
-              <View style={styles.searchRow}>
+              <View style={[styles.searchRow, artistPlaylist && { height: SEARCH_H + searchTopInset, paddingTop: searchTopInset }]}>
                 <View collapsable={false} style={styles.searchBox}>
                   {searchMaterialMounted ? <GlassBackdrop radius={radius.pill} tint={colors.highlight} variant="regular" /> : null}
-                  <Icon name="search" size={18} color={colors.textSecondary} />
+                  <Icon name="search" size={18} color={pagePalette?.textSecondary ?? colors.textSecondary} />
                   <TextInput
-                    style={styles.searchInput}
+                    style={[styles.searchInput, pagePalette && { color: pagePalette.text }]}
                     placeholder={searchPlaceholder ?? t('Find in playlist')}
-                    placeholderTextColor={colors.textSecondary}
+                    placeholderTextColor={pagePalette?.textSecondary ?? colors.textSecondary}
                     value={query}
                     onChangeText={setQuery}
                     onFocus={() => setSearching(true)}
@@ -688,13 +727,13 @@ export function TrackListView({
                       accessibilityLabel={t('Clear')}
                       onPress={() => setQuery('')}
                     >
-                      <Icon name="close-circle" size={18} color={colors.textSecondary} />
+                      <Icon name="close-circle" size={18} color={pagePalette?.textSecondary ?? colors.textSecondary} />
                     </GlassPressable>
                   ) : null}
                 </View>
                 {searching ? (
                   <GlassPressable variant="subtle" hitSlop={8} accessibilityRole="button" onPress={cancelSearch}>
-                    <Text style={styles.searchCancel}>{t('Cancel')}</Text>
+                    <Text style={[styles.searchCancel, pagePalette && { color: pagePalette.text }]}>{t('Cancel')}</Text>
                   </GlassPressable>
                 ) : null}
               </View>
@@ -702,7 +741,33 @@ export function TrackListView({
             ) : null}
             {/* While searching, the large header is hidden: results stay flush
                 with the bar, which is what Spotify does. */}
-            {searching ? null : playlistPresentation ? (
+            {searching ? null : artistPlaylist ? (
+              <PlaylistArtistHeader title={title} owner={subtitle} description={description} meta={meta}
+                uri={coverUri} width={screenW} height={artistHeaderH} sidePadding={sidePadding}
+                extensionHeight={artistGeometry.extensionHeight} apple={appleMusic} artwork={artistArtwork} offline={offline}
+                imageStyle={artistImageStyle} nameStyle={artistNameStyle}
+                onNameLayout={(event) => { artistNameLayout.set(event.nativeEvent.layout); }}
+                onCoverPress={onCoverPress} disabled={songs.length === 0}
+                showPause={currentPlaylistQueue && isPlaying}
+                onPlay={() => { if (currentPlaylistQueue) togglePlayback(); else if (songs.length) void onPlay(0); }}
+                onShuffle={shufflePlay} shuffleActive={shuffleActive} onMenu={onMenu}
+                favorite={favorite ? <FavoriteButton id={favorite.id} type={favorite.type} starred={favorite.starred}
+                  size={25} glyph={appleMusic ? 'star' : undefined}
+                  style={{ width: 48, height: 48, borderRadius: 999, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: appleMusic ? artistArtwork.palette.controlFill : 'transparent' }} /> : undefined}
+                utility={<>
+                  {download ? <Pressable onPress={download.onPress} style={playlistHeaderUtility} accessibilityRole="button"
+                    accessibilityLabel={download.status === 'done' ? t('Remove download') : t('Download')}
+                    accessibilityValue={download.status === 'active' ? { text: `${Math.round(download.progress * 100)}%` } : undefined}>
+                    {download.status === 'active' ? <ActivityIndicator color={pagePalette?.text ?? colors.accent} /> : <Icon
+                      name={download.status === 'done' ? 'checkmark-circle' : 'arrow-down-circle-outline'}
+                      size={25} color={pagePalette?.text ?? colors.textSecondary} />}
+                  </Pressable> : null}
+                  {onSort ? <Pressable onPress={onSort} style={playlistHeaderUtility} accessibilityRole="button" accessibilityLabel={t('Sort')}>
+                    <Icon name="swap-vertical" size={22} color={pagePalette?.text ?? colors.textSecondary} />
+                  </Pressable> : null}
+                </>} />
+            ) : playlistPresentation ? (
               <PlaylistDetailHeader title={title} owner={subtitle} description={description} meta={meta}
                 coverUri={coverUri} art={art} apple={appleMusic} onCoverPress={onCoverPress}
                 artwork={renderCover?.(art)} disabled={songs.length === 0} onPlay={() => { if (songs.length) void onPlay(0); }}
@@ -1052,7 +1117,7 @@ export function TrackListView({
         }}
         ListEmptyComponent={
           filtered ? (
-            <Text style={styles.noResults}>{t('No results for “{q}”', { q: query.trim() })}</Text>
+            <Text style={[styles.noResults, pagePalette && { color: pagePalette.textSecondary }]}>{t('No results for “{q}”', { q: query.trim() })}</Text>
           ) : emptyState ? (
             <>{emptyState}</>
           ) : null
@@ -1074,9 +1139,9 @@ export function TrackListView({
               accessibilityLabel={t('Close')}
               onPress={() => setSelectedIds(null)}
             >
-              <Icon name="close" size={26} color={colors.text} />
+              <Icon name="close" size={26} color={pagePalette?.text ?? colors.text} />
             </GlassPressable>
-            <Text style={styles.barTitle} numberOfLines={1}>
+            <Text style={[styles.barTitle, pagePalette && { color: pagePalette.text }]} numberOfLines={1}>
               {t('{n} selected', { n: selectedIds.size })}
             </Text>
             <GlassPressable variant="subtle"
@@ -1090,18 +1155,24 @@ export function TrackListView({
               <Icon
                 name="checkmark-done"
                 size={24}
-                color={allSelected ? colors.accent : colors.text}
+                color={allSelected ? pagePalette?.accent ?? colors.accent : pagePalette?.text ?? colors.text}
               />
             </GlassPressable>
           </>
         ) : (
           <>
-            <TopBarBackground color={headerColor} opacity={barBgOpacity} />
-            <BackChevron size={28} label={t('Close')} color={minidisc?.palette.text}
-              style={minidisc ? [voltaStyles.roundAction, { backgroundColor: minidisc.palette.controlFill }] : appleMusic ? voltaStyles.roundAction : undefined} />
+            {artistPalette ? <><VoltaArtistHeaderBackdrop
+              color={artistPalette.background} height={insets.top + TOPBAR_H} width={screenW}
+              photoHeight={artistHeaderH} extensionHeight={artistGeometry.extensionHeight}
+              uri={coverUri} sourceUri={artistArtwork.sourceUri} textureUri={artistArtwork.textureUri}
+              scrollY={scrollY} opacity={artistCopyOpacity} />
+              {searchMaterialMounted ? <TopBarBackground color={headerColor} opacity={barBgOpacity} /> : null}
+            </> : <TopBarBackground color={headerColor} opacity={barBgOpacity} />}
+            <BackChevron size={28} label={t('Close')} color={artistPalette?.text ?? minidisc?.palette.text}
+              style={artistPalette ? [voltaStyles.roundAction, { backgroundColor: 'rgba(0,0,0,0.28)' }] : minidisc ? [voltaStyles.roundAction, { backgroundColor: minidisc.palette.controlFill }] : appleMusic ? voltaStyles.roundAction : undefined} />
             <Reanimated.Text
               style={[styles.barTitleCentered, { top: insets.top + 10 }, appleMusic && { left: minidisc ? 70 : 76, right: minidisc ? 126 : 76 },
-                minidisc && { color: minidisc.palette.text }, barContentStyle]}
+                pagePalette && { color: pagePalette.text }, minidisc && { color: minidisc.palette.text }, barContentStyle]}
               numberOfLines={1}
             >
               {title}
@@ -1115,9 +1186,9 @@ export function TrackListView({
                     accessibilityLabel={t('More options')} onPress={onMenu}>
                     <Icon name="ellipsis-horizontal" size={23} color={minidisc.palette.text} />
                   </GlassPressable> : null}
-                </View> : onMenu ? <GlassPressable style={voltaStyles.roundAction} accessibilityRole="button"
+                </View> : onMenu ? <GlassPressable style={[voltaStyles.roundAction, artistPalette && { backgroundColor: 'rgba(0,0,0,0.28)' }]} accessibilityRole="button"
                   accessibilityLabel={t('More options')} onPress={onMenu}>
-                  <Icon name="ellipsis-horizontal" size={23} color={colors.text} />
+                  <Icon name="ellipsis-horizontal" size={23} color={pagePalette?.text ?? colors.text} />
                 </GlassPressable> : null}
               </View>
             ) : null}
@@ -1140,6 +1211,7 @@ export function TrackListView({
       ) : null}
       {selectionMenu.dialogs}
     </View>
+    </ArtistPagePaletteProvider>
   );
 }
 

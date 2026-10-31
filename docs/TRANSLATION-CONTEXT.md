@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 1121 of them.
+Every string the app can show, under the screen it shows up on. 1125 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -1182,7 +1182,9 @@ you are actually typing into, which is easier than reading it here.
 | `Appearance` |  |
 | `Apple Music style` |  |
 | `Applies to album pages in Apple Music style. Spotify style keeps its original album pages. Your player and glass settings stay unchanged.` |  |
+| `Artist page layout` |  |
 | `At the top of Home, what is playing in your other apps and devices, ready to carry on here.` |  |
+| `Compact layout` |  |
 | `Cover corners` |  |
 | `Dark` | The appearance the app has always had, and what it uses unless the other is chosen. |
 | `Explore` | The tab holding everything the server has: all albums, artists, songs, genres, stations and folders |
@@ -1207,6 +1209,7 @@ you are actually typing into, which is easier than reading it here.
 | `Navigation bar blur` |  |
 | `Open the app on` | Which tab the app opens on, and comes back to after a while away |
 | `Playing on other devices` |  |
+| `Playlist page style` |  |
 | `Quick grid` | The grid of shortcut tiles on Home |
 | `Rounded` | One of the values of “Cover corners” |
 | `Scheduled` |  |
@@ -1221,6 +1224,7 @@ you are actually typing into, which is easier than reading it here.
 | `System` | Two places: a theme setting (use whichever appearance the phone itself is set to, light or dark), and `System::section`, the heading in Settings › Quality & playback over Keep screen on and the battery warning. Add `System::section` to your file if one word cannot do both |
 | `Theme` | The screen where the appearance and the accent colour are chosen, and the name of the row that opens it |
 | `UI style` |  |
+| `Use the artist-page header for playlists. Compact layout restores the previous playlist layout instantly.` |  |
 | `Volta` |  |
 | `With no chip pressed, Your library shows Favorites and your playlists instead of everything mixed together.` |  |
 | `Your library` | The tab with your albums, artists and playlists |

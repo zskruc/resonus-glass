@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import { beforeEach, test } from 'node:test';
 
-import { isAppleMusicStyle, normalizeAlbumStyle, normalizeUiStyle } from '@/lib/uiStyle';
+import { isAppleMusicStyle, normalizeAlbumStyle, normalizePlaylistStyle, normalizeUiStyle } from '@/lib/uiStyle';
 
 // Exercise the real settings store, replacing platform I/O and theme effects.
 const storage = { profile: 'one', items: new Map<string, string>(), lookCalls: [] as string[] };
@@ -129,4 +129,66 @@ test('each server profile retains its own UI selection', async () => {
   storage.profile = 'one';
   await useSettings.getState().hydrate();
   assert.equal(useSettings.getState().uiStyle, 'appleMusic');
+});
+
+test('old and invalid playlist preferences preview the artist header; compact remains an explicit valid choice', async () => {
+  assert.equal(useSettings.getState().playlistStyle, 'artist');
+  assert.equal(normalizePlaylistStyle('artist'), 'artist');
+  assert.equal(normalizePlaylistStyle('compact'), 'compact');
+  for (const value of [undefined, null, 'Artist', 'Compact', 'future', 0, true, {}, ['compact']]) {
+    assert.equal(normalizePlaylistStyle(value), 'artist');
+    storage.items.set('resonus.settings.one', JSON.stringify({ uiStyle: 'appleMusic', albumStyle: 'minidisc', playlistStyle: value }));
+    await useSettings.getState().hydrate();
+    assert.equal(useSettings.getState().playlistStyle, 'artist');
+    assert.equal(useSettings.getState().uiStyle, 'appleMusic');
+    assert.equal(useSettings.getState().albumStyle, 'minidisc');
+    useSettings.getState().importSettings({ uiStyle: 'appleMusic', albumStyle: 'minidisc', playlistStyle: value });
+    assert.equal(useSettings.getState().playlistStyle, 'artist');
+    assert.equal(useSettings.getState().uiStyle, 'appleMusic');
+    assert.equal(useSettings.getState().albumStyle, 'minidisc');
+  }
+});
+
+test('playlist layout round-trips per profile, exports and restores independently, then resets to the preview default', async () => {
+  useSettings.getState().setUiStyle('appleMusic');
+  useSettings.getState().setAlbumStyle('minidisc');
+  const before = exportedSettings();
+  useSettings.getState().setPlaylistStyle('compact');
+  assert.equal(JSON.parse(storage.items.get('resonus.settings.one')!).playlistStyle, 'compact');
+  await useSettings.getState().hydrate();
+  assert.deepEqual(exportedSettings(), { ...before, playlistStyle: 'compact' });
+
+  storage.profile = 'two';
+  // A delayed screen from the old account cannot write the new account's blob.
+  useSettings.getState().setPlaylistStyle('artist');
+  assert.equal(storage.items.has('resonus.settings.two'), false);
+  assert.equal(JSON.parse(storage.items.get('resonus.settings.one')!).playlistStyle, 'compact');
+  await useSettings.getState().hydrate();
+  assert.equal(useSettings.getState().playlistStyle, 'artist');
+  useSettings.getState().importSettings({ ...before, playlistStyle: 'compact' });
+  assert.deepEqual(exportedSettings(), { ...before, playlistStyle: 'compact' });
+  useSettings.getState().resetToDefaults();
+  assert.equal(useSettings.getState().playlistStyle, 'artist');
+  storage.profile = 'one';
+  await useSettings.getState().hydrate();
+  assert.deepEqual(exportedSettings(), { ...before, playlistStyle: 'compact' });
+});
+
+test('switching the playlist layout changes only its preference and normalizes programmatic invalid values', () => {
+  const settings = useSettings.getState();
+  settings.setUiStyle('appleMusic');
+  settings.setAlbumStyle('minidisc');
+  settings.setAccentColor('#A66CFF', 'dark');
+  settings.setPlayerPresentation('resonus');
+  settings.setBlurMiniPlayer(false);
+  const before = exportedSettings();
+  storage.lookCalls.length = 0;
+  settings.setPlaylistStyle('compact');
+  assert.deepEqual(exportedSettings(), { ...before, playlistStyle: 'compact' });
+  assert.deepEqual(storage.lookCalls, []);
+  settings.setPlaylistStyle('artist');
+  assert.deepEqual(exportedSettings(), before);
+  (settings.setPlaylistStyle as (value: unknown) => void)({ unexpected: 'compact' });
+  assert.deepEqual(exportedSettings(), before);
+  assert.deepEqual(storage.lookCalls, []);
 });

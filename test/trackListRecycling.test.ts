@@ -8,7 +8,10 @@ import { isValidElement } from 'react';
 
 import { voltaDetailBackground } from '../src/lib/voltaPalette';
 import { buildMinidiscAlbumPalette, minidiscAlbumCoverSize } from '../src/lib/minidiscAlbumPalette';
-import { type UiStyle } from '../src/lib/uiStyle';
+import { type PlaylistStyle, type UiStyle } from '../src/lib/uiStyle';
+import { VOLTA_ARTIST_FALLBACK } from '../src/lib/voltaArtistPalette';
+import { artistHeroGeometry } from '../src/lib/artistHeroGeometry';
+import { artistHeaderFromLayout, artistPhotoParallax } from '../src/lib/artistHeaderTransition';
 
 const { transformSync } = createRequire(import.meta.url)('@babel/core') as {
   transformSync(source: string, options: Record<string, unknown>): { code?: string | null } | null;
@@ -141,7 +144,7 @@ const songA = { id: 'A', title: 'Àlpha', artist: 'Singer', duration: 123, track
 const songB = { id: 'B', title: 'Beta', artist: 'Other', duration: 99, track: 2 };
 
 function list() {
-  const settings: { uiStyle: UiStyle } = { uiStyle: 'spotify' };
+  const settings: { uiStyle: UiStyle; playlistStyle: PlaylistStyle } = { uiStyle: 'spotify', playlistStyle: 'artist' };
   const timings: { toValue: number; complete(finished?: boolean): void; stops: number }[] = [];
   const listNative = { ...native, Animated: { ...native.Animated, timing: (_value: unknown, config: { toValue: number }) => {
     let callback: ((result: { finished: boolean }) => void) | undefined;
@@ -164,6 +167,13 @@ function list() {
       'react-native': listNative, './Icon': icon, './Cover': { Cover: 'Cover' },
       '@/i18n': { useT: () => (value: string) => value }, '@/theme': theme,
     }),
+    '@/components/PlaylistArtistHeader': {
+      PlaylistArtistHeader: 'PlaylistArtistHeader', playlistArtistHeaderHeight: () => 200,
+    },
+    '@/components/volta/ArtistPagePalette': {
+      ArtistPagePaletteProvider: 'ArtistPagePaletteProvider', useArtistPagePalette: () => undefined,
+    },
+    '@/components/volta/VoltaArtistHeaderBackdrop': { VoltaArtistHeaderBackdrop: 'VoltaArtistHeaderBackdrop' },
     '@/components/Icon': icon,
     'expo-linear-gradient': { LinearGradient: 'Gradient' },
     'expo-router': { Link: 'Link', useRouter: () => ({ push() {}, back() {} }) },
@@ -180,17 +190,22 @@ function list() {
     } } },
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) },
     '@/hooks/useDominantColor': { useCoverTint: () => ({ color: '#333', known: true }) },
+    '@/hooks/useVoltaArtistArtwork': { useVoltaArtistArtwork: () => ({ palette: VOLTA_ARTIST_FALLBACK, ready: true }) },
     '@/hooks/useScreenBottomPadding': { useScreenBottomPadding: () => 20 },
     '@/hooks/useLiquidDock': { useLiquidDockScrollHandler: () => dock },
     '@/hooks/useScreenSize': { centredPadding: () => 16, useScreenSize: () => ({ width: 400, height: 800 }) },
     '@/hooks/useSelectionMenu': { useSelectionMenu: () => ({ actions: [], dialogs: null }) },
     '@/i18n': { useT: () => (value: string) => value },
     '@/lib/artistNav': { artistTargets: () => [] },
+    '@/lib/artistHeroGeometry': { artistHeroGeometry },
+    '@/lib/artistHeaderTransition': { artistHeaderFromLayout, artistPhotoParallax },
     '@/lib/haptics': { haptic() {} },
     '@/lib/voltaPalette': { voltaDetailBackground },
     '@/lib/minidiscAlbumPalette': { minidiscAlbumCoverSize },
     '@/components/volta/MinidiscAlbumHeader': { MinidiscAlbumHeader: 'MinidiscAlbumHeader' },
     '@/store/artistPicker': { useArtistPicker: (select: (s: unknown) => unknown) => select({ open() {} }) },
+    '@/store/auth': { useAuthStore: Object.assign((select: (s: unknown) => unknown) => select({ offline: false }),
+      { getState: () => ({ offline: false }) }) },
     '@/store/player': { usePlayerStore: (select: (s: unknown) => unknown) => select({ shuffle: false, queueDealt: false }) },
     '@/store/settings': { useSettings: (select: (s: unknown) => unknown) => select(settings) },
     '@/theme': theme,
@@ -225,6 +240,7 @@ function list() {
   render();
   return { render, recycler, row, search, played, removed, gestures, scrolls, dock, timings, animatedValues: anim.values,
     setUiStyle(style: UiStyle) { settings.uiStyle = style; return render(); },
+    setPlaylistStyle(style: PlaylistStyle) { settings.playlistStyle = style; return render(); },
     unmount: runtime.unmount, stateWrites: () => runtime.stateWrites,
     material: () => find(recycler().props.ListHeaderComponent, (node) => node.type === 'GlassBackdrop'),
     detach() { if (typeof mountedRef === 'function') mountedRef(null); else if (mountedRef) mountedRef.current = null; },
@@ -389,6 +405,47 @@ describe('recycled shared playlist rendering and positions', () => {
     assert.equal(h.row(0).props.selected, false);
     h.selectionBar().props.actions.find((action: any) => action.icon === 'remove-circle-outline').onPress();
     assert.equal(JSON.stringify(h.removed), '[[12]]', 'switching style must not change the selected server position');
+  });
+
+  it('retains native scrolling and duplicate occurrence ownership while switching playlist headers in both UI styles', () => {
+    const h = list();
+    h.render({ playlistPresentation: true });
+    h.setPlaylistStyle('compact');
+    const initial = h.recycler();
+    const oldPress = h.row(2).props.onPress;
+    const occurrences = initial.props.data;
+    const firstOccurrence = occurrences[0], duplicateOccurrence = occurrences[2];
+    initial.props.onScroll.handlers[0].onScroll({ contentOffset: { y: 360 } });
+    const scrollPosition = h.animatedValues.find((value) => value.get() === 360);
+    assert.ok(scrollPosition);
+    h.row(2).props.onLongPress(); h.render();
+
+    for (const ui of ['appleMusic', 'spotify', 'appleMusic', 'spotify'] as const) {
+      h.setUiStyle(ui);
+      for (const header of ['artist', 'compact', 'artist'] as const) {
+        h.setPlaylistStyle(header);
+        const current = h.recycler();
+        assert.equal(current.type, initial.type, 'header choice cannot replace the native recycler');
+        assert.equal(current.props.ref, initial.props.ref);
+        assert.equal(current.props.renderScrollComponent, initial.props.renderScrollComponent,
+          'the original gesture-handler scroll host remains mounted');
+        assert.equal(current.props.data, occurrences);
+        assert.equal(current.props.data[0], firstOccurrence);
+        assert.equal(current.props.data[2], duplicateOccurrence,
+          'repeated Song references still retain their separate occurrence descriptors');
+        assert.equal(current.props.onScroll.handlers[1], h.dock);
+        assert.equal(scrollPosition.get(), 360);
+        assert.equal(h.row(2).props.selected, true);
+        assert.equal(h.row(0).props.selected, false);
+        assert.equal(!!find(current.props.ListHeaderComponent, (node) => node.type === 'PlaylistArtistHeader'), header === 'artist');
+      }
+    }
+    assert.deepEqual(h.scrolls, [], 'header/UI switches do not issue an imperative scroll reset');
+    h.row(2).props.onPressIn();
+    oldPress();
+    assert.deepEqual(h.played, [2], 'the retained callback still plays the second A occurrence');
+    h.selectionBar().props.actions.find((action: any) => action.icon === 'remove-circle-outline').onPress();
+    assert.equal(JSON.stringify(h.removed), '[[12]]', 'removal retains the original server index of the selected duplicate');
   });
 
   it('switches Volta and Minidisc albums without replacing the recycler, scroll owner or duplicate selection', () => {

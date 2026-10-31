@@ -1119,5 +1119,9 @@
   "Playlist file is too large": "Playlist file is too large",
   "Playlist has too many tracks": "Playlist has too many tracks",
   "Playlist contains no valid tracks": "Playlist contains no valid tracks",
-  "Unsupported playlist file": "Unsupported playlist file"
+  "Unsupported playlist file": "Unsupported playlist file",
+  "Playlist page style": "Playlist page style",
+  "Artist page layout": "Artist page layout",
+  "Compact layout": "Compact layout",
+  "Use the artist-page header for playlists. Compact layout restores the previous playlist layout instantly.": "Use the artist-page header for playlists. Compact layout restores the previous playlist layout instantly."
 }
