@@ -234,9 +234,20 @@ function requestCoverTint(src: string, key: string, mode: ThemeMode, vivid: bool
 
 /** Prepares the exact small-image cache used by useCoverTint, without a UI update. */
 export async function prefetchCoverTint(uri: string | undefined, mode: ThemeMode, vivid = false): Promise<void> {
-  if (!uri || uri.startsWith(CACHED_COVER)) return;
+  await readSharedCoverTint(uri, mode, vivid);
+}
+
+/** Synchronous read for global controls: uses the same cache as the full player. */
+export function cachedCoverTint(uri: string, mode: ThemeMode, vivid = false): string | undefined {
+  if (uri.startsWith(CACHED_COVER)) return undefined;
+  return resolved.get(resolvedKey(paletteUri(uri), mode, vivid));
+}
+
+/** Joins the existing pending decode; no additional image sampling or download. */
+export async function readSharedCoverTint(uri: string | undefined, mode: ThemeMode, vivid = false): Promise<string | null> {
+  if (!uri || uri.startsWith(CACHED_COVER)) return null;
   const src = paletteUri(uri);
-  await requestCoverTint(src, resolvedKey(src, mode, vivid), mode, vivid);
+  return requestCoverTint(src, resolvedKey(src, mode, vivid), mode, vivid);
 }
 
 /**

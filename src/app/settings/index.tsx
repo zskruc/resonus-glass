@@ -10,7 +10,7 @@ import Icon from '@/components/Icon';
 import { useRouter } from 'expo-router';
 import { Pressable, Text, View } from 'react-native';
 
-import { ScreenHeader, SettingsSafeArea, settingsStyles } from '@/components/SettingsUI';
+import { SETTINGS_ROW_LAYOUT, ScreenHeader, SettingsSafeArea, settingsStyles } from '@/components/SettingsUI';
 import { useT } from '@/i18n';
 import { useAuthStore } from '@/store/auth';
 import { anyDownloads, useDownloads } from '@/store/downloads';
@@ -214,7 +214,7 @@ const styles = themed((colors) => ({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    paddingVertical: spacing.md + 2,
+    ...SETTINGS_ROW_LAYOUT,
   },
   sectionRowTitle: { color: colors.text, fontSize: fontSize.md, fontWeight: '500', flex: 1 },
 }));

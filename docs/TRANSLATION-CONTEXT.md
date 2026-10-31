@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 988 of them.
+Every string the app can show, under the screen it shows up on. 992 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -1318,11 +1318,15 @@ you are actually typing into, which is easier than reading it here.
 | --- | --- |
 | `Accent color` | The colour the app uses for buttons, links and anything it wants you to notice |
 | `Background` | Section header over what is drawn behind the player. Its two values are `Plain` and `Blurred cover` |
+| `Choose a color` | Theme accent source: select and keep a manual palette/custom color instead of following the currently playing artwork. |
+| `Colors buttons and selected items from the current cover. Your manual colors are kept as a fallback.` |  |
 | `Create custom color` |  |
+| `Current theme color` | Preview of the effective artwork accent after light/dark readability correction. |
 | `Custom color` |  |
 | `Dark` | The appearance the app has always had, and what it uses unless the other is chosen. |
 | `Dark from` |  |
 | `Edit custom color` |  |
+| `Follow album artwork` | Use the currently playing song's album artwork for app button/selection accent colors. This does not follow the album page being browsed or tint glass backgrounds. |
 | `Hex code` |  |
 | `Light` | The light appearance, in Settings › Theme |
 | `Light from` |  |

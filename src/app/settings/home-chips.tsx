@@ -17,7 +17,7 @@ import ReorderableList, {
 
 import { centredPadding, useScreenSize } from '@/hooks/useScreenSize';
 
-import { ScreenHeader, SettingsSafeArea, SwitchList } from '@/components/SettingsUI';
+import { SETTINGS_ROW_LAYOUT, ScreenHeader, SettingsSafeArea, SwitchList } from '@/components/SettingsUI';
 import { useLocalProfile } from '@/hooks/useLocalProfile';
 import { useT } from '@/i18n';
 import { haptic } from '@/lib/haptics';
@@ -59,7 +59,7 @@ function ChipRow({ chip, disabled }: { chip: HomeChip; disabled?: boolean }) {
     // Home screen you get back, and it costs nothing to set now.
     <GlassSurface radius={radius.md} style={[styles.row, disabled && { opacity: 0.5 }]}>
       <Pressable
-        hitSlop={8}
+        hitSlop={10}
         onPressIn={() => {
           haptic('medium');
           drag();
@@ -178,7 +178,7 @@ const styles = themed((colors) => ({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    paddingVertical: spacing.md,
+    ...SETTINGS_ROW_LAYOUT,
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.sm,
     backgroundColor: colors.surface,

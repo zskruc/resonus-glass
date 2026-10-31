@@ -27,6 +27,9 @@ import { BackChevron } from './BackChevron';
 import { MenuGlassPanel, menuGlassScrimColor } from './MenuGlassCard';
 import { DynamicGlassBackdrop, StaticGlassBackdropProvider, useStaticGlassBackdropColor } from './glass/StaticGlassBackdropContext';
 
+/** A 44dp control plus 6dp above/below; text may grow the row when it wraps. */
+export const SETTINGS_ROW_LAYOUT = { minHeight: 56, paddingVertical: 6 } as const;
+
 /**
  * The frame every settings screen sits in.
  *
@@ -448,7 +451,7 @@ export function SliderRow({
 
   return (
     <SettingsCard enabled={!!box} radius={radius.lg} style={[box, disabled && { opacity: 0.5 }]}>
-      <View style={[settingsStyles.row, { paddingBottom: 0 }]}>
+      <View style={[settingsStyles.row, settingsStyles.sliderHeading]}>
         <View style={settingsStyles.rowLabelBox}>
           <Text style={settingsStyles.rowLabel}>{label}</Text>
           {description ? <Text style={settingsStyles.rowDescription}>{description}</Text> : null}
@@ -851,7 +854,7 @@ export const settingsStyles = themed((colors) => ({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.md,
+    ...SETTINGS_ROW_LAYOUT,
     paddingHorizontal: spacing.lg,
     gap: spacing.md,
   },
@@ -897,6 +900,8 @@ export const settingsStyles = themed((colors) => ({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
+  // Slider labels are the heading of a stacked control, not an independent row.
+  sliderHeading: { minHeight: 0, paddingTop: spacing.md, paddingBottom: 0 },
   slider: {
     marginHorizontal: spacing.md,
     marginTop: spacing.xs,
@@ -953,7 +958,7 @@ export const settingsStyles = themed((colors) => ({
   // flexShrink (not flex: 1, whose flex-basis:0 collapses the text and wraps it
   // aggressively): the menu hugs the widest label instead of squeezing it.
   menuItemText: { color: colors.text, fontSize: fontSize.sm, flexShrink: 1 },
-  field: { paddingVertical: spacing.md, paddingHorizontal: spacing.lg },
+  field: { ...SETTINGS_ROW_LAYOUT, paddingHorizontal: spacing.lg },
   fieldLabel: { color: colors.textMuted, fontSize: fontSize.xs, marginBottom: 2 },
   fieldValue: { color: colors.text, fontSize: fontSize.md },
   // Centered white pill button (Spotify's "Log out").

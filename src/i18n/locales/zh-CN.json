@@ -989,5 +989,9 @@
   "Subsonic error": "音乐服务器返回错误",
   "Created playlist not found": "未找到刚创建的播放列表",
   "The server did not return a link": "服务器未返回链接",
-  "Invalid artist catalogue": "艺人目录格式无效"
+  "Invalid artist catalogue": "艺人目录格式无效",
+  "Choose a color": "手动选择",
+  "Follow album artwork": "跟随专辑封面",
+  "Current theme color": "当前主题色",
+  "Colors buttons and selected items from the current cover. Your manual colors are kept as a fallback.": "根据当前封面调整按钮和选中项颜色；保留手动配色，无可用封面时自动使用。"
 }

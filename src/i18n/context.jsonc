@@ -17,6 +17,9 @@
 // purpose. They are not counted as missing.
 {
   "notes": {
+    "Choose a color": "Theme accent source: select and keep a manual palette/custom color instead of following the currently playing artwork.",
+    "Follow album artwork": "Use the currently playing song's album artwork for app button/selection accent colors. This does not follow the album page being browsed or tint glass backgrounds.",
+    "Current theme color": "Preview of the effective artwork accent after light/dark readability correction.",
     "Open-source defaults": "The original AndroidLiquidGlass component presets. These are not Apple’s private optical parameters. Saved custom styles are retained.",
     // ── The app's own words ──────────────────────────────────────────────────
     // These come back on screen after screen. Whatever each language settles

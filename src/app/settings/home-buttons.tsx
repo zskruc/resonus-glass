@@ -16,7 +16,7 @@ import ReorderableList, {
   type ReorderableListReorderEvent,
 } from 'react-native-reorderable-list';
 
-import { ScreenHeader, SettingsSafeArea } from '@/components/SettingsUI';
+import { SETTINGS_ROW_LAYOUT, ScreenHeader, SettingsSafeArea } from '@/components/SettingsUI';
 import { useAccent } from '@/hooks/useAccent';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
 import { centredPadding, useScreenSize } from '@/hooks/useScreenSize';
@@ -53,7 +53,7 @@ function ButtonRow({ button }: { button: HomeButton }) {
   return (
     <GlassSurface radius={radius.md} style={styles.row}>
       <Pressable
-        hitSlop={8}
+        hitSlop={10}
         onPressIn={() => {
           haptic('medium');
           drag();
@@ -127,7 +127,7 @@ const styles = themed((colors) => ({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    paddingVertical: spacing.md,
+    ...SETTINGS_ROW_LAYOUT,
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.sm,
     backgroundColor: colors.surface,

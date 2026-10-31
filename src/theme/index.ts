@@ -22,6 +22,7 @@
 import { useSyncExternalStore } from 'react';
 import { Appearance, AppState, Platform } from 'react-native';
 import type { ImageStyle, TextStyle, ViewStyle } from 'react-native';
+import type { AccentSource } from '@/lib/appAccent';
 
 /** Default accent (Spotify green). */
 export const DEFAULT_ACCENT = '#1DB954';
@@ -558,6 +559,9 @@ let currentMode: ThemeMode = 'dark';
 // Settings is where each is made.
 let darkAccent = DEFAULT_ACCENT;
 let lightAccent = DEFAULT_ACCENT;
+let accentSource: AccentSource = 'manual';
+// Session-only artwork seed: never overwrites either saved manual choice.
+let artworkAccent: string | null = null;
 let pureBlack = false;
 let tint: BackgroundTint = 'blue';
 
@@ -592,7 +596,8 @@ function rebuild(): void {
     : pureBlack
       ? BLACK
       : { ...DARK, ...BACKGROUND_TINTS[tint].dark };
-  const picked = light ? lightAccent : darkAccent;
+  const picked = accentSource === 'artwork' && artworkAccent
+    ? artworkAccent : light ? lightAccent : darkAccent;
   // On white the accent has to be dark enough to read as text; on near-black
   // a palette colour is already fine as picked, and a dark custom one is
   // lifted. `onAccent` follows from that: black on the vivid accent, white on
@@ -612,10 +617,21 @@ function rebuild(): void {
 /** Hot-swaps both accents (accent + its "pressed" variant). Both at once, so
  *  there is never a moment where one appearance holds a colour the setting
  *  no longer says. */
-export function applyAccents(dark: string, light: string): void {
+export function applyAccents(dark: string, light: string, source: AccentSource = 'manual', clearArtwork = false): void {
+  if (darkAccent === dark && lightAccent === light && accentSource === source && (!clearArtwork || artworkAccent === null)) return;
   darkAccent = dark;
   lightAccent = light;
+  accentSource = source;
+  if (clearArtwork) artworkAccent = null;
   rebuild();
+}
+
+/** Changes only accent roles; page backgrounds and glass materials stay independent. */
+export function applyArtworkAccent(seed: string | null): void {
+  const next = seed && /^#[\da-f]{6}$/i.test(seed) ? seed : null;
+  if (next === artworkAccent) return;
+  artworkAccent = next;
+  if (accentSource === 'artwork') rebuild();
 }
 
 /** True black instead of dark grey, whenever the appearance is dark. */

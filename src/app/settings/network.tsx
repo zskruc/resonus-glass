@@ -12,7 +12,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 import { Dialog } from '@/components/Dialog';
-import { SettingsPage, settingsStyles, SwitchList } from '@/components/SettingsUI';
+import { SETTINGS_ROW_LAYOUT, SettingsPage, settingsStyles, SwitchList } from '@/components/SettingsUI';
 import { reachable } from '@/api/backend';
 import { isLanUrl } from '@/lib/serverUrls';
 import { useT } from '@/i18n';
@@ -229,7 +229,7 @@ const styles = themed((colors) => ({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    paddingVertical: spacing.md,
+    ...SETTINGS_ROW_LAYOUT,
     paddingHorizontal: spacing.lg,
   },
   activeUrl: { color: colors.text, fontSize: fontSize.md, flex: 1 },

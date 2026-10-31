@@ -10,8 +10,9 @@ import { useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { GlassPressable } from '@/components/glass';
-import { SelectList, SettingsGroup, SettingsPage, settingsStyles, SwitchList } from '@/components/SettingsUI';
+import { SETTINGS_ROW_LAYOUT, SelectList, SettingsGroup, SettingsPage, settingsStyles, SwitchList } from '@/components/SettingsUI';
 import { useT } from '@/i18n';
+import type { AccentSource } from '@/lib/appAccent';
 import { ACCENT_OPTIONS, useSettings } from '@/store/settings';
 import {
   BACKGROUND_TINTS,
@@ -171,6 +172,8 @@ export default function ThemeSettings() {
   const accentColor = useSettings((s) => s.accentColor);
   const accentColorLight = useSettings((s) => s.accentColorLight);
   const setAccentColor = useSettings((s) => s.setAccentColor);
+  const accentSource = useSettings((s) => s.accentSource);
+  const setAccentSource = useSettings((s) => s.setAccentSource);
   const themeMode = useSettings((s) => s.themeMode);
   const setThemeMode = useSettings((s) => s.setThemeMode);
   const themeLightFrom = useSettings((s) => s.themeLightFrom);
@@ -185,6 +188,7 @@ export default function ThemeSettings() {
   const setCustomAccentColor = useSettings((s) => s.setCustomAccentColor);
   const [pickerOpen, setPickerOpen] = useState(false);
   const accent = mode === 'light' ? accentColorLight : accentColor;
+  const colors = useTheme();
 
   return (
     <SettingsPage title={t('Theme')}>
@@ -251,15 +255,34 @@ export default function ThemeSettings() {
             there rather than repainting it with the other's. Nothing has to say
             so on screen — the ticked swatch is already the answer. */}
         <Text style={[styles.label, styles.secondLabel]}>{t('Accent color')}</Text>
-        <Text style={styles.subLabel}>{t('Palette')}</Text>
-        <Swatches value={accent} onPick={(hex) => setAccentColor(hex, mode)} />
-        <Text style={[styles.subLabel, styles.secondSubLabel]}>{t('Custom::color')}</Text>
-        <CustomSwatch
-          color={customAccentColor}
-          active={!!customAccentColor && customAccentColor.toLowerCase() === accent.toLowerCase()}
-          onPick={() => setAccentColor(customAccentColor, mode)}
-          onEdit={() => setPickerOpen(true)}
+        <SelectList<AccentSource>
+          collapsible={false}
+          value={accentSource}
+          onChange={setAccentSource}
+          options={[
+            { value: 'manual', label: t('Choose a color') },
+            { value: 'artwork', label: t('Follow album artwork') },
+          ]}
         />
+        {accentSource === 'manual' ? <>
+          <Text style={[styles.subLabel, styles.secondSubLabel]}>{t('Palette')}</Text>
+          <Swatches value={accent} onPick={(hex) => setAccentColor(hex, mode)} />
+          <Text style={[styles.subLabel, styles.secondSubLabel]}>{t('Custom::color')}</Text>
+          <CustomSwatch
+            color={customAccentColor}
+            active={!!customAccentColor && customAccentColor.toLowerCase() === accent.toLowerCase()}
+            onPick={() => setAccentColor(customAccentColor, mode)}
+            onEdit={() => setPickerOpen(true)}
+          />
+        </> : <>
+          <View style={styles.accentPreview}>
+            <View style={[styles.previewDot, { backgroundColor: colors.accent }]} />
+            <Text style={styles.previewLabel}>{t('Current theme color')}</Text>
+          </View>
+          <Text style={styles.autoDescription}>
+            {t('Colors buttons and selected items from the current cover. Your manual colors are kept as a fallback.')}
+          </Text>
+        </>}
         {pickerOpen ? (
           <ColorPickerDialog
             initialColor={customAccentColor || accent}
@@ -286,6 +309,12 @@ const styles = themed((colors) => ({
   secondLabel: { marginTop: spacing.xl },
   subLabel: { color: colors.textMuted, fontSize: fontSize.xs, marginBottom: spacing.sm },
   secondSubLabel: { marginTop: spacing.lg },
+  accentPreview: { ...SETTINGS_ROW_LAYOUT, marginTop: spacing.md, paddingHorizontal: spacing.lg,
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    backgroundColor: colors.surface, borderRadius: radius.lg },
+  previewDot: { width: 24, height: 24, borderRadius: 12 },
+  previewLabel: { color: colors.text, fontSize: fontSize.sm, flexShrink: 1 },
+  autoDescription: { color: colors.textSecondary, fontSize: fontSize.xs, lineHeight: 20, marginTop: spacing.sm },
   gap: { height: spacing.md },
   swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg },
   swatch: {

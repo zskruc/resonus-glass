@@ -986,5 +986,9 @@
   "Subsonic error": "Subsonic error",
   "Created playlist not found": "Created playlist not found",
   "The server did not return a link": "The server did not return a link",
-  "Invalid artist catalogue": "Invalid artist catalogue"
+  "Invalid artist catalogue": "Invalid artist catalogue",
+  "Choose a color": "Choose a color",
+  "Follow album artwork": "Follow album artwork",
+  "Current theme color": "Current theme color",
+  "Colors buttons and selected items from the current cover. Your manual colors are kept as a fallback.": "Colors buttons and selected items from the current cover. Your manual colors are kept as a fallback."
 }

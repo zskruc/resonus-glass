@@ -6,6 +6,7 @@ import { isLanguage, LANGUAGE_NAMES, type Language } from '@/i18n/languages';
 import { type TabSegment } from '@/lib/tabOrigin';
 import { hashKey } from '@/lib/localLibrary';
 import { normalizeHomeTitle } from '@/lib/homeTitle';
+import { normalizeAccentSource, type AccentSource } from '@/lib/appAccent';
 import { normalizeAlbumStyle, normalizeUiStyle, type AlbumStyle, type UiStyle } from '@/lib/uiStyle';
 import { setPerfEnabled } from '@/lib/perfLog';
 import { profileScopeGuard } from '@/lib/profileScope';
@@ -825,6 +826,7 @@ type CustomSetter =
   | 'setCustomHomeTitle'
   | 'setGridColumns'
   | 'setAccentColor'
+  | 'setAccentSource'
   | 'setThemeMode'
   | 'setThemeLightFrom'
   | 'setThemeDarkFrom'
@@ -1150,6 +1152,8 @@ interface SettingsState extends Omit<AutoSetters, CustomSetter> {
   /** The same under the light one, which is a separate choice: a colour picked
    *  for near-black is not always the one wanted on white. */
   accentColorLight: string;
+  /** Manual colors stay saved when the current artwork drives the app accent. */
+  accentSource: AccentSource;
   /** The user's own colour (hex), kept apart so picking one from the palette
    *  does not lose it; '' until one is made. */
   customAccentColor: string;
@@ -1190,6 +1194,7 @@ interface SettingsState extends Omit<AutoSetters, CustomSetter> {
   setPlayerButton: (key: PlayerButtonKey, value: boolean) => void;
   setGridColumns: (key: GridSizeKey, value: number) => void;
   setAccentColor: (value: string, appearance: ThemeMode) => void;
+  setAccentSource: (value: AccentSource) => void;
   setThemeMode: (value: ThemePreference) => void;
   setThemeLightFrom: (hour: number) => void;
   setThemeDarkFrom: (hour: number) => void;
@@ -1382,6 +1387,7 @@ const DEFAULTS = {
   syncQueueFromServer: true,
   accentColor: DEFAULT_ACCENT,
   accentColorLight: DEFAULT_ACCENT,
+  accentSource: 'manual' as AccentSource,
   customAccentColor: '',
   uiStyle: 'spotify' as UiStyle,
   albumStyle: 'volta' as AlbumStyle,
@@ -1418,7 +1424,7 @@ function autoSetters(
 /** The appearance side effects of the factory values: they live outside the
  *  store, so putting the store back does not put them back. */
 function applyFactoryLook() {
-  applyAccents(DEFAULT_ACCENT, DEFAULT_ACCENT);
+  applyAccents(DEFAULT_ACCENT, DEFAULT_ACCENT, 'manual', true);
   applyThemeSchedule(DEFAULTS.themeLightFrom, DEFAULTS.themeDarkFrom);
   applyThemePreference(DEFAULTS.themeMode);
   applyPureBlack(DEFAULTS.pureBlack);
@@ -1763,11 +1769,12 @@ function applySaved(raw: unknown, set: (partial: Partial<SettingsState>) => void
   // The light accent falls back to the dark one rather than to the
   // default: every profile that picked a colour before there were two of
   // them picked it for the app, not for one of its appearances.
-  if (isHexColor(parsed.accentColor) || isHexColor(parsed.accentColorLight)) {
+  {
     const dark = isHexColor(parsed.accentColor) ? parsed.accentColor : DEFAULT_ACCENT;
     const light = isHexColor(parsed.accentColorLight) ? parsed.accentColorLight : dark;
-    set({ accentColor: dark, accentColorLight: light });
-    applyAccents(dark, light);
+    const source = normalizeAccentSource(parsed.accentSource);
+    set({ accentColor: dark, accentColorLight: light, accentSource: source });
+    applyAccents(dark, light, source);
   }
   if (isHexColor(parsed.customAccentColor)) {
     set({ customAccentColor: parsed.customAccentColor });
@@ -1911,8 +1918,16 @@ export const useSettings = create<SettingsState>((set, get) => ({
   },
 
   setAccentColor: (value, appearance) => {
-    set(appearance === 'light' ? { accentColorLight: value } : { accentColor: value });
-    applyAccents(get().accentColor, get().accentColorLight);
+    if (!isHexColor(value)) return;
+    set({ ...(appearance === 'light' ? { accentColorLight: value } : { accentColor: value }), accentSource: 'manual' });
+    applyAccents(get().accentColor, get().accentColorLight, 'manual');
+    persist(snapshot(get));
+  },
+
+  setAccentSource: (value) => {
+    const accentSource = normalizeAccentSource(value);
+    set({ accentSource });
+    applyAccents(get().accentColor, get().accentColorLight, accentSource);
     persist(snapshot(get));
   },
 

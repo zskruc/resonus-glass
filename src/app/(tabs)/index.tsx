@@ -111,7 +111,7 @@ function useShelfCard(): number {
 
 /** Volta-style cover + tinted information card. No live blur in a scrolling shelf. */
 function VoltaQuickCard({
-  href, name, cover, subtitle, favorites, width,
+  href, name, cover, subtitle, favorites, width, compact = false,
 }: {
   href: string;
   name: string;
@@ -119,6 +119,7 @@ function VoltaQuickCard({
   subtitle?: string;
   favorites?: boolean;
   width: number;
+  compact?: boolean;
 }) {
   const t = useT();
   const tint = useDominantColor(cover);
@@ -127,12 +128,12 @@ function VoltaQuickCard({
     <Link href={href} asChild>
       <Pressable style={StyleSheet.flatten([voltaStyles.featureCard, { width, backgroundColor: background }])}>
         {favorites ? <FavoritesArt size={width} square /> : <Cover uri={cover} size={width} style={voltaStyles.featureCover} />}
-        <View style={voltaStyles.featureInfo}>
-          <Text style={voltaStyles.featureKind} numberOfLines={1}>
+        <View style={[voltaStyles.featureInfo, compact && voltaStyles.compactFeatureInfo]}>
+          {!compact ? <Text style={voltaStyles.featureKind} numberOfLines={1}>
             {t(favorites ? 'Favorites' : href.startsWith('/playlist/') ? 'Playlist' : 'Album')}
-          </Text>
-          <Text style={voltaStyles.featureName} numberOfLines={1}>{name}</Text>
-          {subtitle ? <Text style={voltaStyles.featureSubtitle} numberOfLines={1}>{subtitle}</Text> : null}
+          </Text> : null}
+          <Text style={[voltaStyles.featureName, compact && voltaStyles.compactFeatureName]} numberOfLines={1}>{name}</Text>
+          {subtitle ? <Text style={[voltaStyles.featureSubtitle, compact && voltaStyles.compactFeatureSubtitle]} numberOfLines={1}>{subtitle}</Text> : null}
         </View>
       </Pressable>
     </Link>
@@ -687,8 +688,10 @@ function DiscoverSection({ title, reshuffleKey }: { title: string; reshuffleKey:
   const canFetch = useAuthStore((s) => !!s.auth || s.offline);
   const card = useShelfCard();
   const appleMusic = useContext(AppleHomeContext);
-  const { width } = useScreenSize();
-  const featureWidth = Math.min(340, width - spacing.lg * 2 - 12);
+  const { width, wide } = useScreenSize();
+  // Keep the next recommendation visible. Full-width square artwork used
+  // most of a phone's available height before the next shelf could appear.
+  const featureWidth = Math.min(wide ? 280 : 240, Math.round((width - spacing.lg * 2) * 0.68));
   const { data, isLoading } = useQuery({
     queryKey: ['albumList', 'discover'],
     queryFn: () => getAlbumList('recent', DISCOVER_POOL, DISCOVER_OFFSET),
@@ -705,7 +708,9 @@ function DiscoverSection({ title, reshuffleKey }: { title: string; reshuffleKey:
     return (
       <HomeShelf>
         <HomeShelfTitle>{title}</HomeShelfTitle>
-        <AlbumCardsSkeleton horizontal />
+        {appleMusic ? <View style={{ minHeight: featureWidth + 74 }}>
+          <AlbumCardsSkeleton width={featureWidth} count={2} horizontal />
+        </View> : <AlbumCardsSkeleton horizontal />}
       </HomeShelf>
     );
   }
@@ -728,7 +733,7 @@ function DiscoverSection({ title, reshuffleKey }: { title: string; reshuffleKey:
         } : {})}
         renderItem={({ item }) => appleMusic ? (
           <VoltaQuickCard href={`/album/${item.id}`} name={item.name} subtitle={item.artist}
-            cover={coverArtUrl(item.coverArt ?? item.id, COVER.card)} width={featureWidth} />
+            cover={coverArtUrl(item.coverArt ?? item.id, COVER.card)} width={featureWidth} compact />
         ) : <AlbumCard album={item} width={card} />}
       />
     </HomeShelf>
@@ -1171,6 +1176,9 @@ const voltaStyles = themed((colors) => ({
   featureKind: { color: colors.textSecondary, fontSize: 12, lineHeight: 16 },
   featureName: { color: colors.text, fontSize: 18, lineHeight: 24, fontWeight: '600' },
   featureSubtitle: { color: colors.textSecondary, fontSize: 15, lineHeight: 21 },
+  compactFeatureInfo: { minHeight: 74, padding: 12, gap: 3 },
+  compactFeatureName: { fontSize: 17, lineHeight: 22 },
+  compactFeatureSubtitle: { fontSize: 14, lineHeight: 19 },
 }));
 
 const styles = themed((colors) => ({
