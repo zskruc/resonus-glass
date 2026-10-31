@@ -41,7 +41,9 @@ These features describe the released Glass baseline. Development previews may ch
 | Channel | Version | Android version code | Availability |
 | --- | --- | --- | --- |
 | Stable | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest), in-app update checks |
-| Development preview | `0.8.5.1-preview.3` | `125` | Unpublished; [dual playlist layouts and seven music tools](./docs/PLAYLIST-MUSIC-TOOLS-PREVIEW-3.md), including build and validation status |
+| Development preview | `0.8.5.1-preview.4` | `126` | Unpublished; [Samsung M4A edge-analysis compatibility fix](./docs/M4A-SILENCE-PREVIEW-4.md), including build and validation status |
+
+`.preview.4` addresses the ALAC/M4A edge-analysis failure found on Samsung. An independent Media3 reader identifies and seeks local audio, reusing the existing ALAC decoder. Ordinary playback, layouts and glass profiles retain their settings. See the [fix and device record](./docs/M4A-SILENCE-PREVIEW-4.md).
 
 `.preview.3` reduces playlist artwork and gives **Apple Music / Spotify** styles separate playlist detail layouts. Seven usable music tools are added:
 

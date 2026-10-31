@@ -17,4 +17,6 @@ android {
 dependencies {
   // Reuse the already shipped ALAC decoder; no additional native library.
   implementation project(':alac-decoder')
+  // Same Media3 version already bundled by expo-audio and the ALAC decoder.
+  implementation 'androidx.media3:media3-extractor:1.9.0'
 }

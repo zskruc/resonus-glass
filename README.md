@@ -41,7 +41,9 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 | 渠道 | 版本 | Android 更新编号 | 获取方式 |
 | --- | --- | --- | --- |
 | 正式发布 | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest)，App 内检查更新 |
-| 开发预览 | `0.8.5.1-preview.3` | `125` | 尚未发布；[歌单双布局与七项音乐工具](./docs/PLAYLIST-MUSIC-TOOLS-PREVIEW-3.md)，构建与验证状态见文档 |
+| 开发预览 | `0.8.5.1-preview.4` | `126` | 尚未发布；[三星 M4A 静音分析兼容修复](./docs/M4A-SILENCE-PREVIEW-4.md)，构建与验证状态见文档 |
+
+`.preview.4` 补充三星实机发现的 ALAC/M4A 首尾分析兼容：独立使用 Media3 识别和定位本地音频，继续复用当前 ALAC 解码器；普通播放、布局与玻璃参数保持原设置。[修复与实机记录](./docs/M4A-SILENCE-PREVIEW-4.md)。
 
 `.preview.3` 缩小歌单封面，并分别重排 **Apple Music／Spotify** 两种风格的歌单详情。新增七项可使用的音乐工具：
 

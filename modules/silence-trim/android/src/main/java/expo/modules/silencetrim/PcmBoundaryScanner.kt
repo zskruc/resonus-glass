@@ -63,6 +63,9 @@ internal class PcmBoundaryScanner(private val thresholdDb: Double) {
         sum += sample * sample
       }
       if (timeUs < beginUs || timeUs >= endUs) continue
+      // Missing or reversed decoded packets cannot establish a silent edge.
+      // A small timestamp rounding tolerance is allowed, not a gap of audio.
+      require(lastSeenUs < 0 || timeUs in (lastSeenUs - 20_000)..(lastSeenUs + 20_000)) { "Discontinuous PCM timestamps" }
       if (firstSeenUs == null) firstSeenUs = timeUs
       lastSeenUs = timeUs + 1_000_000L / rate
       if (windowFrames == 0) windowStartUs = timeUs
