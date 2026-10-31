@@ -66,7 +66,7 @@ export const VoltaArtistHeaderBackdrop = memo(function VoltaArtistHeaderBackdrop
           transformOrigin: 'top left', transform: [{ scale: 1 / small.scale }] }}>
           <VoltaDetailHeroFade key={identity} uri={undefined} sourceUri={source} textureUri={texture}
             width={small.width} height={small.photoHeight} extensionHeight={small.extensionHeight}
-            imageStyle={parallax} backgroundColor={color} blurRadius={2} fieldTransition={0}
+            imageStyle={parallax} backgroundColor={color} blurRadius={2} fieldTransition={0} sharpTransition={0}
             onLayerDisplay={layerDisplay} onLayerError={layerError} />
         </View>
       </Animated.View>

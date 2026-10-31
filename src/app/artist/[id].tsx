@@ -32,6 +32,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   coverArtUrl,
+  artistPortraitUrl,
   getAlbum,
   getAppearsOn,
   getArtist,
@@ -54,6 +55,7 @@ import { StarRating } from '@/components/StarRating';
 import { TrackRow } from '@/components/TrackRow';
 import { VoltaDetailHeroFade } from '@/components/volta/VoltaDetailHeroFade';
 import { artistHeroGeometry } from '@/lib/artistHeroGeometry';
+import { selectArtistPortrait } from '@/lib/artistPortrait';
 import { ArtistPagePaletteProvider, useArtistPagePalette } from '@/components/volta/ArtistPagePalette';
 import { AppleArtistName } from '@/components/volta/AppleArtistName';
 import { VoltaArtistPhotoTarget } from '@/components/volta/VoltaArtistPhotoTarget';
@@ -255,9 +257,14 @@ export default function ArtistScreen() {
   // The artist palette stays local: a light app must not wash this immersive
   // photo into a pastel or change the global theme for other retained routes.
   const serverPortraitUri = canFetch && data
-    ? coverArtUrl(data.artist.coverArt ?? data.artist.id, COVER.full) : undefined;
-  const preferredPortraitUri = info?.imageUrl ?? serverPortraitUri;
-  const headerUri = failedPortrait === preferredPortraitUri ? serverPortraitUri : preferredPortraitUri;
+    ? artistPortraitUrl(data.artist) : undefined;
+  const { preferredUri: preferredPortraitUri, uri: headerUri } = selectArtistPortrait({
+    serverType, coverArt: data?.artist.coverArt, serverUri: serverPortraitUri,
+    infoUri: info?.imageUrl, verifiedFullUri: data?.portraitUri, failedUri: failedPortrait, offline,
+  });
+  const onPortraitError = () => {
+    if (headerUri && headerUri === preferredPortraitUri) setFailedPortrait(preferredPortraitUri);
+  };
   const artistArtwork = useVoltaArtistArtwork(appleMusic ? headerUri : undefined,
     offline, screenW / portraitH, portraitExtension / portraitH, data?.artist.name);
   const artistPalette = artistArtwork.palette;
@@ -451,10 +458,10 @@ export default function ArtistScreen() {
             can continue behind the name/buttons without moving their layout. */}
         <View style={appleMusic ? voltaStyles.heroGroup : undefined}>
         {appleMusic ? (
-          <VoltaDetailHeroFade uri={headerUri} sourceUri={artistArtwork.sourceUri}
+          <VoltaDetailHeroFade uri={headerUri} sourceUri={artistArtwork.sourceUri} cacheOnly={offline}
             textureUri={artistArtwork.textureUri} width={screenW} height={portraitH}
             extensionHeight={portraitExtension} imageStyle={imageStyle} backgroundColor={appleBackground}
-            onError={() => { if (headerUri !== serverPortraitUri) setFailedPortrait(preferredPortraitUri); }} />
+            onError={onPortraitError} />
         ) : null}
         <View style={[styles.headerWrap, { width: screenW, height: headerH }, appleMusic && voltaStyles.hero]}>
           {/* The header fills its space, so a photo that isn't the shape of

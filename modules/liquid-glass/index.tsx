@@ -114,7 +114,7 @@ export type LiquidGlassDiagnostics = {
 };
 
 const nativeModule = Platform.OS === 'android'
-  ? requireOptionalNativeModule<{ isSupported: boolean; themeTraceEnabled?: boolean; artistFocusTraceEnabled?: boolean; getDiagnostics(): Promise<LiquidGlassDiagnostics>;
+  ? requireOptionalNativeModule<{ isSupported: boolean; themeTraceEnabled?: boolean; artistFocusTraceEnabled?: boolean; artistImageTraceEnabled?: boolean; getDiagnostics(): Promise<LiquidGlassDiagnostics>;
     updateTabsMotion: UpdateTabsMotion; updateDockProgress: UpdateDockProgress;
     updateButtonMotion: UpdateButtonMotion; readDockScrollIntent: ReadDockScrollIntent;
     expandDockScrollInput: ExpandDockScrollInput; restoreDockScrollTarget: RestoreDockScrollTarget;
@@ -141,6 +141,8 @@ export const isNativePlayerSurfaceClipAvailable = updateNativePlayerSurfaceClip 
 /** One layout-time adjustment for a photographic button; never a motion call. */
 export const disableNativeViewFocusHighlight = nativeModule?.disableViewFocusHighlight ?? null;
 export const isArtistFocusTraceEnabled = Boolean(nativeModule?.artistFocusTraceEnabled);
+/** Off by default; opt-in image dimensions/cache timing without image URLs. */
+export const isArtistImageTraceEnabled = Boolean(nativeModule?.artistImageTraceEnabled);
 
 export type PlayerSurfaceClipViewProps = ViewProps & {
   onClipHostReady?: (event: NativeSyntheticEvent<{ hostId: number; cornerRadius?: number }>) => void;

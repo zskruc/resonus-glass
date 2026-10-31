@@ -14,6 +14,7 @@ class LiquidGlassModule : Module() {
     Constant("isSupported") { Build.VERSION.SDK_INT >= Build.VERSION_CODES.S }
     Constant("themeTraceEnabled") { GlassThemeTrace.enabled }
     Constant("artistFocusTraceEnabled") { Log.isLoggable("ResonusArtistFocus", Log.DEBUG) }
+    Constant("artistImageTraceEnabled") { Log.isLoggable("ResonusArtistImage", Log.DEBUG) }
     Function("setPlayerTransitionTrace") { enabled: Boolean -> PlayerTransitionTrace.configure(enabled) }
     OnDestroy { PlayerTransitionTrace.configure(false) }
     AsyncFunction("getDiagnostics") {

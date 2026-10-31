@@ -41,7 +41,7 @@ These features describe the released Glass baseline. Development previews may ch
 | Channel | Version | Android version code | Availability |
 | --- | --- | --- | --- |
 | Stable | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest), in-app update checks |
-| Development preview | `0.8.4.1-amll.38` | `121` | [Prerelease APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.4.1-amll.38); see preview records for device validation scope |
+| Development preview | `0.8.4.1-amll.39` | `122` | Local ARM64 APK, unpublished; [artist image loading improvements](./docs/ARTIST-IMAGE-LOADING-39.md) |
 
 The current preview updates artist navigation transitions and name artwork, Volta album actions and dock restoration. It also adds bulk artwork/lyrics caching and a download manager with overall/per-song progress, start/pause/cancel controls and 1–20 concurrent song downloads. Implementation limits, builds and device validation are recorded in the [preview notes](./docs/PREVIEW-35-36-CACHE-AND-DOWNLOADS.md).
 

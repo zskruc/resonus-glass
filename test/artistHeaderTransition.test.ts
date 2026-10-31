@@ -4,6 +4,8 @@ import { describe, it } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 
+import { artistHeroRenderer } from './helpers/artistHeroRenderer';
+
 import {
   artistHeaderCopyGeometry, artistHeaderFromLayout, artistHeaderLocalSource, artistHeaderPhotoOffset,
   artistHeaderTransition, artistNameVisualFrame, artistPhotoParallax,
@@ -199,19 +201,7 @@ it('shows natural body color when there is no photograph and never copies an unv
 });
 
 function heroRenderer() {
-  const exports: Record<string, any> = {}; const jsx = (type: unknown, props: object) => ({ type, props });
-  const imports: Record<string, unknown> = {
-    react: { memo: (component: unknown) => component }, 'react/jsx-runtime': { jsx, jsxs: jsx },
-    '@react-native-masked-view/masked-view': { __esModule: true, default: 'Mask' },
-    'expo-image': { Image: 'Image' }, 'expo-linear-gradient': { LinearGradient: 'Gradient' },
-    'react-native': { View: 'View', StyleSheet: { absoluteFill: {} } },
-    'react-native-reanimated': { __esModule: true, default: { View: 'AnimatedView' } },
-    '@/api/data': { CACHED_COVER: 'cached-cover:' },
-  };
-  runInNewContext(ts.transpileModule(readFileSync(new URL('../src/components/volta/VoltaDetailHeroFade.tsx', import.meta.url), 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
-  }).outputText, { exports, require(name: string) { assert.ok(Object.hasOwn(imports, name), name); return imports[name]; } });
-  return exports.VoltaDetailHeroFade;
+  return artistHeroRenderer().settled;
 }
 
 it('preserves the original hero mask, photo crop and default blur while allowing a static smaller copy', () => {

@@ -41,7 +41,7 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 | 渠道 | 版本 | Android 更新编号 | 获取方式 |
 | --- | --- | --- | --- |
 | 正式发布 | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest)，App 内检查更新 |
-| 开发预览 | `0.8.4.1-amll.38` | `121` | [预发布 APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.4.1-amll.38)，实机验收范围见预览记录 |
+| 开发预览 | `0.8.4.1-amll.39` | `122` | 本地 ARM64 测试包，尚未发布；[艺人图片加载优化](./docs/ARTIST-IMAGE-LOADING-39.md) |
 
 当前预览加入艺人顶栏衔接与名字图修正、Volta 专辑操作排布、后台底栏恢复、批量封面／歌词缓存，以及独立下载管理。下载管理显示总队列和单曲进度，提供全部开始／暂停／取消，允许同时下载 1–20 首歌曲。实现边界及构建、实机记录见[本轮预览说明](./docs/PREVIEW-35-36-CACHE-AND-DOWNLOADS.md)。
 

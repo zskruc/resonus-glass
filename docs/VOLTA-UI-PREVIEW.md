@@ -1,6 +1,8 @@
 # Volta 风格双界面预览 / Volta-inspired dual UI preview
 
-`0.8.4.1-amll.38` · Android `versionCode 121` · `preview/amll-player`
+`0.8.4.1-amll.39` · Android `versionCode 122` · `preview/amll-player`
+
+`.39` 优化艺人高清来源、精确缓存与图层交接，已完成三星首开／重复进入和离线回退检查。范围及证据见[艺人图片加载记录](./ARTIST-IMAGE-LOADING-39.md)。
 
 `.37` 修正实机发现的空队列离线恢复后新下载误暂停，以及名字图首帧几何同步；`.38` 完成整张艺人背景照片的 Android 默认焦点暗层修复。照片、模糊与玻璃参数保持不变。验证进度见下方本轮预览说明。
 

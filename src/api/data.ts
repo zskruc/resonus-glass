@@ -43,12 +43,27 @@ function auth() { return useAuthStore.getState().auth!; }
 const ARTIST_CACHE_AGE = 24 * 60 * 60_000;
 const artistRefreshes = new Map<string, Promise<void>>();
 function currentMediaOwner(owner: Subsonic.SubsonicAuth): boolean { return useAuthStore.getState().auth === owner; }
+export interface ArtistPageDetail {
+  artist: Subsonic.Artist;
+  albums: Subsonic.Album[];
+  /** A full-size managed hero whose local file still exists. */
+  portraitUri?: string;
+}
+async function localArtistHero(saved: MediaCache.SavedArtist, detail = saved.detail): Promise<string | undefined> {
+  if (!saved.heroUri || !/^(file|content):/i.test(saved.heroUri)) return undefined;
+  if (detail && saved.coverKey !== (detail.artist.coverArt ?? '')) return undefined;
+  const file = await FileSystem.getInfoAsync(saved.heroUri).catch(() => undefined);
+  return file?.exists ? saved.heroUri : undefined;
+}
+async function localArtistDetail(saved: MediaCache.SavedArtist, detail: ArtistPageDetail | undefined = saved.detail): Promise<ArtistPageDetail | undefined> {
+  if (!detail) return undefined;
+  const portraitUri = await localArtistHero(saved, detail);
+  return portraitUri ? { ...detail, portraitUri } : detail;
+}
 async function localArtistInfo(saved: MediaCache.SavedArtist): Promise<Subsonic.ArtistInfo | undefined> {
   if (!saved.info) return undefined;
-  if (saved.heroUri) {
-    const file = await FileSystem.getInfoAsync(saved.heroUri).catch(() => undefined);
-    if (file?.exists) return { ...saved.info, imageUrl: saved.heroUri };
-  }
+  const portraitUri = await localArtistHero(saved);
+  if (portraitUri) return { ...saved.info, imageUrl: portraitUri };
   return isOffline() ? { ...saved.info, imageUrl: undefined } : saved.info;
 }
 function refreshArtistMedia(owner: Subsonic.SubsonicAuth, profile: string, id: string,
@@ -64,7 +79,7 @@ function refreshArtistMedia(owner: Subsonic.SubsonicAuth, profile: string, id: s
     if (value === undefined || !current()) return;
     const saved = await MediaCache.readSavedArtist(profile, id);
     if (!current()) return;
-    const data = kind === 'info' && saved ? await localArtistInfo(saved) : value;
+    const data = saved ? (kind === 'info' ? await localArtistInfo(saved) : await localArtistDetail(saved, value as ArtistPageDetail)) ?? value : value;
     if (current() && data) queryClient.setQueryData([kind === 'info' ? 'artistInfo' : 'artist', id], data);
   }).catch(() => {}).finally(() => { if (artistRefreshes.get(key) === work) artistRefreshes.delete(key); });
   artistRefreshes.set(key, work);
@@ -235,6 +250,17 @@ export function coverArtUrl(id: string | undefined, _size?: number): string | un
     return CACHED_COVER + Subsonic.coverArtUrl(auth(), id, _size);
   }
   return Subsonic.coverArtUrl(auth(), id, _size);
+}
+
+/** The artist hero must not mistake an older 600px library cover for 1200px art. */
+export function artistPortraitUrl(artist: Pick<Subsonic.Artist, 'id' | 'coverArt'>): string | undefined {
+  const owner = useAuthStore.getState().auth;
+  const cover = artist.coverArt ?? artist.id;
+  if (!isOffline() && owner?.serverType === 'navidrome' && artist.coverArt && !isRemoteArt(artist.coverArt)) {
+    return Subsonic.coverArtUrl(owner, artist.coverArt, Subsonic.COVER.full);
+  }
+  // Offline files and non-Navidrome providers retain their existing policy.
+  return coverArtUrl(cover, Subsonic.COVER.full);
 }
 
 /**
@@ -851,7 +877,7 @@ export function getMusicDirectory(id: string): Promise<Subsonic.FolderContents> 
   return Subsonic.getMusicDirectory(auth(), id);
 }
 
-export async function getArtist(id: string): Promise<{ artist: Subsonic.Artist; albums: Subsonic.Album[] }> {
+export async function getArtist(id: string): Promise<ArtistPageDetail> {
   const owner = useAuthStore.getState().auth;
   const profile = owner ? MediaCache.mediaCacheProfile(owner) : undefined;
   const load = async () => {
@@ -864,8 +890,10 @@ export async function getArtist(id: string): Promise<{ artist: Subsonic.Artist; 
     const saved = await MediaCache.readSavedArtist(profile, id).catch(() => undefined);
     if (!currentMediaOwner(owner)) throw new Error('Artist profile changed');
     if (saved?.detail) {
+      const detail = await localArtistDetail(saved);
+      if (!currentMediaOwner(owner)) throw new Error('Artist profile changed');
       if (!isOffline() && Date.now() - saved.detailAt > ARTIST_CACHE_AGE) refreshArtistMedia(owner, profile, id, 'detail', load);
-      return saved.detail;
+      return detail!;
     }
   }
   if (isOffline()) {
@@ -934,10 +962,12 @@ export async function getArtistInfo(id: string): Promise<Subsonic.ArtistInfo> {
     const saved = await MediaCache.readSavedArtist(profile, id).catch(() => undefined);
     if (!currentMediaOwner(owner)) throw new Error('Artist profile changed');
     if (saved?.info) {
-      if (!isOffline() && Date.now() - saved.infoAt > ARTIST_CACHE_AGE) refreshArtistMedia(owner, profile, id, 'info', load);
       const info = await localArtistInfo(saved);
       if (!currentMediaOwner(owner)) throw new Error('Artist profile changed');
-      if (info) return info;
+      if (info) {
+        if (!isOffline() && Date.now() - saved.infoAt > ARTIST_CACHE_AGE) refreshArtistMedia(owner, profile, id, 'info', load);
+        return info;
+      }
     }
     if (!isOffline()) return load();
   }

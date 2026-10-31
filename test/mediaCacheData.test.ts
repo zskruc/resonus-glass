@@ -18,7 +18,7 @@ const lyrics = { synced: true, lines: [{ start: 100, value: 'word by word', word
 ] }] };
 
 function harness() {
-  const auth = { url: 'https://server.test', username: 'one' };
+  const auth = { url: 'https://server.test', username: 'one', serverType: 'navidrome' as string | undefined };
   const state = { auth: auth as typeof auth | null, offline: false };
   const files: Record<string, string> = {};
   let saved: any = undefined;
@@ -30,6 +30,9 @@ function harness() {
   let localLyrics: any = null;
   let onlineLyrics: any = null;
   let fileExists = true;
+  let fileGate: Promise<void> | undefined;
+  const covers = new Map<string, string>();
+  const coverRequests: { id: string; size: number }[] = [];
   const calls = { detail: 0, info: 0, structured: 0, classic: 0, online: 0, sidecar: 0 };
   const writes: unknown[][] = [], published: unknown[][] = [], timers: (() => void)[] = [];
   class ApiError extends Error { network = true; code?: number; }
@@ -49,14 +52,18 @@ function harness() {
       saveLyrics: async (...args: unknown[]) => { writes.push(['lyrics', ...args.slice(0, 4)]); },
     },
     '@/lib/netBudget': { withSpeculativeSlot: async (current: () => boolean, work: () => Promise<unknown>) => current() ? work() : undefined },
-    'expo-file-system/legacy': { getInfoAsync: async () => ({ exists: fileExists }) },
+    'expo-file-system/legacy': { getInfoAsync: async () => { await fileGate; return { exists: fileExists }; } },
     './backend': {
+      COVER: { full: 1200 },
+      coverArtUrl: (_owner: unknown, id: string, size: number) => {
+        coverRequests.push({ id, size }); return `https://server.test/art/${id}?size=${size}`;
+      },
       getArtist: async () => { calls.detail++; return fetchDetail(); },
       getArtistInfo: async () => { calls.info++; return fetchInfo(); },
       getLyricsBySongId: async () => { calls.structured++; return fetchLyrics(); },
       getLyrics: async () => { calls.classic++; return ''; }, SubsonicRequestError: ApiError,
     },
-    '@/lib/localQueries': { serverArtistId: async () => undefined },
+    '@/lib/localQueries': { serverArtistId: async () => undefined, coverUrl: (id: string) => covers.get(id) },
     './netGate': { isManualOffline: () => state.offline },
     '@/lib/localLyrics': { getLocalLyrics: async () => { calls.sidecar++; return localLyrics; },
       getOnlineLyrics: async () => { calls.online++; return onlineLyrics; } },
@@ -67,7 +74,7 @@ function harness() {
   runInNewContext(executable, { exports: exported, __DEV__: false,
     setTimeout: (callback: () => void) => { timers.push(callback); return timers.length; },
     require(name: string) { assert.ok(Object.hasOwn(dependencies, name), name); return dependencies[name]; } });
-  return { api: exported, state, calls, writes, published, files,
+  return { api: exported, state, calls, writes, published, files, covers, coverRequests,
     save: (value: any) => { saved = value; }, saveLyrics: (value: any) => { savedLyrics = value; },
     cacheReader: (work: typeof cacheRead) => { cacheRead = work; },
     detailRequest: (work: typeof fetchDetail) => { fetchDetail = work; },
@@ -75,6 +82,7 @@ function harness() {
     lyricsRequest: (work: typeof fetchLyrics) => { fetchLyrics = work; },
     local: (value: unknown) => { localLyrics = value; }, online: (value: unknown) => { onlineLyrics = value; },
     fileExists: (value: boolean) => { fileExists = value; },
+    fileGate: (value: Promise<void>) => { fileGate = value; },
     refresh: async () => { for (const callback of timers.splice(0)) callback(); await tick(); },
   };
 }
@@ -82,13 +90,68 @@ function harness() {
 test('the actual artist queries return complete saved metadata and the durable full hero before network, online or offline', async () => {
   for (const offline of [false, true]) {
     const h = harness(); h.state.offline = offline;
-    h.save({ detail, info, heroUri: 'file:///managed/full.jpg', detailAt: Date.now(), infoAt: Date.now() });
-    assert.deepEqual(plain(await h.api.getArtist('artist')), detail);
+    h.save({ detail, info, coverKey: 'ar-hash', heroUri: 'file:///managed/full.jpg', detailAt: Date.now(), infoAt: Date.now() });
+    assert.deepEqual(plain(await h.api.getArtist('artist')), { ...detail, portraitUri: 'file:///managed/full.jpg' });
     assert.deepEqual(plain(await h.api.getArtistInfo('artist')), { ...info, imageUrl: 'file:///managed/full.jpg' });
     assert.equal(h.calls.detail + h.calls.info, 0);
     h.fileExists(false);
+    assert.deepEqual(plain(await h.api.getArtist('artist')), detail, 'an evicted full hero is not advertised as reusable');
     assert.equal((await h.api.getArtistInfo('artist')).imageUrl, offline ? undefined : info.imageUrl,
       'a removed local file falls back online without bypassing manual offline');
+  }
+});
+
+test('Navidrome artist heroes bypass a lower-quality local cover online while preserving offline and other providers', () => {
+  const h = harness(); h.covers.set('ar-hash', 'file:///mirror/600.jpg');
+  assert.equal(h.api.coverArtUrl('ar-hash', 1200), 'file:///mirror/600.jpg', 'ordinary cover policy is unchanged');
+  assert.equal(h.api.artistPortraitUrl(detail.artist), 'https://server.test/art/ar-hash?size=1200');
+  assert.deepEqual(plain(h.coverRequests), [{ id: 'ar-hash', size: 1200 }]);
+  h.state.offline = true;
+  assert.equal(h.api.artistPortraitUrl(detail.artist), 'file:///mirror/600.jpg');
+  assert.equal(h.coverRequests.length, 1, 'offline local lookup does not initiate a cover request');
+  h.state.offline = false; h.state.auth!.serverType = 'jellyfin';
+  assert.equal(h.api.artistPortraitUrl(detail.artist), 'file:///mirror/600.jpg');
+  h.state.auth!.serverType = 'navidrome';
+  assert.equal(h.api.artistPortraitUrl({ id: 'artist', coverArt: 'https://external.test/full.jpg' }), 'https://external.test/full.jpg');
+  assert.equal(h.coverRequests.length, 1, 'external artwork URLs are never passed as native artwork IDs');
+});
+
+test('the saved full hero is available with artist detail without waiting for artistInfo', async () => {
+  const h = harness(); const waiting = deferred<typeof info>(); h.infoRequest(() => waiting.promise);
+  h.save({ detail, coverKey: 'ar-hash', heroUri: 'file:///managed/full.jpg', detailAt: Date.now() });
+  assert.equal((await h.api.getArtist('artist')).portraitUri, 'file:///managed/full.jpg');
+  assert.equal(h.calls.info, 0); assert.equal(h.calls.detail, 0);
+});
+
+test('a changed artwork hash cannot reuse a cached full hero belonging to the previous photograph', async () => {
+  const h = harness();
+  h.save({ detail, info, coverKey: 'ar-old-hash', heroUri: 'file:///managed/old-photo.jpg', detailAt: Date.now(), infoAt: Date.now() });
+  assert.deepEqual(plain(await h.api.getArtist('artist')), detail);
+  assert.equal((await h.api.getArtistInfo('artist')).imageUrl, info.imageUrl);
+});
+
+test('background detail refresh preserves a matching full hero but publishes changed art without the old file', async () => {
+  for (const changed of [false, true]) {
+    const h = harness();
+    h.save({ detail, info, coverKey: 'ar-hash', heroUri: 'file:///managed/full.jpg', detailAt: 0, infoAt: Date.now() });
+    const fresh = { ...detail, artist: { ...detail.artist, name: 'Refreshed artist', coverArt: changed ? 'ar-new-hash' : 'ar-hash' } };
+    h.detailRequest(async () => fresh);
+    assert.equal((await h.api.getArtist('artist')).portraitUri, 'file:///managed/full.jpg');
+    await h.refresh();
+    const published = h.published.find((entry) => plain(entry[0]).join('|') === 'artist|artist');
+    assert.ok(published);
+    assert.deepEqual(plain(published[1]), changed ? fresh : { ...fresh, portraitUri: 'file:///managed/full.jpg' });
+  }
+});
+
+test('cached full-photo file checks cannot publish to a replacement account', async () => {
+  for (const query of ['getArtist', 'getArtistInfo']) {
+    const h = harness(), file = deferred<void>();
+    h.save({ detail, info, coverKey: 'ar-hash', heroUri: 'file:///managed/full.jpg', detailAt: Date.now(), infoAt: Date.now() });
+    h.fileGate(file.promise); const read = h.api[query]('artist'); await tick();
+    h.state.auth = { ...h.state.auth! }; file.resolve();
+    await assert.rejects(read, /profile changed/);
+    assert.equal(h.writes.length, 0); assert.equal(h.published.length, 0);
   }
 });
 

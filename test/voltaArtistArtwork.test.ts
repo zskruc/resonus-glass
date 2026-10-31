@@ -33,6 +33,9 @@ function harness() {
   const metadataReads = new Map<string, (value: { backgroundColor: string } | null) => void>();
   let automatic = false;
   let holdCache: Promise<void> | undefined;
+  let holdPrefetch: Promise<void> | undefined;
+  let prefetchSucceeds = true;
+  let profile = 'profile-a';
   const react = {
     useRef: <T,>(value: T) => slot(() => ({ current: value })),
     useState: <T,>(value?: T) => {
@@ -62,6 +65,8 @@ function harness() {
   runInNewContext(compiled.outputText, { exports, require(name: string) {
     if (name === 'react') return react;
     if (name === '@/api/data') return { CACHED_COVER: 'cached-cover:' };
+    if (name === '@/store/auth') return { profileScopeId: () => profile,
+      useAuthStore: (select: (state: { auth: object }) => unknown) => select({ auth: {} }) };
     if (name === '@/lib/voltaArtistPalette') return artistColors;
     if (name === '@/lib/verifyAppleArtistPhoto') return { verifyAppleArtistPhoto: async () => false };
     if (name === '@/lib/appleArtistArtwork') return {
@@ -84,7 +89,9 @@ function harness() {
     if (name === 'expo-image') return { Image: {
       async getCachePathAsync(uri: string) { probes.push(uri); await holdCache; return paths.get(uri) ?? null; },
       async prefetch(uri: string, policy: string) {
-        assert.equal(policy, 'disk'); prefetches.push(uri); paths.set(uri, `/cached/${encodeURIComponent(uri)}`); return true;
+        assert.equal(policy, 'disk'); prefetches.push(uri); await holdPrefetch;
+        if (!prefetchSucceeds) return false;
+        paths.set(uri, `/cached/${encodeURIComponent(uri)}`); return true;
       },
     } };
     throw new Error(`Unexpected artist artwork import ${name}`);
@@ -101,10 +108,70 @@ function harness() {
     unmount() { for (const close of cleanup) close(); cleanup.clear(); },
     setAutomatic() { automatic = true; },
     delayCache(promise: Promise<void>) { holdCache = promise; },
+    delayPrefetch(promise: Promise<void>) { holdPrefetch = promise; },
+    failPrefetch() { prefetchSucceeds = false; },
+    setProfile(value: string) { profile = value; },
     writes: () => writes,
   };
 }
 async function flush() { for (let i = 0; i < 36; i++) await Promise.resolve(); }
+
+describe('artist exact-quality cache resolution', () => {
+  it('fetches the requested full image when only a list thumbnail is cached', async () => {
+    const uri = 'https://music.example/artist?size=1200';
+    const paths = new Map([['https://music.example/artist?size=200', '/cache/thumbnail.jpg']]);
+    const fetches: string[] = [];
+    const result = await resolveArtworkLocalUri(uri, 'cached-cover:', {
+      cachePath: async (key) => paths.get(key) ?? null,
+      prefetch: async (key) => { fetches.push(key); paths.set(key, '/cache/full.jpg'); return true; },
+      allowNetwork: () => true,
+    }, { quality: 'exact' });
+    assert.equal(result, 'file:///cache/full.jpg'); assert.deepEqual(fetches, [uri]);
+  });
+
+  it('does not label a thumbnail as a successful full request after a failed download', async () => {
+    const result = await resolveArtworkLocalUri('https://music.example/artist?size=1200', 'cached-cover:', {
+      cachePath: async (key) => key.endsWith('size=600') ? '/cache/card.jpg' : null,
+      prefetch: async () => false, allowNetwork: () => true,
+    }, { quality: 'exact' });
+    assert.equal(result, undefined);
+  });
+
+  it('uses the highest available offline size without changing legacy consumer ordering', async () => {
+    let fetches = 0;
+    const access = {
+      cachePath: async (key: string) => key.endsWith('size=1200') ? '/cache/full.jpg'
+        : key.endsWith('size=600') ? '/cache/card.jpg' : null,
+      prefetch: async () => { fetches++; return true; }, allowNetwork: () => true,
+    };
+    const uri = 'cached-cover:https://music.example/artist?size=2400';
+    assert.equal(await resolveArtworkLocalUri(uri, 'cached-cover:', access, { quality: 'exact' }), 'file:///cache/full.jpg');
+    assert.equal(await resolveArtworkLocalUri(uri, 'cached-cover:', access), 'file:///cache/card.jpg');
+    assert.equal(fetches, 0);
+  });
+
+  it('cancels a superseded online full request while the offline consumer may still use cached art', async () => {
+    let online = true, fetches = 0;
+    const access = {
+      cachePath: async (key: string) => { online = false; return key.endsWith('size=200') ? '/cache/thumb.jpg' : null; },
+      prefetch: async () => { fetches++; return true; }, allowNetwork: () => online,
+    };
+    const uri = 'https://music.example/artist?size=1200';
+    assert.equal(await resolveArtworkLocalUri(uri, 'cached-cover:', access, { quality: 'exact' }), undefined);
+    assert.equal(await resolveArtworkLocalUri('cached-cover:' + uri, 'cached-cover:', access, { quality: 'exact' }), 'file:///cache/thumb.jpg');
+    assert.equal(fetches, 0);
+  });
+
+  it('returns an exact cache hit without prefetch or alternate-size lookup', async () => {
+    const keys: string[] = [];
+    const uri = 'https://music.example/artist?size=1200';
+    const result = await resolveArtworkLocalUri(uri, 'cached-cover:', {
+      cachePath: async (key) => { keys.push(key); return '/cache/full.jpg'; },
+      prefetch: async () => { throw new Error('cached full art must not download again'); }, allowNetwork: () => true,
+    }, { quality: 'exact' });
+    assert.equal(result, 'file:///cache/full.jpg'); assert.deepEqual(keys, [uri]);
+  });
+});
 
 describe('atomic static artist artwork preparation', () => {
   it('resolves the displayed image through disk cache and publishes texture and lower-image palette together', async () => {
@@ -145,6 +212,55 @@ describe('atomic static artist artwork preparation', () => {
     h.render('https://cdn.example/changing.jpg'); await flush();
     h.render('https://cdn.example/changing.jpg', true); release(); await flush();
     assert.equal(h.prefetches.length, 0); assert.equal(h.nativeCalls.length, 0);
+  });
+
+  it('keeps offline fallback preparation separate so returning online upgrades to the full photo', async () => {
+    const h = harness(); const uri = 'https://music.example/artist?size=1200';
+    h.paths.set('https://music.example/artist?size=200', '/cache/thumb.jpg');
+    h.render(uri, true); await flush(); h.resolve('file:///cache/thumb.jpg', sample('thumb')); await flush();
+    assert.equal(h.render(uri, true).sourceUri, 'file:///cache/thumb.jpg');
+    assert.equal(h.render(uri).sourceUri, undefined, 'offline prepared art cannot satisfy the online exact cache');
+    await flush(); assert.deepEqual(h.prefetches, [uri]);
+    const full = h.nativeCalls[1].uri; assert.notEqual(full, 'file:///cache/thumb.jpg');
+    h.resolve(full, sample('full')); await flush();
+    assert.equal(h.render(uri).sourceUri, full);
+    assert.equal(h.render(uri, true).sourceUri, full, 'a later offline visit prefers the known full result over an older fallback');
+  });
+
+  it('ignores a late online prefetch after switching offline and reuses its full disk file on return', async () => {
+    const h = harness(); const uri = 'https://music.example/artist?size=1200'; let release!: () => void;
+    h.paths.set('https://music.example/artist?size=200', '/cache/thumb.jpg');
+    h.delayPrefetch(new Promise<void>((resolve) => { release = resolve; }));
+    h.render(uri); await flush(); assert.deepEqual(h.prefetches, [uri]);
+    h.render(uri, true); await flush(); h.resolve('file:///cache/thumb.jpg', sample('offline')); await flush();
+    release(); await flush();
+    assert.equal(h.nativeCalls.length, 1, 'the retired online request cannot start preparation after policy changes');
+    assert.equal(h.render(uri, true).sourceUri, 'file:///cache/thumb.jpg');
+    h.render(uri); await flush();
+    assert.equal(h.prefetches.length, 1, 'the completed disk file is retained, not deleted or downloaded again');
+    const full = h.nativeCalls[1].uri; h.resolve(full, sample('full')); await flush();
+    assert.equal(h.render(uri).sourceUri, full);
+  });
+
+  it('does not start native preparation for an obsolete URI after its prefetch finishes', async () => {
+    const h = harness(); const a = 'https://music.example/A?size=1200', b = 'https://music.example/B?size=1200';
+    let release!: () => void; h.delayPrefetch(new Promise<void>((resolve) => { release = resolve; }));
+    h.render(a); await flush(); h.paths.set(b, '/cache/B.jpg');
+    h.render(b); await flush(); h.resolve('file:///cache/B.jpg', sample('B')); await flush(); release(); await flush();
+    assert.deepEqual(h.nativeCalls.map((call) => call.uri), ['file:///cache/B.jpg']);
+    assert.equal(h.render(b).sourceUri, 'file:///cache/B.jpg');
+  });
+
+  it('isolates prepared artifacts and rejects late native results across profile changes', async () => {
+    const h = harness(); h.render('file:///shared.jpg'); await flush();
+    h.setProfile('profile-b');
+    assert.equal(h.render('file:///shared.jpg').sourceUri, undefined); await flush();
+    h.resolve('file:///shared.jpg', sample('old-profile')); await flush();
+    assert.equal(h.render('file:///shared.jpg').sourceUri, undefined, 'old profile cannot publish into the new account');
+    h.resolve('file:///shared.jpg', sample('new-profile')); await flush();
+    assert.equal(h.render('file:///shared.jpg').textureUri, 'file:///prepared/new-profile.png');
+    h.setProfile('profile-a');
+    assert.equal(h.render('file:///shared.jpg').sourceUri, undefined, 'retired profile completion was not retained as a reusable result');
   });
 
   it('rejects old artist/crop results and applies only each image’s own atomic pair', async () => {
