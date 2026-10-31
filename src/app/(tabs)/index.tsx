@@ -267,7 +267,7 @@ function QuickGrid() {
   if (!withFavorites && tiles.length === 0) return null;
 
   if (appleMusic) {
-    const card = Math.min(310, Math.round(width * 0.62));
+    const card = Math.min(240, Math.round(width * 0.58));
     const gap = 16;
     const picks = [
       ...(withFavorites ? [{ key: '/favorites', href: '/favorites', name: t('Favorites'), favorites: true }] : []),
@@ -288,7 +288,7 @@ function QuickGrid() {
           snapToInterval={card + gap}
           contentContainerStyle={voltaStyles.featureRow}
           getItemLayout={(_, index) => ({ length: card + gap, offset: (card + gap) * index, index })}
-          renderItem={({ item }) => <VoltaQuickCard {...item} width={card} />}
+          renderItem={({ item }) => <VoltaQuickCard {...item} width={card} compact />}
         />
       </HomeShelf>
     );

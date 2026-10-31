@@ -22,6 +22,7 @@ import { CarAutoSync } from '@/components/CarAutoSync';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { FrameMeter } from '@/components/FrameMeter';
 import { PlaybackColorWarmup } from '@/components/PlaybackColorWarmup';
+import { ListeningStatsTracker } from '@/components/ListeningStatsTracker';
 import { GlobalMiniPlayer } from '@/components/GlobalMiniPlayer';
 import { PlayerArtworkOverlay } from '@/components/PlayerArtworkOverlay';
 import { PlayerUnderlayTransform } from '@/components/PlayerUnderlayTransform';
@@ -387,14 +388,21 @@ export default function RootLayout() {
                 <Stack.Screen name="favorites" />
                 <Stack.Screen name="favorites-add" />
                 <Stack.Screen name="history" />
+                <Stack.Screen name="lyric-poster" />
                 <Stack.Screen name="settings/index" />
                 <Stack.Screen name="settings/downloads" />
                 <Stack.Screen name="settings/download-manager" />
                 <Stack.Screen name="settings/media-cache" />
                 <Stack.Screen name="settings/cache" />
                 <Stack.Screen name="settings/library" />
+                <Stack.Screen name="settings/listening-stats" />
+                <Stack.Screen name="settings/smart-playlists" />
+                <Stack.Screen name="settings/duplicates" />
+                <Stack.Screen name="settings/playlist-exchange" />
                 <Stack.Screen name="settings/playback" />
                 <Stack.Screen name="settings/player" />
+                <Stack.Screen name="settings/lyrics-tools" />
+                <Stack.Screen name="settings/silence-trim" />
                 <Stack.Screen name="settings/language" />
                 <Stack.Screen name="settings/font" />
                 <Stack.Screen name="settings/personalization" />
@@ -467,6 +475,7 @@ export default function RootLayout() {
                 independently of the visible screens. */}
             <FrameMeter />
             {auth || offline ? <PlaybackColorWarmup /> : null}
+            {auth || offline ? <ListeningStatsTracker /> : null}
             {auth || offline ? <CarAutoSync /> : null}
             {auth || offline ? <BatteryWarning /> : null}
             {/* Not behind the profile guard on a whim: the check reaches

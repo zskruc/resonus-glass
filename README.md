@@ -41,9 +41,17 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 | 渠道 | 版本 | Android 更新编号 | 获取方式 |
 | --- | --- | --- | --- |
 | 正式发布 | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest)，App 内检查更新 |
-| 开发预览 | `0.8.5.1-preview.2` | `124` | 本地 ARM64 测试包，尚未发布；[紧凑首页、封面主题色与设置行高](./docs/HOME-THEME-SETTINGS-PREVIEW-2.md) |
+| 开发预览 | `0.8.5.1-preview.3` | `125` | 尚未发布；[歌单双布局与七项音乐工具](./docs/PLAYLIST-MUSIC-TOOLS-PREVIEW-3.md)，构建与验证状态见文档 |
 
-`.preview.2` 缩小 Apple Music 风格首页「发现」卡片，设置中新增手选／跟随当前专辑封面的主题色来源，并统一普通设置行的最小高度。保留已适配的上游修复、播放器布局和玻璃参数，详见[本轮预览说明](./docs/HOME-THEME-SETTINGS-PREVIEW-2.md)。
+`.preview.3` 缩小歌单封面，并分别重排 **Apple Music／Spotify** 两种风格的歌单详情。新增七项可使用的音乐工具：
+
+- **设置 → 播放器 → 歌词工具**：逐曲歌词校时；歌曲菜单也可打开校时与实际 PNG 歌词海报分享。
+- **设置 → 音乐库 → 音乐工具**：M3U／M3U8／JSON 歌单交换、真实听歌统计与年度回顾、可保存的规则智能歌单、只读重复／多版本检查。
+- **设置 → 播放器 → 跳过首尾静音**：默认关闭，仅分析本地或已下载音频的有限首尾片段，不跳过歌曲内部的安静段落。
+
+歌单导入匹配当前曲库，只创建新歌单，不覆盖已有歌单；歧义可人工确认。统计从启用后的真实播放记录开始，拖动进度不重复计次，同曲连续循环视为一段会话。完整入口、用法、离线边界及后续建议见[本轮说明](./docs/PLAYLIST-MUSIC-TOOLS-PREVIEW-3.md)。保留现有播放器布局和玻璃参数。
+
+此前 `.preview.2` 的紧凑首页、手选／封面主题色和统一设置行高继续保留，见[前一版说明](./docs/HOME-THEME-SETTINGS-PREVIEW-2.md)。
 
 本轮选择性适配上游的播放加载优先级、网络错误本地化、艺人／专辑搜索网格、歌单成员管理及外部媒体切歌指令；其中后两项来自发布后的主分支。保留当前页面布局、玻璃参数和 `.39` 艺人图片优化，未完整合并上游。构建、检查范围与未采用部分见[适配记录](./docs/UPSTREAM-0.8.5-ADAPTATION-20261031.md)。
 
@@ -57,7 +65,7 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 
 `.27` 新增参考 [Volta](https://github.com/countervolts/Volta) 的 **Apple Music风格**，可在 **设置 → 外观 → 界面风格** 与 **Spotify风格** 之间切换。首页、资料库、艺人和专辑／歌单详情采用可切换的页面布局，保留现有播放器、玻璃参数及用户资料。范围和验证限制见 [双风格预览说明](./docs/VOLTA-UI-PREVIEW.md)。下方早期版本说明保留为开发历史。
 
-当前开发预览位于 `preview/compact-home-artwork-accent-20261031` 分支。播放页结合 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 派生的原生控件与 SVG，以及独立实现的封面／歌词界面和网格流动背景。「设置 → 播放器 → 播放器布局」可切回 Resonus 原有布局；下方「播放器背景」仅影响原有布局。控件与 SVG 的 **AGPL-3.0-only** 来源、保留的原有许可证和实现范围见 [第三方声明](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) 与 [预览说明](./docs/AMLL-PLAYER-PREVIEW.md)。
+当前开发预览位于 `feature/playlist-and-music-tools-20261031` 分支。播放页结合 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 派生的原生控件与 SVG，以及独立实现的封面／歌词界面和网格流动背景。「设置 → 播放器 → 播放器布局」可切回 Resonus 原有布局；下方「播放器背景」仅影响原有布局。控件与 SVG 的 **AGPL-3.0-only** 来源、保留的原有许可证和实现范围见 [第三方声明](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) 与 [预览说明](./docs/AMLL-PLAYER-PREVIEW.md)。
 
 `.15` 保留 `.14` 的五项修改：移除播放／歌词页顶部白条，保留原高度、顶部下拉和封面无障碍关闭；移除随机／循环按钮，仅保留原位置的上一首、播放／暂停、下一首，播放模式仍可在菜单设置；返回时冻结底栏已绘制进度，等来源页面状态恢复就绪后再交接，并保留来源页选中透镜透明度；逐字歌词只预备当前与下一行遮罩，下一行延后 720ms 准备，不改模糊、光学或歌词计时；有完整歌单镜像时先显示保存内容并在后台请求服务器，离线复用元数据避免重复 SQL，本地只查询当前歌单的歌曲 ID。没有缓存的首次打开仍可能等待，不能保证所有歌单立即出现。
 
@@ -132,6 +140,7 @@ bash scripts/build-glass-preview.sh
 | --- | --- |
 | 版本变化与 APK | [更新日志](./CHANGELOG.md) · [Releases](https://github.com/zskruc/resonus-glass/releases) |
 | 功能与验证范围 | [Glass 说明](./docs/LIQUID-GLASS-PREVIEW.md) |
+| 歌单双布局与七项音乐工具 | [入口、用法、边界与后续建议（中英）](./docs/PLAYLIST-MUSIC-TOOLS-PREVIEW-3.md) |
 | AMLL 播放器预览 | [布局、背景与验证边界](./docs/AMLL-PLAYER-PREVIEW.md) |
 | Apple Music 转场 | [共享封面、独立背景与来源页景深](./docs/APPLE-MUSIC-TRANSITION.md) |
 | 播放列表性能 | [现场、修复与未验收范围](./docs/PLAYLIST-SCROLL-PERFORMANCE.md) |
@@ -148,7 +157,8 @@ bash scripts/build-glass-preview.sh
 - [Resonus](https://github.com/juananzzz/resonus)：原作者 **juananzzz** 及原项目贡献者；原有源码保留 **GPL-3.0-or-later**，根 [LICENSE](./LICENSE) 不变；本预览新增的 AGPL 派生控件另见下项及第三方声明。支持原作者可前往其 [Ko-fi](https://ko-fi.com/juananzzz)。
 - [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)：**Apache-2.0**。原生材质依赖 Backdrop 1.0.0，并适配其 Bottom Tabs 示例；[许可证](./modules/liquid-glass/ANDROID_LIQUID_GLASS_LICENSE)。
 - [sdegenaar/liquid_glass_widgets](https://github.com/sdegenaar/liquid_glass_widgets)：**MIT**，Copyright © 2024–2026 Sebastian Degenaar。参考并适配其联动布局和最小化控制器；未引入 Flutter 引擎；[许可证](./modules/liquid-glass/LIQUID_GLASS_WIDGETS_LICENSE)。
-- Primuse：歌词动效的部分实现遵循 **MIT**，详见 [第三方声明](./THIRD_PARTY_NOTICES.md)。
+- [Primuse](https://github.com/chenqi92/primuse)：**MIT**，Copyright © 2026 Welape。已有歌词动效来源见 [第三方声明](./THIRD_PARTY_NOTICES.md)；七项音乐工具参考固定版本功能并在 React Native／Kotlin 中重写，见[来源与边界](./docs/PLAYLIST-MUSIC-TOOLS-PREVIEW-3.md#来源与实现--provenance-and-implementation)。
+- [react-native-view-shot](https://github.com/gre/react-native-view-shot)：**MIT**，本预览使用 5.1.0 生成真实 PNG 歌词海报。
 - [f728743/AppleMusicStylePlayer](https://github.com/f728743/AppleMusicStylePlayer)：**MIT**，Copyright © 2025 Alexey Vorobyov。适配共享封面转场、背景轮廓与下拉规则；[完整许可证](./licenses/APPLE-MUSIC-STYLE-PLAYER-MIT.txt)及[实现范围](./docs/APPLE-MUSIC-TRANSITION.md)。
 - [LNPopupController](https://github.com/LeoNatan/LNPopupController)：**MIT**，Copyright © 2015-2025 Léo Natan；[完整许可](./licenses/LNPOPUPCONTROLLER-MIT.txt)与[适配范围](./docs/LNPOPUP-TRANSITION.md)。
 - [AMLL](https://github.com/amll-dev/applemusic-like-lyrics)：播放控件及选定 SVG 派生自固定版本，保留 **AGPL-3.0-only**、[完整许可证](./licenses/AMLL-AGPL-3.0.txt) 与 [文件来源／组合分发要求](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference)。封面网格背景独立实现，未嵌入其 Web 运行库、着色器或动画引擎；不将图标来源声明为 Apple 授权。

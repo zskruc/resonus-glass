@@ -198,6 +198,11 @@ async function resolveSong(id: string): Promise<Song | undefined> {
   return (await resolveSongs([id])).get(id);
 }
 
+/** Resolve one known library ID without scanning the entire catalogue. */
+export async function getSong(id: string): Promise<Song | undefined> {
+  return resolveSong(id);
+}
+
 /** Final desired tracklist for an offline playlist: the outbox edit if any,
  *  or the mirror's tracklist. */
 async function currentPlaylistSongIds(id: string): Promise<string[]> {
@@ -674,6 +679,21 @@ export function getSongList(
     });
   }
   return subsonicSongList(a, sort, count, offset);
+}
+
+/** Complete catalogue walkers page each enabled folder independently. */
+export async function getCatalogSongPage(count = 200, offset = 0, folderIndex = 0): Promise<{ songs: Subsonic.Song[]; sourceCount: number }> {
+  if (!Number.isInteger(count) || count < 1 || count > 500 || !Number.isInteger(offset) || offset < 0
+    || !Number.isInteger(folderIndex) || folderIndex < 0) throw new Error('Invalid catalogue page');
+  if (isOffline()) return { songs: folderIndex === 0 ? await Local.getSongList('server', count, offset) : [], sourceCount: 1 };
+  const owner = auth();
+  if (!owner) throw new Error('Catalogue profile changed');
+  const folders = enabledFolderIds(owner);
+  const sourceCount = folders ? Math.max(1, folders.length) : 1;
+  if (folders?.length === 0) return { songs: [], sourceCount };
+  if (folderIndex >= sourceCount) return { songs: [], sourceCount };
+  const songs = await Subsonic.getSongList(owner, 'server', count, offset, folders?.[folderIndex]);
+  return { songs, sourceCount };
 }
 
 /** What a Subsonic server can do about listing songs, orders included. */
@@ -1550,8 +1570,13 @@ async function flushOutbox(auth: Subsonic.SubsonicAuth, file: string): Promise<v
     try {
       if (edit.created) {
         if (edit.deleted) continue; // created and deleted offline: nothing to upload
-        const realId = await Subsonic.createPlaylist(auth, edit.name ?? '');
-        if (edit.songIds?.length) await Subsonic.reorderPlaylist(auth, realId, edit.songIds);
+        const check = () => {
+          const state = useAuthStore.getState();
+          if (!ours() || !state.auth || state.offline || outboxFileFor(state.auth) !== file)
+            throw new Error('Playlist profile changed');
+        };
+        const realId = await createFreshServerPlaylist(auth, edit.name ?? '', edit.songIds ?? [], check);
+        check();
         if (edit.comment !== undefined || edit.public !== undefined) {
           await Subsonic.updatePlaylist(auth, realId, {
             comment: edit.comment,
@@ -1809,6 +1834,62 @@ export async function createPlaylist(name: string): Promise<string> {
     return Promise.resolve(tmpId);
   }
   return Subsonic.createPlaylist(context.owner!, name);
+}
+
+/** Imports into a new playlist only; existing lists are never replaced. */
+export async function createPlaylistFromSongs(name: string, songs: Subsonic.Song[]): Promise<string> {
+  const context = playlistEditContext();
+  const title = name.trim();
+  if (!title || !songs.length || songs.length > 10000 || songs.some((song) => !song.id || !canGoIntoPlaylist(song)))
+    throw new Error('Invalid playlist import');
+  const ids = songs.map((song) => song.id);
+  context.check();
+  if (context.offline && !context.owner) {
+    const rules = await import('@/lib/playlistMembership');
+    playlistEditQueue ??= new rules.PlaylistEditQueue();
+    return playlistEditQueue.run(JSON.stringify([context.profile, 'local-playlists']), async () => {
+      context.check();
+      const id = await Local.createPlaylist(title); context.check();
+      await Local.editPlaylistTracklist(id, () => ids, context.current); context.check();
+      void queryClient.invalidateQueries({ queryKey: ['playlists'] });
+      return id;
+    });
+  }
+  if (context.offline) {
+    context.check();
+    const id = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    useOfflineQueue.getState().rememberSongs(songs);
+    useOfflineQueue.getState().setPlaylist(id, { created: true, name: title, songIds: ids });
+    void queryClient.invalidateQueries({ queryKey: ['playlists'] });
+    return id;
+  }
+  const id = await createFreshServerPlaylist(context.owner!, title, ids, context.check);
+  void queryClient.invalidateQueries({ queryKey: ['playlists'] });
+  void queryClient.invalidateQueries({ queryKey: ['playlist', id] });
+  return id;
+}
+
+/** The online importer and reconnect outbox share the same new-list guard. */
+async function createFreshServerPlaylist(
+  owner: Subsonic.SubsonicAuth, title: string, ids: string[], check: () => void,
+): Promise<string> {
+  check();
+  const before = new Set((await Subsonic.getPlaylists(owner)).map((playlist) => playlist.id));
+  check();
+  const id = await Subsonic.createPlaylist(owner, title); check();
+  // Legacy servers may return a name lookup instead of the newly created ID.
+  // Never rewrite that pre-existing list, including during an outbox retry.
+  if (before.has(id)) throw new Error('The server did not return a new playlist');
+  const fresh = await Subsonic.getPlaylist(owner, id); check();
+  if (fresh.playlist.id !== id || fresh.playlist.name !== title || fresh.playlist.readonly
+    || (fresh.playlist.owner && fresh.playlist.owner !== owner.username)
+    || fresh.songs.length || (fresh.playlist.songCount ?? 0) !== 0)
+    throw new Error('The new playlist changed before import');
+  if (ids.length) { await Subsonic.reorderPlaylist(owner, id, ids); check(); }
+  const verified = await Subsonic.getPlaylist(owner, id); check();
+  if (verified.songs.length !== ids.length || verified.songs.some((song, index) => song.id !== ids[index]))
+    throw new Error('The imported playlist could not be verified');
+  return id;
 }
 
 export async function deletePlaylist(id: string): Promise<void> {

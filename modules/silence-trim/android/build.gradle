@@ -1,0 +1,20 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.silencetrim'
+version = '0.0.1'
+
+android {
+  namespace 'expo.modules.silencetrim'
+  defaultConfig {
+    versionCode 1
+    versionName '0.0.1'
+  }
+}
+
+dependencies {
+  // Reuse the already shipped ALAC decoder; no additional native library.
+  implementation project(':alac-decoder')
+}

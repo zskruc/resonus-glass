@@ -160,6 +160,10 @@ function list() {
   const dock = { dock: true };
   const module = load('components/TrackListView.tsx', runtime.react, {
     '@/components/glass': { GlassBackdrop: 'GlassBackdrop', GlassPressable: 'GlassPressable' },
+    '@/components/PlaylistDetailHeader': load('components/PlaylistDetailHeader.tsx', runtime.react, {
+      'react-native': listNative, './Icon': icon, './Cover': { Cover: 'Cover' },
+      '@/i18n': { useT: () => (value: string) => value }, '@/theme': theme,
+    }),
     '@/components/Icon': icon,
     'expo-linear-gradient': { LinearGradient: 'Gradient' },
     'expo-router': { Link: 'Link', useRouter: () => ({ push() {}, back() {} }) },

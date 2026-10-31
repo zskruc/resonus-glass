@@ -5,6 +5,7 @@ import Icon from '@/components/Icon';
 import { MenuGlassCardFrame, MenuGlassCardHeader } from '@/components/MenuGlassCard';
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
+import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Modal, ScrollView, Text, View } from 'react-native';
 
@@ -211,6 +212,12 @@ export default function LibrarySettings() {
             ) : null}
           </>
         )}
+
+        <Text style={settingsStyles.sectionTitle}>{t('Music tools')}</Text>
+        <SettingRow icon="stats-chart-outline" label={t('Listening statistics')} chevron onPress={() => router.push('/settings/listening-stats')} />
+        <SettingRow icon="sparkles-outline" label={t('Smart playlists')} chevron onPress={() => router.push('/settings/smart-playlists')} />
+        <SettingRow icon="copy-outline" label={t('Duplicates and versions')} chevron onPress={() => router.push('/settings/duplicates')} />
+        <SettingRow icon="swap-horizontal" label={t('Playlist import and export')} chevron onPress={() => router.push('/settings/playlist-exchange')} />
 
         {/* Separated from scanning/source: it's maintenance, not configuration. */}
         <Text style={settingsStyles.sectionTitle}>{t('Storage')}</Text>

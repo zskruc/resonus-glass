@@ -651,7 +651,9 @@ export default function PlaylistScreen() {
   return (
     <>
       <TrackListView
+        playlistPresentation
         title={data.playlist.name}
+        subtitle={data.playlist.owner}
         description={showPlaylistDescription ? data.playlist.comment : undefined}
         meta={metaParts.join(' · ')}
         coverUri={coverArtUrl(data.playlist.coverArt ?? data.playlist.id, COVER.card)}
@@ -851,6 +853,11 @@ export default function PlaylistScreen() {
                 <Text style={styles.actionText}>{t('Refresh')}</Text>
               </Pressable>
             ) : null}
+            <Pressable style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
+              onPress={() => close(() => router.push({ pathname: '/settings/playlist-exchange', params: { playlistId: id } }))}>
+              <Icon name="document-text-outline" size={24} color={colors.text} />
+              <Text style={styles.actionText}>{t('Playlist import and export')}</Text>
+            </Pressable>
             {canShare ? (
               <Pressable
                 style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}

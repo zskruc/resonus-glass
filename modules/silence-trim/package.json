@@ -1,0 +1,7 @@
+{
+  "name": "silence-trim",
+  "version": "0.0.1",
+  "description": "Bounded local audio edge-silence analysis for Resonus",
+  "main": "index.ts",
+  "private": true
+}

@@ -54,6 +54,7 @@ import { haptic } from '@/lib/haptics';
 import { voltaDetailBackground } from '@/lib/voltaPalette';
 import { minidiscAlbumCoverSize, type MinidiscAlbumPalette } from '@/lib/minidiscAlbumPalette';
 import { MinidiscAlbumHeader } from '@/components/volta/MinidiscAlbumHeader';
+import { PlaylistDetailHeader, playlistCoverSize } from '@/components/PlaylistDetailHeader';
 import { useArtistPicker } from '@/store/artistPicker';
 import { usePlayerStore } from '@/store/player';
 import { useSettings } from '@/store/settings';
@@ -111,6 +112,7 @@ interface TrackListOccurrence {
  */
 const AnimatedList = Reanimated.createAnimatedComponent(FlashList<TrackListOccurrence>);
 const NO_SCROLL_ANCHOR = { disabled: true };
+const playlistHeaderUtility = { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' } as const;
 
 /** Normalizes for searching: lowercase and without accents. */
 function normQ(s: string): string {
@@ -118,6 +120,8 @@ function normQ(s: string): string {
 }
 
 interface Props {
+  /** Playlist-only compositions; album layouts keep their existing geometry. */
+  playlistPresentation?: boolean;
   /** Volta album actions keep favorite in the existing overflow menu. */
   albumActionLayout?: 'volta';
   /** Album-only Minidisc presentation; playlist and Spotify headers retain their layout. */
@@ -225,6 +229,7 @@ interface Props {
 }
 
 export function TrackListView({
+  playlistPresentation,
   albumActionLayout,
   albumPresentation,
   title,
@@ -530,7 +535,7 @@ export function TrackListView({
 
   // Without cover, the header is shorter: the gradient and bar collapse adjust
   // to a smaller distance so the transition fits.
-  const art = minidisc ? minidiscAlbumCoverSize(screenW, screenH) : appleMusic
+  const art = playlistPresentation ? playlistCoverSize(screenW, screenH, appleMusic) : minidisc ? minidiscAlbumCoverSize(screenW, screenH) : appleMusic
     ? Math.round(Math.min(screenW * 0.76, screenH * 0.43, 360))
     : coverSize(screenW, screenH);
   const cover = hideCover ? 0 : art;
@@ -543,7 +548,7 @@ export function TrackListView({
     opacity: appleMusic ? 1 : interpolate(scrollY.get(), [0, collapse * 0.7], [1, 0], Extrapolation.CLAMP),
   }));
   const barContentStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(scrollY.get(), [collapse * 0.5, collapse * 0.85], [0, 1], Extrapolation.CLAMP),
+    opacity: interpolate(scrollY.get(), playlistPresentation ? [art + 16, art + 52] : [collapse * 0.5, collapse * 0.85], [0, 1], Extrapolation.CLAMP),
   }));
   const barBgOpacity = useDerivedValue(() =>
     interpolate(scrollY.get(), [0, collapse * 0.85], [0, 1], Extrapolation.CLAMP));
@@ -697,7 +702,26 @@ export function TrackListView({
             ) : null}
             {/* While searching, the large header is hidden: results stay flush
                 with the bar, which is what Spotify does. */}
-            {searching ? null : minidisc ? (
+            {searching ? null : playlistPresentation ? (
+              <PlaylistDetailHeader title={title} owner={subtitle} description={description} meta={meta}
+                coverUri={coverUri} art={art} apple={appleMusic} onCoverPress={onCoverPress}
+                artwork={renderCover?.(art)} disabled={songs.length === 0} onPlay={() => { if (songs.length) void onPlay(0); }}
+                onShuffle={shufflePlay} shuffleActive={shuffleActive} onMenu={onMenu}
+                utility={<>
+                  {favorite ? <FavoriteButton id={favorite.id} type={favorite.type} starred={favorite.starred}
+                    size={24} glyph={appleMusic ? 'star' : undefined} style={playlistHeaderUtility} /> : null}
+                  {download ? <Pressable onPress={download.onPress} style={playlistHeaderUtility} accessibilityRole="button"
+                    accessibilityLabel={download.status === 'done' ? t('Remove download') : t('Download')}
+                    accessibilityValue={download.status === 'active' ? { text: `${Math.round(download.progress * 100)}%` } : undefined}>
+                    {download.status === 'active' ? <ActivityIndicator color={colors.accent} /> : <Icon
+                      name={download.status === 'done' ? 'checkmark-circle' : 'arrow-down-circle-outline'}
+                      size={25} color={download.status === 'done' ? colors.accent : colors.textSecondary} />}
+                  </Pressable> : null}
+                  {onSort ? <Pressable onPress={onSort} style={playlistHeaderUtility} accessibilityRole="button" accessibilityLabel={t('Sort')}>
+                    <Icon name="swap-vertical" size={22} color={colors.textSecondary} />
+                  </Pressable> : null}
+                </>} />
+            ) : minidisc ? (
               <MinidiscAlbumHeader title={title} subtitle={subtitle} onSubtitlePress={onSubtitlePress}
                 meta={minidisc.meta} explicit={showExplicit} coverUri={coverUri} coverSize={art}
                 onCoverPress={onCoverPress} description={description} genres={genres} palette={minidisc.palette}

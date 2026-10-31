@@ -140,6 +140,11 @@ export default function PlayerSettings() {
         <Text style={[settingsStyles.rowDescription, { marginHorizontal: 16, marginTop: 8 }]}>
           {t('AMLL uses a shared cover transition, full-page lyrics and an artwork mesh background. Your previous player remains available.')}
         </Text>
+        <Text style={settingsStyles.sectionTitle}>{t('Music tools')}</Text>
+        <SettingsGroup>
+          <SettingRow label={t('Lyrics tools')} chevron onPress={() => router.push('/settings/lyrics-tools')} />
+          <SettingRow label={t('Skip leading and trailing silence')} chevron onPress={() => router.push('/settings/silence-trim')} />
+        </SettingsGroup>
         <Text style={settingsStyles.sectionTitle}>{t('AM++ player features')}</Text>
         <SettingsGroup>
           <SelectList<PlayerGlassRecipe>

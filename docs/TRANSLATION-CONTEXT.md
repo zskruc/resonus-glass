@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 992 of them.
+Every string the app can show, under the screen it shows up on. 1121 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -40,7 +40,6 @@ you are actually typing into, which is easier than reading it here.
 | `1 week` | How long a shared link lasts, counted from the moment it is made |
 | `Allow downloads` | Whether whoever gets the link can download the music, not only listen to it |
 | `Android may stop playback in the background, interrupt downloads or delay the sleep timer. Allowing unrestricted battery use fixes it.` |  |
-| `Artist` | In search results, the little word under a result saying what kind of thing it is |
 | `Artists` | A heading over a list of them, never a count |
 | `Back online` | The toast shown when the server answers again and the app comes out of offline mode |
 | `Battery optimization is on` | Title of the card warning that Android may cut playback off |
@@ -69,6 +68,8 @@ you are actually typing into, which is easier than reading it here.
 | `Genre` | Label of a field in the song information sheet |
 | `Go to album` | Leave this sheet and open the album the song is on |
 | `Go to artist` | Leave this sheet and open the artist |
+| `Lyric poster` |  |
+| `Lyrics tools` |  |
 | `Mix of “{name}”` | What the player calls the queue once it has grown past its album into songs the app picked itself. `{name}` is the song it was grown from |
 | `Mix started` | The toast that says the app is now picking the songs |
 | `Moods` | Mood tags the server has on the song: mellow, energetic… |
@@ -344,7 +345,6 @@ you are actually typing into, which is easier than reading it here.
 
 | String | What it is |
 | --- | --- |
-| `Artist` | In search results, the little word under a result saying what kind of thing it is |
 | `Couldn't create the playlist` | Toast: the server refused |
 | `Couldn't load artists.` | Error on the screen, with a Retry button |
 | `Couldn't load playlists.` | Error on the screen, with a Retry button |
@@ -397,6 +397,22 @@ you are actually typing into, which is easier than reading it here.
 | `The music on your device is not touched.` | The rest of that warning: only the account's own downloads go |
 | `Username` | The username field |
 | `We need permission to read your device music.` | Android has not granted access to the phone's files yet |
+
+## Lyric poster
+
+| String | What it is |
+| --- | --- |
+| `Album artwork` | One of the values of “Poster style” |
+| `Choose a song first to use lyrics tools.` |  |
+| `Choose up to {lines} lines and {chars} characters.` |  |
+| `Could not create the lyric poster. Please try again.` |  |
+| `Create PNG and share` |  |
+| `Dark` | The appearance the app has always had, and what it uses unless the other is chosen. |
+| `Light` | The light appearance, in Settings › Theme |
+| `Lyric poster` |  |
+| `No lyrics available for this song.` | Empty state on the lyrics screen |
+| `Poster style` |  |
+| `Sharing is not available on this device.` |  |
 
 ## Lyrics
 
@@ -494,17 +510,16 @@ you are actually typing into, which is easier than reading it here.
 | `Confirm your password` | Changing a cover on the server needs the password again. It is not a new password being set |
 | `Couldn't load the playlist.` | Error on the screen, with a Retry button |
 | `Couldn't update the cover` | Toast: the upload failed |
-| `Delete` | The confirm button of a delete dialog, for a playlist or a radio station |
 | `Delete “{name}”?` | Dialog title. `{name}` is the playlist or station |
 | `Delete playlist` | Menu action, in red |
 | `Description` | The playlist's own description: what whoever made it wrote about it |
-| `Done` | The button that leaves drag-to-reorder, or accepts a fine-tuned number |
 | `Edit playlist` | Menu action, and the title of the sheet it opens |
 | `Find in playlist` | Placeholder of the search box hidden above a tracklist, for finding a song within it |
 | `Name` | The Name field when editing a playlist or a station |
 | `Password` | The password field, on the login screen and wherever the server asks again |
 | `Playlist` | A list saved on the server. Not the queue |
 | `Playlist deleted` | Toast, with an undo button |
+| `Playlist import and export` |  |
 | `Playlist updated` | Toast after saving a change |
 | `Playlists are not available in offline mode.` | Shown instead of a playlist when there is no connection |
 | `Public playlist` | Toggle that makes a playlist public on the server |
@@ -600,7 +615,6 @@ you are actually typing into, which is easier than reading it here.
 | `Couldn't load radio stations.` | Error on the screen, with a Retry button |
 | `Couldn't update the cover` | Toast: the upload failed |
 | `Cover uploads are disabled` |  |
-| `Delete` | The confirm button of a delete dialog, for a playlist or a radio station |
 | `Delete station` | Menu action, in red |
 | `Edit station` | Title of the same sheet when changing one |
 | `Find a station` | The search box's placeholder on the radio screen |
@@ -631,7 +645,6 @@ you are actually typing into, which is easier than reading it here.
 | String | What it is |
 | --- | --- |
 | `All` |  |
-| `Artist` | In search results, the little word under a result saying what kind of thing it is |
 | `Artists` | A heading over a list of them, never a count |
 | `Couldn't reach the server. Check your connection.` | Error on Home when the server does not answer at all |
 | `Radio` | Internet radio stations. Most languages keep the word |
@@ -771,7 +784,6 @@ you are actually typing into, which is easier than reading it here.
 | `Cache songs you play` |  |
 | `Cached songs` |  |
 | `Cover art` | Three places, one word: a section header in Settings › Player, a line of the storage bar in Settings › Downloads, and what the screen reader calls the picture in the song information sheet |
-| `Delete` | The confirm button of a delete dialog, for a playlist or a radio station |
 | `Delete all downloads` |  |
 | `Delete all downloads?` |  |
 | `Download codec` |  |
@@ -801,6 +813,21 @@ you are actually typing into, which is easier than reading it here.
 | `Transcode lossless files only` |  |
 | `View song progress and pause, start or cancel your download queue.` | The line under “Download manager”, explaining it |
 | `Your server must support it.` |  |
+
+## Settings › Duplicates
+
+| String | What it is |
+| --- | --- |
+| `Candidate groups: {n}` |  |
+| `Could not read the music catalogue. Try refreshing.` |  |
+| `Duplicates and versions` |  |
+| `No duplicate candidates found` |  |
+| `Offline analysis checks only the music available in this profile.` |  |
+| `Possible alternate versions` |  |
+| `Read-only suggestions based on title, artist and duration. Different releases may be intentional. No files are deleted or changed.` |  |
+| `Reading library: {n} songs` |  |
+| `Scan again` |  |
+| `Similar copies` |  |
 
 ## Settings › Equalizer
 
@@ -992,14 +1019,18 @@ you are actually typing into, which is easier than reading it here.
 | `Couldn't rescan` | Toast: going through the phone's own files failed |
 | `Couldn't start the scan` | Toast: the server refused to start a scan |
 | `Device` | In offline mode, where the phone's own music is read from: the whole device, as opposed to `Folder`, one folder you picked. Not a server library |
+| `Duplicates and versions` |  |
 | `Folder` | In offline mode, where the phone's own music is read from: one folder you picked, as opposed to `Device`, the whole phone |
 | `Keep at least one folder` | Refusing to remove the last folder of a local profile, which would leave it with no music |
 | `Keep at least one library on` | Toast: at least one of the server's libraries has to stay ticked |
 | `Libraries` | Section header over the server's libraries, when it has more than one |
 | `Library updated` | Toast after the phone finished going through its own files |
+| `Listening statistics` |  |
 | `Local music` | Music stored on the phone itself |
 | `Music folders` | Settings > Local music: the list of phone folders the local profile reads its music from |
+| `Music tools` |  |
 | `Only the music in the folder you choose.` | The line under `Choose a folder (recommended)` |
+| `Playlist import and export` |  |
 | `Rescan` | Trigger the server's library scan again |
 | `Rescanning your music…` | The phone is going through its own files again, offline |
 | `Scan` | Trigger the server's library scan |
@@ -1008,12 +1039,64 @@ you are actually typing into, which is easier than reading it here.
 | `Scan status` | How the server's library scan is going |
 | `Scan the whole phone` | The other way: look everywhere for audio files |
 | `Scanning…` | The server is looking for new music right now |
+| `Smart playlists` |  |
 | `Source` | The music source (which server, or local). Not source code |
 | `Source updated` | Toast after changing where music is read from |
 | `Storage` | Section header over the cache |
 | `That folder is already there` | The folder just picked is already in the local profile's list |
 | `We need permission to read your device music.` | Android has not granted access to the phone's files yet |
 | `Where should we get your music?` | Heading when choosing where the phone's own music is read from |
+
+## Settings › Listening stats
+
+| String | What it is |
+| --- | --- |
+| `{n} hours` |  |
+| `{n} minutes` | A value of the sleep timer, in minutes from now |
+| `{n} seconds` |  |
+| `A session counts after 30 seconds, or half of a shorter song.` |  |
+| `All-time most played` |  |
+| `Couldn't play` |  |
+| `Different songs` |  |
+| `Last 30 days` |  |
+| `Last 7 days` | One of the values of “Report period” |
+| `Listening statistics` |  |
+| `Listening statistics are unavailable` |  |
+| `Listening time` |  |
+| `Listening time chart` |  |
+| `Most listened artists` |  |
+| `Most listened songs` |  |
+| `No listening recorded in this period` |  |
+| `Only actual advancing playback is counted. Seeking and buffering are excluded.` | The line under “Record listening on this device”, explaining it |
+| `Qualified listening sessions` |  |
+| `Record listening on this device` |  |
+| `Recording since {date}. Older listening time is not reconstructed.` |  |
+| `Refresh report` |  |
+| `Report period` |  |
+| `Reports start when music plays in this version. No past listening time is invented.` |  |
+| `Seeking does not add a session. Continuous repeats of the same song count as one session.` |  |
+| `Uses the existing server or local play counter.` |  |
+| `Year` | Label of a field in the song information sheet: the year of the release |
+| `Yearly review` |  |
+
+## Settings › Lyrics tools
+
+| String | What it is |
+| --- | --- |
+| `Choose a song first to use lyrics tools.` |  |
+| `Could not save lyric timing` |  |
+| `Lyric poster` |  |
+| `Lyric timing` |  |
+| `Lyric timing could not be loaded. Your saved values have not been changed.` |  |
+| `Lyrics tools` |  |
+| `Negative values show lyrics earlier; positive values show them later. Saved for this song only.` | The line under “Lyric timing”, explaining it |
+| `Original lyric files and downloaded copies stay unchanged.` |  |
+| `Preview lyrics` |  |
+| `Reset this song timing` |  |
+| `Show lyrics earlier` |  |
+| `Show lyrics later` |  |
+| `Song` | In search results, the little word under a result saying what kind of thing it is |
+| `Timing adjustment needs synchronized lyrics.` |  |
 
 ## Settings › Media cache
 
@@ -1153,7 +1236,6 @@ you are actually typing into, which is easier than reading it here.
 | `By album` | Volume normalization (ReplayGain) mode: even out loudness album by album |
 | `By track` | Volume normalization (ReplayGain) mode: even out loudness track by track |
 | `Crossfade` | One song fading into the next |
-| `Done` | The button that leaves drag-to-reorder, or accepts a fine-tuned number |
 | `Equalizer` |  |
 | `Keep screen on` |  |
 | `Mobile data` | Group header under `Streaming`: the settings that apply on mobile data, as opposed to Wi-Fi |
@@ -1220,10 +1302,12 @@ you are actually typing into, which is easier than reading it here.
 | `Lyrics card background` | What is drawn behind the small lyrics card that peeks under the player. Not the same thing as `Lyrics background` |
 | `Lyrics size` |  |
 | `Lyrics source` | Where lyrics are looked for. Its values are the three `Prefer…`/`Disable…` lines |
+| `Lyrics tools` |  |
 | `Lyrics weight` |  |
 | `Medium font weight` | One of the values of “Lyrics weight” |
 | `Mini player` |  |
 | `Mini player blur` |  |
+| `Music tools` |  |
 | `No` | A setting value meaning none or zero, not the answer to a question: no crossfade, no seek buttons |
 | `None` | One of the values of “Buttons next to play” |
 | `Nothing` | A value of `On cover tap`: tapping the cover does nothing |
@@ -1260,6 +1344,7 @@ you are actually typing into, which is easier than reading it here.
 | `Show rating` |  |
 | `Show system volume` |  |
 | `Skip buttons` | The seek forward / back buttons setting |
+| `Skip leading and trailing silence` |  |
 | `Slightly blur synchronized lyrics other than the current line to emphasize what is playing.` | Help text under that switch. Only the current synchronized lyric line stays sharp |
 | `Swap favorite and menu` | Exchange the places of those two buttons in the player, for whichever hand you hold the phone in |
 | `Untinted glass` | One of the values of “Floating popup glass” |
@@ -1273,6 +1358,34 @@ you are actually typing into, which is easier than reading it here.
 | `Bottom row` |  |
 | `Grouped in the middle` | One of the values of “Arrangement” |
 | `Spread across the width` | One of the values of “Arrangement” |
+
+## Settings › Playlist exchange
+
+| String | What it is |
+| --- | --- |
+| `{matched} matched, {unmatched} need review` |  |
+| `Choose a match or skip` |  |
+| `Choose playlist file` |  |
+| `Export JSON playlist` |  |
+| `Export M3U8 playlist` |  |
+| `Import failed. A new empty or partial playlist may remain; existing playlists were not replaced.` |  |
+| `Import matched tracks into a new playlist` |  |
+| `Import matches music in this library; it never downloads links or replaces an existing playlist.` |  |
+| `Library changed. Reopen this page.` |  |
+| `M3U, M3U8 or Resonus JSON; up to 10,000 tracks.` |  |
+| `Playlist contains no valid tracks` |  |
+| `Playlist file is too large` |  |
+| `Playlist has too many tracks` |  |
+| `Playlist import and export` |  |
+| `Playlist imported` |  |
+| `Portable song metadata without account credentials.` |  |
+| `Relative music paths, without authenticated stream links.` |  |
+| `Save unmatched tracks` |  |
+| `Search this library` |  |
+| `Showing up to 50 candidates. Refine the search if needed.` |  |
+| `Skip this track` |  |
+| `Unsupported playlist file` |  |
+| `Working…` |  |
 
 ## Settings › Quick grid
 
@@ -1290,13 +1403,79 @@ you are actually typing into, which is easier than reading it here.
 
 | String | What it is |
 | --- | --- |
-| `Done` | The button that leaves drag-to-reorder, or accepts a fine-tuned number |
 | `How far into a song it counts as played. Whichever of the two comes first.` | At the top of the `Scrobbling` screen, over the two rows below it |
 | `Part of the song` | How much of a song must have played before it counts, as a percentage. One of the two scrobble rules, and it can be `Off` |
 | `Restore defaults` | Button at the end of the `Scrobbling` screen, putting both rules back to what they came as |
 | `Scrobbling` | Reporting a song as played, to the user's own server and from there to Last.fm or ListenBrainz. The title of its own screen and the row that opens it. The word comes from Last.fm and most languages keep it; use whatever those services call it in yours if they do |
 | `Time played` | How long a song must have played before it counts, as a time. The other scrobble rule, and it can be `Off` too. Whichever of the two comes first is the one that counts |
 | `With both off nothing is reported, not even to your own server.` | Shown only when both scrobble rules are `Off`, since that also stops the play counts on the user's own server |
+
+## Settings › Silence trim
+
+| String | What it is |
+| --- | --- |
+| `{n} seconds` |  |
+| `Analysis status` |  |
+| `Analyze current song` |  |
+| `Analyzing audio edges…` |  |
+| `Audio edge analysis is not supported on this device.` |  |
+| `Audio edges analyzed` |  |
+| `Current song` |  |
+| `For downloaded and local audio only. Online streams are not downloaded for analysis.` |  |
+| `Leading silence trimmed` |  |
+| `Maximum scan per edge` |  |
+| `Minimum detected silence` |  |
+| `Not analyzed` |  |
+| `Only song edges are inspected; quiet sections inside songs are preserved. Seeking takes priority, and lyrics keep the original timeline.` |  |
+| `Only the leading edge could be analyzed` |  |
+| `Restore default silence settings` |  |
+| `Silence threshold` |  |
+| `Skip song-edge silence` |  |
+| `This audio file could not be analyzed` |  |
+| `This song has no local audio file` |  |
+| `Trailing silence trimmed` |  |
+
+## Settings › Smart playlists
+
+| String | What it is |
+| --- | --- |
+| `Added within` |  |
+| `Any` | One of the values of “Minimum rating” |
+| `Any time` | One of the values of “Added within” |
+| `Artist contains` |  |
+| `Could not load smart playlists` |  |
+| `Could not read the music catalogue. Try refreshing.` |  |
+| `Could not save smart playlist` |  |
+| `Delete rule` |  |
+| `Enter a name and valid year range` |  |
+| `Favorites only` |  |
+| `From year` |  |
+| `Genre contains` |  |
+| `Last 30 days` |  |
+| `Last 365 days` |  |
+| `Last 7 days` | One of the values of “Report period” |
+| `Last 90 days` |  |
+| `Matching songs: {n}` |  |
+| `Minimum rating` |  |
+| `Missing year or added-date tags cannot match those filters.` |  |
+| `Most played` | Sorted by how many times they were played |
+| `New smart playlist` | One of the values of “Saved smart playlists” |
+| `No recorded plays` |  |
+| `No songs match these rules` |  |
+| `Offline rules use the music available in this profile.` |  |
+| `Reading library: {n} songs` |  |
+| `Recently added` | A sort order, and a section: newest first (in Favorites, last favorited first) |
+| `Refresh library` |  |
+| `Result limit` |  |
+| `Rules are combined with AND and saved only for this profile. They do not alter server playlists.` |  |
+| `Save rule` |  |
+| `Saved smart playlists` |  |
+| `Smart playlist removed` |  |
+| `Smart playlist saved` |  |
+| `Smart playlists` |  |
+| `Through year` |  |
+| `Title` | One of the values of “Sort by” |
+| `Waiting for favorites` |  |
 
 ## Settings › Song lists
 
@@ -1372,6 +1551,7 @@ you are actually typing into, which is easier than reading it here.
 | `Album` | In search results, the little word under a result saying what kind of thing it is |
 | `Albums` | A heading over a list of them, never a count |
 | `Alphabetical` | Sort option: the order of a list |
+| `Artist` | In search results, the little word under a result saying what kind of thing it is |
 | `Ascending` | Sort option: the order of a list |
 | `Back` | Screen reader label for the back arrow. A direction, not a verb |
 | `Cancel` | The button that closes a dialog without doing anything, and the one beside a search box |
@@ -1391,9 +1571,11 @@ you are actually typing into, which is easier than reading it here.
 | `Create` | The confirm button of the new-playlist dialog. A verb |
 | `Created playlist not found` |  |
 | `Default` | Sorting pill: what you get when nothing is sorted, which is the order the server keeps its songs in. Not alphabetical, and not Resonus deciding. On a playlist it is the order the list came in, which is the one you made by dragging the songs if it is an ordinary playlist and the one its rules produced if it is a smart one — hence a word that is true of both rather than "custom" or "pre-defined" |
+| `Delete` | The confirm button of a delete dialog, for a playlist or a radio station |
 | `Delete downloads` | Menu action: delete the downloaded files of everything here |
 | `Descending` | Sort option: the order of a list |
 | `Direction` | Sort sheet: the ascending vs descending toggle. Not a compass direction |
+| `Done` | The button that leaves drag-to-reorder, or accepts a fine-tuned number |
 | `Download` | The confirm button of the download dialog, and what the screen reader calls the download button. A verb |
 | `Download “{name}”?` | Dialog title. `{name}` is an album, artist or playlist |
 | `Download stopped` | Toast: the download was stopped part way |

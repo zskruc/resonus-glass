@@ -85,7 +85,9 @@ import { primaryUrl } from '@/lib/serverUrls';
 import { getItem, setItem } from '@/lib/storage';
 import { StreamWarming } from '@/lib/streamWarming';
 import { playbackLoadGate } from '@/lib/playbackLoadGate';
-import { useAuthStore } from './auth';
+import { profileScopeId, useAuthStore } from './auth';
+import { SilenceTrimSession } from '@/lib/silenceTrim';
+import { prefetchSilenceBounds, useSilenceTrim } from './silenceTrim';
 import { checkAutoUrlNow } from './autoUrl';
 import { castSetState, castSetVolumeLevel, castUpdate, initCastMedia } from './castMedia';
 import { useDownloads } from './downloads';
@@ -254,7 +256,7 @@ function ensurePlayer(idx: number): AudioPlayer {
   // Only the active player feeds state: events from the one that is powering
   // down during a crossfade (including its didJustFinish) are ignored.
   p.addListener('playbackStatusUpdate', (status) => {
-    if (activePlayer() === p) onStatus(status);
+    if (activePlayer() === p && !applySilenceBoundary(p, status)) onStatus(status);
   });
   // Skip track from notification / lock screen → JS manages the queue.
   // Only the session owner emits these events; there are no double skips.
@@ -482,7 +484,8 @@ function setStreamOffset(sec: number, p: AudioPlayer | null = activePlayer()) {
 function applyLoop(p: AudioPlayer | null, offsetSec = streamOffsetSec) {
   if (!p) return;
   try {
-    p.loop = usePlayerStore.getState().repeat === 'one' && offsetSec === 0;
+    p.loop = usePlayerStore.getState().repeat === 'one' && offsetSec === 0
+      && !silenceLoopManaged();
   } catch {
     // ignore
   }
@@ -577,6 +580,7 @@ async function ensureTranscodeOffsetSupport(): Promise<boolean> {
  */
 function seekActive(sec: number, stillOwned?: () => boolean) {
   if (stillOwned && !stillOwned()) return;
+  silenceSession.cancelLeading();
   const state = usePlayerStore.getState();
   const song = currentSong(state);
   pendingSeek = { sec, at: Date.now() };
@@ -1331,8 +1335,113 @@ function endBootQuiet(catchUp = false) {
   cacheUpcoming();
 }
 
+// Edge inspection never changes the file's timebase. Its owner includes the
+// installed source generation, account and player, not just the song ID (the
+// same song can be loaded again while an older decoder is still draining).
+const silenceSession = new SilenceTrimSession();
+let silenceGeneration = 0;
+let silenceOwner: {
+  identity: string; load: number; auth: SubsonicAuth | null; scope: string;
+  player: AudioPlayer; songId: string; uri: string | undefined;
+} | null = null;
+
+function ownsSilenceSession(): boolean {
+  const owner = silenceOwner;
+  if (!owner || !useSilenceTrim.getState().enabled || remoteKind()) return false;
+  return owner.load === loadToken && owner.auth === useAuthStore.getState().auth
+    && owner.scope === profileScopeId() && owner.player === activePlayer()
+    && owner.songId === currentSong(usePlayerStore.getState())?.id
+    && streamOffsetSec === 0;
+}
+
+function silenceEffectiveEnd(duration: number): number {
+  return ownsSilenceSession() ? silenceSession.effectiveEnd(duration) : duration;
+}
+function silenceTailManaged(): boolean {
+  const duration = usePlayerStore.getState().durationSec;
+  return duration > 0 && silenceEffectiveEnd(duration) < duration - 0.1;
+}
+function silenceLoopManaged(): boolean {
+  return ownsSilenceSession() && silenceSession.managesLoop(usePlayerStore.getState().durationSec);
+}
+
+/** Read a fresh native clock; queued pre-seek/pre-load events never drive a trim. */
+function applySilenceBoundary(p: AudioPlayer, event?: AudioStatus): boolean {
+  if (!ownsSilenceSession() || pendingSeek || event?.didJustFinish || event?.error) return false;
+  let status: AudioStatus;
+  try { status = p.currentStatus; } catch { return false; }
+  if (status.didJustFinish || status.error) return false;
+  try { if (silenceSession.managesLoop(status.duration) && p.loop) {
+    // A cache hit may arrive before the first loaded duration reaches the
+    // store. Do not leave native repeat enabled until a later metadata event.
+    p.loop = false;
+  } } catch { return false; }
+  const action = silenceSession.action({ positionSec: streamOffsetSec + status.currentTime,
+    durationSec: status.duration, playing: status.playing, loaded: status.isLoaded,
+    buffering: status.isBuffering }, !(fadingOut || fadeState));
+  if (!action) return false;
+  // Crossfade owns the outgoing end. The incoming song can trim its head,
+  // while its tail remains eligible after the fade has finished.
+  const owner = silenceOwner;
+  const target = action.kind === 'head' ? action.positionSec : status.duration;
+  try {
+    // Seeking to the original end lets Media3 emit its normal ended event.
+    // That retains repeat, sleep-at-end and the ordinary queue advance, rather
+    // than synthesizing a second finish event in JS.
+    if (action.kind === 'tail') {
+      queuedNext = null;
+      p.clearNextSource();
+    }
+    const result = p.seekTo(target);
+    pendingSeek = { sec: target, at: Date.now() };
+    usePlayerStore.setState({ positionSec: target });
+    void Promise.resolve(result).catch(() => {
+      if (silenceOwner === owner && ownsSilenceSession() && pendingSeek?.sec === target) pendingSeek = null;
+    });
+    return true;
+  } catch { return false; } // Unsupported random access leaves ordinary playback intact.
+}
+
+function beginSilenceInspection(song: Song, allowLeading: boolean) {
+  silenceOwner = null;
+  silenceSession.clear();
+  useSilenceTrim.getState().cancelInspection();
+  const preferences = useSilenceTrim.getState();
+  const p = activePlayer();
+  if (!p || !preferences.hydrated || !preferences.enabled || remoteKind()) return;
+  const identity = `silence.${++silenceGeneration}`;
+  silenceOwner = { identity, load: loadToken, auth: useAuthStore.getState().auth,
+    scope: profileScopeId(), player: p, songId: song.id, uri: song.url ? undefined : localSourceFor(song) };
+  silenceSession.begin(identity, allowLeading);
+  const owner = silenceOwner;
+  const stillCurrent = () => silenceOwner === owner && ownsSilenceSession();
+  void preferences.inspect(owner.uri, song.id, (bounds) => {
+    if (!stillCurrent() || !silenceSession.accept(identity, bounds)) return;
+    applyLoop(p);
+    // A queued gapless source would advance immediately on our end seek.
+    // Return ownership of a trimmed end to the normal didJustFinish path.
+    scheduleNextSource(true);
+    applySilenceBoundary(p);
+  }).then(() => {
+    if (!stillCurrent()) return;
+    const next = nextIndex(false);
+    const following = next == null ? undefined : usePlayerStore.getState().queue[next];
+    if (following && following.id !== song.id) {
+      void prefetchSilenceBounds(localSourceFor(following), stillCurrent);
+    }
+  });
+}
+
+/** Reanalysis on demand must never move a listener back to the song's start. */
+export function inspectCurrentSilence() {
+  const song = currentSong(usePlayerStore.getState());
+  if (song) beginSilenceInspection(song, false);
+}
+
 /** Now playing / history + syncs the queue on track change. */
 function onTrackChanged(song: Song) {
+  const playback = usePlayerStore.getState();
+  beginSilenceInspection(song, playback.isPlaying && playback.positionSec < 0.05);
   playbackOutage.trackChanged(song.id);
   if (!playbackOutage.waiting) clearBackgroundRetryTimer();
   // Whatever the last stream announced was about the last stream. The
@@ -1809,7 +1918,7 @@ function gaplessReady(): boolean {
   const st = usePlayerStore.getState();
   // 'one' repeats through the native `loop`, and "stop at end of song" needs
   // the track to end for real so its `didJustFinish` arrives.
-  if (st.repeat === 'one' || st.sleepAtSongEnd) return false;
+  if (st.repeat === 'one' || st.sleepAtSongEnd || silenceTailManaged()) return false;
   const current = st.queue[st.index];
   // A radio has no end to join anything to.
   return !!current && !current.url;
@@ -2232,7 +2341,7 @@ function maybeStartCrossfade(status: AudioStatus) {
   // would start the incoming at full volume on the way to silence.
   if (sleepFadeTimer) return;
   const current = st.queue[st.index];
-  const duration = st.durationSec;
+  const duration = silenceEffectiveEnd(st.durationSec);
   if (!current || current.url || duration < fadeSec + 5) return;
   // What is left of the track measured in seconds of clock, which is what the
   // fade is made of: at 1.5× the last nine seconds of music are six of ramp,
@@ -4059,6 +4168,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // module's `handleSeek`). A position the player cannot answer is not a seek
     // that goes nowhere, it is a player that stops.
     if (!Number.isFinite(sec)) return;
+    const hadTrimmedEnd = silenceLoopManaged() || silenceTailManaged();
+    silenceSession.manualSeek();
+    if (hadTrimmedEnd) {
+      applyLoop(activePlayer());
+      scheduleNextSource(true);
+    }
     cancelPlaybackRecovery();
     const duration = get().durationSec;
     // A radio has no length to stay inside of, and a stream still loading has
@@ -4562,7 +4677,12 @@ useSettings.subscribe((state, previous) => {
 // shuffle, autoplay…), where the queued track would go stale by omission.
 usePlayerStore.subscribe((st, prev) => {
   if (!st.isPlaying && prev.isPlaying) cancelSpeculativePriority();
-  if (st.queue.length === 0 && prev.queue.length > 0) resetWarmed();
+  if (st.queue.length === 0 && prev.queue.length > 0) {
+    resetWarmed();
+    silenceOwner = null;
+    silenceSession.clear();
+    useSilenceTrim.getState().cancelInspection();
+  }
   if (st.queue[st.index]?.id !== prev.queue[prev.index]?.id) {
     playbackOutage.trackChanged(st.queue[st.index]?.id ?? null);
     if (!playbackOutage.waiting) clearBackgroundRetryTimer();
@@ -4610,6 +4730,17 @@ usePlayerStore.subscribe((st, prev) => {
   ) {
     queueDirty = true;
   }
+});
+
+// Preferences are infrequent events. Do not subscribe the analyzer to every
+// playback position update or launch one decoder per render.
+useSilenceTrim.subscribe((state, previous) => {
+  if (state.enabled === previous.enabled && state.hydrated === previous.hydrated
+    && state.thresholdDb === previous.thresholdDb && state.minimumSilenceMs === previous.minimumSilenceMs
+    && state.scanSeconds === previous.scanSeconds) return;
+  inspectCurrentSilence();
+  applyLoop(activePlayer());
+  scheduleNextSource(true);
 });
 
 // A song starred or unstarred anywhere in the app: the heart outside it follows.

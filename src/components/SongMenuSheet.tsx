@@ -41,6 +41,7 @@ import { MenuRequestScope } from '@/lib/menuRequest';
 import { useArtistPicker } from '@/store/artistPicker';
 import { useAuthStore } from '@/store/auth';
 import { usePlaylistPicker } from '@/store/playlistPicker';
+import { useLyricToolTarget } from '@/store/lyricToolTarget';
 import { useDownloads } from '@/store/downloads';
 import { usePlayerStore } from '@/store/player';
 import { useSongInfo } from '@/store/songInfo';
@@ -688,6 +689,14 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
                       }}
                     />
                   ) : null}
+                  {canGoIntoPlaylist(song) ? <>
+                    <Action icon="time-outline" label={t('Lyrics tools')} onPress={() => dismissAction(() => {
+                      useLyricToolTarget.getState().open(song); router.push('/settings/lyrics-tools');
+                    })} />
+                    <Action icon="image-outline" label={t('Lyric poster')} onPress={() => dismissAction(() => {
+                      useLyricToolTarget.getState().open(song); router.push('/lyric-poster');
+                    })} />
+                  </> : null}
                   {/* The player's buttons that are hidden from its bottom row,
                       so hiding them does not hide what they open (#248). */}
                   {extras.queue ? (

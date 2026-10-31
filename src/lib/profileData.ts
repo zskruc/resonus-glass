@@ -35,6 +35,7 @@ const SCOPED_KEYS = [
   'resonus.localFavorites',
   'resonus.localPlaylists',
   'resonus.librarySizes',
+  'resonus.lyricOffsets',
 ];
 
 const DOWNLOADS_DIR = `${FileSystem.documentDirectory}downloads/`;
@@ -52,8 +53,20 @@ async function remove(uri: string): Promise<void> {
  * whoever uses it, and nothing here is its to delete.
  */
 export async function deleteProfileData(auth: SubsonicAuth): Promise<void> {
-  const scope = hashKey(`${primaryUrl(auth)}|${auth.username}`);
+  const rawScope = `${primaryUrl(auth)}|${auth.username}`;
+  const scope = hashKey(rawScope);
   const dir = `${DOWNLOADS_DIR}${scope}/`;
+
+  // These modules read active-account state; importing them eagerly here would
+  // make auth -> profileData -> tools -> auth a startup dependency cycle.
+  const [musicTools, silenceTrim] = await Promise.all([
+    import('./listeningDb'),
+    import('@/store/silenceTrim'),
+  ]);
+  await Promise.all([
+    musicTools.clearMusicToolsProfile(rawScope),
+    silenceTrim.clearSilenceTrimProfile(rawScope),
+  ]);
 
   // The databases are closed before their files go, or the handles would
   // outlive what they point at and every later read would fail on a profile

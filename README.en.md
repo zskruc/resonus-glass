@@ -41,9 +41,17 @@ These features describe the released Glass baseline. Development previews may ch
 | Channel | Version | Android version code | Availability |
 | --- | --- | --- | --- |
 | Stable | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest), in-app update checks |
-| Development preview | `0.8.5.1-preview.2` | `124` | Local ARM64 APK, unpublished; [compact Home, artwork accents and settings rows](./docs/HOME-THEME-SETTINGS-PREVIEW-2.md) |
+| Development preview | `0.8.5.1-preview.3` | `125` | Unpublished; [dual playlist layouts and seven music tools](./docs/PLAYLIST-MUSIC-TOOLS-PREVIEW-3.md), including build and validation status |
 
-`.preview.2` reduces the Apple Music-style Home Discover cards, adds manual/current-artwork accent sources in settings, and aligns ordinary settings rows to a shared minimum height. Existing upstream fixes, player layout and glass profiles remain. See the [preview notes](./docs/HOME-THEME-SETTINGS-PREVIEW-2.md).
+`.preview.3` reduces playlist artwork and gives **Apple Music / Spotify** styles separate playlist detail layouts. Seven usable music tools are added:
+
+- **Settings → Player → Lyrics tools**: per-song lyric timing, also available from song menus alongside real PNG lyric-poster sharing.
+- **Settings → Library → Music tools**: M3U/M3U8/JSON playlist exchange, actual listening statistics and yearly reviews, saved rule-based smart playlists, and read-only duplicate/version analysis.
+- **Settings → Player → Skip leading and trailing silence**: off by default; inspects bounded edges of local/downloaded audio, preserving quiet passages inside songs.
+
+Playlist import matches this library and creates a separate new playlist, preserving existing lists and allowing manual ambiguity review. Reports begin with actual playback recorded in this version; seeking adds no session, and continuous repeats of one song form one session. See the [preview guide](./docs/PLAYLIST-MUSIC-TOOLS-PREVIEW-3.md) for entry points, use, offline boundaries and future candidates. Existing player layout and glass profiles remain.
+
+The compact Home, manual/artwork accents and shared settings-row geometry from `.preview.2` remain; see the [previous notes](./docs/HOME-THEME-SETTINGS-PREVIEW-2.md).
 
 This preview adapts selected upstream playback-load priority, localized network errors, artist/album search grids, playlist membership management and external media skip commands. The last two come from main after the release. Existing layouts, glass profiles and the `.39` artist-image improvements are retained; this is not a complete upstream merge. See the [adaptation record](./docs/UPSTREAM-0.8.5-ADAPTATION-20261031.md) for validation and deferred changes.
 
@@ -57,7 +65,7 @@ The current preview updates artist navigation transitions and name artwork, Volt
 
 `.27` adds an optional [Volta](https://github.com/countervolts/Volta)-inspired **Apple Music style** under **Settings → Appearance → UI style**, alongside **Spotify style**. Home, Library, artist and album/playlist pages use alternate layouts while retaining the existing player, glass profiles and user data. See the [dual UI preview scope and validation](./docs/VOLTA-UI-PREVIEW.md). Earlier preview notes below remain development history.
 
-The current preview is on `preview/compact-home-artwork-accent-20261031`. Its native player combines [AMLL](https://github.com/amll-dev/applemusic-like-lyrics)-derived controls and SVGs with independently implemented cover/lyric views and a moving artwork-field background. Settings → Player → Player layout restores the previous Resonus layout; the Player background option below applies only to that layout. See the [third-party notices](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) and [preview guide](./docs/AMLL-PLAYER-PREVIEW.md) for the controls/assets’ **AGPL-3.0-only** provenance, retained original licenses and implementation boundaries.
+The current preview is on `feature/playlist-and-music-tools-20261031`. Its native player combines [AMLL](https://github.com/amll-dev/applemusic-like-lyrics)-derived controls and SVGs with independently implemented cover/lyric views and a moving artwork-field background. Settings → Player → Player layout restores the previous Resonus layout; the Player background option below applies only to that layout. See the [third-party notices](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) and [preview guide](./docs/AMLL-PLAYER-PREVIEW.md) for the controls/assets’ **AGPL-3.0-only** provenance, retained original licenses and implementation boundaries.
 
 `.15` retains five changes from `.14`: remove the player/lyric top handle while retaining header space, pull-down dismissal and accessible closing on the artwork; remove shuffle/repeat buttons while leaving previous/play-pause/next in their original positions, with modes still in More; retain painted dock progress until its origin scope is restored and preserve the origin's selected-lens opacity; prepare word masks only for the current and next lyric rows, delaying next-row preparation by 720ms without changing blur, optics or lyric timing; show a complete saved playlist mirror while refreshing HTTP in the background, reuse offline metadata without duplicate SQL and limit local queries to the current playlist IDs. A first opening without saved data can still wait; instant loading is not guaranteed.
 
@@ -134,6 +142,7 @@ This project provides a complete [Chinese README](./README.md) and [English READ
 | --- | --- |
 | Changes and APKs | [Changelog](./CHANGELOG.md) · [Releases](https://github.com/zskruc/resonus-glass/releases) |
 | Features and validation scope | [Glass guide](./docs/LIQUID-GLASS-PREVIEW.md) |
+| Playlist layouts and seven music tools | [Entry points, use, limits and future candidates (Chinese/English)](./docs/PLAYLIST-MUSIC-TOOLS-PREVIEW-3.md) |
 | AMLL player preview | [Layout, background and validation boundaries](./docs/AMLL-PLAYER-PREVIEW.md) |
 | Apple Music transition | [Shared artwork, independent background and source-screen depth](./docs/APPLE-MUSIC-TRANSITION.md) |
 | Playlist performance | [Evidence, changes and pending acceptance](./docs/PLAYLIST-SCROLL-PERFORMANCE.md) |
@@ -150,7 +159,8 @@ Report issues and suggestions in [this repository's Issues](https://github.com/z
 - [Resonus](https://github.com/juananzzz/resonus): original author **juananzzz** and upstream contributors. Original sources retain **GPL-3.0-or-later** and the root [LICENSE](./LICENSE) is unchanged. The preview’s added AGPL-derived controls are described below and in the third-party notices. You can support the original author on [Ko-fi](https://ko-fi.com/juananzzz).
 - [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass): **Apache-2.0**. Native materials use Backdrop 1.0.0 and adapt its Bottom Tabs example; see the [license](./modules/liquid-glass/ANDROID_LIQUID_GLASS_LICENSE).
 - [sdegenaar/liquid_glass_widgets](https://github.com/sdegenaar/liquid_glass_widgets): **MIT**, Copyright © 2024–2026 Sebastian Degenaar. Its coordinated layout and minimize controller informed this adaptation. The Flutter engine is not included; see the [license](./modules/liquid-glass/LIQUID_GLASS_WIDGETS_LICENSE).
-- Primuse: parts of the lyrics animation implementation follow **MIT**; see [third-party notices](./THIRD_PARTY_NOTICES.md).
+- [Primuse](https://github.com/chenqi92/primuse): **MIT**, Copyright © 2026 Welape. Existing lyric-animation provenance remains in [third-party notices](./THIRD_PARTY_NOTICES.md); the seven music tools adapt pinned feature references through React Native/Kotlin implementations. See [provenance and boundaries](./docs/PLAYLIST-MUSIC-TOOLS-PREVIEW-3.md#来源与实现--provenance-and-implementation).
+- [react-native-view-shot](https://github.com/gre/react-native-view-shot): **MIT**; this preview uses 5.1.0 to create real PNG lyric posters.
 - [f728743/AppleMusicStylePlayer](https://github.com/f728743/AppleMusicStylePlayer): **MIT**, Copyright © 2025 Alexey Vorobyov. Shared-artwork motion, background outline and pull-down rules are adapted; see the [complete license](./licenses/APPLE-MUSIC-STYLE-PLAYER-MIT.txt) and [implementation scope](./docs/APPLE-MUSIC-TRANSITION.md).
 - [LNPopupController](https://github.com/LeoNatan/LNPopupController): **MIT**, Copyright © 2015-2025 Léo Natan; [complete license](./licenses/LNPOPUPCONTROLLER-MIT.txt) and [adaptation scope](./docs/LNPOPUP-TRANSITION.md).
 - [AMLL](https://github.com/amll-dev/applemusic-like-lyrics): native controls and selected SVGs derive from a pinned source and retain **AGPL-3.0-only**; see the [complete license](./licenses/AMLL-AGPL-3.0.txt) and [file provenance / combined-distribution requirements](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference). The artwork field is independently implemented without its web runtime, shaders or animation engine. Icon provenance is not represented as Apple permission.
