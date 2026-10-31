@@ -11,6 +11,7 @@ import { buildMinidiscAlbumPalette, minidiscAlbumCoverSize } from '../src/lib/mi
 import { type PlaylistStyle, type UiStyle } from '../src/lib/uiStyle';
 import { VOLTA_ARTIST_FALLBACK } from '../src/lib/voltaArtistPalette';
 import { artistHeroGeometry } from '../src/lib/artistHeroGeometry';
+import { artistTargets } from '../src/lib/artistNav';
 import { artistHeaderFromLayout, artistPhotoParallax } from '../src/lib/artistHeaderTransition';
 
 const { transformSync } = createRequire(import.meta.url)('@babel/core') as {
@@ -158,6 +159,11 @@ function list() {
   const anim = animation(runtime);
   const played: number[] = [];
   const removed: number[][] = [];
+  const navigated: string[] = [];
+  const artistPickers: unknown[][] = [];
+  let playbackToggles = 0;
+  const player = { shuffle: false, queueDealt: false, sourceHref: '', isPlaying: false,
+    toggle() { playbackToggles++; } };
   const gestures: any[] = [];
   const scrolls: unknown[] = [];
   const dock = { dock: true };
@@ -176,7 +182,7 @@ function list() {
     '@/components/volta/VoltaArtistHeaderBackdrop': { VoltaArtistHeaderBackdrop: 'VoltaArtistHeaderBackdrop' },
     '@/components/Icon': icon,
     'expo-linear-gradient': { LinearGradient: 'Gradient' },
-    'expo-router': { Link: 'Link', useRouter: () => ({ push() {}, back() {} }) },
+    'expo-router': { Link: 'Link', useRouter: () => ({ push(href: string) { navigated.push(href); }, back() {} }) },
     '@shopify/flash-list': { FlashList: 'FlashList' },
     'react-native': listNative,
     'react-native-reanimated': anim.api,
@@ -196,23 +202,23 @@ function list() {
     '@/hooks/useScreenSize': { centredPadding: () => 16, useScreenSize: () => ({ width: 400, height: 800 }) },
     '@/hooks/useSelectionMenu': { useSelectionMenu: () => ({ actions: [], dialogs: null }) },
     '@/i18n': { useT: () => (value: string) => value },
-    '@/lib/artistNav': { artistTargets: () => [] },
+    '@/lib/artistNav': { artistTargets },
     '@/lib/artistHeroGeometry': { artistHeroGeometry },
     '@/lib/artistHeaderTransition': { artistHeaderFromLayout, artistPhotoParallax },
     '@/lib/haptics': { haptic() {} },
     '@/lib/voltaPalette': { voltaDetailBackground },
     '@/lib/minidiscAlbumPalette': { minidiscAlbumCoverSize },
     '@/components/volta/MinidiscAlbumHeader': { MinidiscAlbumHeader: 'MinidiscAlbumHeader' },
-    '@/store/artistPicker': { useArtistPicker: (select: (s: unknown) => unknown) => select({ open() {} }) },
+    '@/store/artistPicker': { useArtistPicker: (select: (s: unknown) => unknown) => select({ open(targets: unknown[]) { artistPickers.push(targets); } }) },
     '@/store/auth': { useAuthStore: Object.assign((select: (s: unknown) => unknown) => select({ offline: false }),
       { getState: () => ({ offline: false }) }) },
-    '@/store/player': { usePlayerStore: (select: (s: unknown) => unknown) => select({ shuffle: false, queueDealt: false }) },
+    '@/store/player': { usePlayerStore: (select: (s: unknown) => unknown) => select(player) },
     '@/store/settings': { useSettings: (select: (s: unknown) => unknown) => select(settings) },
     '@/theme': theme,
     '@/theme/motion': { motion: { duration: { fade: 120 }, reduceMotion: { decorative: 'system' } } },
     './BackChevron': { BackChevron: 'Back' }, './BarBlur': { TopBarBackground: 'TopBar' },
     './Cover': { Cover: 'Cover' }, './FavoriteButton': { FavoriteButton: 'Favorite' },
-    './ExplicitBadge': { ExplicitBadge: 'Explicit', useExplicitBadge: () => false },
+    './ExplicitBadge': { ExplicitBadge: 'Explicit', useExplicitBadge: (status: unknown) => status === 'explicit' },
     './SelectionBar': { SelectionBar: 'SelectionBar' }, './TrackRow': { TrackRow: 'TrackRow' },
   });
   let tree: Element;
@@ -239,6 +245,8 @@ function list() {
   const search = () => find(recycler().props.ListHeaderComponent, (node) => node.type === 'TextInput')!;
   render();
   return { render, recycler, row, search, played, removed, gestures, scrolls, dock, timings, animatedValues: anim.values,
+    navigated, artistPickers, playbackToggles: () => playbackToggles,
+    setPlayer(next: Partial<typeof player>) { Object.assign(player, next); return render(); },
     setUiStyle(style: UiStyle) { settings.uiStyle = style; return render(); },
     setPlaylistStyle(style: PlaylistStyle) { settings.playlistStyle = style; return render(); },
     unmount: runtime.unmount, stateWrites: () => runtime.stateWrites,
@@ -247,6 +255,27 @@ function list() {
     attach(instance: unknown) { if (typeof mountedRef === 'function') mountedRef(instance); else if (mountedRef) mountedRef.current = instance; },
     selectionBar: () => find(tree, (node) => node.type === 'SelectionBar')!,
     tree: () => tree };
+}
+
+/** Execute the actual shared header to exercise the album's artist tap target. */
+function renderArtistHeader(h: ReturnType<typeof list>) {
+  const runtime = hooks();
+  const anim = animation(runtime);
+  const module = load('components/PlaylistArtistHeader.tsx', runtime.react, {
+    'expo-linear-gradient': { LinearGradient: 'Gradient' },
+    'react-native': native,
+    'react-native-reanimated': anim.api,
+    './Cover': { Cover: 'Cover' }, './Icon': icon,
+    './volta/VoltaArtistPhotoTarget': { VoltaArtistPhotoTarget: 'PhotoTarget' },
+    './volta/VoltaDetailHeroFade': { VoltaDetailHeroFade: 'HeroFade' },
+    '@/i18n': { useT: () => (value: string) => value }, '@/theme': theme,
+  });
+  const header = find(h.recycler().props.ListHeaderComponent, (node) => node.type === 'PlaylistArtistHeader');
+  assert.ok(header, 'the actual shared album header must be active');
+  runtime.begin();
+  const tree = module.PlaylistArtistHeader(header.props);
+  runtime.commit();
+  return tree;
 }
 
 function flashListCell(listProps: Record<string, any>) {
@@ -482,6 +511,109 @@ describe('recycled shared playlist rendering and positions', () => {
       'the saved album preference never replaces Spotify pages');
     h.selectionBar().props.actions.find((action: any) => action.icon === 'remove-circle-outline').onPress();
     assert.equal(JSON.stringify(h.removed), '[[12]]', 'the selected occurrence keeps its original server position');
+  });
+
+  it('retains multi-disc positions, selection and scroll ownership across artist, Volta and Minidisc albums', () => {
+    const h = list();
+    const selected: unknown[][] = [];
+    const artist = { sourceHref: '/album/album-one' };
+    const minidisc = { palette: buildMinidiscAlbumPalette('#315b7f', false), meta: 'Rock · 2026' };
+    h.setUiStyle('appleMusic');
+    h.render({ title: 'Album', playlistId: undefined, playlistIndices: undefined, showArtwork: false,
+      numbered: true, discHeaders: { 0: 'Disc one', 2: 'Disc two' },
+      selection: { onAddTo: (songs: unknown[]) => selected.push(songs) }, albumArtistPresentation: artist });
+    const initial = h.recycler();
+    const oldPress = h.row(2).props.onPress;
+    oldPress();
+    assert.deepEqual(h.played, [2], 'the repeated track retains the album queue position');
+    initial.props.onScroll.handlers[0].onScroll({ contentOffset: { y: 315 } });
+    const scrollPosition = h.animatedValues.find((value) => value.get() === 315);
+    assert.ok(scrollPosition);
+    h.row(2).props.onLongPress(); h.render();
+    for (const ui of ['appleMusic', 'spotify', 'appleMusic'] as const) {
+      h.setUiStyle(ui);
+      for (const style of ['artist', 'volta', 'minidisc', 'artist'] as const) {
+        h.render({ albumArtistPresentation: style === 'artist' ? artist : undefined,
+          albumActionLayout: style === 'volta' ? 'volta' : undefined,
+          albumPresentation: style === 'minidisc' ? minidisc : undefined });
+        const current = h.recycler();
+        assert.equal(current.type, initial.type);
+        assert.equal(current.props.ref, initial.props.ref);
+        assert.equal(current.props.renderScrollComponent, initial.props.renderScrollComponent);
+        assert.equal(current.props.data, initial.props.data, 'a layout change cannot recreate track occurrences');
+        assert.equal(current.props.onScroll.handlers[1], h.dock);
+        assert.equal(scrollPosition.get(), 315);
+        assert.equal(h.row(2).props.selected, true);
+        assert.equal(h.row(0).props.selected, false, 'selection belongs only to the second repeated occurrence');
+        assert.equal(h.row(2).props.displayIndex, 2);
+        assert.equal(h.row(2).props.serverIndex, 2);
+        assert.equal(current.props.getItemType(current.props.data[2], 2), 'disc');
+        const secondDisc = find(current.props.renderItem({ item: current.props.data[2], index: 2 }),
+          (node) => node.type?.name === 'DiscHeader');
+        assert.equal(secondDisc?.props.label, 'Disc two');
+        assert.equal(!!find(current.props.ListHeaderComponent, (node) => node.type === 'PlaylistArtistHeader'), style === 'artist');
+        assert.equal(!!find(current.props.ListHeaderComponent, (node) => node.type === 'MinidiscAlbumHeader'), style === 'minidisc' && ui === 'appleMusic');
+      }
+    }
+    assert.deepEqual(h.scrolls, [], 'style switches must not request an imperative scroll reset');
+    h.selectionBar().props.actions.find((action: any) => action.icon === 'add-circle-outline').onPress();
+    assert.equal(selected.length, 1);
+    assert.equal(selected[0].length, 1);
+    assert.equal(selected[0][0], songA, 'album batch operations retain the selected original Song');
+  });
+
+  it('binds artist-header playback to the displayed album and retains badges, genre links and artist navigation', () => {
+    const h = list();
+    const played: { index: number; shuffled?: boolean }[] = [];
+    h.setUiStyle('appleMusic');
+    h.render({ title: 'Album', subtitle: 'Singer', artistId: 'artist-one', playlistId: undefined,
+      albumArtistPresentation: { sourceHref: '/album/album-one' }, explicit: true, genres: ['Rock'],
+      onPlay: (index: number, options?: { shuffled?: boolean }) => played.push({ index, ...options }) });
+    const header = () => find(h.recycler().props.ListHeaderComponent, (node) => node.type === 'PlaylistArtistHeader')!;
+    assert.equal(header().props.showPause, false);
+    header().props.onPlay();
+    assert.deepEqual(played, [{ index: 0 }]);
+    assert.equal(h.playbackToggles(), 0);
+    h.setPlayer({ sourceHref: '/album/album-one', isPlaying: true });
+    assert.equal(header().props.showPause, true);
+    header().props.onPlay();
+    assert.equal(h.playbackToggles(), 1, 'the visible album pauses its existing queue instead of restarting track one');
+    h.setPlayer({ sourceHref: '/playlist/other', isPlaying: true });
+    assert.equal(header().props.showPause, false);
+    header().props.onPlay();
+    assert.deepEqual(played, [{ index: 0 }, { index: 0 }], 'another active queue must not hijack the album play action');
+    assert.equal(h.playbackToggles(), 1);
+    header().props.onShuffle();
+    assert.deepEqual(played.at(-1), { index: 0, shuffled: true });
+    assert.ok(header().props.metadataBadge, 'the explicit mark survives the full-bleed presentation');
+    assert.ok(find(header().props.details, (node) => node.type === 'Link' && node.props.href === '/genre/Rock'),
+      'album genre browsing remains available');
+    let owner = find(renderArtistHeader(h), (node) => node.type === 'Pressable' && node.props.onPress === header().props.onOwnerPress);
+    assert.ok(owner, 'the shared header exposes a real artist tap target');
+    owner.props.onPress();
+    assert.deepEqual(h.navigated, ['/artist/artist-one']);
+    h.render({ artists: [{ id: 'artist-one', name: 'Singer' }, { id: 'artist-two', name: 'Guest' }] });
+    owner = find(renderArtistHeader(h), (node) => node.type === 'Pressable' && node.props.onPress === header().props.onOwnerPress);
+    owner!.props.onPress();
+    assert.equal(h.artistPickers.length, 1, 'collaborative albums keep the artist picker');
+    assert.equal(JSON.stringify(h.artistPickers[0].map((target: any) => target.id)), '["artist-one","artist-two"]');
+    assert.deepEqual(h.navigated, ['/artist/artist-one']);
+  });
+
+  it('keeps a non-navigable playlist owner transparent to the existing cover target', () => {
+    const h = list();
+    let coverOpens = 0;
+    h.setUiStyle('appleMusic');
+    h.render({ playlistPresentation: true, subtitle: 'Playlist owner', onCoverPress: () => { coverOpens++; } });
+    const header = renderArtistHeader(h);
+    const owner = find(header, (node) => node.type === 'Pressable'
+      && node.props.children?.props.children === 'Playlist owner');
+    assert.ok(owner);
+    assert.equal(owner.props.disabled, true);
+    assert.equal(owner.props.pointerEvents, 'none', 'display-only owner text must not intercept the full-width cover target');
+    find(header, (node) => node.type === 'PhotoTarget')!.props.onOpen();
+    assert.equal(coverOpens, 1);
+    assert.deepEqual(h.navigated, []);
   });
 
   it('uses the original Volta album action row and retains favorite in its existing overflow menu', () => {

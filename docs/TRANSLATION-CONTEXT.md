@@ -1181,8 +1181,8 @@ you are actually typing into, which is easier than reading it here.
 | `Always show the navigation bar` |  |
 | `Appearance` |  |
 | `Apple Music style` |  |
-| `Applies to album pages in Apple Music style. Spotify style keeps its original album pages. Your player and glass settings stay unchanged.` |  |
 | `Artist page layout` |  |
+| `Artist page layout matches your artist and playlist headers. Volta and Minidisc keep their previous layouts in Apple Music style; Spotify uses its original compact layout.` |  |
 | `At the top of Home, what is playing in your other apps and devices, ready to carry on here.` |  |
 | `Compact layout` |  |
 | `Cover corners` |  |

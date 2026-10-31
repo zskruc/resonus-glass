@@ -1159,7 +1159,7 @@ interface SettingsState extends Omit<AutoSetters, CustomSetter> {
   customAccentColor: string;
   /** Browse-page design; independent from theme, player layout and glass. */
   uiStyle: UiStyle;
-  /** Album detail presentation within Apple Music style; Spotify is unchanged. */
+  /** Shared artist header, or a prior album layout (Volta/Minidisc in Apple Music). */
   albumStyle: AlbumStyle;
   /** Playlist header choice; the previous compact layout stays immediately available. */
   playlistStyle: PlaylistStyle;
@@ -1392,7 +1392,7 @@ const DEFAULTS = {
   accentSource: 'manual' as AccentSource,
   customAccentColor: '',
   uiStyle: 'spotify' as UiStyle,
-  albumStyle: 'volta' as AlbumStyle,
+  albumStyle: 'artist' as AlbumStyle,
   playlistStyle: 'artist' as PlaylistStyle,
   // Dark: the appearance the app was designed in. Light is opt-in.
   themeMode: 'dark' as ThemePreference,
@@ -1417,6 +1417,7 @@ function autoSetters(
   for (const key of PERSISTED_KEYS) {
     out[`set${key[0].toUpperCase()}${key.slice(1)}`] = (value) => {
       if (key === 'downloadConcurrency') value = normalizeDownloadConcurrency(value);
+      if (key === 'albumStyle') value = normalizeAlbumStyle(value);
       if (key === 'playlistStyle') value = normalizePlaylistStyle(value);
       set({ [key]: value } as Partial<SettingsState>);
       persist(snapshot(get));

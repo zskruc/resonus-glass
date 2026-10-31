@@ -901,7 +901,6 @@
   "Album page style": "Album page style",
   "Volta": "Volta",
   "Minidisc": "Minidisc",
-  "Applies to album pages in Apple Music style. Spotify style keeps its original album pages. Your player and glass settings stay unchanged.": "Applies to album pages in Apple Music style. Spotify style keeps its original album pages. Your player and glass settings stay unchanged.",
   "Bulk artwork & lyrics": "Bulk artwork & lyrics",
   "Cache artwork and lyrics across your entire library.": "Cache artwork and lyrics across your entire library.",
   "Album covers": "Album covers",
@@ -1123,5 +1122,6 @@
   "Playlist page style": "Playlist page style",
   "Artist page layout": "Artist page layout",
   "Compact layout": "Compact layout",
-  "Use the artist-page header for playlists. Compact layout restores the previous playlist layout instantly.": "Use the artist-page header for playlists. Compact layout restores the previous playlist layout instantly."
+  "Use the artist-page header for playlists. Compact layout restores the previous playlist layout instantly.": "Use the artist-page header for playlists. Compact layout restores the previous playlist layout instantly.",
+  "Artist page layout matches your artist and playlist headers. Volta and Minidisc keep their previous layouts in Apple Music style; Spotify uses its original compact layout.": "Artist page layout matches your artist and playlist headers. Volta and Minidisc keep their previous layouts in Apple Music style; Spotify uses its original compact layout."
 }

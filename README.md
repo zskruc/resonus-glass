@@ -41,9 +41,9 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 | 渠道 | 版本 | Android 更新编号 | 获取方式 |
 | --- | --- | --- | --- |
 | 正式发布 | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest)，App 内检查更新 |
-| 开发预览 | `0.8.5.1-preview.5` | `127` | 尚未发布；[艺人式歌单页预览及一键回切](./docs/PLAYLIST-ARTIST-PREVIEW-5.md) |
+| 开发预览 | `0.8.5.1-preview.6` | `128` | 尚未发布；[艺人式专辑页及样式回切](./docs/ALBUM-ARTIST-PREVIEW-6.md) |
 
-`.preview.5` 让歌单沿用对应主题的艺人页式满幅页头。Apple Music 风格复用艺人页静态模糊延伸、取色和标题衔接，Spotify 风格使用其艺人页的满幅图片与左对齐信息。**设置 → 外观 → 歌单页风格**可立即切回「紧凑布局」，保留 `.preview.4` 安装包和源码回滚点。详见[预览说明](./docs/PLAYLIST-ARTIST-PREVIEW-5.md)。
+`.preview.6` 让专辑也可使用与艺人、歌单一致的满幅页头、封面取色与滚动衔接。**设置 → 外观 → 专辑页风格 → 艺人页布局**进入预览，Volta／Minidisc 可立即回切；已有账户保留原选择。此前[歌单页预览](./docs/PLAYLIST-ARTIST-PREVIEW-5.md)继续保留，播放器和玻璃参数不变。详见[预览说明](./docs/ALBUM-ARTIST-PREVIEW-6.md)及[动效方案调研](./docs/MOTION-OPTIONS-20261101.md)。
 
 `.preview.4` 补充三星实机发现的 ALAC/M4A 首尾分析兼容：独立使用 Media3 识别和定位本地音频，继续复用当前 ALAC 解码器；普通播放、布局与玻璃参数保持原设置。[修复与实机记录](./docs/M4A-SILENCE-PREVIEW-4.md)。
 

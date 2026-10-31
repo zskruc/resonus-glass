@@ -904,7 +904,6 @@
   "Album page style": "专辑页风格",
   "Volta": "Volta",
   "Minidisc": "Minidisc",
-  "Applies to album pages in Apple Music style. Spotify style keeps its original album pages. Your player and glass settings stay unchanged.": "仅应用于 Apple Music 风格下的专辑页面；Spotify 风格保留原有专辑页。播放器和玻璃设置保持不变。",
   "Bulk artwork & lyrics": "批量缓存封面与歌词",
   "Cache artwork and lyrics across your entire library.": "批量缓存整个曲库的封面、艺人照片和歌词。",
   "Album covers": "专辑封面",
@@ -1126,5 +1125,6 @@
   "Playlist page style": "歌单页风格",
   "Artist page layout": "艺人页布局",
   "Compact layout": "紧凑布局",
-  "Use the artist-page header for playlists. Compact layout restores the previous playlist layout instantly.": "歌单沿用当前主题的艺人页式页头；选择紧凑布局可立即恢复之前的歌单排版。"
+  "Use the artist-page header for playlists. Compact layout restores the previous playlist layout instantly.": "歌单沿用当前主题的艺人页式页头；选择紧凑布局可立即恢复之前的歌单排版。",
+  "Artist page layout matches your artist and playlist headers. Volta and Minidisc keep their previous layouts in Apple Music style; Spotify uses its original compact layout.": "艺人页布局与艺人和歌单页的页头保持一致。Volta 和 Minidisc 保留 Apple Music 风格下的原有专辑排版；Spotify 风格使用原有紧凑布局。"
 }

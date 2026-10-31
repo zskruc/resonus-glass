@@ -41,9 +41,9 @@ These features describe the released Glass baseline. Development previews may ch
 | Channel | Version | Android version code | Availability |
 | --- | --- | --- | --- |
 | Stable | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest), in-app update checks |
-| Development preview | `0.8.5.1-preview.5` | `127` | Unpublished; [artist-style playlist header and instant rollback](./docs/PLAYLIST-ARTIST-PREVIEW-5.md) |
+| Development preview | `0.8.5.1-preview.6` | `128` | Unpublished; [artist-style album header and reversible styles](./docs/ALBUM-ARTIST-PREVIEW-6.md) |
 
-`.preview.5` gives playlists their selected theme’s artist-page header. Apple Music reuses the static blurred field, palette and measured title transition; Spotify uses full-width artwork with left-aligned information. **Settings → Appearance → Playlist page style → Compact layout** restores the previous composition immediately. The `.preview.4` APK and a source checkpoint are retained. See the [preview notes](./docs/PLAYLIST-ARTIST-PREVIEW-5.md).
+`.preview.6` adds the shared artist/playlist full-width hero, cover palette and scroll transition to albums. Select **Settings → Appearance → Album page style → Artist page layout**; Volta/Minidisc remain immediate rollback choices. Existing profiles retain their explicit preference. The earlier [playlist preview](./docs/PLAYLIST-ARTIST-PREVIEW-5.md) remains; player/glass tuning is unchanged. See [preview notes](./docs/ALBUM-ARTIST-PREVIEW-6.md) and [motion research](./docs/MOTION-OPTIONS-20261101.md).
 
 `.preview.4` addresses the ALAC/M4A edge-analysis failure found on Samsung. An independent Media3 reader identifies and seeks local audio, reusing the existing ALAC decoder. Ordinary playback, layouts and glass profiles retain their settings. See the [fix and device record](./docs/M4A-SILENCE-PREVIEW-4.md).
 

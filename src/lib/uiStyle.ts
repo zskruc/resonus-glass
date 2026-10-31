@@ -1,7 +1,7 @@
 /** Page layout is independent from the colour theme, player and glass tuning. */
 export const UI_STYLES = ['spotify', 'appleMusic'] as const;
 export type UiStyle = (typeof UI_STYLES)[number];
-export const ALBUM_STYLES = ['volta', 'minidisc'] as const;
+export const ALBUM_STYLES = ['artist', 'volta', 'minidisc'] as const;
 export type AlbumStyle = (typeof ALBUM_STYLES)[number];
 export const PLAYLIST_STYLES = ['artist', 'compact'] as const;
 export type PlaylistStyle = (typeof PLAYLIST_STYLES)[number];
@@ -11,9 +11,9 @@ export function normalizePlaylistStyle(value: unknown): PlaylistStyle {
   return value === 'compact' ? 'compact' : 'artist';
 }
 
-/** Existing Apple Music profiles retain their Volta album presentation. */
+/** Preview the shared artist header; retain explicit prior album choices. */
 export function normalizeAlbumStyle(value: unknown): AlbumStyle {
-  return value === 'minidisc' ? 'minidisc' : 'volta';
+  return value === 'volta' || value === 'minidisc' ? value : 'artist';
 }
 
 /** Old profiles and unrecognised imported values retain the original layout. */

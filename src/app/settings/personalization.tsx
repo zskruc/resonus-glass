@@ -104,6 +104,7 @@ export default function AppearanceSettings() {
         <SelectList<AlbumStyle>
           collapsible={false}
           options={[
+            { value: 'artist', label: t('Artist page layout') },
             { value: 'volta', label: t('Volta') },
             { value: 'minidisc', label: t('Minidisc') },
           ]}
@@ -111,7 +112,7 @@ export default function AppearanceSettings() {
           onChange={setAlbumStyle}
         />
         <Text style={settingsStyles.sectionDescription}>
-          {t('Applies to album pages in Apple Music style. Spotify style keeps its original album pages. Your player and glass settings stay unchanged.')}
+          {t('Artist page layout matches your artist and playlist headers. Volta and Minidisc keep their previous layouts in Apple Music style; Spotify uses its original compact layout.')}
         </Text>
         <Text style={settingsStyles.sectionTitle}>{t('Playlist page style')}</Text>
         <SelectList<PlaylistStyle>

@@ -1,8 +1,10 @@
 /** Album detail with its songs. */
 import { useQuery } from '@tanstack/react-query';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useIsFocused, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { NavigationBar } from 'expo-navigation-bar';
 import { useShallow } from 'zustand/react/shallow';
 
 import { COVER, coverArtUrl, getAlbum } from '@/api/data';
@@ -15,7 +17,7 @@ import { MoreFromArtist } from '@/components/MoreFromArtist';
 import { PlaylistPickerSheet } from '@/components/PlaylistPickerSheet';
 import { TrackListSkeleton } from '@/components/TrackListSkeleton';
 import { TrackListView } from '@/components/TrackListView';
-import { ArtistPagePaletteProvider } from '@/components/volta/ArtistPagePalette';
+import { ArtistPagePaletteProvider, useArtistPagePalette } from '@/components/volta/ArtistPagePalette';
 import { useDownloadMessage } from '@/hooks/useDownloadMessage';
 import { useFavoriteIds } from '@/hooks/useFavoriteIds';
 import { useMinidiscAlbumPalette } from '@/hooks/useMinidiscAlbumPalette';
@@ -127,7 +129,10 @@ export default function AlbumScreen() {
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
   const appleMusic = useSettings((s) => s.uiStyle === 'appleMusic');
-  const minidisc = useSettings((s) => s.albumStyle === 'minidisc') && appleMusic;
+  const albumStyle = useSettings((s) => s.albumStyle);
+  const artistLayout = albumStyle === 'artist';
+  const minidisc = albumStyle === 'minidisc' && appleMusic;
+  const focused = useIsFocused();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const canFetch = useAuthStore((s) => !!s.auth || s.offline);
@@ -178,7 +183,7 @@ export default function AlbumScreen() {
   const lastGood = useRef(fresh);
   if (fresh && fresh.songs.length > 0) lastGood.current = fresh;
   const data = vanished ? (lastGood.current ?? fresh) : fresh;
-  const displayedCover = data ? coverArtUrl(data.album.coverArt ?? data.album.id, appleMusic ? COVER.full : COVER.card) : undefined;
+  const displayedCover = data ? coverArtUrl(data.album.coverArt ?? data.album.id, appleMusic || artistLayout ? COVER.full : COVER.card) : undefined;
   const albumPalette = useMinidiscAlbumPalette(minidisc ? displayedCover : undefined, offline);
 
   const discHeaders = useMemo(
@@ -270,8 +275,10 @@ export default function AlbumScreen() {
 
   return (
     <ArtistPagePaletteProvider value={minidisc ? albumPalette : undefined}>
+      {artistLayout && appleMusic && focused ? <><StatusBar style="light" /><NavigationBar style="light" /></> : null}
       <TrackListView
-        albumActionLayout={appleMusic && !minidisc ? 'volta' : undefined}
+        albumArtistPresentation={artistLayout ? { sourceHref: `/album/${id}` } : undefined}
+        albumActionLayout={appleMusic && !minidisc && !artistLayout ? 'volta' : undefined}
         albumPresentation={minidisc ? {
           palette: albumPalette,
           meta: [genres[0], ...yearParts].filter(Boolean).join(' · '),
@@ -317,15 +324,7 @@ export default function AlbumScreen() {
                 />
               ) : null}
               {labelText ? (
-                <Text
-                  style={{
-                    color: minidisc ? albumPalette.textSecondary : appleMusic ? colors.textSecondary : colors.textMuted,
-                    fontSize: fontSize.xs,
-                    marginTop: spacing.lg,
-                  }}
-                >
-                  {labelText}
-                </Text>
+                <AlbumFooterNote text={labelText} />
               ) : null}
             </>
           ) : undefined
@@ -385,4 +384,11 @@ export default function AlbumScreen() {
       />
     </ArtistPagePaletteProvider>
   );
+}
+
+/** This descendant reads the same local cover palette as the recycled song rows. */
+function AlbumFooterNote({ text }: { text: string }) {
+  const palette = useArtistPagePalette();
+  return <Text style={{ color: palette?.textSecondary ?? colors.textSecondary, fontSize: fontSize.xs,
+    marginTop: spacing.lg }}>{text}</Text>;
 }

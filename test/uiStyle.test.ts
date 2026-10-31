@@ -52,20 +52,20 @@ test('old profiles and unknown style values keep the original Spotify layout', a
   }
 });
 
-test('old, invalid and imported album preferences retain Volta without changing UI or glass', async () => {
-  assert.equal(useSettings.getState().albumStyle, 'volta');
+test('missing and invalid album preferences use the artist header without changing UI or glass', async () => {
+  assert.equal(useSettings.getState().albumStyle, 'artist');
   for (const value of [undefined, null, 'Volta', 'Minidisc', 'future', 1, true, {}, ['minidisc']]) {
-    assert.equal(normalizeAlbumStyle(value), 'volta');
+    assert.equal(normalizeAlbumStyle(value), 'artist');
     storage.items.set('resonus.settings.one', JSON.stringify({ uiStyle: 'appleMusic', albumStyle: value }));
     await useSettings.getState().hydrate();
-    assert.equal(useSettings.getState().albumStyle, 'volta');
+    assert.equal(useSettings.getState().albumStyle, 'artist');
     useSettings.getState().importSettings({ uiStyle: 'appleMusic', albumStyle: value });
-    assert.equal(useSettings.getState().albumStyle, 'volta');
+    assert.equal(useSettings.getState().albumStyle, 'artist');
     assert.equal(useSettings.getState().uiStyle, 'appleMusic');
   }
 });
 
-test('album style persists per profile, exports and imports independently, and resets to Volta', async () => {
+test('album style persists per profile, exports and imports independently, and resets to artist', async () => {
   useSettings.getState().setUiStyle('appleMusic');
   useSettings.getState().setBlurMiniPlayer(false);
   const before = exportedSettings();
@@ -76,15 +76,45 @@ test('album style persists per profile, exports and imports independently, and r
   assert.equal(useSettings.getState().albumStyle, 'minidisc');
   storage.profile = 'two';
   await useSettings.getState().hydrate();
-  assert.equal(useSettings.getState().albumStyle, 'volta');
+  assert.equal(useSettings.getState().albumStyle, 'artist');
   useSettings.getState().importSettings({ ...before, albumStyle: 'minidisc' });
   assert.equal(useSettings.getState().albumStyle, 'minidisc');
   assert.equal(useSettings.getState().blurMiniPlayer, false);
   useSettings.getState().resetToDefaults();
-  assert.equal(useSettings.getState().albumStyle, 'volta');
+  assert.equal(useSettings.getState().albumStyle, 'artist');
   storage.profile = 'one';
   await useSettings.getState().hydrate();
   assert.equal(useSettings.getState().albumStyle, 'minidisc');
+});
+
+test('explicit album choices survive startup and import, including both previous layouts', async () => {
+  for (const albumStyle of ['artist', 'volta', 'minidisc'] as const) {
+    assert.equal(normalizeAlbumStyle(albumStyle), albumStyle);
+    storage.items.set('resonus.settings.one', JSON.stringify({ uiStyle: 'appleMusic', albumStyle }));
+    await useSettings.getState().hydrate();
+    assert.equal(useSettings.getState().albumStyle, albumStyle);
+    useSettings.getState().importSettings({ uiStyle: 'spotify', albumStyle });
+    assert.equal(useSettings.getState().albumStyle, albumStyle);
+    assert.equal(useSettings.getState().uiStyle, 'spotify');
+  }
+});
+
+test('changing album layout affects only its preference and normalizes programmatic invalid values', () => {
+  const settings = useSettings.getState();
+  settings.setUiStyle('appleMusic');
+  settings.setPlaylistStyle('compact');
+  settings.setAccentColor('#A66CFF', 'dark');
+  settings.setPlayerPresentation('resonus');
+  settings.setBlurMiniPlayer(false);
+  const before = exportedSettings();
+  storage.lookCalls.length = 0;
+  for (const albumStyle of ['volta', 'minidisc', 'artist'] as const) {
+    settings.setAlbumStyle(albumStyle);
+    assert.deepEqual(exportedSettings(), { ...before, albumStyle });
+  }
+  (settings.setAlbumStyle as (value: unknown) => void)({ unexpected: 'minidisc' });
+  assert.deepEqual(exportedSettings(), before);
+  assert.deepEqual(storage.lookCalls, []);
 });
 
 test('switching styles persists and survives hydration without changing other preferences', async () => {

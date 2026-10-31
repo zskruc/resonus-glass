@@ -127,8 +127,10 @@ function normQ(s: string): string {
 }
 
 interface Props {
-  /** Playlist-only compositions; album layouts keep their existing geometry. */
+  /** Playlist compositions; their layout preference remains independent from albums. */
   playlistPresentation?: boolean;
+  /** Full-width artist composition for an album, including its queue identity. */
+  albumArtistPresentation?: { sourceHref: string };
   /** Volta album actions keep favorite in the existing overflow menu. */
   albumActionLayout?: 'volta';
   /** Album-only Minidisc presentation; playlist and Spotify headers retain their layout. */
@@ -237,6 +239,7 @@ interface Props {
 
 export function TrackListView({
   playlistPresentation,
+  albumArtistPresentation,
   albumActionLayout,
   albumPresentation,
   title,
@@ -279,19 +282,19 @@ export function TrackListView({
   const bottomPad = useScreenBottomPadding();
   const appleMusic = useSettings((s) => s.uiStyle === 'appleMusic');
   const playlistStyle = useSettings((s) => s.playlistStyle);
-  const artistPlaylist = !!playlistPresentation && playlistStyle !== 'compact' && !hideCover;
+  const artistDetail = !hideCover && (!!albumArtistPresentation || !!playlistPresentation && playlistStyle !== 'compact');
   const offline = useAuthStore((s) => s.offline);
   const inheritedPalette = useArtistPagePalette();
   const artistHeaderH = playlistArtistHeaderHeight(screenW, screenH, appleMusic);
   const artistGeometry = artistHeroGeometry(artistHeaderH, 72 + spacing.xl + 56);
-  const artistArtwork = useVoltaArtistArtwork(artistPlaylist && appleMusic ? coverUri : undefined,
+  const artistArtwork = useVoltaArtistArtwork(artistDetail && appleMusic ? coverUri : undefined,
     offline, screenW / artistHeaderH, artistGeometry.extensionHeight / artistHeaderH);
-  const artistPalette = artistPlaylist && appleMusic ? artistArtwork.palette : undefined;
+  const artistPalette = artistDetail && appleMusic ? artistArtwork.palette : undefined;
   const pagePalette = artistPalette ?? inheritedPalette;
   const sidePadding = centredPadding(screenW, spacing.lg);
-  const searchTopInset = artistPlaylist ? insets.top + TOPBAR_H + spacing.md : 0;
-  const minidisc = appleMusic ? albumPresentation : undefined;
-  const voltaAlbum = appleMusic && !minidisc && albumActionLayout === 'volta';
+  const searchTopInset = artistDetail ? insets.top + TOPBAR_H + spacing.md : 0;
+  const minidisc = appleMusic && !artistDetail ? albumPresentation : undefined;
+  const voltaAlbum = appleMusic && !artistDetail && !minidisc && albumActionLayout === 'volta';
   const tint = useCoverTint(minidisc || artistPalette ? undefined : coverUri, true);
   const dominant = tint.color;
   const appleBackground = voltaDetailBackground(dominant, colors.background, colors.text, colors.textSecondary);
@@ -335,7 +338,8 @@ export function TrackListView({
   const sourceHref = usePlayerStore((state) => state.sourceHref);
   const isPlaying = usePlayerStore((state) => state.isPlaying);
   const togglePlayback = usePlayerStore((state) => state.toggle);
-  const currentPlaylistQueue = !!playlistId && sourceHref === `/playlist/${playlistId}`;
+  const headerSourceHref = albumArtistPresentation?.sourceHref ?? (playlistId ? `/playlist/${playlistId}` : undefined);
+  const currentHeaderQueue = !!headerSourceHref && sourceHref === headerSourceHref;
   const scrollY = useSharedValue(0);
   const artistNameLayout = useSharedValue({ y: 0, height: 0 });
   const artistHeader = useDerivedValue(() => artistHeaderFromLayout(scrollY.get(), insets.top + TOPBAR_H,
@@ -568,7 +572,7 @@ export function TrackListView({
 
   // Without cover, the header is shorter: the gradient and bar collapse adjust
   // to a smaller distance so the transition fits.
-  const art = artistPlaylist ? artistHeaderH : playlistPresentation ? playlistCoverSize(screenW, screenH, appleMusic) : minidisc ? minidiscAlbumCoverSize(screenW, screenH) : appleMusic
+  const art = artistDetail ? artistHeaderH : playlistPresentation ? playlistCoverSize(screenW, screenH, appleMusic) : minidisc ? minidiscAlbumCoverSize(screenW, screenH) : appleMusic
     ? Math.round(Math.min(screenW * 0.76, screenH * 0.43, 360))
     : coverSize(screenW, screenH);
   const cover = hideCover ? 0 : art;
@@ -581,13 +585,13 @@ export function TrackListView({
     opacity: appleMusic ? 1 : interpolate(scrollY.get(), [0, collapse * 0.7], [1, 0], Extrapolation.CLAMP),
   }));
   const barContentStyle = useAnimatedStyle(() => ({
-    opacity: artistPlaylist && searchMaterialMounted ? (searching ? 1 : 0)
-      : artistPlaylist && appleMusic ? artistHeader.get().compactOpacity
-      : interpolate(scrollY.get(), artistPlaylist ? [art * .45, art * .75]
+    opacity: artistDetail && searchMaterialMounted ? (searching ? 1 : 0)
+      : artistDetail && appleMusic ? artistHeader.get().compactOpacity
+      : interpolate(scrollY.get(), artistDetail ? [art * .45, art * .75]
         : playlistPresentation ? [art + 16, art + 52] : [collapse * .5, collapse * .85], [0, 1], Extrapolation.CLAMP),
   }));
-  const barBgOpacity = useDerivedValue(() => artistPlaylist && searchMaterialMounted ? 1
-    : artistPlaylist && appleMusic ? artistHeader.get().backgroundOpacity
+  const barBgOpacity = useDerivedValue(() => artistDetail && searchMaterialMounted ? 1
+    : artistDetail && appleMusic ? artistHeader.get().backgroundOpacity
       : interpolate(scrollY.get(), [0, collapse * .85], [0, 1], Extrapolation.CLAMP));
   const artistCopyOpacity = useDerivedValue(() => searchMaterialMounted ? 0 : barBgOpacity.get());
   const gradientStyle = useAnimatedStyle(() => ({
@@ -629,7 +633,7 @@ export function TrackListView({
       <View style={{ flex: 1 }}>
       {/* Dominant color gradient; scrolls with 1:1 parallax. Hidden in search
           mode to keep the screen flat black. */}
-      {searching || appleMusic || artistPlaylist ? null : (
+      {searching || appleMusic || artistDetail ? null : (
         <Animated.View
           pointerEvents="none"
           style={[
@@ -689,7 +693,7 @@ export function TrackListView({
         contentContainerStyle={[
           styles.list,
           {
-            paddingTop: artistPlaylist ? 0 : insets.top + TOPBAR_H + spacing.md,
+            paddingTop: artistDetail ? 0 : insets.top + TOPBAR_H + spacing.md,
             paddingBottom: bottomPad,
             // Centred on a wide screen instead of stretched across it: a row
             // whose title is at one edge and whose duration is at the other,
@@ -706,7 +710,7 @@ export function TrackListView({
                  goes in a no-padding container: any padding would impose a
                  minimum height and show a sliver. */
               <Animated.View style={[styles.searchClip, { height: searchH }]}>
-              <View style={[styles.searchRow, artistPlaylist && { height: SEARCH_H + searchTopInset, paddingTop: searchTopInset }]}>
+              <View style={[styles.searchRow, artistDetail && { height: SEARCH_H + searchTopInset, paddingTop: searchTopInset }]}>
                 <View collapsable={false} style={styles.searchBox}>
                   {searchMaterialMounted ? <GlassBackdrop radius={radius.pill} tint={colors.highlight} variant="regular" /> : null}
                   <Icon name="search" size={18} color={pagePalette?.textSecondary ?? colors.textSecondary} />
@@ -741,15 +745,16 @@ export function TrackListView({
             ) : null}
             {/* While searching, the large header is hidden: results stay flush
                 with the bar, which is what Spotify does. */}
-            {searching ? null : artistPlaylist ? (
-              <PlaylistArtistHeader title={title} owner={subtitle} description={description} meta={meta}
+            {searching ? null : artistDetail ? (
+              <PlaylistArtistHeader title={title} owner={subtitle} onOwnerPress={onSubtitlePress} description={description} meta={meta}
+                metadataBadge={showExplicit ? <ExplicitBadge status="explicit" /> : undefined}
                 uri={coverUri} width={screenW} height={artistHeaderH} sidePadding={sidePadding}
                 extensionHeight={artistGeometry.extensionHeight} apple={appleMusic} artwork={artistArtwork} offline={offline}
                 imageStyle={artistImageStyle} nameStyle={artistNameStyle}
                 onNameLayout={(event) => { artistNameLayout.set(event.nativeEvent.layout); }}
                 onCoverPress={onCoverPress} disabled={songs.length === 0}
-                showPause={currentPlaylistQueue && isPlaying}
-                onPlay={() => { if (currentPlaylistQueue) togglePlayback(); else if (songs.length) void onPlay(0); }}
+                showPause={currentHeaderQueue && isPlaying}
+                onPlay={() => { if (currentHeaderQueue) togglePlayback(); else if (songs.length) void onPlay(0); }}
                 onShuffle={shufflePlay} shuffleActive={shuffleActive} onMenu={onMenu}
                 favorite={favorite ? <FavoriteButton id={favorite.id} type={favorite.type} starred={favorite.starred}
                   size={25} glyph={appleMusic ? 'star' : undefined}
@@ -766,7 +771,16 @@ export function TrackListView({
                   {onSort ? <Pressable onPress={onSort} style={playlistHeaderUtility} accessibilityRole="button" accessibilityLabel={t('Sort')}>
                     <Icon name="swap-vertical" size={22} color={pagePalette?.text ?? colors.textSecondary} />
                   </Pressable> : null}
-                </>} />
+                </>}
+                details={genres?.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                  style={styles.genres} contentContainerStyle={styles.genresContent}>
+                  {genres.map((g) => <Link key={g} href={`/genre/${encodeURIComponent(g)}`} asChild>
+                    <Pressable style={({ pressed }) => [styles.genreChip,
+                      { backgroundColor: pagePalette?.controlFill ?? colors.highlight }, pressed && { opacity: .65 }]}>
+                      <Text style={[styles.genreText, pagePalette && { color: pagePalette.textSecondary }]}>{g}</Text>
+                    </Pressable>
+                  </Link>)}
+                </ScrollView> : undefined} />
             ) : playlistPresentation ? (
               <PlaylistDetailHeader title={title} owner={subtitle} description={description} meta={meta}
                 coverUri={coverUri} art={art} apple={appleMusic} onCoverPress={onCoverPress}
