@@ -14,7 +14,7 @@ Resonus Glass 基于 [juananzzz/resonus](https://github.com/juananzzz/resonus)�
 
 ## 安装
 
-从 [本仓库最新 Release](https://github.com/zskruc/resonus-glass/releases/latest) 下载 **Resonus Glass APK**。公开下载以 Release 页面为准。本分支为 `0.8.5.1` 候选，尚未正式发布，适用于 ARM64 Android 设备。原项目 Releases 中的 APK 是原版 Resonus，不包含本分支的改动。
+从 [本仓库最新 Release](https://github.com/zskruc/resonus-glass/releases/latest) 下载 **Resonus Glass APK**。当前正式版为 `0.8.5.1`，APK 为 `Resonus-Glass-v0.8.5.1-arm64-v8a.apk`，适用于 ARM64 Android 设备。原项目 Releases 中的 APK 是原版 Resonus，不包含本分支的改动。
 
 Android 13 及以上支持原生折射和定向高光；Android 12 使用 GPU 模糊；更早版本使用界面回退效果。实际效果与流畅度取决于设备和系统状态。
 
@@ -24,7 +24,7 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 
 需要自行验证时，可进入 **Actions → Glass ARM64 test APK → Run workflow** 手动构建测试 APK。每次任务使用随机生成的一次性测试签名，不能覆盖当前手机上已有的 Glass 安装，也不能保证与前一次 CI 构建互相覆盖；请使用独立测试设备或模拟器。正式下载以 Releases 中明确标注的安装包为准。
 
-本分支正在准备 **0.8.5.1 候选版**。连续跳转复测发现原候选仍存在图片资源累积，因此暂缓正式发布；待新资源生命周期修复完成三星验证后再进入正式更新渠道。公开 `.preview.6` 及原图库继续保留。
+当前正式版 **[0.8.5.1](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1)** 已整合艺人上滑、保留页面图片资源与遮罩生命周期修复。三星已完成连续详情跳转、滚动和旧页返回检查；具体范围与内存限制见[本版说明](./docs/RELEASE-0.8.5.1.md)。
 
 ## Glass 的主要改动
 
@@ -61,7 +61,7 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 
 | 渠道 | 版本 | Android 更新编号 | 获取方式 |
 | --- | --- | --- | --- |
-| 候选，待实机验证 | `0.8.5.1` | `132` | [改动与验证进度](./docs/RELEASE-0.8.5.1.md)，尚未发布正式 Release |
+| 正式版 | `0.8.5.1` | `132` | [Release 与 APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1) · [改动与验证](./docs/RELEASE-0.8.5.1.md) |
 | 测试预发布 | `0.8.5.1-preview.6` | `128` | [Release 与 APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1-preview.6) · [改动与验证](./docs/ALBUM-ARTIST-PREVIEW-6.md) |
 
 `0.8.5.1` 将艺人照片移动调整为参考画面中约 0.4 倍的内容位移，让完整照片、静态模糊延伸与共同遮罩在同一持久层移动，并按实际姓名／名字图的底边平滑交接顶栏。使用艺人页布局的专辑与歌单同步采用；Android 页面脱离窗口时释放原生遮罩位图，返回时重新生成。发布范围和性能验收边界见[本版说明](./docs/RELEASE-0.8.5.1.md)。

@@ -13,7 +13,7 @@ preserved upstream history.
 Releases before 0.2.1 are only listed on the
 [GitHub releases page](https://github.com/juananzzz/resonus/releases).
 
-## [0.8.5.1 candidate] - 2026-11-01
+## [0.8.5.1] - 2026-11-01
 
 ### Changed
 
@@ -31,9 +31,9 @@ Releases before 0.2.1 are only listed on the
 
 ### Notes
 
-- ARM64 正式候选，尚未发布，Android `versionCode 132`；使用现有 Glass 包名与签名，可覆盖安装保留资料。
+- ARM64 正式版，Android `versionCode 132`；使用现有 Glass 包名与签名，可覆盖安装保留资料。
 - 从已发布 `.preview.6` 单独移植艺人上滑修复与原生遮罩生命周期补丁；React Native Screen Transitions／Gorhom Bottom Sheet 的本地实验不在本版范围内。
-- 本正式分支 1005 项测试、类型及翻译检查通过。原生构建、签名校验及最终三星复测仍在进行，结果将记录在[本版说明](./docs/RELEASE-0.8.5.1.md)；此处不以静态检查证明持续 120 fps 或长期稳定性。
+- 1005 项测试、类型及翻译检查、原生构建与签名核验通过。三星 12 对艺人／专辑跳转的 Bitmap 分配保持约340MiB，跨三页返回滚动位置一致；726帧记录多数呈现间隔接近120Hz。深历史的总内存仍增长，返回首页可释放大量视图；不声称长期内存恒定或持续120fps，详见[本版说明](./docs/RELEASE-0.8.5.1.md)。
 
 ### English
 
@@ -42,7 +42,7 @@ Releases before 0.2.1 are only listed on the
 - Promotes preview.6's selectable Apple Music/Spotify layouts, artist-style album/playlist pages, download management, music tools and reviewed upstream 0.8.5 adaptations to the stable channel.
 - Artist photos now move at the reference-derived 0.4× content ratio. The full photo, static blur field and common mask persist outside recycled headers; title/wordmark handoff follows measured bounds.
 - Corrects worklet initialization order and releases native Android mask bitmaps on view detachment, rebuilding on return. Player layout, stored glass profiles and downloaded files are retained.
-- Unpublished ARM64 candidate, version code 132, using the existing Glass package/signature. RN Screen Transitions and Gorhom's local experiment are excluded. All 1005 tests, type and translation checks pass; candidate132 is built and package/source-verified, with Android memory and continuous-scroll validation pending. Scoped results do not establish sustained 120 fps or long-session stability.
+- Stable ARM64 release, version code 132, using the existing Glass package/signature. RN Screen Transitions and Gorhom's local experiment are excluded. All 1005 tests, type and translation checks pass; the APK is built and package/source-verified. Samsung checks cover 12 artist/album pairs, stable bitmap allocation, exact retired-page scroll restoration and a 726-frame capture with mostly near-120Hz presentation intervals. Total memory still grows with deep route history; root return frees substantial resources. Sustained physical 120fps and long-session memory stability are not established.
 
 ## [0.8.5.1-preview.6] - 2026-11-01
 

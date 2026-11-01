@@ -14,7 +14,7 @@ This is an independently maintained, unofficial derivative. It is not affiliated
 
 ## Install
 
-Download the **Resonus Glass APK** from [this repository's latest release](https://github.com/zskruc/resonus-glass/releases/latest). Use the published release page for downloads. This branch is the unpublished `0.8.5.1` candidate, for ARM64 Android devices. APKs in the original project's releases are the original Resonus and do not include these changes.
+Download the **Resonus Glass APK** from [this repository's latest release](https://github.com/zskruc/resonus-glass/releases/latest). The stable release is `0.8.5.1`, with APK `Resonus-Glass-v0.8.5.1-arm64-v8a.apk`, for ARM64 Android devices. APKs in the original project's releases are the original Resonus and do not include these changes.
 
 Android 13 and later support native refraction and directional highlights. Android 12 uses GPU blur; earlier versions use a UI fallback. Appearance and smoothness depend on the device and system state.
 
@@ -24,7 +24,7 @@ In **Settings → About**, the GitHub link, release notes, and update check all 
 
 For independent testing, open **Actions → Glass ARM64 test APK → Run workflow**. Each run creates a random, disposable test signing key. Its APK cannot update an existing Glass installation and is not guaranteed to update an APK from an earlier CI run. Use a separate test device or emulator. Use explicitly identified APKs in Releases for normal installation.
 
-This branch prepares the **0.8.5.1 candidate**. Deep-navigation testing exposed retained image resources in the first candidate, so stable publication is deferred until the new lifecycle fix passes Samsung validation. The published preview.6 and its UI gallery remain available.
+The stable **[0.8.5.1 release](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1)** includes artist scrolling, retained-page image ownership and native mask lifecycle fixes. Samsung checks cover repeated detail navigation, scrolling and retired-page restoration; see the [release notes](./docs/RELEASE-0.8.5.1.md) for scope and memory limitations.
 
 ## Glass features
 
@@ -61,7 +61,7 @@ Choose Artist page layout, Volta or Minidisc under **Settings → Appearance →
 
 | Channel | Version | Android version code | Availability |
 | --- | --- | --- | --- |
-| Candidate, device validation pending | `0.8.5.1` | `132` | [Changes and validation status](./docs/RELEASE-0.8.5.1.md), no stable release yet |
+| Stable | `0.8.5.1` | `132` | [Release and APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1) · [Changes and validation](./docs/RELEASE-0.8.5.1.md) |
 | Test prerelease | `0.8.5.1-preview.6` | `128` | [Release and APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1-preview.6) · [Changes and validation](./docs/ALBUM-ARTIST-PREVIEW-6.md) |
 
 `0.8.5.1` moves artist photos at about 0.4 times content displacement, following the available reference frames. The complete photo, static blurred continuation and shared mask move in one persistent layer; compact titles hand over based on the measured name/wordmark bounds. Albums and playlists using Artist page layout share this behavior. Android releases native mask bitmaps when their views detach and rebuilds them on return. See the [release notes](./docs/RELEASE-0.8.5.1.md) for scope and performance-validation limits.
