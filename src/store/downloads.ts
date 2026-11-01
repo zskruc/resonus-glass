@@ -958,7 +958,9 @@ export const useDownloads = create<DownloadsState>((set, get) => {
     const hasPreflight = currentPreflights().length > 0;
     const keep = own.lease ? activity.active || hasPreflight
       : !activity.queuePaused && activity.queued + activity.downloading > 0 || hasPreflight;
-    if (own.auth !== useAuthStore.getState().auth || own.epoch !== protectionEpoch || !policyAllowed() || !keep) {
+    // Pausing/cancelling invalidates admission, not an already-promoted CPU
+    // lease: native pause and an unabortable file commit can still be settling.
+    if (own.auth !== useAuthStore.getState().auth || !own.lease && own.epoch !== protectionEpoch || !policyAllowed() || !keep) {
       void releaseProtection(); return;
     }
     own.lease?.update(progress(activity));
@@ -966,12 +968,12 @@ export const useDownloads = create<DownloadsState>((set, get) => {
   const ensureProtection = async (auth: SubsonicAuth, current: () => boolean): Promise<boolean> => {
     if (!current() || !policyAllowed()) return false;
     let own = protection;
-    if (!own || own.auth !== auth || own.epoch !== protectionEpoch) {
+    if (!own || own.auth !== auth || !own.lease && own.epoch !== protectionEpoch) {
       if (own) void releaseProtection();
       own = { auth, epoch: protectionEpoch, pending: new AbortController() };
       const ticket = own;
       protection = ticket;
-      const owns = () => protection === ticket && ticket.epoch === protectionEpoch
+      const owns = () => protection === ticket
         && useAuthStore.getState().auth === auth && policyAllowed();
       ticket.work = acquireBackgroundWork('music', progress(queue.getActivity()), (reason) => {
         if (!owns()) return;
@@ -987,7 +989,7 @@ export const useDownloads = create<DownloadsState>((set, get) => {
     }
     try {
       const lease = own.lease ?? await own.work!;
-      if (protection !== own || own.epoch !== protectionEpoch) {
+      if (protection !== own || !own.lease && own.epoch !== protectionEpoch) {
         await lease.release();
         return false;
       }
@@ -1283,7 +1285,9 @@ export const useDownloads = create<DownloadsState>((set, get) => {
       protectionEpoch++;
       set({ backgroundError: undefined });
       await queue.pauseAll();
-      await releaseProtection();
+      // The queue's activity callback releases only after the last real worker
+      // settles. A resumed/new group may already share this same native owner.
+      reconcileProtection(queue.getActivity());
     },
     resumeAll: () => queue.resumeAll(),
     cancelAll: async () => {
@@ -1292,7 +1296,7 @@ export const useDownloads = create<DownloadsState>((set, get) => {
       const auth = useAuthStore.getState().auth;
       if (auth) for (const [key, group] of groupRuns) if (key.startsWith(scope(auth) + '|')) group.cancel();
       await queue.cancelAll();
-      await releaseProtection();
+      reconcileProtection(queue.getActivity());
     },
     hydrated: false,
 

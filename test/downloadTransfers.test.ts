@@ -34,6 +34,7 @@ function harness() {
     interrupt(reason: BackgroundWorkInterruption): void; current(): boolean }[] = [];
   let protectionGate: Promise<void> | undefined, protectionFailure = false, networkGate: Promise<void> | undefined;
   let moveGate: (() => Promise<void>) | undefined, catalogGate: (() => Promise<void>) | undefined;
+  let pauseGate: Promise<void> | undefined;
   const dependencies: Record<string, unknown> = {
     zustand: { create: (create: (set: any, get: any) => object) => {
       const store = observable({} as any); store.setState(create(store.setState, store.getState)); return store;
@@ -80,7 +81,7 @@ function harness() {
         const start = () => { transfers.push(record); return new Promise((yes) => { finish = yes; }); };
         return { downloadAsync: start, resumeAsync: start,
           savable: () => ({ options, resumeData }),
-          pauseAsync: async () => { resumeData = String(files.get(file) ?? 0); record.paused = true; finish(undefined); return { resumeData }; },
+          pauseAsync: async () => { await pauseGate; resumeData = String(files.get(file) ?? 0); record.paused = true; finish(undefined); return { resumeData }; },
           cancelAsync: async () => { finish(undefined); },
         };
       },
@@ -111,6 +112,7 @@ function harness() {
     protectionGate: (gate: Promise<void> | undefined) => { protectionGate = gate; },
     protectionFailure: (value: boolean) => { protectionFailure = value; },
     networkGate: (gate: Promise<void> | undefined) => { networkGate = gate; },
+    pauseGate: (gate: Promise<void> | undefined) => { pauseGate = gate; },
     moveGate: (gate: typeof moveGate) => { moveGate = gate; }, catalogGate: (gate: typeof catalogGate) => { catalogGate = gate; } };
 }
 
@@ -202,6 +204,38 @@ test('a denied protection restart leaves a paused song resumable without a foreg
   h.transfers[1].finish(); await work; await tick(); assert.equal(h.records.length, 1);
 });
 
+test('manual pause retains its active native owner through native cleanup and a concurrent resume', async () => {
+  const h = harness(), paused = gate();
+  const work = h.store.getState().downloadSong(song()); await tick();
+  h.transfers[0].progress(40, 100); h.setAppState('background'); h.pauseGate(paused.promise);
+  const stop = h.store.getState().pauseAll(); await tick();
+  assert.equal(h.store.getState().queue[0].status, 'paused');
+  assert.equal(h.protections[0].released, false, 'pending native pause still owns real work');
+  assert.equal(h.protections[0].current(), true, 'invalidating new admission must not invalidate active CPU protection');
+  await h.store.getState().resumeAll(); await tick();
+  assert.equal(h.transfers.length, 1, 'resume waits for the previous transfer to actually pause');
+  h.pauseGate(undefined); paused.resolve(); await stop; await tick();
+  assert.equal(h.transfers.length, 2); assert.equal(h.transfers[1].resumeData, '40');
+  assert.equal(h.protections.length, 1, 'resume safely shares the existing native owner');
+  assert.equal(h.protections[0].released, false, 'the old pause completion cannot stop the resumed job');
+  h.transfers[1].finish(); await work; await tick(); assert.equal(h.protections[0].released, true);
+});
+
+test('manual pause retains CPU protection until an unabortable file commit settles', async () => {
+  const h = harness(), moved = gate(); h.moveGate(() => moved.promise);
+  const work = h.store.getState().downloadSong(song()); await tick();
+  h.transfers[0].finish(); await tick(); h.setAppState('background');
+  await h.store.getState().pauseAll(); await tick();
+  assert.equal(h.protections[0].released, false, 'pauseAsync returning does not settle the file move');
+  assert.equal(h.protections[0].current(), true);
+  h.moveGate(undefined); moved.resolve(); await tick();
+  assert.equal(h.protections[0].released, true, 'a fully paused queue releases after its actual worker settles');
+  assert.equal(h.records.length, 0);
+  h.setAppState('active'); await h.store.getState().resumeAll(); await tick(); await work; await tick();
+  assert.equal(h.transfers.length, 1); assert.equal(h.records.length, 1);
+  assert.equal(h.protections.length, 2); assert.equal(h.protections[1].released, true);
+});
+
 test('Wi-Fi/offline policy blocks service admission and retries use the protected native wait', async () => {
   const h = harness(); h.network.setState({ cellular: true }); h.settings.setState({ downloadWifiOnly: true });
   await h.store.getState().downloadSong(song());
@@ -278,12 +312,18 @@ test('cancel during an unabortable move then immediately re-add cannot let old c
   const h = harness(); h.settings.setState({ downloadConcurrency: 2 }); let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; }); h.moveGate(() => gate);
   const old = h.store.getState().downloadSong(song()); await tick(); h.transfers[0].finish(); await tick();
+  h.setAppState('background');
   await h.store.getState().cancelAll(); await old; await tick();
+  assert.equal(h.protections[0].released, false, 'cancelling visible tasks does not finish their unabortable move');
+  assert.equal(h.protections[0].current(), true);
   const fresh = h.store.getState().downloadSong(song()); await tick();
   assert.equal(h.transfers.length, 1, 'same file waits until the retired run and its cleanup finish');
+  assert.equal(h.protections.length, 1, 'a new explicit group can share protection while old cleanup drains');
   h.moveGate(undefined); release(); await tick(); assert.equal(h.transfers.length, 2);
+  assert.equal(h.protections[0].released, false, 'old cleanup cannot revoke the new group');
   h.transfers[1].finish(); await fresh; await tick();
   assert.equal(h.records.length, 1); assert.equal(h.files.get(h.store.getState().files.one), 100);
+  assert.equal(h.protections[0].released, true);
 });
 
 test('catalog retry exhaustion cleans its owned audio and explicit Start can redownload successfully', async () => {
