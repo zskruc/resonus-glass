@@ -1,0 +1,51 @@
+diff --git a/android/src/main/java/org/reactnative/maskedview/RNCMaskedView.java b/android/src/main/java/org/reactnative/maskedview/RNCMaskedView.java
+--- a/android/src/main/java/org/reactnative/maskedview/RNCMaskedView.java
++++ b/android/src/main/java/org/reactnative/maskedview/RNCMaskedView.java
+@@ -30,7 +30,7 @@
+   protected void dispatchDraw(Canvas canvas) {
+     super.dispatchDraw(canvas);
+ 
+-    if (mBitmapMaskInvalidated) {
++    if (mBitmapMaskInvalidated || getChildAt(0) == null) {
+       // redraw mask element to support animated elements
+       updateBitmapMask();
+ 
+@@ -77,15 +77,34 @@
+     mBitmapMaskInvalidated = true;
+   }
+ 
++  @Override
++  protected void onDetachedFromWindow() {
++    super.onDetachedFromWindow();
++    // Navigation may retain the view after detaching its screen. Retain only
++    // the mask element; its full-size raster can be rebuilt on the next attach.
++    releaseBitmapMask();
++    mBitmapMaskInvalidated = true;
++  }
++
++  private void releaseBitmapMask() {
++    Bitmap previousMask = mBitmapMask;
++    mBitmapMask = null;
++    if (previousMask != null && !previousMask.isRecycled()) {
++      previousMask.recycle();
++    }
++  }
++
+   private void updateBitmapMask() {
+     View maskView = getChildAt(0);
++    // Also discard a prior mask when the element was removed or became empty.
++    releaseBitmapMask();
+     if (maskView != null) {
+       maskView.setVisibility(View.VISIBLE);
+-      if (this.mBitmapMask != null) {
+-        this.mBitmapMask.recycle();
++      try {
++        this.mBitmapMask = getBitmapFromView(maskView);
++      } finally {
++        maskView.setVisibility(View.INVISIBLE);
+       }
+-      this.mBitmapMask = getBitmapFromView(maskView);
+-      maskView.setVisibility(View.INVISIBLE);
+     }
+   }
+ 
