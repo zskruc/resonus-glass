@@ -1,22 +1,77 @@
 diff --git a/android/src/main/java/org/reactnative/maskedview/RNCMaskedView.java b/android/src/main/java/org/reactnative/maskedview/RNCMaskedView.java
+index b6af9c4b242b4d41a685d74103df377b91db9315..bb6a456ff2cab60183e24a1adcf282b4903eff5a 100644
 --- a/android/src/main/java/org/reactnative/maskedview/RNCMaskedView.java
 +++ b/android/src/main/java/org/reactnative/maskedview/RNCMaskedView.java
-@@ -30,7 +30,7 @@
+@@ -15,6 +15,9 @@ public class RNCMaskedView extends ReactViewGroup {
+ 
+   private Bitmap mBitmapMask = null;
+   private boolean mBitmapMaskInvalidated = false;
++  // ScreenStack keeps removed children drawable until its native exit ends.
++  // The logical first child can already be gone while those pixels still draw.
++  private View mTransitionMaskView = null;
+   private Paint mPaint;
+   private PorterDuffXfermode mPorterDuffXferMode;
+   private int mRenderingMode = View.LAYER_TYPE_HARDWARE;
+@@ -28,9 +31,12 @@ public class RNCMaskedView extends ReactViewGroup {
+ 
+   @Override
    protected void dispatchDraw(Canvas canvas) {
++    // A screen removed before its first valid mask must not expose unmasked
++    // image pixels while Android is still drawing its disappearing children.
++    if (mTransitionMaskView != null && mBitmapMask == null) return;
      super.dispatchDraw(canvas);
  
 -    if (mBitmapMaskInvalidated) {
-+    if (mBitmapMaskInvalidated || getChildAt(0) == null) {
++    if (mTransitionMaskView == null && (mBitmapMaskInvalidated || getChildAt(0) == null)) {
        // redraw mask element to support animated elements
        updateBitmapMask();
  
-@@ -77,15 +77,34 @@
+@@ -46,6 +52,33 @@ public class RNCMaskedView extends ReactViewGroup {
+     }
+   }
+ 
++  @Override
++  public void startViewTransition(View view) {
++    if (view == getChildAt(0) && mTransitionMaskView == null) {
++      // Capture before Fabric removes the mask from getChildAt(0). Do not
++      // replace this raster with an empty/reordered child during the exit.
++      if (mBitmapMask == null) {
++        updateBitmapMask();
++        mBitmapMaskInvalidated = false;
++      }
++      mTransitionMaskView = view;
++    }
++    super.startViewTransition(view);
++  }
++
++  @Override
++  public void endViewTransition(View view) {
++    super.endViewTransition(view);
++    if (view == mTransitionMaskView) {
++      mTransitionMaskView = null;
++      // A cancelled transition may keep the same element attached. Rebuild
++      // only on its next draw; a removed mask has no remaining owner.
++      if (getChildAt(0) == null) releaseBitmapMask();
++      mBitmapMaskInvalidated = true;
++      invalidate();
++    }
++  }
++
+   @Override
+   public void onDescendantInvalidated(View child, View target) {
+     super.onDescendantInvalidated(child, target);
+@@ -74,18 +107,45 @@ public class RNCMaskedView extends ReactViewGroup {
+   @Override
+   protected void onAttachedToWindow() {
+     super.onAttachedToWindow();
++    mTransitionMaskView = null;
      mBitmapMaskInvalidated = true;
    }
  
 +  @Override
 +  protected void onDetachedFromWindow() {
 +    super.onDetachedFromWindow();
++    mTransitionMaskView = null;
 +    // Navigation may retain the view after detaching its screen. Retain only
 +    // the mask element; its full-size raster can be rebuilt on the next attach.
 +    releaseBitmapMask();
@@ -33,19 +88,42 @@ diff --git a/android/src/main/java/org/reactnative/maskedview/RNCMaskedView.java
 +
    private void updateBitmapMask() {
      View maskView = getChildAt(0);
-+    // Also discard a prior mask when the element was removed or became empty.
-+    releaseBitmapMask();
++    Bitmap replacement = null;
      if (maskView != null) {
        maskView.setVisibility(View.VISIBLE);
 -      if (this.mBitmapMask != null) {
 -        this.mBitmapMask.recycle();
 +      try {
-+        this.mBitmapMask = getBitmapFromView(maskView);
++        replacement = getBitmapFromView(maskView);
 +      } finally {
 +        maskView.setVisibility(View.INVISIBLE);
        }
 -      this.mBitmapMask = getBitmapFromView(maskView);
 -      maskView.setVisibility(View.INVISIBLE);
++    }
++    // Keep the current valid raster alive while its replacement is drawn.
++    // A normal removal/empty element still releases it immediately.
++    Bitmap previousMask = mBitmapMask;
++    mBitmapMask = replacement;
++    if (previousMask != null && previousMask != replacement && !previousMask.isRecycled()) {
++      previousMask.recycle();
      }
    }
  
+@@ -101,9 +161,13 @@ public class RNCMaskedView extends ReactViewGroup {
+ 
+     final Canvas canvas = new Canvas(bitmap);
+ 
+-    view.draw(canvas);
+-
+-    return bitmap;
++    try {
++      view.draw(canvas);
++      return bitmap;
++    } catch (RuntimeException | Error failure) {
++      bitmap.recycle();
++      throw failure;
++    }
+   }
+ 
+   public void setRenderingMode(String renderingMode) {

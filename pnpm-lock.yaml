@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  '@react-native-masked-view/masked-view@0.3.2': dde2c944f2b9c04658c433fa8e270d28044ff7679dfd871affcf78783a184e2b
+  '@react-native-masked-view/masked-view@0.3.2': 2ce03ac08dc5f2ba82a2c6fd47c9a56c78aa954cd7c3caa12d16c3889262ff96
   expo-audio: a257b5e6b4e67923a59a09424897f8a77a3f668cb22c46ac9e53320b9d9fd9c9
   expo-file-system: c8a1d9da3cf6b956c563a515ad903a7c75ac65af64785bd37e54d40226939db3
   expo-image@57.0.3: 9c42f7cd3a9a667accf24c3ba9b0847851db67e204f94029b2bd4efbf3ad6471
@@ -27,7 +27,7 @@ importers:
         version: 5.2.0
       '@react-native-masked-view/masked-view':
         specifier: 0.3.2
-        version: 0.3.2(patch_hash=dde2c944f2b9c04658c433fa8e270d28044ff7679dfd871affcf78783a184e2b)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)
+        version: 0.3.2(patch_hash=2ce03ac08dc5f2ba82a2c6fd47c9a56c78aa954cd7c3caa12d16c3889262ff96)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)
       '@shopify/flash-list':
         specifier: 2.0.2
         version: 2.0.2(@babel/runtime@7.29.7)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)
@@ -5546,7 +5546,7 @@ snapshots:
 
   '@react-native-community/slider@5.2.0': {}
 
-  '@react-native-masked-view/masked-view@0.3.2(patch_hash=dde2c944f2b9c04658c433fa8e270d28044ff7679dfd871affcf78783a184e2b)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)':
+  '@react-native-masked-view/masked-view@0.3.2(patch_hash=2ce03ac08dc5f2ba82a2c6fd47c9a56c78aa954cd7c3caa12d16c3889262ff96)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)':
     dependencies:
       react: 19.2.3
       react-native: 0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.3)(supports-color@8.1.1)
@@ -7052,7 +7052,7 @@ snapshots:
       '@expo/ui': 57.0.12(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.17)(expo@57.0.15)(react-dom@19.2.3(react@19.2.3))(react-native-worklets@0.10.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)(supports-color@8.1.1))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)
       '@radix-ui/react-slot': 1.3.0(@types/react@19.2.17)(react@19.2.3)
       '@radix-ui/react-tabs': 1.1.15(@types/react@19.2.17)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
-      '@react-native-masked-view/masked-view': 0.3.2(patch_hash=dde2c944f2b9c04658c433fa8e270d28044ff7679dfd871affcf78783a184e2b)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)
+      '@react-native-masked-view/masked-view': 0.3.2(patch_hash=2ce03ac08dc5f2ba82a2c6fd47c9a56c78aa954cd7c3caa12d16c3889262ff96)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)
       client-only: 0.0.1
       color: 4.2.3
       debug: 4.4.3(supports-color@8.1.1)

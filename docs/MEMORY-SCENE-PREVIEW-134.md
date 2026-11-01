@@ -1,6 +1,6 @@
 # 内存与详情页整体显示测试版 / Memory and detail-scene preview
 
-`0.8.5.2-preview.1` · Android `versionCode 133` · 本地测试包，未作为正式 Release 发布。
+`0.8.5.2-preview.2` · Android `versionCode 134` · 本地测试包，未作为正式 Release 发布。
 
 ## 本次修正
 
@@ -20,14 +20,20 @@ Unknown 必须结合 SwapPss 判断。该项初始合计约 173,104KB，末次�
 
 本版针对源码已确认的重复页面与缓存容量点修正；不同内容的正常历史状态、Glide 解码缓存和运行时高水位仍有各自的生命周期。不能以测试或代码修改代替长期原生内存稳态验收，也不宣称任意长时间持续 120fps。
 
+## 133 实机复测与 134 的原生退出修正
+
+133 在两轮各 12 对艺人／专辑循环中，4／8／12 对的 Views 分别为 2578／2406／2404 与 2578／2406／2406，不再逐层堆积；回首页空闲后的 Views 均为 1269，Bitmap 分配为 217,756／217,760KB。原生分配仍有约 23.3MiB 的短时基线差异，不能据此声称所有底层增长已解决。第二份原生堆记录也出现采样中断，只采用可证明完整的时间段，不把丢失尾部当作未释放对象。
+
+133 的退出录像确实仍有错误：原生导航为了完成淡出，会继续绘制已经从逻辑子列表移走的内容；旧遮罩补丁此时清空最后一份渐变位图，短暂露出没有遮罩的矩形。134 修正 MaskedView 的 startViewTransition／endViewTransition 生命周期，仅在原生退出期间保留最后有效遮罩；结束或实际 detach 后清理。普通被覆盖页面的图片退休仍即时回收，不采用固定延时或永久保存页面截图。
+
 ## 自动检查
 
-1036 项应用测试、规范 ID 检查、TypeScript、翻译检查及所改生产文件 ESLint 已通过。真实 StackRouter 测试覆盖 24 轮艺人／专辑循环不再增加重复历史；真实 QueryClient 验证 1915 位未打开艺人不会新增 UI 查询；真实 React 覆盖统一就绪、状态保留、旧回调、租约重获和加载退出。最终原生安装包及三星结果另行记录。
+1036 项应用测试、规范 ID 检查、TypeScript、翻译检查及所改生产文件 ESLint 已通过。真实 StackRouter 测试覆盖 24 轮艺人／专辑循环不再增加重复历史；真实 QueryClient 验证 1915 位未打开艺人不会新增 UI 查询；真实 React 覆盖统一就绪、状态保留、旧回调、租约重获和加载退出。新增原生 Java 回归直接编译实际安装的 MaskedView 源码，模拟移除子元素后继续绘制的退出顺序。134 最终安装包及三星结果另行记录。
 
 原始设备帧、账户日志、参考图片和跟踪文件只保留在本地，不随源码发布。
 
 ## English
 
-This local ARM64 preview reuses exact artist/album ancestors with targeted POP actions, without reordering screen keys or crossing player-related modals. Bulk artwork work persists metadata to disk without creating unseen UI queries. Small completed artwork caches now have explicit capacities and shared in-flight ownership.
+The follow-up code 134 preview also pins the last valid mask only through an actual native removal transition, preventing the unmasked rectangular flash seen in code 133 while retaining detach cleanup. This local ARM64 preview reuses exact artist/album ancestors with targeted POP actions, without reordering screen keys or crossing player-related modals. Bulk artwork work persists metadata to disk without creating unseen UI queries. Small completed artwork caches now have explicit capacities and shared in-flight ownership.
 
 Artist-style detail pages prepare their sharp image and blur field concurrently and reveal the full scene together. Existing layout and glass profiles are retained, as are page state and transition resource leases. All 1036 tests, canonical-ID, type, translation and scoped lint checks pass. The rejected early heap trace is not used for allocation attribution; native high-water behavior and indefinitely long sessions still require scoped device validation.
