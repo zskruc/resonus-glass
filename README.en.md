@@ -14,7 +14,7 @@ This is an independently maintained, unofficial derivative. It is not affiliated
 
 ## Install
 
-Download the **Resonus Glass APK** from [this repository's latest release](https://github.com/zskruc/resonus-glass/releases/latest). The `v0.8.4` file is `Resonus-Glass-v0.8.4-arm64-v8a.apk`, for ARM64 Android devices. APKs in the original project's releases are the original Resonus and do not include these changes.
+Download the **Resonus Glass APK** from [this repository's latest release](https://github.com/zskruc/resonus-glass/releases/latest). Use the published release page for downloads. This branch is the unpublished `0.8.5.1` candidate, for ARM64 Android devices. APKs in the original project's releases are the original Resonus and do not include these changes.
 
 Android 13 and later support native refraction and directional highlights. Android 12 uses GPU blur; earlier versions use a UI fallback. Appearance and smoothness depend on the device and system state.
 
@@ -24,7 +24,7 @@ In **Settings → About**, the GitHub link, release notes, and update check all 
 
 For independent testing, open **Actions → Glass ARM64 test APK → Run workflow**. Each run creates a random, disposable test signing key. Its APK cannot update an existing Glass installation and is not guaranteed to update an APK from an earlier CI run. Use a separate test device or emulator. Use explicitly identified APKs in Releases for normal installation.
 
-The current Samsung-tested build is available from the **[0.8.5.1-preview.6 prerelease](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1-preview.6)** as `Resonus-Glass-v0.8.5.1-preview.6-arm64-v8a.apk`. Prereleases do not trigger stable update prompts; manually install over the existing Glass app to retain data.
+This branch prepares the **0.8.5.1 candidate**. Deep-navigation testing exposed retained image resources in the first candidate, so stable publication is deferred until the new lifecycle fix passes Samsung validation. The published preview.6 and its UI gallery remain available.
 
 ## Glass features
 
@@ -61,8 +61,10 @@ Choose Artist page layout, Volta or Minidisc under **Settings → Appearance →
 
 | Channel | Version | Android version code | Availability |
 | --- | --- | --- | --- |
-| Stable | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest), in-app update checks |
+| Candidate, device validation pending | `0.8.5.1` | `132` | [Changes and validation status](./docs/RELEASE-0.8.5.1.md), no stable release yet |
 | Test prerelease | `0.8.5.1-preview.6` | `128` | [Release and APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1-preview.6) · [Changes and validation](./docs/ALBUM-ARTIST-PREVIEW-6.md) |
+
+`0.8.5.1` moves artist photos at about 0.4 times content displacement, following the available reference frames. The complete photo, static blurred continuation and shared mask move in one persistent layer; compact titles hand over based on the measured name/wordmark bounds. Albums and playlists using Artist page layout share this behavior. Android releases native mask bitmaps when their views detach and rebuilds them on return. See the [release notes](./docs/RELEASE-0.8.5.1.md) for scope and performance-validation limits.
 
 `.preview.6` adds the shared artist/playlist full-width hero, cover palette and scroll transition to albums. Select **Settings → Appearance → Album page style → Artist page layout**; Volta/Minidisc remain immediate rollback choices. Existing profiles retain their explicit preference. The earlier [playlist preview](./docs/PLAYLIST-ARTIST-PREVIEW-5.md) remains; player/glass tuning is unchanged. See [preview notes](./docs/ALBUM-ARTIST-PREVIEW-6.md) and [motion research](./docs/MOTION-OPTIONS-20261101.md).
 
@@ -90,7 +92,7 @@ The current preview updates artist navigation transitions and name artwork, Volt
 
 `.27` adds an optional [Volta](https://github.com/countervolts/Volta)-inspired **Apple Music style** under **Settings → Appearance → UI style**, alongside **Spotify style**. Home, Library, artist and album/playlist pages use alternate layouts while retaining the existing player, glass profiles and user data. See the [dual UI preview scope and validation](./docs/VOLTA-UI-PREVIEW.md). Earlier preview notes below remain development history.
 
-The published preview is `v0.8.5.1-preview.6`; its source is synchronized to `glass`, with the tag preserving the release snapshot. Its native player combines [AMLL](https://github.com/amll-dev/applemusic-like-lyrics)-derived controls and SVGs with independently implemented cover/lyric views and a moving artwork-field background. Settings → Player → Player layout restores the previous Resonus layout; the Player background option below applies only to that layout. See the [third-party notices](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) and [preview guide](./docs/AMLL-PLAYER-PREVIEW.md) for the controls/assets’ **AGPL-3.0-only** provenance, retained original licenses and implementation boundaries.
+The current stable release is `v0.8.5.1`; its source is synchronized to `glass`, with each tag preserving its release snapshot. The previous `.preview.6` test package remains available. Its native player combines [AMLL](https://github.com/amll-dev/applemusic-like-lyrics)-derived controls and SVGs with independently implemented cover/lyric views and a moving artwork-field background. Settings → Player → Player layout restores the previous Resonus layout; the Player background option below applies only to that layout. See the [third-party notices](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) and [preview guide](./docs/AMLL-PLAYER-PREVIEW.md) for the controls/assets’ **AGPL-3.0-only** provenance, retained original licenses and implementation boundaries.
 
 `.15` retains five changes from `.14`: remove the player/lyric top handle while retaining header space, pull-down dismissal and accessible closing on the artwork; remove shuffle/repeat buttons while leaving previous/play-pause/next in their original positions, with modes still in More; retain painted dock progress until its origin scope is restored and preserve the origin's selected-lens opacity; prepare word masks only for the current and next lyric rows, delaying next-row preparation by 720ms without changing blur, optics or lyric timing; show a complete saved playlist mirror while refreshing HTTP in the background, reuse offline metadata without duplicate SQL and limit local queries to the current playlist IDs. A first opening without saved data can still wait; instant loading is not guaranteed.
 
@@ -126,7 +128,7 @@ The current revision restores the original action-button appearance and colors p
 
 This preview also adds floating-popup glass recipes, a tappable quality card, real system output controls, hardware-synchronized media volume, and an optional full-player artwork palette. Find the options under Settings → Player → AM++ player features. Artwork colors default to Off and never recolor the mini player or tabs. An unavailable system output switcher explicitly falls back to the system volume panel.
 
-The visible version follows the latest reviewed upstream stable baseline. Glass selectively ports changes: it **is not the complete upstream 0.8.4** and does not include all of that release's new features. Consult the [Glass changelog](./CHANGELOG.md) and [upstream fix scope](./docs/LIQUID-GLASS-PREVIEW.md#上游修复范围) for the changes included here.
+The visible version follows the latest reviewed upstream stable baseline. Glass selectively ports changes: it **is not the complete upstream 0.8.5** and does not include all of that release's new features. Consult the [Glass changelog](./CHANGELOG.md) and [upstream fix scope](./docs/LIQUID-GLASS-PREVIEW.md#上游修复范围) for the changes included here.
 
 Further Glass changes within the same upstream baseline can use a fourth version component, such as `0.8.4.1`; a subsequent upstream baseline uses `0.8.5`. For a stable release, the app version, Git tag, and release version match, and Android `versionCode` must increase for each release. Matching visible versions do not make the original and Glass APKs interchangeable.
 

@@ -7,6 +7,7 @@ type Node = { type: unknown; props: Record<string, any> };
 
 /** Drives real hero event handlers while keeping native image completions deferred. */
 export function artistHeroRenderer(trace = false) {
+  let imageLease = { active: true };
   let slots: any[] = [], cursor = 0, writes = 0;
   const effects: (() => void)[] = [];
   const cleanup = new Set<() => void>();
@@ -48,6 +49,7 @@ export function artistHeroRenderer(trace = false) {
     'react-native': { View: 'View', StyleSheet: { absoluteFill: {} } },
     'react-native-reanimated': { __esModule: true, default: { View: 'AnimatedView' } },
     '@/api/data': { CACHED_COVER: 'cached-cover:' },
+    '@/components/RouteImageResources': { useRouteImageLease: () => imageLease },
     '../../../modules/liquid-glass': { isArtistImageTraceEnabled: trace },
   };
   runInNewContext(ts.transpileModule(readFileSync(new URL('../../src/components/volta/VoltaDetailHeroFade.tsx', import.meta.url), 'utf8'), {
@@ -72,5 +74,6 @@ export function artistHeroRenderer(trace = false) {
   };
   const unmount = () => { for (const close of cleanup) close(); cleanup.clear(); };
   return { render, settled, layers, logs, unmount, writes: () => writes,
+    lease: (active: boolean) => { if (imageLease.active !== active) imageLease = { active }; },
     remount: () => { unmount(); slots = []; } };
 }

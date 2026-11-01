@@ -2,6 +2,7 @@
 import { Image, type ImageRef } from 'expo-image';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useEffect, useRef, useState } from 'react';
+import { useRouteImageLease, type RouteImageLease } from '@/components/RouteImageResources';
 
 import { CACHED_COVER } from '@/api/data';
 import { appleArtworkAssetKey, getCachedAppleArtistArtwork, resolveAppleArtistArtwork,
@@ -85,17 +86,18 @@ function usableMask(value: string): boolean {
 
 export function useAppleArtistNameArtwork(uri?: string, artistName?: string, offline = false,
   sourceFingerprint?: string): LoadedArtistNameArtwork | undefined {
+  const imageLease = useRouteImageLease();
   useAuthStore((state) => state.auth);
   const profile = profileScopeId();
   const key = cacheKey(uri, artistName, sourceFingerprint);
   const binding = key ? JSON.stringify([key, uri, offline, profile]) : undefined;
   const policy = useRef({ binding, offline });
   const generation = useRef(0);
-  const [loaded, setLoaded] = useState<{ binding: string; value: LoadedArtistNameArtwork }>();
+  const [loaded, setLoaded] = useState<{ binding: string; lease: RouteImageLease; value: LoadedArtistNameArtwork }>();
   useEffect(() => { policy.current = { binding, offline }; }, [binding, offline]);
   useEffect(() => {
     const token = ++generation.current;
-    if (!key || !binding || !uri) return;
+    if (!imageLease.active || !key || !binding || !uri) return;
     let active = true;
     let owned: ImageRef | undefined;
     const allowNetwork = () => active && policy.current.binding === binding && !policy.current.offline
@@ -133,10 +135,10 @@ export function useAppleArtistNameArtwork(uri?: string, artistName?: string, off
         if (image.isAnimated || !usableMask(await Image.generateThumbhashAsync(image))) return;
         if (!active || token !== generation.current || profileScopeId() !== profile) return;
         accepted = true; owned = image;
-        setLoaded({ binding, value: Object.freeze({ image, width: saved.artwork.width, height: saved.artwork.height }) });
+        setLoaded({ binding, lease: imageLease, value: Object.freeze({ image, width: saved.artwork.width, height: saved.artwork.height }) });
       } finally { if (!accepted) image.release(); }
     })().catch(() => { /* A failed optional logo never hides the artist's name. */ });
     return () => { active = false; owned?.release(); owned = undefined; };
-  }, [key, binding, uri, artistName, offline, sourceFingerprint, profile]);
-  return loaded?.binding === binding ? loaded?.value : undefined;
+  }, [key, binding, uri, artistName, offline, sourceFingerprint, profile, imageLease]);
+  return imageLease.active && loaded && loaded.binding === binding && loaded.lease === imageLease ? loaded.value : undefined;
 }

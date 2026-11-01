@@ -15,6 +15,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { CACHED_COVER, COVER, coverArtUrl, getArtistInfo } from '@/api/data';
+import { useRouteImageLease } from '@/components/RouteImageResources';
 import { useT } from '@/i18n';
 import { useAuthStore } from '@/store/auth';
 import { currentSong, usePlayerStore } from '@/store/player';
@@ -27,6 +28,7 @@ const BIO_LINES = 3;
 const BIO_TOGGLE_AT = 220;
 
 export function ArtistPlayerCard() {
+  const imageLease = useRouteImageLease();
   const t = useT();
   const router = useRouter();
   const song = usePlayerStore(currentSong);
@@ -58,7 +60,7 @@ export function ArtistPlayerCard() {
           its own taps and only unfolds the text. */}
       <Pressable accessibilityRole="button" onPress={() => router.push(`/artist/${artistId}`)}>
         <View style={styles.photo}>
-          {imageUri ? (
+          {imageLease.active && imageUri ? (
             <Image
               source={{ uri: imageUri }}
               style={StyleSheet.absoluteFill}

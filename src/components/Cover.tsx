@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { AppState, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { CACHED_COVER, COVER } from '@/api/data';
+import { useRouteImageLease } from '@/components/RouteImageResources';
 import { useImageAnimation } from '@/hooks/useImageAnimation';
 import { bump } from '@/lib/perfLog';
 import { createCoverPathCache } from '@/lib/coverPathCache';
@@ -334,10 +335,11 @@ export function Cover({
   onAnimatedDetected,
   onImageMetadata,
 }: Props) {
+  const imageLease = useRouteImageLease();
   // A recycled row must render the new artwork immediately, rather than keep
   // the old error placeholder until a passive effect has reset a boolean.
   // A fresh binding also rejects callbacks from an earlier A -> B -> A cycle.
-  const binding = useMemo(() => ({ uri, resetKey }), [uri, resetKey]);
+  const binding = useMemo(() => ({ uri, resetKey, imageLease }), [uri, resetKey, imageLease]);
   const currentBinding = useRef<typeof binding | null>(binding);
   useLayoutEffect(() => {
     currentBinding.current = binding;
@@ -377,10 +379,10 @@ export function Cover({
   const shown = cacheOnly ? (cached && cached.uri === uri ? cached.path : undefined) : uri;
   const imageRef = useRef<Image>(null);
   const redraw = useRedrawOnReturn(imageRef, shown);
-  const animation = useImageAnimation(imageRef, autoplay && !failed, shown, redraw.nonce);
+  const animation = useImageAnimation(imageRef, imageLease.active && autoplay && !failed, shown, redraw.nonce);
   const corner = useCoverRadius(size);
   const borderRadius = rounded ? radius.pill : corner;
-  if (!shown || failed) {
+  if (!imageLease.active || !shown || failed) {
     return (
       <View
         style={[

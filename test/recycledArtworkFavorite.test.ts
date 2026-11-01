@@ -11,6 +11,7 @@ const jsx = (type: unknown, props: Record<string, unknown>, key?: string | numbe
   ({ type, props, key: key === undefined ? undefined : String(key) });
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
 const pressEvent = (timestamp: number) => ({ nativeEvent: { timestamp }, stopPropagation() {} });
+const activeImageLease = Object.freeze({ active: true });
 
 // Render the real components with persistent hook slots, separate layout and
 // passive effects, and controllable requests. Their actual handlers execute;
@@ -144,6 +145,7 @@ function artwork() {
   } });
   const appState = { currentState: 'active', addEventListener: () => ({ remove() {} }) };
   const module = load('Cover', runtime.react, {
+    '@/components/RouteImageResources': { useRouteImageLease: () => activeImageLease },
     'expo-image': { Image },
     'react-native': { AppState: appState, View: 'Placeholder' },
     '@/api/data': { CACHED_COVER: 'cached-cover:', COVER: { card: 1200, full: 2000, thumb: 96 } },

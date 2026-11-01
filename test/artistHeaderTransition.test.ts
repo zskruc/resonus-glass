@@ -5,6 +5,8 @@ import { describe, it } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 
+const activeImageLease = Object.freeze({ active: true });
+
 import { artistHeroRenderer } from './helpers/artistHeroRenderer';
 
 import {
@@ -216,6 +218,7 @@ function backdropHarness() {
     'react-native': { View: 'View', PixelRatio: { get: () => 3.5 }, StyleSheet: { create: (value: unknown) => value, absoluteFill: {} } },
     'react-native-reanimated': { __esModule: true, default: { View: 'AnimatedView' }, useAnimatedStyle: (read: () => unknown) => ({ read }) },
     '@/lib/artistHeaderTransition': { artistHeaderCopyGeometry, artistHeaderLocalSource, artistPhotoParallax, artistHeaderPhotoOffset },
+    '@/components/RouteImageResources': { useRouteImageLease: () => activeImageLease },
     './VoltaDetailHeroFade': { VoltaDetailHeroFade: 'SameHero' },
   };
   runInNewContext(ts.transpileModule(readFileSync(new URL('../src/components/volta/VoltaArtistHeaderBackdrop.tsx', import.meta.url), 'utf8'), {

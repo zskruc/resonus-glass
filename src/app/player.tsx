@@ -31,6 +31,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 
 import { CACHED_COVER, COVER, songCoverUrl, star, unstar, type Song } from '@/api/data';
 import { ArtistPlayerCard } from '@/components/ArtistPlayerCard';
+import { useRouteImageLease } from '@/components/RouteImageResources';
 import { AudioQualityBadge } from '@/components/AudioQualityBadge';
 import { AmllPlayerScreen } from '@/components/AmllPlayerScreen';
 import { PlayerAudioQualitySheet } from '@/components/PlayerAudioQualitySheet';
@@ -238,6 +239,7 @@ export default function PlayerScreen() {
 
 /** The previous presentation remains selectable with all its existing options. */
 function ResonusPlayerScreen() {
+  const imageLease = useRouteImageLease();
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
@@ -998,7 +1000,7 @@ function ResonusPlayerScreen() {
     <GestureDetector gesture={dismissPan}>
       <Animated.View style={[styles.root, rootStyle]}>
         <Animated.View style={[StyleSheet.absoluteFill, bgStyle]} />
-        {isAnimatedCover && cover ? (
+        {imageLease.active && isAnimatedCover && cover ? (
           /* The animated cover itself, unblurred, over the whole screen. */
           <Animated.View style={[StyleSheet.absoluteFill, animatedBgStyle]}>
             <Image
@@ -1023,7 +1025,7 @@ function ResonusPlayerScreen() {
               locations={[0.7, 1]}
             />
           </Animated.View>
-        ) : background === 'cover' && backdropSource.shown ? (
+        ) : imageLease.active && background === 'cover' && backdropSource.shown ? (
           <>
             {/* The artwork itself, blurred, filling the screen. No
                 `recyclingKey`: it blanks the view the moment the song changes,

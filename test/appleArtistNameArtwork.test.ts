@@ -57,7 +57,7 @@ function harness(files = new Map<string, string>()) {
   const calls: { uri: string; name?: string; offline: boolean; verification?: object }[] = [];
   const prefetches: string[] = []; const loads: { uri: string; options: Record<string, unknown>; image: Ref }[] = [];
   const pending = new Map<string, ((ref: Ref) => void)[]>();
-  let deferred = false; let opaque = false; let profile = 'first';
+  let deferred = false; let opaque = false; let profile = 'first'; let imageLease = { active: true };
   const module = compile('../src/hooks/useAppleArtistNameArtwork.ts', {
     react: runtime.react,
     'expo-file-system/legacy': { cacheDirectory: 'file:///cache/', async readAsStringAsync(path: string) { return files.get(path) ?? ''; },
@@ -72,6 +72,7 @@ function harness(files = new Map<string, string>()) {
       async generateThumbhashAsync() { return hash(opaque); },
     } },
     '@/api/data': { CACHED_COVER: 'cached-cover:' },
+    '@/components/RouteImageResources': { useRouteImageLease: () => imageLease },
     '@/lib/appleArtistArtwork': { appleArtworkAssetKey,
       getCachedAppleArtistArtwork: () => null,
       async resolveAppleArtistArtwork(uri: string, name: string | undefined, offline: boolean, allowed: () => boolean, verification: object | undefined) {
@@ -87,6 +88,7 @@ function harness(files = new Map<string, string>()) {
       runtime.begin(); const result = module.useAppleArtistNameArtwork(uri, name, offline, fingerprint); runtime.commit(); return result;
     },
     deferred() { deferred = true; }, opaque() { opaque = true; }, profile(value: string) { profile = value; },
+    lease(active: boolean) { if (imageLease.active !== active) imageLease = { active }; },
     resolve(uri: string, ref: Ref) { const done = pending.get(uri)?.shift(); assert.ok(done); done(ref); },
     unmount: runtime.unmount,
   };
@@ -94,6 +96,33 @@ function harness(files = new Map<string, string>()) {
 async function flush() { for (let i = 0; i < 40; i++) await Promise.resolve(); }
 
 describe('official artist name artwork ownership and offline bytes', () => {
+  it('releases a covered route logo before freezing and reacquires a fresh native owner on return', async () => {
+    const h = harness(); h.metadata.set(photo(), artwork());
+    h.render(photo(), 'Taylor Swift'); await flush();
+    const first = h.render(photo(), 'Taylor Swift'); assert.ok(first);
+    h.lease(false);
+    assert.equal(h.render(photo(), 'Taylor Swift'), undefined);
+    assert.equal(first.image.releases, 1, 'layout cleanup releases the retired native handle');
+    h.lease(true);
+    assert.equal(h.render(photo(), 'Taylor Swift'), undefined, 'a reacquired lease cannot display the released old handle');
+    await flush();
+    const second = h.render(photo(), 'Taylor Swift'); assert.ok(second);
+    assert.notEqual(second.image, first.image);
+    assert.equal(second.image.releases, 0);
+    h.unmount(); assert.equal(second.image.releases, 1);
+  });
+
+  it('discards a decode completing after its route lost the image lease', async () => {
+    const h = harness(); h.metadata.set(photo(), artwork()); h.deferred();
+    h.paths.set(artwork().nameArtwork!.uri, '/cached/A.png');
+    h.render(photo(), 'Taylor Swift'); await flush();
+    h.lease(false); h.render(photo(), 'Taylor Swift');
+    const late = image(); h.resolve('file:///cached/A.png', late); await flush();
+    assert.equal(late.releases, 1);
+    assert.equal(h.render(photo(), 'Taylor Swift'), undefined);
+    h.unmount();
+  });
+
   it('loads the verified original RGBA locally without a tint and persists only optional public metadata', async () => {
     const h = harness(); h.metadata.set(photo(), artwork());
     assert.equal(h.render(photo(), 'Taylor Swift'), undefined); await flush();

@@ -3,6 +3,7 @@ import { memo, useEffect, useState } from 'react';
 import { AppState, StyleSheet } from 'react-native';
 
 import { CACHED_COVER } from '@/api/data';
+import { useRouteImageLease } from '@/components/RouteImageResources';
 import { useAuthStore } from '@/store/auth';
 import { AmllBackgroundView } from '../../modules/amll-background';
 import { resolveArtworkLocalUri } from '../../modules/amll-background/artworkSource';
@@ -11,6 +12,7 @@ export type AmllPlayerBackgroundProps = { uri?: string; active: boolean };
 
 /** Background cadence is independent of the native controls and lyrics' display cadence. */
 export const AmllPlayerBackground = memo(function AmllPlayerBackground({ uri, active }: AmllPlayerBackgroundProps) {
+  const imageLease = useRouteImageLease();
   const offline = useAuthStore((state) => state.offline);
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const [resolved, setResolved] = useState<{ uri: string | undefined; path: string | undefined }>();
@@ -34,6 +36,7 @@ export const AmllPlayerBackground = memo(function AmllPlayerBackground({ uri, ac
   }, [uri, offline]);
 
   const localUri = resolved?.uri === uri ? resolved?.path : undefined;
+  if (!imageLease.active) return null;
   return <AmllBackgroundView
     pointerEvents="none"
     accessible={false}

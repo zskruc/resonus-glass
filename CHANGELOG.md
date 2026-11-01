@@ -13,6 +13,37 @@ preserved upstream history.
 Releases before 0.2.1 are only listed on the
 [GitHub releases page](https://github.com/juananzzz/resonus/releases).
 
+## [0.8.5.1 candidate] - 2026-11-01
+
+### Changed
+
+- 限制较旧页面的图片、遮罩与原生句柄保留；页面数据、滚动与选择状态继续保留，当前／前一内容页及播放器、歌词下层继续显示。
+
+- 将此前 preview.6 的可切换 Apple Music／Spotify 界面、艺人式专辑／歌单页、下载管理、音乐工具及选择性上游 0.8.5 适配纳入正式渠道。
+- 艺人封面按参考画面约以内容 0.4 倍的速度移动；完整照片、静态模糊场和共同遮罩移至列表外的持久层。使用艺人页布局的专辑／歌单同步采用。
+- 大名字与官方名字图按实测底边平滑交接顶栏标题；保留现有播放器布局、保存的玻璃参数与离线文件。
+
+### Fixed
+
+- 修正原先叠加反向补偿导致照片上移过快、固定边界裁掉渐变延伸及回收 Header 后背景提前消失的问题。
+- 调整 Worklets 依赖函数的初始化顺序，避免进入艺人页时出现 `undefined is not a function`，并补充真实生产转换回归。
+- Android MaskedView 脱离窗口时释放大尺寸遮罩位图，重新连接时重建；遮罩元素移除时也清理旧位图，减少导航保留页面时的无效资源持有。
+
+### Notes
+
+- ARM64 正式候选，尚未发布，Android `versionCode 132`；使用现有 Glass 包名与签名，可覆盖安装保留资料。
+- 从已发布 `.preview.6` 单独移植艺人上滑修复与原生遮罩生命周期补丁；React Native Screen Transitions／Gorhom Bottom Sheet 的本地实验不在本版范围内。
+- 本正式分支 1005 项测试、类型及翻译检查通过。原生构建、签名校验及最终三星复测仍在进行，结果将记录在[本版说明](./docs/RELEASE-0.8.5.1.md)；此处不以静态检查证明持续 120 fps 或长期稳定性。
+
+### English
+
+- Bounds retained-page image, mask and native-handle ownership while preserving page/scroll/selection state and the current/previous content and modal underlays.
+
+- Promotes preview.6's selectable Apple Music/Spotify layouts, artist-style album/playlist pages, download management, music tools and reviewed upstream 0.8.5 adaptations to the stable channel.
+- Artist photos now move at the reference-derived 0.4× content ratio. The full photo, static blur field and common mask persist outside recycled headers; title/wordmark handoff follows measured bounds.
+- Corrects worklet initialization order and releases native Android mask bitmaps on view detachment, rebuilding on return. Player layout, stored glass profiles and downloaded files are retained.
+- Unpublished ARM64 candidate, version code 132, using the existing Glass package/signature. RN Screen Transitions and Gorhom's local experiment are excluded. All 1005 tests, type and translation checks pass; the new candidate still requires its native build/package checks and another Samsung session. Scoped results do not establish sustained 120 fps or long-session stability.
+
 ## [0.8.5.1-preview.6] - 2026-11-01
 
 ### Added

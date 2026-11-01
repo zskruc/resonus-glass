@@ -6,6 +6,20 @@ import { artistHeroRenderer } from './helpers/artistHeroRenderer';
 const photo = { uri: 'https://example.com/full.jpg?size=1200', sourceUri: 'file:///cached/200.jpg',
   textureUri: 'file:///prepared/240.png', width: 411, height: 411, extensionHeight: 144, imageStyle: {} };
 
+test('a retired route drops both masks/images and rejects late same-URI callbacks after lease reacquisition', () => {
+  const h = artistHeroRenderer(); const errors: string[] = [];
+  const props = { ...photo, onLayerError: (layer: string) => errors.push(layer) };
+  const old = h.layers(h.settled(props));
+  h.lease(false); assert.equal(h.render(props), null);
+  h.lease(true); let tree = h.render(props);
+  assert.equal(h.layers(tree).field, null, 'a new lease waits for its actual sharp decoder');
+  old.sharp!.props.onDisplay(); old.field!.props.onError();
+  tree = h.render(props); assert.equal(h.layers(tree).field, null); assert.deepEqual(errors, []);
+  h.layers(tree).sharp!.props.onDisplay();
+  assert.ok(h.layers(h.render(props)).field);
+  h.unmount();
+});
+
 test('an online full-size image remains the source when processing files arrive, and the low-resolution field waits for its actual display', () => {
   const h = artistHeroRenderer();
   let tree = h.render({ ...photo, sourceUri: undefined, textureUri: undefined });

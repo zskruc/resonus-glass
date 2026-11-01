@@ -11,6 +11,7 @@ import { StyleSheet, View, type ViewStyle } from 'react-native';
 import Animated, { type AnimatedStyle } from 'react-native-reanimated';
 
 import { CACHED_COVER } from '@/api/data';
+import { useRouteImageLease } from '@/components/RouteImageResources';
 import { isArtistImageTraceEnabled } from '../../../modules/liquid-glass';
 
 // Remember only small identities, never ImageRefs/bitmaps. Glide owns the
@@ -31,7 +32,7 @@ function photoSource(uri: string | undefined, sourceUri: string | undefined, cac
   // never replace the logical full-size image in an online photograph view.
   return uri;
 }
-type ImageRequest = Readonly<{ uri?: string; sequence: number; owner?: ImageRequest }>;
+type ImageRequest = Readonly<{ uri?: string; sequence: number; owner?: ImageRequest; lease?: object }>;
 function imageTrace(request: ImageRequest, layer: 'sharp' | 'field', event: string, details = '') {
   if (isArtistImageTraceEnabled) console.info(`[ResonusArtistImage] ${layer} ${event} request=${request.sequence} time=${Date.now()}${details}`);
 }
@@ -64,11 +65,12 @@ export const VoltaDetailHeroFade = memo(function VoltaDetailHeroFade({
   backgroundColor = 'transparent', extensionHeight = 0, onError,
   blurRadius = 0, fieldTransition = 160, sharpTransition, onLayerDisplay, onLayerError,
 }: Props) {
+  const imageLease = useRouteImageLease();
   const totalHeight = height + extensionHeight;
   const fadeStart = Math.min(0.99, height * 0.52 / Math.max(1, totalHeight));
   const primaryUri = photoSource(uri, sourceUri, cacheOnly);
-  const primary = useMemo<ImageRequest>(() => ({ uri: primaryUri, sequence: ++imageRequestSequence }),
-    [primaryUri]);
+  const primary = useMemo<ImageRequest>(() => ({ uri: primaryUri, sequence: ++imageRequestSequence, lease: imageLease }),
+    [primaryUri, imageLease]);
   const [failedPrimary, setFailedPrimary] = useState<ImageRequest>();
   const fallback = localPhoto(sourceUri);
   const sharpUri = failedPrimary === primary && fallback && fallback !== primaryUri ? fallback : primaryUri;
@@ -107,6 +109,7 @@ export const VoltaDetailHeroFade = memo(function VoltaDetailHeroFade({
     onError?.();
     onLayerError?.('sharp');
   };
+  if (!imageLease.active) return null;
   return (
     <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0,
       width, height: totalHeight, backgroundColor, overflow: 'hidden' }}>

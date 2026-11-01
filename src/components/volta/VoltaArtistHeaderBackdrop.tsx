@@ -6,6 +6,7 @@ import { PixelRatio, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
 import { artistHeaderCopyGeometry, artistHeaderLocalSource, artistHeaderPhotoOffset } from '@/lib/artistHeaderTransition';
+import { useRouteImageLease } from '@/components/RouteImageResources';
 import { VoltaDetailHeroFade } from './VoltaDetailHeroFade';
 
 const STATIC_IMAGE_STYLE = {};
@@ -25,11 +26,12 @@ interface Props {
 
 export const VoltaArtistHeaderBackdrop = memo(function VoltaArtistHeaderBackdrop({ color, height, width,
   photoHeight, extensionHeight, uri, sourceUri, textureUri, scrollY, opacity }: Props) {
+  const imageLease = useRouteImageLease();
   const source = artistHeaderLocalSource(sourceUri);
   const texture = artistHeaderLocalSource(textureUri);
   const small = artistHeaderCopyGeometry(width, photoHeight, extensionHeight, PixelRatio.get());
   const identity = JSON.stringify([source, texture, width, photoHeight, extensionHeight, small.scale]);
-  const request = useMemo(() => ({ identity }), [identity]);
+  const request = useMemo(() => ({ identity, lease: imageLease }), [identity, imageLease]);
   const live = useRef<typeof request | undefined>(undefined);
   const [displayed, setDisplayed] = useState<{ request: typeof request; layers: number; failed: boolean }>();
   useLayoutEffect(() => { live.current = request; return () => { live.current = undefined; }; }, [request]);
@@ -52,6 +54,7 @@ export const VoltaArtistHeaderBackdrop = memo(function VoltaArtistHeaderBackdrop
   }), [scrollY, photoHeight]);
   // Match the scene plane's complete movement, including its final mask.
   // Only transforms change; static masks stay <=240 physical pixels wide.
+  if (!imageLease.active) return null;
   return <Animated.View pointerEvents="none" accessible={false} accessibilityElementsHidden
     importantForAccessibility="no-hide-descendants"
     style={[styles.frame, { width, height: height + 56 }, fade]}>

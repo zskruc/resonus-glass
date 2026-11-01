@@ -43,6 +43,7 @@ import {
 import { type Album, type Artist, type Song } from '@/api/subsonic';
 import { AlbumCard } from '@/components/AlbumCard';
 import { Cover } from '@/components/Cover';
+import { RouteImageResource } from '@/components/RouteImageResources';
 import { CoverViewer } from '@/components/CoverViewer';
 import { Dialog } from '@/components/Dialog';
 import { FavoriteButton } from '@/components/FavoriteButton';
@@ -464,7 +465,7 @@ export default function ArtistScreen() {
               the header loses its edges. Rather than trying to hold every
               shape up there, tapping it opens the whole thing, like a cover. */}
           <VoltaArtistPhotoTarget onOpen={() => setPhotoOpen(true)}>
-            {!appleMusic ? <Animated.Image
+            {!appleMusic ? <RouteImageResource><Animated.Image
               source={{ uri: headerUri }}
               style={[
                 styles.headerImg,
@@ -472,7 +473,7 @@ export default function ArtistScreen() {
                 imageStyle,
               ]}
               resizeMode="cover"
-            /> : null}
+            /></RouteImageResource> : null}
           </VoltaArtistPhotoTarget>
           {/* Both sit on top of the photo and neither is there to be touched:
               without this they take the tap and it never reaches the image. */}

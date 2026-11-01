@@ -14,7 +14,7 @@ Resonus Glass 基于 [juananzzz/resonus](https://github.com/juananzzz/resonus)�
 
 ## 安装
 
-从 [本仓库最新 Release](https://github.com/zskruc/resonus-glass/releases/latest) 下载 **Resonus Glass APK**。`v0.8.4` 对应文件为 `Resonus-Glass-v0.8.4-arm64-v8a.apk`，适用于 ARM64 Android 设备。原项目 Releases 中的 APK 是原版 Resonus，不包含本分支的改动。
+从 [本仓库最新 Release](https://github.com/zskruc/resonus-glass/releases/latest) 下载 **Resonus Glass APK**。公开下载以 Release 页面为准。本分支为 `0.8.5.1` 候选，尚未正式发布，适用于 ARM64 Android 设备。原项目 Releases 中的 APK 是原版 Resonus，不包含本分支的改动。
 
 Android 13 及以上支持原生折射和定向高光；Android 12 使用 GPU 模糊；更早版本使用界面回退效果。实际效果与流畅度取决于设备和系统状态。
 
@@ -24,7 +24,7 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 
 需要自行验证时，可进入 **Actions → Glass ARM64 test APK → Run workflow** 手动构建测试 APK。每次任务使用随机生成的一次性测试签名，不能覆盖当前手机上已有的 Glass 安装，也不能保证与前一次 CI 构建互相覆盖；请使用独立测试设备或模拟器。正式下载以 Releases 中明确标注的安装包为准。
 
-当前三星测试版本可从 **[0.8.5.1-preview.6 测试版 Release](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1-preview.6)** 下载，APK 为 `Resonus-Glass-v0.8.5.1-preview.6-arm64-v8a.apk`。测试预发布不触发 App 的正式更新提示；可手动覆盖安装，保留原有资料。
+本分支正在准备 **0.8.5.1 候选版**。连续跳转复测发现原候选仍存在图片资源累积，因此暂缓正式发布；待新资源生命周期修复完成三星验证后再进入正式更新渠道。公开 `.preview.6` 及原图库继续保留。
 
 ## Glass 的主要改动
 
@@ -61,8 +61,10 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 
 | 渠道 | 版本 | Android 更新编号 | 获取方式 |
 | --- | --- | --- | --- |
-| 正式发布 | `0.8.4` | `67` | [GitHub Releases](https://github.com/zskruc/resonus-glass/releases/latest)，App 内检查更新 |
+| 候选，待实机验证 | `0.8.5.1` | `132` | [改动与验证进度](./docs/RELEASE-0.8.5.1.md)，尚未发布正式 Release |
 | 测试预发布 | `0.8.5.1-preview.6` | `128` | [Release 与 APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1-preview.6) · [改动与验证](./docs/ALBUM-ARTIST-PREVIEW-6.md) |
+
+`0.8.5.1` 将艺人照片移动调整为参考画面中约 0.4 倍的内容位移，让完整照片、静态模糊延伸与共同遮罩在同一持久层移动，并按实际姓名／名字图的底边平滑交接顶栏。使用艺人页布局的专辑与歌单同步采用；Android 页面脱离窗口时释放原生遮罩位图，返回时重新生成。发布范围和性能验收边界见[本版说明](./docs/RELEASE-0.8.5.1.md)。
 
 `.preview.6` 让专辑也可使用与艺人、歌单一致的满幅页头、封面取色与滚动衔接。**设置 → 外观 → 专辑页风格 → 艺人页布局**进入预览，Volta／Minidisc 可立即回切；已有账户保留原选择。此前[歌单页预览](./docs/PLAYLIST-ARTIST-PREVIEW-5.md)继续保留，播放器和玻璃参数不变。详见[预览说明](./docs/ALBUM-ARTIST-PREVIEW-6.md)及[动效方案调研](./docs/MOTION-OPTIONS-20261101.md)。
 
@@ -90,7 +92,7 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 
 `.27` 新增参考 [Volta](https://github.com/countervolts/Volta) 的 **Apple Music风格**，可在 **设置 → 外观 → 界面风格** 与 **Spotify风格** 之间切换。首页、资料库、艺人和专辑／歌单详情采用可切换的页面布局，保留现有播放器、玻璃参数及用户资料。范围和验证限制见 [双风格预览说明](./docs/VOLTA-UI-PREVIEW.md)。下方早期版本说明保留为开发历史。
 
-当前已发布测试版为 `v0.8.5.1-preview.6`，源码同步至 `glass` 分支；该 tag 固定对应发布时的源码。播放页结合 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 派生的原生控件与 SVG，以及独立实现的封面／歌词界面和网格流动背景。「设置 → 播放器 → 播放器布局」可切回 Resonus 原有布局；下方「播放器背景」仅影响原有布局。控件与 SVG 的 **AGPL-3.0-only** 来源、保留的原有许可证和实现范围见 [第三方声明](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) 与 [预览说明](./docs/AMLL-PLAYER-PREVIEW.md)。
+当前正式版为 `v0.8.5.1`，源码同步至 `glass` 分支；各版本 tag 固定对应各自的发布源码，之前的 `.preview.6` 测试包继续保留。播放页结合 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 派生的原生控件与 SVG，以及独立实现的封面／歌词界面和网格流动背景。「设置 → 播放器 → 播放器布局」可切回 Resonus 原有布局；下方「播放器背景」仅影响原有布局。控件与 SVG 的 **AGPL-3.0-only** 来源、保留的原有许可证和实现范围见 [第三方声明](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) 与 [预览说明](./docs/AMLL-PLAYER-PREVIEW.md)。
 
 `.15` 保留 `.14` 的五项修改：移除播放／歌词页顶部白条，保留原高度、顶部下拉和封面无障碍关闭；移除随机／循环按钮，仅保留原位置的上一首、播放／暂停、下一首，播放模式仍可在菜单设置；返回时冻结底栏已绘制进度，等来源页面状态恢复就绪后再交接，并保留来源页选中透镜透明度；逐字歌词只预备当前与下一行遮罩，下一行延后 720ms 准备，不改模糊、光学或歌词计时；有完整歌单镜像时先显示保存内容并在后台请求服务器，离线复用元数据避免重复 SQL，本地只查询当前歌单的歌曲 ID。没有缓存的首次打开仍可能等待，不能保证所有歌单立即出现。
 
@@ -126,7 +128,7 @@ Resonus 原有布局开启封面配色时，播放／暂停按钮直接使用当
 
 本轮另加入悬浮弹窗玻璃预设、可点击音质卡片、真实系统输出入口、与手机音量键同步的音量条，以及可选的全屏播放器封面配色。新选项位于「设置 → 播放器 → AM++ 播放器新特性」，封面配色默认关闭，不影响 mini player 和底栏。系统输出选择不可用时会明确回退至系统音量面板。
 
-版本号跟随最近审查的上游正式版基线，但 Glass 采用选择性移植，**不等同于完整的上游 0.8.4**，也未包含后者的全部新功能。具体采用的功能以 [Glass 更新日志](./CHANGELOG.md) 和 [上游修复范围](./docs/LIQUID-GLASS-PREVIEW.md#上游修复范围) 为准。
+版本号跟随最近审查的上游正式版基线，但 Glass 采用选择性移植，**不等同于完整的上游 0.8.5**，也未包含后者的全部新功能。具体采用的功能以 [Glass 更新日志](./CHANGELOG.md) 和 [上游修复范围](./docs/LIQUID-GLASS-PREVIEW.md#上游修复范围) 为准。
 
 同一上游基线内继续修改 Glass 时，可以使用第四段修订号，如 `0.8.4.1`；下一个上游基线使用 `0.8.5`。正式发布时，App 版本、Git tag 和 Release 使用同一个版本，Android `versionCode` 每次发布必须递增。版本号一致不表示与原项目安装包可相互覆盖。
 

@@ -26,6 +26,7 @@ import { ListeningStatsTracker } from '@/components/ListeningStatsTracker';
 import { GlobalMiniPlayer } from '@/components/GlobalMiniPlayer';
 import { PlayerArtworkOverlay } from '@/components/PlayerArtworkOverlay';
 import { PlayerUnderlayTransform } from '@/components/PlayerUnderlayTransform';
+import { RootImageResourceProvider, RootScreenImageResources } from '@/components/RouteImageResources';
 import { BottomScrollEdge } from '@/components/BottomScrollEdge';
 import { GlobalTabBar } from '@/components/GlobalTabBar';
 import { LiquidDockProvider } from '@/hooks/useLiquidDock';
@@ -75,7 +76,9 @@ const MIRROR_DELAY_MS = 15_000;
 
 type RootScreenLayoutProps = Parameters<NonNullable<ComponentProps<typeof Stack>['screenLayout']>>[0];
 function renderRootScreen({ route, children }: RootScreenLayoutProps) {
-  return <PlayerUnderlayTransform routeKey={route.key} routeName={route.name}>{children}</PlayerUnderlayTransform>;
+  return <RootScreenImageResources routeKey={route.key}>
+    <PlayerUnderlayTransform routeKey={route.key} routeName={route.name}>{children}</PlayerUnderlayTransform>
+  </RootScreenImageResources>;
 }
 
 /** Queue and lyrics are whole screens. On iOS `modal` is a sheet that stops
@@ -126,7 +129,7 @@ const LYRICS_MODAL = Platform.OS === 'android' ? {
  * Android Recents captures the retained native stack while the app backgrounds.
  * Suspense hiding disconnects layout effects and can clear only some player
  * layers before that capture. Keep Android mounted; foreground effects still
- * pause work, and navigation's freezeOnBlur still suspends covered routes.
+ * pause work, and the resource boundary parks only retired navigation pages.
  */
 function useAway(): boolean {
   const [away, setAway] = useState(() => Platform.OS !== 'android' && AppState.currentState === 'background');
@@ -352,7 +355,9 @@ export default function RootLayout() {
           <View style={{ flex: 1 }}>
             <Freeze freeze={away}>
             <BarBlurTarget>
+            <RootImageResourceProvider>{(imageResourceListeners) =>
             <Stack
+              screenListeners={imageResourceListeners}
               screenLayout={renderRootScreen}
               screenOptions={({ route }) => ({
                 headerShown: false,
@@ -361,15 +366,11 @@ export default function RootLayout() {
                 animation: Platform.OS === 'android' && route.name.startsWith('settings/')
                   ? 'none'
                   : 'fade',
-                // A screen you have navigated away from stops re-rendering
-                // until you come back. It stays mounted either way, which is
-                // the point of a stack, but without this every screen still
-                // behind you kept answering to every change in every store:
-                // the position of the song playing, a download's progress, a
-                // favourite. Ten screens deep that is ten renders nobody sees,
-                // between the tap and the screen that was asked for, which is
-                // why the lag grew the more you browsed.
-                freezeOnBlur: true,
+                // The screen-layout boundary keeps a bounded set of back/modal
+                // underlays live, then commits image-resource release before
+                // parking older page state. Native freezing here would prevent
+                // that release from ever reaching Fabric.
+                freezeOnBlur: false,
                 contentStyle: { backgroundColor: colors.background },
               })}
             >
@@ -458,6 +459,7 @@ export default function RootLayout() {
                 options={LYRICS_MODAL}
               />
             </Stack>
+            }</RootImageResourceProvider>
             </BarBlurTarget>
             {auth || offline ? <AppStartupTab /> : null}
             {auth || offline ? <BottomScrollEdge /> : null}

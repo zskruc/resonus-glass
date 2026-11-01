@@ -15,6 +15,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-nat
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CACHED_COVER, COVER, songCoverUrl } from '@/api/data';
+import { useRouteImageLease } from '@/components/RouteImageResources';
 import { SyncedLyricsView, useLyricsLineStyle } from '@/components/LyricsCard';
 import { SeekBar } from '@/components/SeekBar';
 import { useCoverTint } from '@/hooks/useDominantColor';
@@ -26,6 +27,7 @@ import { colors, fontSize, radius, spacing, themed, useTheme, useThemeMode } fro
 import { centredPadding, useScreenSize } from '@/hooks/useScreenSize';
 
 export default function LyricsScreen() {
+  const imageLease = useRouteImageLease();
   // Repaints on a change of appearance or accent: a stack keeps this screen
   // mounted while you are on another one, out of reach of anything else.
   useTheme();
@@ -85,7 +87,7 @@ export default function LyricsScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: bg }]}>
-      {background === 'cover' && cover ? (
+      {imageLease.active && background === 'cover' && cover ? (
         <>
           {/* Same as the player: no `recyclingKey`, or the change of song
               blanks this to black before the next cover arrives. */}
