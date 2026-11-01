@@ -5,8 +5,10 @@ import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PixelRatio, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
-import { artistHeaderCopyGeometry, artistHeaderLocalSource, artistPhotoParallax } from '@/lib/artistHeaderTransition';
+import { artistHeaderCopyGeometry, artistHeaderLocalSource, artistHeaderPhotoOffset } from '@/lib/artistHeaderTransition';
 import { VoltaDetailHeroFade } from './VoltaDetailHeroFade';
+
+const STATIC_IMAGE_STYLE = {};
 
 interface Props {
   color: string;
@@ -46,13 +48,10 @@ export const VoltaArtistHeaderBackdrop = memo(function VoltaArtistHeaderBackdrop
   };
   const fade = useAnimatedStyle(() => ({ opacity: ready ? opacity.get() : 0 }), [ready, opacity]);
   const position = useAnimatedStyle(() => ({
-    transform: [{ translateY: -scrollY.get() }],
-  }), [scrollY]);
-  const parallax = useAnimatedStyle(() => ({
-    transform: [{ translateY: artistPhotoParallax(scrollY.get(), photoHeight) * small.scale }],
-  }), [scrollY, photoHeight, small.scale]);
-  // Match both the page's outer clip and the photo's inner parallax. Only
-  // transforms change; their static masks stay <=240 physical pixels wide.
+    transform: [{ translateY: artistHeaderPhotoOffset(scrollY.get(), photoHeight) }],
+  }), [scrollY, photoHeight]);
+  // Match the scene plane's complete movement, including its final mask.
+  // Only transforms change; static masks stay <=240 physical pixels wide.
   return <Animated.View pointerEvents="none" accessible={false} accessibilityElementsHidden
     importantForAccessibility="no-hide-descendants"
     style={[styles.frame, { width, height: height + 56 }, fade]}>
@@ -66,7 +65,7 @@ export const VoltaArtistHeaderBackdrop = memo(function VoltaArtistHeaderBackdrop
           transformOrigin: 'top left', transform: [{ scale: 1 / small.scale }] }}>
           <VoltaDetailHeroFade key={identity} uri={undefined} sourceUri={source} textureUri={texture}
             width={small.width} height={small.photoHeight} extensionHeight={small.extensionHeight}
-            imageStyle={parallax} backgroundColor={color} blurRadius={2} fieldTransition={0} sharpTransition={0}
+            imageStyle={STATIC_IMAGE_STYLE} backgroundColor={color} blurRadius={2} fieldTransition={0} sharpTransition={0}
             onLayerDisplay={layerDisplay} onLayerError={layerError} />
         </View>
       </Animated.View>

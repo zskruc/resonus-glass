@@ -17,12 +17,12 @@ export function playlistArtistHeaderHeight(width: number, height: number, apple:
 }
 
 export function PlaylistArtistHeader({ title, owner, onOwnerPress, description, meta, metadataBadge, details, uri, width, height, sidePadding,
-  extensionHeight, apple, artwork, offline, imageStyle, nameStyle, onNameLayout, onCoverPress,
+  extensionHeight, apple, artwork, offline, imageStyle, nameStyle, drawBackdrop = true, onNameLayout, onCoverPress,
   disabled, onPlay, onShuffle, shuffleActive, showPause, favorite, onMenu, utility }: {
   title: string; owner?: string; onOwnerPress?: () => void; description?: string; meta?: string;
   metadataBadge?: ReactNode; details?: ReactNode; uri?: string;
   width: number; height: number; sidePadding: number; extensionHeight: number; apple: boolean;
-  artwork: VoltaArtistArtwork; offline: boolean; imageStyle: AnimatedStyle<ViewStyle>;
+  artwork: VoltaArtistArtwork; offline: boolean; drawBackdrop?: boolean; imageStyle: AnimatedStyle<ViewStyle>;
   nameStyle: AnimatedStyle<ViewStyle>; onNameLayout: (event: LayoutChangeEvent) => void;
   onCoverPress?: () => void; disabled: boolean; onPlay: () => void; onShuffle: () => void;
   shuffleActive: boolean; showPause: boolean; favorite?: ReactNode; onMenu?: () => void; utility?: ReactNode;
@@ -48,7 +48,7 @@ export function PlaylistArtistHeader({ title, owner, onOwnerPress, description, 
   </Pressable> : <View style={styles.round} />;
   return <View style={{ width, marginHorizontal: -sidePadding }}>
     <View style={styles.heroGroup}>
-      {apple ? <VoltaDetailHeroFade uri={uri} sourceUri={artwork.sourceUri} textureUri={artwork.textureUri}
+      {apple && drawBackdrop ? <VoltaDetailHeroFade uri={uri} sourceUri={artwork.sourceUri} textureUri={artwork.textureUri}
         cacheOnly={offline} width={width} height={height} extensionHeight={extensionHeight}
         imageStyle={imageStyle} backgroundColor={palette.background} /> : null}
       <View style={[styles.photoFrame, { width, height }]}>

@@ -53,14 +53,14 @@ import { MenuGlassCardHeader } from '@/components/MenuGlassCard';
 import { SheetModal } from '@/components/SheetModal';
 import { StarRating } from '@/components/StarRating';
 import { TrackRow } from '@/components/TrackRow';
-import { VoltaDetailHeroFade } from '@/components/volta/VoltaDetailHeroFade';
+import { VoltaArtistScrollBackdrop } from '@/components/volta/VoltaArtistScrollBackdrop';
 import { artistHeroGeometry } from '@/lib/artistHeroGeometry';
 import { selectArtistPortrait } from '@/lib/artistPortrait';
 import { ArtistPagePaletteProvider, useArtistPagePalette } from '@/components/volta/ArtistPagePalette';
 import { AppleArtistName } from '@/components/volta/AppleArtistName';
 import { VoltaArtistPhotoTarget } from '@/components/volta/VoltaArtistPhotoTarget';
 import { VoltaArtistHeaderBackdrop } from '@/components/volta/VoltaArtistHeaderBackdrop';
-import { artistHeaderFromLayout, artistPhotoParallax } from '@/lib/artistHeaderTransition';
+import { artistHeaderFromLayout } from '@/lib/artistHeaderTransition';
 import { useDominantColor } from '@/hooks/useDominantColor';
 import { useVoltaArtistArtwork } from '@/hooks/useVoltaArtistArtwork';
 import { useDownloadMessage } from '@/hooks/useDownloadMessage';
@@ -209,9 +209,8 @@ export default function ArtistScreen() {
       : interpolate(scrollY.get(), [0, headerH * 0.55], [1, 0], Extrapolation.CLAMP),
   }));
   const imageStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: appleMusic
-      ? artistPhotoParallax(scrollY.get(), headerH)
-      : interpolate(scrollY.get(), [-headerH, 0, headerH], [headerH / 2, 0, -headerH / 3], Extrapolation.CLAMP) }],
+    transform: [{ translateY: interpolate(scrollY.get(), [-headerH, 0, headerH],
+      [headerH / 2, 0, -headerH / 3], Extrapolation.CLAMP) }],
   }));
 
   const { data, isLoading, isError, refetch } = useQuery({
@@ -449,20 +448,17 @@ export default function ArtistScreen() {
       {appleMusic && focused ? <><StatusBar style="light" /><NavigationBar style="light" /></> : null}
       <View style={{ flex: 1 }}>
       <ArtistPagePaletteProvider value={appleMusic ? artistPalette : undefined}>
+      {appleMusic ? <VoltaArtistScrollBackdrop uri={headerUri} sourceUri={artistArtwork.sourceUri}
+        textureUri={artistArtwork.textureUri} cacheOnly={offline} width={screenW} height={portraitH}
+        extensionHeight={portraitExtension} backgroundColor={appleBackground} scrollY={scrollY}
+        onError={onPortraitError} /> : null}
       <AnimatedPage
         contentContainerStyle={{ paddingBottom: bottomPad }}
         scrollEventThrottle={16}
         onScroll={onScroll}
       >
-        {/* One background spans the photo AND the controls. Its blurred edge
-            can continue behind the name/buttons without moving their layout. */}
+        {/* Layout and touch targets scroll normally over the persistent photo plane. */}
         <View style={appleMusic ? voltaStyles.heroGroup : undefined}>
-        {appleMusic ? (
-          <VoltaDetailHeroFade uri={headerUri} sourceUri={artistArtwork.sourceUri} cacheOnly={offline}
-            textureUri={artistArtwork.textureUri} width={screenW} height={portraitH}
-            extensionHeight={portraitExtension} imageStyle={imageStyle} backgroundColor={appleBackground}
-            onError={onPortraitError} />
-        ) : null}
         <View style={[styles.headerWrap, { width: screenW, height: headerH }, appleMusic && voltaStyles.hero]}>
           {/* The header fills its space, so a photo that isn't the shape of
               the header loses its edges. Rather than trying to hold every

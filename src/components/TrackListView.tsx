@@ -56,11 +56,12 @@ import { minidiscAlbumCoverSize, type MinidiscAlbumPalette } from '@/lib/minidis
 import { MinidiscAlbumHeader } from '@/components/volta/MinidiscAlbumHeader';
 import { PlaylistDetailHeader, playlistCoverSize } from '@/components/PlaylistDetailHeader';
 import { PlaylistArtistHeader, playlistArtistHeaderHeight } from '@/components/PlaylistArtistHeader';
+import { VoltaArtistScrollBackdrop } from '@/components/volta/VoltaArtistScrollBackdrop';
 import { VoltaArtistHeaderBackdrop } from '@/components/volta/VoltaArtistHeaderBackdrop';
 import { ArtistPagePaletteProvider, useArtistPagePalette } from '@/components/volta/ArtistPagePalette';
 import { useVoltaArtistArtwork } from '@/hooks/useVoltaArtistArtwork';
 import { artistHeroGeometry } from '@/lib/artistHeroGeometry';
-import { artistHeaderFromLayout, artistPhotoParallax } from '@/lib/artistHeaderTransition';
+import { artistHeaderFromLayout } from '@/lib/artistHeaderTransition';
 import { useAuthStore } from '@/store/auth';
 import { useArtistPicker } from '@/store/artistPicker';
 import { usePlayerStore } from '@/store/player';
@@ -349,7 +350,7 @@ export function TrackListView({
       : interpolate(scrollY.get(), [0, artistHeaderH * .55], [1, 0], Extrapolation.CLAMP),
   }));
   const artistImageStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: artistPhotoParallax(scrollY.get(), artistHeaderH) }],
+    transform: [{ translateY: appleMusic ? 0 : -Math.max(0, Math.min(artistHeaderH, scrollY.get())) / 3 }],
   }));
   const headerScroll = useAnimatedScrollHandler({
     onScroll: (event) => { scrollY.set(event.contentOffset.y); },
@@ -631,6 +632,13 @@ export function TrackListView({
       {minidisc ? <LinearGradient pointerEvents="none" style={StyleSheet.absoluteFill}
         colors={[minidisc.palette.backgroundTop, minidisc.palette.background]} /> : null}
       <View style={{ flex: 1 }}>
+      {artistDetail && appleMusic && !searching ? <Animated.View pointerEvents="none"
+        style={{ position: 'absolute', left: 0, top: 0, width: screenW, height: artistHeaderH + artistGeometry.extensionHeight,
+          transform: [{ translateY: searchH }] }}>
+        <VoltaArtistScrollBackdrop uri={coverUri} sourceUri={artistArtwork.sourceUri}
+          textureUri={artistArtwork.textureUri} cacheOnly={offline} width={screenW} height={artistHeaderH}
+          extensionHeight={artistGeometry.extensionHeight} backgroundColor={artistArtwork.palette.background} scrollY={scrollY} />
+      </Animated.View> : null}
       {/* Dominant color gradient; scrolls with 1:1 parallax. Hidden in search
           mode to keep the screen flat black. */}
       {searching || appleMusic || artistDetail ? null : (
@@ -746,7 +754,7 @@ export function TrackListView({
             {/* While searching, the large header is hidden: results stay flush
                 with the bar, which is what Spotify does. */}
             {searching ? null : artistDetail ? (
-              <PlaylistArtistHeader title={title} owner={subtitle} onOwnerPress={onSubtitlePress} description={description} meta={meta}
+              <PlaylistArtistHeader drawBackdrop={false} title={title} owner={subtitle} onOwnerPress={onSubtitlePress} description={description} meta={meta}
                 metadataBadge={showExplicit ? <ExplicitBadge status="explicit" /> : undefined}
                 uri={coverUri} width={screenW} height={artistHeaderH} sidePadding={sidePadding}
                 extensionHeight={artistGeometry.extensionHeight} apple={appleMusic} artwork={artistArtwork} offline={offline}

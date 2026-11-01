@@ -180,6 +180,7 @@ function list() {
       ArtistPagePaletteProvider: 'ArtistPagePaletteProvider', useArtistPagePalette: () => undefined,
     },
     '@/components/volta/VoltaArtistHeaderBackdrop': { VoltaArtistHeaderBackdrop: 'VoltaArtistHeaderBackdrop' },
+    '@/components/volta/VoltaArtistScrollBackdrop': { VoltaArtistScrollBackdrop: 'VoltaArtistScrollBackdrop' },
     '@/components/Icon': icon,
     'expo-linear-gradient': { LinearGradient: 'Gradient' },
     'expo-router': { Link: 'Link', useRouter: () => ({ push(href: string) { navigated.push(href); }, back() {} }) },
@@ -475,6 +476,59 @@ describe('recycled shared playlist rendering and positions', () => {
     assert.deepEqual(h.played, [2], 'the retained callback still plays the second A occurrence');
     h.selectionBar().props.actions.find((action: any) => action.icon === 'remove-circle-outline').onPress();
     assert.equal(JSON.stringify(h.removed), '[[12]]', 'removal retains the original server index of the selected duplicate');
+  });
+
+  it('keeps the artist image plane outside recycled content during long album and playlist scrolling', () => {
+    for (const album of [false, true]) {
+      const h = list();
+      h.setUiStyle('appleMusic');
+      h.render({ playlistPresentation: !album,
+        albumArtistPresentation: album ? { sourceHref: '/album/long-album' } : undefined,
+        coverUri: 'file:///cache/hero-original.jpg',
+        playlistId: album ? undefined : 'p1', playlistIndices: album ? undefined : [4, 8, 12], showArtwork: !album,
+        numbered: album, discHeaders: { 0: 'Disc one', 2: 'Disc two' } });
+      h.row(2).props.onLongPress(); h.render();
+      const initial = h.recycler();
+      const plane = () => find(h.tree(), (node) => node.type === 'VoltaArtistScrollBackdrop');
+      assert.ok(plane(), 'the image world plane must be a sibling of the scrolling recycler');
+      assert.equal(find(initial.props.ListHeaderComponent, (node) => node.type === 'VoltaArtistScrollBackdrop'), undefined,
+        'FlashList must not clip or recycle the slow-moving image plane with its header');
+      assert.equal(find(initial.props.ListHeaderComponent, (node) => node.type === 'PlaylistArtistHeader')!.props.drawBackdrop, false,
+        'the header keeps its text/actions without painting a second picture');
+      const sharedScroll = plane()!.props.scrollY;
+      const writes = h.stateWrites();
+      for (let offset = 0; offset <= 60_000; offset += 48) {
+        initial.props.onScroll.handlers[0].onScroll({ contentOffset: { y: offset } });
+        assert.equal(sharedScroll.get(), offset);
+      }
+      assert.equal(h.stateWrites(), writes, 'native scroll frames cannot enqueue React state updates');
+      h.render();
+      const current = h.recycler();
+      assert.equal(current.type, initial.type);
+      assert.equal(current.props.ref, initial.props.ref);
+      assert.equal(current.props.renderScrollComponent, initial.props.renderScrollComponent);
+      assert.equal(current.props.data, initial.props.data);
+      assert.equal(current.props.onScroll.handlers[1], h.dock);
+      assert.equal(plane()!.props.scrollY, sharedScroll);
+      assert.equal(h.row(2).props.selected, true);
+      assert.equal(h.row(0).props.selected, false);
+      assert.equal(h.row(2).props.serverIndex, album ? 2 : 12);
+      assert.equal(current.props.getItemType(current.props.data[2], 2), 'disc');
+      assert.deepEqual(h.scrolls, [], 'the detached backdrop must not reset the native list');
+      h.setUiStyle('spotify');
+      assert.equal(plane(), undefined, 'Spotify keeps the original scrolled-header implementation');
+      h.setUiStyle('appleMusic');
+      assert.equal(h.recycler().props.ref, initial.props.ref);
+      assert.equal(h.row(2).props.selected, true);
+      if (!album) {
+        h.setPlaylistStyle('compact');
+        assert.equal(plane(), undefined, 'compact playlists retain their earlier presentation');
+      } else {
+        h.render({ albumArtistPresentation: undefined,
+          albumPresentation: { palette: buildMinidiscAlbumPalette('#315b7f', false), meta: 'Rock' } });
+        assert.equal(plane(), undefined, 'Minidisc albums retain their earlier presentation');
+      }
+    }
   });
 
   it('switches Volta and Minidisc albums without replacing the recycler, scroll owner or duplicate selection', () => {

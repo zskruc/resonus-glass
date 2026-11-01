@@ -1,14 +1,22 @@
 export interface ArtistNameMeasurement { y: number; height: number }
 
-/** The photo moves once with the page and once with its existing parallax. */
-export function artistHeaderPhotoOffset(scrollY: number, headerHeight: number) {
-  'worklet';
-  return -scrollY + artistPhotoParallax(scrollY, headerHeight);
-}
-
+/** Compensate content motion; do not accelerate the image in the scroll direction. */
 export function artistPhotoParallax(scrollY: number, headerHeight: number) {
   'worklet';
-  return -Math.max(0, Math.min(headerHeight, scrollY)) / 3;
+  const scroll = Number.isFinite(scrollY) ? Math.max(0, scrollY) : 0;
+  const height = Number.isFinite(headerHeight) && headerHeight > 0 ? headerHeight : 1;
+  // By this point even the extended photo field is well above the viewport.
+  // Bound a long list's compensation without changing slope at the photo edge.
+  return Math.min(scroll, height * 8 + 512) * .6;
+}
+
+// Keep worklet dependencies before their callers: Babel captures closures
+// while initializing each worklet, unlike ordinary function declaration hoisting.
+/** World-space photo movement: measured reference motion is 0.4 of content scroll. */
+export function artistHeaderPhotoOffset(scrollY: number, headerHeight: number) {
+  'worklet';
+  const scroll = Number.isFinite(scrollY) ? scrollY : 0;
+  return -scroll + artistPhotoParallax(scroll, headerHeight);
 }
 
 /** Keep the duplicate's masks/blur buffers small, independent of screen density. */
@@ -39,16 +47,21 @@ function progress(value: number, start: number, end: number) {
   return t * t * (3 - 2 * t);
 }
 
-/** Large artwork/name leaves first; the compact title follows without two readable names. */
+/** Handoff follows the visible name's bottom edge, including official artwork. */
 export function artistHeaderTransition(scrollY: number, barHeight: number, name: ArtistNameMeasurement) {
   'worklet';
-  const exitStart = Math.max(0, name.y - barHeight - 8);
-  const exitEnd = exitStart + Math.max(16, Math.min(28, name.height * .45));
-  const compactStart = exitEnd + 4;
+  const scroll = Number.isFinite(scrollY) ? scrollY : 0;
+  const distance = Math.max(28, Math.min(64, name.height * .8));
+  const bottomCrossing = name.y + name.height - barHeight;
+  const exitEnd = Math.max(distance, bottomCrossing + distance * .25);
+  const exitStart = exitEnd - distance;
+  const phase = progress(scroll, exitStart, exitEnd);
   return {
-    largeOpacity: 1 - progress(scrollY, exitStart, exitEnd),
-    compactOpacity: progress(scrollY, compactStart, compactStart + 18),
-    backgroundOpacity: progress(scrollY, exitStart, compactStart + 28),
+    largeOpacity: 1 - phase,
+    // The compact name can arrive dimly before the outgoing name vanishes,
+    // but never while both are readable (>0.35). There is no empty-title gap.
+    compactOpacity: Math.pow(phase, 2.5),
+    backgroundOpacity: progress(scroll, Math.max(0, exitStart - 20), exitEnd),
   };
 }
 
@@ -56,6 +69,6 @@ export function artistHeaderTransition(scrollY: number, barHeight: number, name:
 export function artistHeaderFromLayout(scrollY: number, barHeight: number, name: ArtistNameMeasurement,
   width: number, bottomPadding: number, artworkAspect: number) {
   'worklet';
-  if (!(name.height > 0)) return { largeOpacity: 1, compactOpacity: 0, backgroundOpacity: 0 };
+  if (!(name.height > 0) || !Number.isFinite(name.height) || !Number.isFinite(name.y)) return { largeOpacity: 1, compactOpacity: 0, backgroundOpacity: 0 };
   return artistHeaderTransition(scrollY, barHeight, artistNameVisualFrame(name, width, bottomPadding, artworkAspect));
 }
