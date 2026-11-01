@@ -40,18 +40,18 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 
 ## 界面预览
 
-以下为 Samsung 实机上的 Resonus Glass 近期截图，展示当前版本沿用的页面与可选布局；不同截图的主题、歌曲和玻璃参数可能不同，曲库内容仅为示例。艺人／专辑图为截图中展示的媒体内容，不随 App 分发。
+以下为 Samsung 实机上的 Resonus Glass 界面与交互示例，展示 `glass` 分支的页面和可选布局；主题、歌曲和玻璃参数可能不同，曲库内容仅为示例。艺人／专辑图为画面中展示的媒体内容，不随 App 分发。
 
 <table>
   <tr>
-    <td align="center"><img src="./assets/screenshots/gallery-20261101/artist-page.jpg" width="230" alt="Resonus Glass 艺人页：满幅照片、渐变衔接与播放操作" /><br /><strong>艺人页</strong><br />满幅照片与取色背景</td>
-    <td align="center"><img src="./assets/screenshots/gallery-20261101/album-artist-layout.jpg" width="230" alt="Resonus Glass 专辑页的艺人式满幅布局" /><br /><strong>艺人式专辑页</strong><br />与艺人、歌单共用页头风格</td>
-    <td align="center"><img src="./assets/screenshots/gallery-20261101/playlist-collapsed-dock.jpg" width="230" alt="Resonus Glass 歌单滚动后的小标题及折叠玻璃底栏" /><br /><strong>歌单与折叠底栏</strong><br />滚动顶栏与 Mini Player 联动</td>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/artist-page.jpg" width="230" alt="Resonus Glass 的 Taylor Swift 艺人页" /><br /><strong>艺人页 · Taylor Swift</strong><br />满幅照片与取色背景</td>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/album-artist-layout.jpg" width="230" alt="Resonus Glass 的七里香专辑页" /><br /><strong>专辑页 · 七里香</strong><br />艺人式满幅布局</td>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/dock-interaction.gif" width="230" alt="Resonus Glass 的 Bottom Tabs 与 Mini Player 随滚动折叠、展开的交互动画" /><br /><strong>底栏交互</strong><br />Mini Player 与 Bottom Tabs 联动</td>
   </tr>
   <tr>
-    <td align="center"><img src="./assets/screenshots/gallery-20261101/player.jpg" width="230" alt="Resonus Glass 播放页：专辑封面、主题色背景与播放控件" /><br /><strong>播放器</strong><br />封面主题色与易读控件</td>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/player.jpg" width="230" alt="Resonus Glass 播放 Above the Chinese Restaurant 的播放器页面" /><br /><strong>播放器</strong><br />Above the Chinese Restaurant</td>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/lyrics.jpg" width="230" alt="Resonus Glass 的 Above the Chinese Restaurant 同步歌词页面" /><br /><strong>同步歌词</strong><br />Above the Chinese Restaurant</td>
     <td align="center"><img src="./assets/screenshots/gallery-20261101/appearance-options.jpg" width="230" alt="Resonus Glass 外观设置中的 Apple Music、Spotify 以及专辑布局选项" /><br /><strong>可切换布局</strong><br />Apple Music／Spotify、专辑与歌单样式</td>
-    <td align="center"><img src="./assets/screenshots/gallery-20261101/download-manager.jpg" width="230" alt="Resonus Glass 下载管理空队列及全部开始、暂停、取消操作" /><br /><strong>下载管理</strong><br />队列总览与批量操作</td>
   </tr>
 </table>
 
@@ -61,8 +61,11 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 
 | 渠道 | 版本 | Android 更新编号 | 获取方式 |
 | --- | --- | --- | --- |
+| 当前源码 | `0.8.5.2-preview.3` | `135` | `glass` 分支，未发布 Release · [后台缓存说明](./docs/BACKGROUND-CACHE-PREVIEW-135.md) |
 | 正式版 | `0.8.5.1` | `132` | [Release 与 APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1) · [改动与验证](./docs/RELEASE-0.8.5.1.md) |
 | 测试预发布 | `0.8.5.1-preview.6` | `128` | [Release 与 APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1-preview.6) · [改动与验证](./docs/ALBUM-ARTIST-PREVIEW-6.md) |
+
+当前 `glass` 源码包含重复详情导航与取色缓存容量优化、详情页整体显示／退出修复，以及封面、歌词和离线音乐的锁屏／后台缓存支持，保留现有播放器布局与玻璃参数。实现和三星验证范围见[内存与详情页说明](./docs/MEMORY-SCENE-PREVIEW-134.md)及[后台缓存说明](./docs/BACKGROUND-CACHE-PREVIEW-135.md)。本轮仅同步源码，**不发布新的 Release**；正式下载和 App 检查更新仍以 `0.8.5.1` 为准。
 
 `0.8.5.1` 将艺人照片移动调整为参考画面中约 0.4 倍的内容位移，让完整照片、静态模糊延伸与共同遮罩在同一持久层移动，并按实际姓名／名字图的底边平滑交接顶栏。使用艺人页布局的专辑与歌单同步采用；Android 页面脱离窗口时释放原生遮罩位图，返回时重新生成。发布范围和性能验收边界见[本版说明](./docs/RELEASE-0.8.5.1.md)。
 
@@ -92,7 +95,7 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 
 `.27` 新增参考 [Volta](https://github.com/countervolts/Volta) 的 **Apple Music风格**，可在 **设置 → 外观 → 界面风格** 与 **Spotify风格** 之间切换。首页、资料库、艺人和专辑／歌单详情采用可切换的页面布局，保留现有播放器、玻璃参数及用户资料。范围和验证限制见 [双风格预览说明](./docs/VOLTA-UI-PREVIEW.md)。下方早期版本说明保留为开发历史。
 
-当前正式版为 `v0.8.5.1`，源码同步至 `glass` 分支；各版本 tag 固定对应各自的发布源码，之前的 `.preview.6` 测试包继续保留。播放页结合 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 派生的原生控件与 SVG，以及独立实现的封面／歌词界面和网格流动背景。「设置 → 播放器 → 播放器布局」可切回 Resonus 原有布局；下方「播放器背景」仅影响原有布局。控件与 SVG 的 **AGPL-3.0-only** 来源、保留的原有许可证和实现范围见 [第三方声明](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) 与 [预览说明](./docs/AMLL-PLAYER-PREVIEW.md)。
+当前正式版为 `v0.8.5.1`；各版本 tag 固定对应各自的发布源码，`glass` 分支另包含上方列出的未发布修复，之前的 `.preview.6` 测试包继续保留。播放页结合 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 派生的原生控件与 SVG，以及独立实现的封面／歌词界面和网格流动背景。「设置 → 播放器 → 播放器布局」可切回 Resonus 原有布局；下方「播放器背景」仅影响原有布局。控件与 SVG 的 **AGPL-3.0-only** 来源、保留的原有许可证和实现范围见 [第三方声明](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) 与 [预览说明](./docs/AMLL-PLAYER-PREVIEW.md)。
 
 `.15` 保留 `.14` 的五项修改：移除播放／歌词页顶部白条，保留原高度、顶部下拉和封面无障碍关闭；移除随机／循环按钮，仅保留原位置的上一首、播放／暂停、下一首，播放模式仍可在菜单设置；返回时冻结底栏已绘制进度，等来源页面状态恢复就绪后再交接，并保留来源页选中透镜透明度；逐字歌词只预备当前与下一行遮罩，下一行延后 720ms 准备，不改模糊、光学或歌词计时；有完整歌单镜像时先显示保存内容并在后台请求服务器，离线复用元数据避免重复 SQL，本地只查询当前歌单的歌曲 ID。没有缓存的首次打开仍可能等待，不能保证所有歌单立即出现。
 

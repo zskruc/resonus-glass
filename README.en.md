@@ -40,18 +40,18 @@ These features describe the released Glass baseline. Development previews may ch
 
 ## UI preview
 
-Recent Resonus Glass screenshots captured on a Samsung device, showing pages and optional layouts retained in the current version. Theme, song and glass settings vary between captures; library content is illustrative. Artist/album imagery is media shown in the screenshots and is not bundled with the app.
+Resonus Glass screens and interactions captured on a Samsung device, showing pages and optional layouts in the `glass` branch. Theme, song and glass settings vary between captures; library content is illustrative. Artist/album imagery is media shown in these captures and is not bundled with the app.
 
 <table>
   <tr>
-    <td align="center"><img src="./assets/screenshots/gallery-20261101/artist-page.jpg" width="230" alt="Resonus Glass artist page with full-width photo, color transition and playback actions" /><br /><strong>Artist page</strong><br />Full-width photo and artwork-derived background</td>
-    <td align="center"><img src="./assets/screenshots/gallery-20261101/album-artist-layout.jpg" width="230" alt="Resonus Glass album page using the full-width artist-style layout" /><br /><strong>Artist-style album</strong><br />A shared header language for artists and playlists</td>
-    <td align="center"><img src="./assets/screenshots/gallery-20261101/playlist-collapsed-dock.jpg" width="230" alt="Resonus Glass playlist with compact scroll title and collapsed glass dock" /><br /><strong>Playlist and compact dock</strong><br />Scroll-linked title, tabs and Mini Player</td>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/artist-page.jpg" width="230" alt="Taylor Swift artist page in Resonus Glass" /><br /><strong>Artist page · Taylor Swift</strong><br />Full-width photo and artwork-derived background</td>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/album-artist-layout.jpg" width="230" alt="Qi Li Xiang album page in Resonus Glass" /><br /><strong>Album page · 七里香</strong><br />Artist-style full-width layout</td>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/dock-interaction.gif" width="230" alt="Resonus Glass Bottom Tabs and Mini Player folding and unfolding during scrolling" /><br /><strong>Dock interaction</strong><br />Coordinated Mini Player and Bottom Tabs</td>
   </tr>
   <tr>
-    <td align="center"><img src="./assets/screenshots/gallery-20261101/player.jpg" width="230" alt="Resonus Glass player with album art, artwork-colored background and playback controls" /><br /><strong>Player</strong><br />Artwork colors and readable controls</td>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/player.jpg" width="230" alt="Resonus Glass player for Above the Chinese Restaurant" /><br /><strong>Player</strong><br />Above the Chinese Restaurant</td>
+    <td align="center"><img src="./assets/screenshots/gallery-20261101/lyrics.jpg" width="230" alt="Synchronized lyrics for Above the Chinese Restaurant in Resonus Glass" /><br /><strong>Synchronized lyrics</strong><br />Above the Chinese Restaurant</td>
     <td align="center"><img src="./assets/screenshots/gallery-20261101/appearance-options.jpg" width="230" alt="Resonus Glass Appearance settings with Apple Music, Spotify and album layout choices" /><br /><strong>Layout choices</strong><br />Apple Music/Spotify, album and playlist styles</td>
-    <td align="center"><img src="./assets/screenshots/gallery-20261101/download-manager.jpg" width="230" alt="Resonus Glass download manager showing an empty queue and batch start, pause and cancel actions" /><br /><strong>Download manager</strong><br />Queue overview and batch actions</td>
   </tr>
 </table>
 
@@ -61,8 +61,11 @@ Choose Artist page layout, Volta or Minidisc under **Settings → Appearance →
 
 | Channel | Version | Android version code | Availability |
 | --- | --- | --- | --- |
+| Current source | `0.8.5.2-preview.3` | `135` | `glass` branch, no Release published · [Background caching notes](./docs/BACKGROUND-CACHE-PREVIEW-135.md) |
 | Stable | `0.8.5.1` | `132` | [Release and APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1) · [Changes and validation](./docs/RELEASE-0.8.5.1.md) |
 | Test prerelease | `0.8.5.1-preview.6` | `128` | [Release and APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1-preview.6) · [Changes and validation](./docs/ALBUM-ARTIST-PREVIEW-6.md) |
+
+The current `glass` source adds bounded repeat-detail navigation and palette caches, coordinated detail-page reveal/exit fixes, and locked-screen/background caching for artwork, lyrics and offline music. Existing player layout and glass profiles remain. See the [memory/detail-scene notes](./docs/MEMORY-SCENE-PREVIEW-134.md) and [background caching notes](./docs/BACKGROUND-CACHE-PREVIEW-135.md) for implementation and Samsung validation scope. This update publishes source only, **without a new Release**; stable downloads and in-app update checks still use `0.8.5.1`.
 
 `0.8.5.1` moves artist photos at about 0.4 times content displacement, following the available reference frames. The complete photo, static blurred continuation and shared mask move in one persistent layer; compact titles hand over based on the measured name/wordmark bounds. Albums and playlists using Artist page layout share this behavior. Android releases native mask bitmaps when their views detach and rebuilds them on return. See the [release notes](./docs/RELEASE-0.8.5.1.md) for scope and performance-validation limits.
 
@@ -92,7 +95,7 @@ The current preview updates artist navigation transitions and name artwork, Volt
 
 `.27` adds an optional [Volta](https://github.com/countervolts/Volta)-inspired **Apple Music style** under **Settings → Appearance → UI style**, alongside **Spotify style**. Home, Library, artist and album/playlist pages use alternate layouts while retaining the existing player, glass profiles and user data. See the [dual UI preview scope and validation](./docs/VOLTA-UI-PREVIEW.md). Earlier preview notes below remain development history.
 
-The current stable release is `v0.8.5.1`; its source is synchronized to `glass`, with each tag preserving its release snapshot. The previous `.preview.6` test package remains available. Its native player combines [AMLL](https://github.com/amll-dev/applemusic-like-lyrics)-derived controls and SVGs with independently implemented cover/lyric views and a moving artwork-field background. Settings → Player → Player layout restores the previous Resonus layout; the Player background option below applies only to that layout. See the [third-party notices](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) and [preview guide](./docs/AMLL-PLAYER-PREVIEW.md) for the controls/assets’ **AGPL-3.0-only** provenance, retained original licenses and implementation boundaries.
+The current stable release is `v0.8.5.1`, with each tag preserving its release snapshot. The `glass` branch also includes the unreleased fixes listed above. The previous `.preview.6` test package remains available. Its native player combines [AMLL](https://github.com/amll-dev/applemusic-like-lyrics)-derived controls and SVGs with independently implemented cover/lyric views and a moving artwork-field background. Settings → Player → Player layout restores the previous Resonus layout; the Player background option below applies only to that layout. See the [third-party notices](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) and [preview guide](./docs/AMLL-PLAYER-PREVIEW.md) for the controls/assets’ **AGPL-3.0-only** provenance, retained original licenses and implementation boundaries.
 
 `.15` retains five changes from `.14`: remove the player/lyric top handle while retaining header space, pull-down dismissal and accessible closing on the artwork; remove shuffle/repeat buttons while leaving previous/play-pause/next in their original positions, with modes still in More; retain painted dock progress until its origin scope is restored and preserve the origin's selected-lens opacity; prepare word masks only for the current and next lyric rows, delaying next-row preparation by 720ms without changing blur, optics or lyric timing; show a complete saved playlist mirror while refreshing HTTP in the background, reuse offline metadata without duplicate SQL and limit local queries to the current playlist IDs. A first opening without saved data can still wait; instant loading is not guaranteed.
 
