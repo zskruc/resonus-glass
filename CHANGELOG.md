@@ -42,7 +42,7 @@ Releases before 0.2.1 are only listed on the
 - Promotes preview.6's selectable Apple Music/Spotify layouts, artist-style album/playlist pages, download management, music tools and reviewed upstream 0.8.5 adaptations to the stable channel.
 - Artist photos now move at the reference-derived 0.4× content ratio. The full photo, static blur field and common mask persist outside recycled headers; title/wordmark handoff follows measured bounds.
 - Corrects worklet initialization order and releases native Android mask bitmaps on view detachment, rebuilding on return. Player layout, stored glass profiles and downloaded files are retained.
-- Unpublished ARM64 candidate, version code 132, using the existing Glass package/signature. RN Screen Transitions and Gorhom's local experiment are excluded. All 1005 tests, type and translation checks pass; the new candidate still requires its native build/package checks and another Samsung session. Scoped results do not establish sustained 120 fps or long-session stability.
+- Unpublished ARM64 candidate, version code 132, using the existing Glass package/signature. RN Screen Transitions and Gorhom's local experiment are excluded. All 1005 tests, type and translation checks pass; candidate132 is built and package/source-verified, with Android memory and continuous-scroll validation pending. Scoped results do not establish sustained 120 fps or long-session stability.
 
 ## [0.8.5.1-preview.6] - 2026-11-01
 

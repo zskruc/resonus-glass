@@ -42,9 +42,13 @@ The photo now follows the reference-derived slower motion, while title handoff u
 All 1005 app tests, type and translation checks pass on this candidate branch. The prior experimental build's test count/hash is historical and does not validate this APK. A guarded pre-fix trace of an existing long-lived process contains 80 actual application Surface frames, with median duration 109.36 ms against an 8.33 ms target. These are application frame durations, not complete physical-display FPS; the trace establishes severe late frames without assigning every delay to one component. A prior control trace that failed process attribution is excluded.
 
 <!-- RELEASE_FINAL_VERIFICATION -->
-**发布前待补：** 原生构建、最终 APK 的版本／签名／SHA-256，以及本轮三星实机的上滑、页面返回和连续滚动结果。当前尚未据此声明卡顿已完全修复或持续达到 120 fps。
+**132 候选已构建并核验，尚未安装实测。** ARM64 APK 为45,709,344 bytes，包名 `com.zskruc.resonus.glasspreview`、版本 `0.8.5.1` / `132`，沿用原签名。构建代码提交 `d6eae16587e47a833946763d9f2dae227c218e6f`；15个相关生产源文件与实际 Metro sourcemap逐字一致，APK内 Hermes与生成文件逐字节一致，两个动效实验库和测试renderer不在生产bundle中。
 
-**Before publication:** complete the native build, verify the final APK version/signature/SHA-256, and record this build's Samsung scroll, navigation-return and sustained-scroll checks. No claim of fully resolved jank or sustained 120 fps is made at this stage.
+SHA-256: `8e50416fcebf1ef5041cde3beaa900fd675282e15799c38143289e121e36f4a8`。
+
+1005项测试、类型与翻译检查通过。真实React回归验证的是资源所有权和状态保持，不是Android原生内存／帧率。三星下一轮需复测深导航后的Bitmap/Graphics占用、连续滚动、封面／文字位置、播放器／歌词返回及后台恢复；通过后才发布正式Release。
+
+**Candidate132 is built and package-verified; device testing remains pending.** The APK retains the existing package/signature, uses code132 and is45,709,344bytes. The15 relevant production files exactly match the packaged source map and the Hermes asset matches the generated bundle; experimental motion libraries and the test renderer are absent. All1005 tests, type and translation checks pass. Stable publication awaits Android memory, scrolling, layout, player/lyrics return and background-restoration checks.
 <!-- /RELEASE_FINAL_VERIFICATION -->
 
 ## 安装 / Install
