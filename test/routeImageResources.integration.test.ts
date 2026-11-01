@@ -117,7 +117,7 @@ function harness() {
   let listeners: { transitionStart: (event: object) => void; transitionEnd: (event: object) => void };
   const app = element(resources.RootImageResourceProvider, { children: (next: typeof listeners) => { listeners = next; return element(Pages); } });
   let renderer: ReactTestRenderer;
-  return { resources, NativeImage, nativeImages, nativeMasks, connectedPages, pageMounts, pageState, events, metadata,
+  return { resources, Hero: hero.VoltaDetailHeroFade, NativeImage, nativeImages, nativeMasks, connectedPages, pageMounts, pageState, events, metadata,
     async mount() { await act(async () => { renderer = create(app); }); },
     async navigate(next: Route[], complete = true) {
       routes = next; navigationState = { index: routes.length - 1, routes };
@@ -131,6 +131,21 @@ function harness() {
 }
 
 describe('real React route image resource commits and Suspense', () => {
+  it('settles the hidden two-image composite after a request changes while its field URI stays the same', async () => {
+    const h = harness(); const readiness: boolean[] = [];
+    const props = { uri: 'https://example.com/full.jpg', sourceUri: 'file:///full.jpg', textureUri: 'file:///field.png',
+      width: 400, height: 400, extensionHeight: 120, imageStyle: {}, onReadyChange: (ready: boolean) => readiness.push(ready) };
+    let renderer: ReactTestRenderer;
+    await act(async () => { renderer = create(element(h.Hero, props)); });
+    assert.deepEqual(readiness, [false, true]); assert.equal(h.nativeImages.size, 2);
+    const previous = new Set(h.nativeImages);
+    await act(async () => { renderer.update(element(h.Hero, { ...props, cacheOnly: true })); });
+    assert.deepEqual(readiness, [false, true, false, true], 'the remounted same-URI field must report readiness while its parent is hidden');
+    assert.equal(h.nativeImages.size, 2);
+    assert.ok([...h.nativeImages].every((id) => !previous.has(id)), 'both current decoder completions belong to the new request');
+    await act(async () => { renderer.unmount(); }); assert.equal(h.nativeImages.size, 0);
+  });
+
   it('releases actual hero image/mask subtrees while preserving page scroll and selection state through deep navigation', async () => {
     const h = harness(); await h.mount();
     const routes = [home, artist('a0'), album('b0')]; await h.navigate(routes);

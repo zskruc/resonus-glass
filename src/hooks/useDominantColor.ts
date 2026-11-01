@@ -14,6 +14,8 @@
 import { useEffect, useState } from 'react';
 
 import { CACHED_COVER, COVER } from '@/api/data';
+import { artworkColorCache } from '@/lib/artworkColorCache';
+import { BoundedCache } from '@/lib/boundedCache';
 import { colors as theme, useThemeMode, type ThemeMode } from '@/theme';
 
 function hexToRgb(hex: string): [number, number, number] | null {
@@ -173,20 +175,20 @@ function paletteUri(uri: string): string {
 /** A failed read must stay retryable instead of caching a plain tint. */
 async function readCoverColor(src: string, mode: ThemeMode, vivid: boolean): Promise<string | null> {
   try {
-    const { getColors, cache } = await import('react-native-image-colors');
-    const fallback = theme.surfaceHighlight;
-    const res = await getColors(src, { fallback, cache: true, key: src, quality: 'high' });
-    if (!res) return null;
-    // Android computes average directly from the decoded bitmap, even when
-    // Palette returns no swatches for a pure black or white cover. That real
-    // colour keeps a valid neutral image out of the failed-read path.
-    const swatches = Object.entries(res).filter(
-      ([k]) => k !== 'platform' && k !== 'quality',
-    );
-    if (swatches.length > 0 && swatches.every(([, value]) => value === fallback)) {
-      cache.removeItem(src);
-      return null;
-    }
+    const readFallback = theme.surfaceHighlight;
+    const sample = await artworkColorCache.load(src, readFallback, async () => {
+      const { getColors, cache } = await import('react-native-image-colors');
+      const result = cache.getItem(src) ?? await getColors(src, { fallback: readFallback, cache: false, key: src, quality: 'high' });
+      if (!result) return null;
+      // A real Android average accepts neutral art even without swatches.
+      const swatches = Object.entries(result).filter(([key]) => key !== 'platform' && key !== 'quality');
+      if (swatches.length > 0 && swatches.every(([, value]) => value === readFallback)) {
+        cache.removeItem(src); return null;
+      }
+      return result;
+    });
+    if (!sample) return null;
+    const { colors: res, fallback } = sample;
     let color: string = fallback;
     if (res.platform === 'android') {
       // An absent vibrant swatch is the fallback, even when a black-and-white
@@ -210,16 +212,24 @@ async function readCoverColor(src: string, mode: ThemeMode, vivid: boolean): Pro
  * instead of starting from the plain one and jumping (which `getColors`'s own
  * cache cannot prevent: it answers asynchronously even when it has the answer).
  */
-const resolved = new Map<string, string>();
+// Four normalized variants per recent source: light/dark × ordinary/vivid.
+const resolved = new BoundedCache<string, string>(1024);
 const pending = new Map<string, Promise<string | null>>();
 
 function resolvedKey(src: string, mode: ThemeMode, vivid: boolean): string {
   return `${mode}|${vivid ? 'v' : 'c'}|${src}`;
 }
 
+function cachedTint(src: string, key: string): string | undefined {
+  const color = resolved.get(key);
+  // Current covers should keep their raw palette warm for a theme change.
+  if (color) artworkColorCache.peek(src);
+  return color;
+}
+
 /** A shared request fills the synchronous cache for UI reads and bounded warmup. */
 function requestCoverTint(src: string, key: string, mode: ThemeMode, vivid: boolean): Promise<string | null> {
-  const cached = resolved.get(key);
+  const cached = cachedTint(src, key);
   if (cached) return Promise.resolve(cached);
   const existing = pending.get(key);
   if (existing) return existing;
@@ -240,7 +250,8 @@ export async function prefetchCoverTint(uri: string | undefined, mode: ThemeMode
 /** Synchronous read for global controls: uses the same cache as the full player. */
 export function cachedCoverTint(uri: string, mode: ThemeMode, vivid = false): string | undefined {
   if (uri.startsWith(CACHED_COVER)) return undefined;
-  return resolved.get(resolvedKey(paletteUri(uri), mode, vivid));
+  const src = paletteUri(uri);
+  return cachedTint(src, resolvedKey(src, mode, vivid));
 }
 
 /** Joins the existing pending decode; no additional image sampling or download. */
@@ -272,7 +283,7 @@ export function useCoverTint(uri?: string, vivid = false): { color: string; know
   const src = readable ? paletteUri(uri) : undefined;
   const key = src ? resolvedKey(src, mode, vivid) : undefined;
   const [read, setRead] = useState<{ key: string; color: string } | undefined>(undefined);
-  const cachedAtRender = key ? resolved.get(key) : undefined;
+  const cachedAtRender = src && key ? cachedTint(src, key) : undefined;
 
   useEffect(() => {
     // A warmup may resolve between render and effect. Only skip a cache value

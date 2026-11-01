@@ -3,7 +3,7 @@
  * centered. The twin of `AlbumCard`, which already existed; artists were
  * previously drawn by hand on each screen.
  */
-import { Link } from 'expo-router';
+import { DetailLink } from '@/components/DetailLink';
 import { memo } from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 
@@ -27,7 +27,7 @@ export const ArtistCard = memo(function ArtistCard({ artist, width = 150 }: Prop
   const cover = coverArtUrl(artist.coverArt ?? artist.id, COVER.card);
 
   return (
-    <Link href={`/artist/${artist.id}`} asChild>
+    <DetailLink kind="artist" id={artist.id} asChild>
       {/* expo-router merges the Link style into this child; it must be a
           single object, not an array, so we flatten it. */}
       <Pressable style={StyleSheet.flatten([styles.container, { width }])}>
@@ -36,7 +36,7 @@ export const ArtistCard = memo(function ArtistCard({ artist, width = 150 }: Prop
           {artist.name}
         </Text>
       </Pressable>
-    </Link>
+    </DetailLink>
   );
 });
 

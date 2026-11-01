@@ -3,7 +3,7 @@
  * list-mode sibling of `ArtistCard`; until now it only existed loose inside
  * the Library.
  */
-import { Link } from 'expo-router';
+import { DetailLink } from '@/components/DetailLink';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 
@@ -27,7 +27,7 @@ export function ArtistRow({ artist }: { artist: Artist }) {
   // the single object it wants.
   return (
     <Animated.View style={press.style}>
-      <Link href={`/artist/${artist.id}`} asChild>
+      <DetailLink kind="artist" id={artist.id} asChild>
         <Pressable
           style={StyleSheet.flatten([styles.row, appleMusic && appleMusicStyles.mediaRow])}
           onPressIn={press.onPressIn}
@@ -41,7 +41,7 @@ export function ArtistRow({ artist }: { artist: Artist }) {
             <Text style={[styles.sub, appleMusic && appleMusicStyles.rowSubtitle]}>{albumsLabel(artist.albumCount ?? 0, lang)}</Text>
           </View>
         </Pressable>
-      </Link>
+      </DetailLink>
     </Animated.View>
   );
 }

@@ -67,7 +67,7 @@ function renderer() {
   const imports: Record<string, unknown> = {
     react: { memo: (component: unknown) => component },
     'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' },
-    'expo-router': { Link: 'Link' },
+    '@/components/DetailLink': { DetailLink: 'DetailLink' },
     'react-native': { Pressable: 'Pressable', Text: 'Text', View: 'View', StyleSheet: { flatten: (value: unknown) => value } },
     'react-native-gesture-handler': { FlatList: 'VirtualGrid' },
     'react-native-reanimated': { __esModule: true, default: { createAnimatedComponent: (value: unknown) => value } },
@@ -101,7 +101,9 @@ test('large result sets create covers only for requested virtual cells and use o
   assert.equal(tree.props.keyboardShouldPersistTaps, 'handled');
   const cell = tree.props.renderItem({ item: items[9_999] }) as Element;
   const link = cell.props.children as Element; const press = link.props.children as Element;
-  assert.equal(link.props.href, '/artist/9999');
+  assert.equal(link.type, 'DetailLink');
+  assert.equal(link.props.kind, 'artist');
+  assert.equal(link.props.id, '9999');
   assert.deepEqual(h.coverRequests, ['image-9999']);
   press.props.onPress();
   assert.equal(h.recent[0].id, '9999'); assert.equal(h.recent[0].kind, 'artist');

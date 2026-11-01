@@ -4,6 +4,7 @@ import { StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
 import { artistHeaderPhotoOffset } from '@/lib/artistHeaderTransition';
+import { useDetailHeroReporter } from '@/components/DetailHeroScene';
 import { VoltaDetailHeroFade } from './VoltaDetailHeroFade';
 
 const STATIC_IMAGE_STYLE = {};
@@ -13,6 +14,7 @@ interface Props {
   sourceUri?: string;
   textureUri?: string;
   cacheOnly?: boolean;
+  prepared?: boolean;
   width: number;
   height: number;
   extensionHeight: number;
@@ -24,6 +26,7 @@ interface Props {
 export const VoltaArtistScrollBackdrop = memo(function VoltaArtistScrollBackdrop({
   scrollY, width, height, extensionHeight, ...source
 }: Props) {
+  const reportReady = useDetailHeroReporter();
   // Move the completed photograph, field and static masks together. Moving
   // only their pixels inside a fixed clip would cut a still-visible fade.
   const position = useAnimatedStyle(() => ({
@@ -33,7 +36,7 @@ export const VoltaArtistScrollBackdrop = memo(function VoltaArtistScrollBackdrop
     accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
     style={[styles.plane, { width, height: height + extensionHeight }, position]}>
     <VoltaDetailHeroFade {...source} uri={source.uri} width={width} height={height}
-      extensionHeight={extensionHeight} imageStyle={STATIC_IMAGE_STYLE} />
+      extensionHeight={extensionHeight} imageStyle={STATIC_IMAGE_STYLE} onReadyChange={reportReady} />
   </Animated.View>;
 });
 

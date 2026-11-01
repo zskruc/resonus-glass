@@ -14,15 +14,7 @@ import { CACHED_COVER } from '@/api/data';
 import { useRouteImageLease } from '@/components/RouteImageResources';
 import { isArtistImageTraceEnabled } from '../../../modules/liquid-glass';
 
-// Remember only small identities, never ImageRefs/bitmaps. Glide owns the
-// bounded decoded-image cache; a revisit does not need a fixed entry fade.
-const displayedPhotos = new Set<string>();
 let imageRequestSequence = 0;
-function rememberPhoto(uri: string) {
-  displayedPhotos.delete(uri);
-  displayedPhotos.add(uri);
-  while (displayedPhotos.size > 64) displayedPhotos.delete(displayedPhotos.values().next().value!);
-}
 function localPhoto(uri?: string) {
   return uri && /^(?:file|content):/i.test(uri) ? uri : undefined;
 }
@@ -53,8 +45,12 @@ interface Props {
   onError?: () => void;
   /** A small static navigation copy may blur its cached photograph at decode. */
   blurRadius?: number;
+  /** The source/field preparation has settled, including an unavailable fallback. */
+  prepared?: boolean;
+  /** Readiness of the complete current composite, never just its first image. */
+  onReadyChange?: (ready: boolean) => void;
+  /** Kept for callers of the static navigation copy; layers always switch together. */
   fieldTransition?: number;
-  /** Navigation's hidden static copy needs no entry animation. */
   sharpTransition?: number;
   onLayerDisplay?: (layer: 'sharp' | 'field') => void;
   onLayerError?: (layer: 'sharp' | 'field') => void;
@@ -63,7 +59,7 @@ interface Props {
 export const VoltaDetailHeroFade = memo(function VoltaDetailHeroFade({
   uri, sourceUri, textureUri, width, height, imageStyle, cacheOnly = false,
   backgroundColor = 'transparent', extensionHeight = 0, onError,
-  blurRadius = 0, fieldTransition = 160, sharpTransition, onLayerDisplay, onLayerError,
+  blurRadius = 0, prepared = true, onReadyChange, onLayerDisplay, onLayerError,
 }: Props) {
   const imageLease = useRouteImageLease();
   const totalHeight = height + extensionHeight;
@@ -76,30 +72,28 @@ export const VoltaDetailHeroFade = memo(function VoltaDetailHeroFade({
   const sharpUri = failedPrimary === primary && fallback && fallback !== primaryUri ? fallback : primaryUri;
   const sharp = useMemo<ImageRequest>(() => ({ uri: sharpUri, sequence: ++imageRequestSequence, owner: primary }), [primary, sharpUri]);
   const field = useMemo<ImageRequest>(() => ({ uri: textureUri, sequence: ++imageRequestSequence, owner: primary }), [primary, textureUri]);
-  const live = useRef<{ sharp: ImageRequest; field: ImageRequest } | undefined>(undefined);
+  const live = useRef<{ sharp: ImageRequest; field: ImageRequest; active: boolean } | undefined>(undefined);
   const [shown, setShown] = useState<{ request: ImageRequest; failed: boolean }>();
+  const [shownField, setShownField] = useState<{ request: ImageRequest; failed: boolean }>();
   useLayoutEffect(() => {
-    live.current = { sharp, field };
+    live.current = { sharp, field, active: imageLease.active };
     return () => { live.current = undefined; };
-  }, [sharp, field]);
+  }, [sharp, field, imageLease]);
   useLayoutEffect(() => { if (sharp.uri) imageTrace(sharp, 'sharp', 'requested'); }, [sharp]);
-  const sharpSettled = shown?.request === sharp;
-  // A 240px blur field must not briefly stand in for the whole photograph.
-  // After a genuine sharp failure it remains a valid last-resort fallback.
-  const showField = !sharpUri || sharpSettled;
-  // Freeze this request's animation choice. Its onDisplay event remembers the
-  // photo for future requests without changing a fade already in progress.
-  const transition = useMemo(() => sharpTransition ?? (sharp.uri && displayedPhotos.has(sharp.uri) ? 0 : 120),
-    [sharp, sharpTransition]);
+  const ready = imageLease.active && prepared && (!sharpUri || shown?.request === sharp)
+    && (!textureUri || shownField?.request === field);
+  useLayoutEffect(() => {
+    if (live.current?.sharp === sharp && live.current.field === field
+      && live.current.active === imageLease.active) onReadyChange?.(ready);
+  }, [sharp, field, imageLease, ready, onReadyChange]);
   const sharpDisplayed = () => {
-    if (live.current?.sharp !== sharp) return;
-    if (sharpUri && sharpTransition === undefined) rememberPhoto(sharpUri);
+    if (!live.current?.active || live.current.sharp !== sharp) return;
     setShown((previous) => previous?.request === sharp && !previous.failed ? previous : { request: sharp, failed: false });
     imageTrace(sharp, 'sharp', 'displayed');
     onLayerDisplay?.('sharp');
   };
   const sharpFailed = () => {
-    if (live.current?.sharp !== sharp) return;
+    if (!live.current?.active || live.current.sharp !== sharp) return;
     imageTrace(sharp, 'sharp', 'failed');
     if (sharpUri === primaryUri) setFailedPrimary(primary);
     if (sharpUri === primaryUri && fallback && fallback !== primaryUri) {
@@ -109,22 +103,36 @@ export const VoltaDetailHeroFade = memo(function VoltaDetailHeroFade({
     onError?.();
     onLayerError?.('sharp');
   };
+  const fieldDisplayed = () => {
+    if (!live.current?.active || live.current.field !== field) return;
+    setShownField((previous) => previous?.request === field && !previous.failed ? previous : { request: field, failed: false });
+    imageTrace(field, 'field', 'displayed');
+    onLayerDisplay?.('field');
+  };
+  const fieldFailed = () => {
+    if (!live.current?.active || live.current.field !== field) return;
+    setShownField({ request: field, failed: true });
+    imageTrace(field, 'field', 'failed');
+    onLayerError?.('field');
+  };
   if (!imageLease.active) return null;
   return (
     <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0,
-      width, height: totalHeight, backgroundColor, overflow: 'hidden' }}>
+      width, height: totalHeight, backgroundColor, overflow: 'hidden', opacity: ready ? 1 : 0 }}>
       <Animated.View renderToHardwareTextureAndroid shouldRasterizeIOS
         style={[{ width, height: totalHeight }, imageStyle]}>
         <MaskedView androidRenderingMode="hardware" style={{ width, height: totalHeight }} maskElement={
           <LinearGradient colors={['#FFFFFFFF', '#FFFFFFFF', '#FFFFFF00']}
             locations={[0, fadeStart, 1]} style={StyleSheet.absoluteFill} />
         }>
-        {textureUri && showField ? (
-          <Image source={{ uri: textureUri }} recyclingKey={textureUri}
-            cachePolicy="memory-disk" contentFit="fill" transition={fieldTransition} blurRadius={blurRadius}
-            onLoad={(event) => { if (live.current?.field === field) imageTrace(field, 'field', 'loaded', ` width=${event.source.width} height=${event.source.height} cache=${event.cacheType}`); }}
-            onDisplay={() => { if (live.current?.field === field) { imageTrace(field, 'field', 'displayed'); onLayerDisplay?.('field'); } }}
-            onError={() => { if (live.current?.field === field) { imageTrace(field, 'field', 'failed'); onLayerError?.('field'); } }}
+        {/* Decode both layers while hidden. Expo Image's onDisplay signals
+            drawable assignment even at opacity 0, so neither waits for the other.
+            One outer gate reveals the completed photograph and its feather. */}
+        {textureUri ? (
+          <Image key={field.sequence} source={{ uri: textureUri }} recyclingKey={textureUri}
+            cachePolicy="memory-disk" contentFit="fill" transition={0} blurRadius={blurRadius}
+            onLoad={(event) => { if (live.current?.active && live.current.field === field) imageTrace(field, 'field', 'loaded', ` width=${event.source.width} height=${event.source.height} cache=${event.cacheType}`); }}
+            onDisplay={fieldDisplayed} onError={fieldFailed}
             style={{ width, height: totalHeight }} />
         ) : null}
         {sharpUri ? (
@@ -135,10 +143,10 @@ export const VoltaDetailHeroFade = memo(function VoltaDetailHeroFade({
                 locations={[0, 0.55, 0.85]}
                 style={StyleSheet.absoluteFill} />
             }>
-            <Image source={{ uri: sharpUri }} recyclingKey={sharpUri}
+            <Image key={sharp.sequence} source={{ uri: sharpUri }} recyclingKey={sharpUri}
               cachePolicy="memory-disk" priority="high"
-              contentFit="cover" transition={transition} blurRadius={blurRadius}
-              onLoad={(event) => { if (live.current?.sharp === sharp) imageTrace(sharp, 'sharp', 'loaded', ` width=${event.source.width} height=${event.source.height} cache=${event.cacheType}`); }}
+              contentFit="cover" transition={0} blurRadius={blurRadius}
+              onLoad={(event) => { if (live.current?.active && live.current.sharp === sharp) imageTrace(sharp, 'sharp', 'loaded', ` width=${event.source.width} height=${event.source.height} cache=${event.cacheType}`); }}
               onDisplay={sharpDisplayed} onError={sharpFailed}
               style={{ width, height }} />
           </MaskedView>

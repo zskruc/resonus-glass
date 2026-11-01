@@ -25,6 +25,7 @@ function plane() {
       runOnJS: () => { stateWrites++; throw new Error('image scrolling must stay on the UI thread'); },
     },
     '@/lib/artistHeaderTransition': { artistHeaderPhotoOffset },
+    '@/components/DetailHeroScene': { useDetailHeroReporter: () => undefined },
     './VoltaDetailHeroFade': { VoltaDetailHeroFade: 'PreparedHero' },
   };
   const exported: Record<string, any> = {};

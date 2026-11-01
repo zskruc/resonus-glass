@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 
-type Node = { type: unknown; props: Record<string, any> };
+type Node = { type: unknown; props: Record<string, any>; key?: string | number };
 
 /** Drives real hero event handlers while keeping native image completions deferred. */
 export function artistHeroRenderer(trace = false) {
@@ -41,7 +41,7 @@ export function artistHeroRenderer(trace = false) {
     },
   };
   const exported: Record<string, any> = {};
-  const jsx = (type: unknown, props: Node['props']) => ({ type, props });
+  const jsx = (type: unknown, props: Node['props'], key?: Node['key']) => ({ type, props, key });
   const imports: Record<string, unknown> = {
     react, 'react/jsx-runtime': { jsx, jsxs: jsx },
     '@react-native-masked-view/masked-view': { __esModule: true, default: 'Mask' },
@@ -56,7 +56,8 @@ export function artistHeroRenderer(trace = false) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText, { exports: exported, console: { info: (line: string) => logs.push(line) },
     require(name: string) { assert.ok(Object.hasOwn(imports, name), name); return imports[name]; } });
-  const layers = (tree: Node): { field: Node | null; sharp: Node | null } => {
+  const layers = (tree: Node | null): { field: Node | null; sharp: Node | null } => {
+    if (!tree) return { field: null, sharp: null };
     const [field, sharp] = tree.props.children.props.children.props.children;
     return { field, sharp: sharp?.props.children ?? null };
   };
@@ -69,6 +70,7 @@ export function artistHeroRenderer(trace = false) {
   const settled = (props: Record<string, any>) => {
     let tree = render(props);
     layers(tree).sharp?.props.onDisplay();
+    layers(tree).field?.props.onDisplay();
     tree = render(props);
     return tree;
   };

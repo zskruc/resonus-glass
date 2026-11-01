@@ -306,7 +306,7 @@ it('preserves the original hero mask, photo crop and default blur while allowing
       'the final fade must be the same normalized .52H → H+extension ramp, not an independent navigation gradient');
   });
   const [mainField, mainSharp] = mainMask.props.children; const [copyField, copySharp] = copyMask.props.children;
-  assert.equal(mainField.props.transition, 160); assert.equal(mainField.props.blurRadius, 0);
+  assert.equal(mainField.props.transition, 0); assert.equal(mainField.props.blurRadius, 0);
   assert.equal(mainSharp.props.children.props.blurRadius, 0);
   assert.equal(copyField.props.transition, 0); assert.equal(copySharp.props.children.props.blurRadius, 2);
   assert.equal(copySharp.props.children.props.contentFit, mainSharp.props.children.props.contentFit);

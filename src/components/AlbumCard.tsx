@@ -1,5 +1,5 @@
 /** Album card for home and search grids/carousels. */
-import { Link } from 'expo-router';
+import { DetailLink } from '@/components/DetailLink';
 import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -34,7 +34,7 @@ export const AlbumCard = memo(function AlbumCard({ album, width = 150, onPress }
   const explicit = useExplicitBadge(album.explicitStatus);
 
   return (
-    <Link href={`/album/${album.id}`} asChild>
+    <DetailLink kind="album" id={album.id} asChild>
       {/* expo-router merges the Link style into this child; it must be a
           single object, not an array, so we flatten it. */}
       <Pressable
@@ -62,7 +62,7 @@ export const AlbumCard = memo(function AlbumCard({ album, width = 150, onPress }
           </View>
         ) : null}
       </Pressable>
-    </Link>
+    </DetailLink>
   );
 });
 

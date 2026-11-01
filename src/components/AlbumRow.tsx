@@ -5,7 +5,7 @@
  * The pin is optional because pinning belongs to the Library: when browsing
  * there are no pinned items to show.
  */
-import { Link } from 'expo-router';
+import { DetailLink } from '@/components/DetailLink';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 
@@ -42,7 +42,7 @@ export function AlbumRow({ album, pinned }: Props) {
   // the single object it wants.
   return (
     <Animated.View style={press.style}>
-      <Link href={`/album/${album.id}`} asChild>
+      <DetailLink kind="album" id={album.id} asChild>
         <Pressable
           style={StyleSheet.flatten([styles.row, appleMusic && appleMusicStyles.mediaRow])}
           onPressIn={press.onPressIn}
@@ -72,7 +72,7 @@ export function AlbumRow({ album, pinned }: Props) {
             ) : null}
           </View>
         </Pressable>
-      </Link>
+      </DetailLink>
     </Animated.View>
   );
 }

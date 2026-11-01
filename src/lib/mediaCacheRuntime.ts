@@ -90,8 +90,10 @@ export function makeMediaCacheRuntime(auth: SubsonicAuth, profile: string, curre
       check();
       await Db.saveArtistInfo(profile, artist.id, info, result.uri, current);
       check();
-      queryClient.setQueryData(['artist', artist.id], detail);
-      queryClient.setQueryData(['artistInfo', artist.id], { ...info, imageUrl: result.uri ?? info.imageUrl });
+      // SQLite owns the full-library cache. Refresh already-opened queries,
+      // without creating two in-memory metadata entries for every unseen artist.
+      queryClient.setQueriesData({ queryKey: ['artist', artist.id], exact: true }, detail);
+      queryClient.setQueriesData({ queryKey: ['artistInfo', artist.id], exact: true }, { ...info, imageUrl: result.uri ?? info.imageUrl });
       return result.outcome;
     },
   };

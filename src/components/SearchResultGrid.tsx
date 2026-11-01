@@ -1,5 +1,5 @@
 /** A filtered search owns one vertical, virtualized scroll surface. */
-import { Link } from 'expo-router';
+import { DetailLink } from '@/components/DetailLink';
 import { memo, type ReactElement } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { FlatList } from 'react-native-gesture-handler';
@@ -58,7 +58,7 @@ export const SearchResultGrid = memo(function SearchResultGrid({ identity, items
       {item.kind === 'album' ? <AlbumCard album={item.album} width={cardWidth} onPress={() => addRecent({
         kind: 'album', id: item.album.id, title: item.album.name, artist: item.album.artist,
         coverArt: item.album.coverArt ?? item.album.id, href: `/album/${item.album.id}`,
-      })} /> : <Link href={`/artist/${item.artist.id}`} asChild>
+      })} /> : <DetailLink kind="artist" id={item.artist.id} asChild>
         <Pressable style={StyleSheet.flatten([styles.artist, { width: cardWidth }])}
           onPress={() => addRecent({ kind: 'artist', id: item.artist.id, title: item.artist.name,
             coverArt: item.artist.coverArt ?? item.artist.id, href: `/artist/${item.artist.id}` })}>
@@ -67,7 +67,7 @@ export const SearchResultGrid = memo(function SearchResultGrid({ identity, items
             {item.artist.name}
           </Text>
         </Pressable>
-      </Link>}
+      </DetailLink>}
     </View>}
   />;
 });

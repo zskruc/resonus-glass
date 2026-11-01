@@ -5,14 +5,18 @@ import { CACHED_COVER, COVER } from '@/api/data';
 import { useAuthStore } from '@/store/auth';
 import { useThemeMode } from '@/theme';
 import { buildMinidiscAlbumPalette } from '@/lib/minidiscAlbumPalette';
+import { artworkColorCache } from '@/lib/artworkColorCache';
+import { BoundedCache } from '@/lib/boundedCache';
 
-const seeds = new Map<string, string>();
+const seeds = new BoundedCache<string, string>(64);
 const pending = new Map<string, Promise<string | undefined>>();
 const FAILURE = '#010203';
 
 async function readSeed(source: string, displayed: string, offline: boolean): Promise<string | undefined> {
   const { getColors, cache } = await import('react-native-image-colors');
-  let sample = cache.getItem(source);
+  const shared = artworkColorCache.peek(source);
+  const fallback = shared?.fallback ?? FAILURE;
+  let sample = shared?.colors ?? cache.getItem(source);
   if (!sample) {
     let local = /^(?:file:|content:|data:image\/)/.test(displayed) ? displayed : undefined;
     if (offline || useAuthStore.getState().offline) {
@@ -20,11 +24,13 @@ async function readSeed(source: string, displayed: string, offline: boolean): Pr
       if (!path) return undefined;
       local = path.startsWith('/') ? `file://${path}` : path;
     }
+    // A low-quality seed stays local to Minidisc; it must not replace a
+    // full player palette's higher-quality sample in the shared cache.
     sample = await getColors(local ?? source, { fallback: FAILURE, cache: false, quality: 'low', pixelSpacing: 10 });
   }
   const candidates = sample.platform === 'ios' ? [sample.background, sample.primary, sample.secondary]
     : sample.platform === 'android' ? [sample.dominant, sample.average, sample.muted] : [sample.dominant, sample.vibrant];
-  return candidates.find((value) => value && value !== FAILURE && /^#[\da-f]{6}$/i.test(value));
+  return candidates.find((value) => value && value !== fallback && /^#[\da-f]{6}$/i.test(value));
 }
 
 export function useMinidiscAlbumPalette(uri?: string, offline = false) {
@@ -43,8 +49,7 @@ export function useMinidiscAlbumPalette(uri?: string, offline = false) {
       const owned = request;
       void request.then((seed) => {
         if (seed) {
-          seeds.delete(source); seeds.set(source, seed);
-          while (seeds.size > 64) seeds.delete(seeds.keys().next().value!);
+          seeds.set(source, seed);
         }
       }).finally(() => { if (pending.get(source) === owned) pending.delete(source); });
     }

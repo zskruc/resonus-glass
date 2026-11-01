@@ -42,6 +42,8 @@ import {
 } from '@/api/data';
 import { type Album, type Artist, type Song } from '@/api/subsonic';
 import { AlbumCard } from '@/components/AlbumCard';
+import { DetailLink } from '@/components/DetailLink';
+import { DetailHeroScene } from '@/components/DetailHeroScene';
 import { Cover } from '@/components/Cover';
 import { RouteImageResource } from '@/components/RouteImageResources';
 import { CoverViewer } from '@/components/CoverViewer';
@@ -445,12 +447,14 @@ export default function ArtistScreen() {
   }
 
   return (
-    <View style={[styles.root, appleMusic && { backgroundColor: appleBackground }]}>
+    <DetailHeroScene enabled={appleMusic && !!headerUri} identity={headerUri}
+      loadingColor={appleBackground} loadingTint={artistPalette.text}
+      style={[styles.root, appleMusic && { backgroundColor: appleBackground }]}>
       {appleMusic && focused ? <><StatusBar style="light" /><NavigationBar style="light" /></> : null}
       <View style={{ flex: 1 }}>
       <ArtistPagePaletteProvider value={appleMusic ? artistPalette : undefined}>
       {appleMusic ? <VoltaArtistScrollBackdrop uri={headerUri} sourceUri={artistArtwork.sourceUri}
-        textureUri={artistArtwork.textureUri} cacheOnly={offline} width={screenW} height={portraitH}
+        textureUri={artistArtwork.textureUri} prepared={artistArtwork.ready} cacheOnly={offline} width={screenW} height={portraitH}
         extensionHeight={portraitExtension} backgroundColor={appleBackground} scrollY={scrollY}
         onError={onPortraitError} /> : null}
       <AnimatedPage
@@ -600,7 +604,7 @@ export default function ArtistScreen() {
 
         {appleMusic && featured ? (
           <View style={styles.section}>
-            <Link href={`/album/${featured.id}`} asChild>
+            <DetailLink kind="album" id={featured.id} asChild>
               <Pressable accessibilityLabel={`${t('Featured')}, ${featured.name}`}
                 style={StyleSheet.flatten(voltaStyles.featuredCard)}
                 android_ripple={{ color: artistPalette.controlFill }}>
@@ -614,7 +618,7 @@ export default function ArtistScreen() {
                 </View>
                 <Icon name="chevron-forward" size={22} color={artistPalette.textSecondary} />
               </Pressable>
-            </Link>
+            </DetailLink>
           </View>
         ) : null}
 
@@ -713,14 +717,14 @@ export default function ArtistScreen() {
               contentContainerStyle={styles.row}
             >
               {info.similarArtists.map((a) => (
-                <Link key={a.id} href={`/artist/${a.id}`} asChild>
+                <DetailLink key={a.id} kind="artist" id={a.id} asChild>
                   <Pressable style={styles.similar}>
                     <Cover uri={coverArtUrl( a.coverArt ?? a.id, COVER.thumb)} size={110} rounded />
                     <Text style={[styles.similarName, appleText]} numberOfLines={1}>
                       {a.name}
                     </Text>
                   </Pressable>
-                </Link>
+                </DetailLink>
               ))}
             </ScrollView>
           </View>
@@ -927,7 +931,7 @@ export default function ArtistScreen() {
           )
         }
       </SheetModal>
-    </View>
+    </DetailHeroScene>
   );
 }
 

@@ -6,7 +6,8 @@
 import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Link, useRouter } from 'expo-router';
+import { Link } from 'expo-router';
+import { useDetailNavigation } from '@/hooks/useDetailNavigation';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import {
@@ -57,6 +58,7 @@ import { MinidiscAlbumHeader } from '@/components/volta/MinidiscAlbumHeader';
 import { PlaylistDetailHeader, playlistCoverSize } from '@/components/PlaylistDetailHeader';
 import { PlaylistArtistHeader, playlistArtistHeaderHeight } from '@/components/PlaylistArtistHeader';
 import { VoltaArtistScrollBackdrop } from '@/components/volta/VoltaArtistScrollBackdrop';
+import { DetailHeroScene } from '@/components/DetailHeroScene';
 import { VoltaArtistHeaderBackdrop } from '@/components/volta/VoltaArtistHeaderBackdrop';
 import { ArtistPagePaletteProvider, useArtistPagePalette } from '@/components/volta/ArtistPagePalette';
 import { useVoltaArtistArtwork } from '@/hooks/useVoltaArtistArtwork';
@@ -276,7 +278,7 @@ export function TrackListView({
   selection,
   onPlay,
 }: Props) {
-  const router = useRouter();
+  const openDetail = useDetailNavigation();
   const t = useT();
   const insets = useSafeAreaInsets();
   const { width: screenW, height: screenH } = useScreenSize();
@@ -333,7 +335,7 @@ export function TrackListView({
     subtitleTargets.length > 1
       ? () => openArtistPicker(subtitleTargets)
       : subtitleTargets.length === 1
-        ? () => router.push(`/artist/${subtitleTargets[0].id}`)
+        ? () => openDetail({ kind: 'artist', id: subtitleTargets[0].id })
         : undefined;
 
   const sourceHref = usePlayerStore((state) => state.sourceHref);
@@ -628,7 +630,9 @@ export function TrackListView({
 
   return (
     <ArtistPagePaletteProvider value={pagePalette}>
-    <View style={[styles.root, appleMusic && { backgroundColor: artistPalette?.background ?? minidisc?.palette.background ?? appleBackground }]}>
+    <DetailHeroScene enabled={artistDetail && appleMusic && !searching && !!coverUri} identity={coverUri}
+      loadingColor={artistPalette?.background ?? minidisc?.palette.background ?? appleBackground} loadingTint={pagePalette?.text}
+      style={[styles.root, appleMusic && { backgroundColor: artistPalette?.background ?? minidisc?.palette.background ?? appleBackground }]}>
       {minidisc ? <LinearGradient pointerEvents="none" style={StyleSheet.absoluteFill}
         colors={[minidisc.palette.backgroundTop, minidisc.palette.background]} /> : null}
       <View style={{ flex: 1 }}>
@@ -636,7 +640,7 @@ export function TrackListView({
         style={{ position: 'absolute', left: 0, top: 0, width: screenW, height: artistHeaderH + artistGeometry.extensionHeight,
           transform: [{ translateY: searchH }] }}>
         <VoltaArtistScrollBackdrop uri={coverUri} sourceUri={artistArtwork.sourceUri}
-          textureUri={artistArtwork.textureUri} cacheOnly={offline} width={screenW} height={artistHeaderH}
+          textureUri={artistArtwork.textureUri} prepared={artistArtwork.ready} cacheOnly={offline} width={screenW} height={artistHeaderH}
           extensionHeight={artistGeometry.extensionHeight} backgroundColor={artistArtwork.palette.background} scrollY={scrollY} />
       </Animated.View> : null}
       {/* Dominant color gradient; scrolls with 1:1 parallax. Hidden in search
@@ -1232,7 +1236,7 @@ export function TrackListView({
         />
       ) : null}
       {selectionMenu.dialogs}
-    </View>
+    </DetailHeroScene>
     </ArtistPagePaletteProvider>
   );
 }

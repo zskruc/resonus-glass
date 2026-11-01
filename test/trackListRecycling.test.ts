@@ -181,9 +181,14 @@ function list() {
     },
     '@/components/volta/VoltaArtistHeaderBackdrop': { VoltaArtistHeaderBackdrop: 'VoltaArtistHeaderBackdrop' },
     '@/components/volta/VoltaArtistScrollBackdrop': { VoltaArtistScrollBackdrop: 'VoltaArtistScrollBackdrop' },
+    // The complete scene's real readiness/state behavior has its own React tests.
+    '@/components/DetailHeroScene': { DetailHeroScene: 'DetailHeroScene' },
     '@/components/Icon': icon,
     'expo-linear-gradient': { LinearGradient: 'Gradient' },
-    'expo-router': { Link: 'Link', useRouter: () => ({ push(href: string) { navigated.push(href); }, back() {} }) },
+    'expo-router': { Link: 'Link' },
+    '@/hooks/useDetailNavigation': { useDetailNavigation: () => (target: { kind: 'artist' | 'album'; id: string }) => {
+      navigated.push(`/${target.kind}/${target.id}`);
+    } },
     '@shopify/flash-list': { FlashList: 'FlashList' },
     'react-native': listNative,
     'react-native-reanimated': anim.api,
