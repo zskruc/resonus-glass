@@ -106,3 +106,26 @@ test('a policy change during discovery does not insert stale pages or start tran
   await assert.rejects(work, MediaCacheStopped);
   assert.equal(h.rows.size, 0); assert.equal(transfers, 0);
 });
+
+test('pause interrupts unresolved discovery, processing and protected yields without waiting for late callbacks', async () => {
+  for (const stage of ['page', 'process', 'yield'] as const) {
+    const h = repository(), job = newMediaCacheJob(['lyrics']), control = new AbortController();
+    const gate = deferred<void>(), entered = deferred<void>();
+    if (stage !== 'page') { await h.repo.addPage([item(1)]); job.cursors.lyrics.complete = true; }
+    let updates = 0;
+    const work = runBulkMediaWorker({ job, repository: h.repo, signal: control.signal, policy: () => null,
+      page: async () => { entered.resolve(); await gate.promise; return [item(1)]; },
+      process: async () => { if (stage === 'process') { entered.resolve(); await gate.promise; } return 'success'; },
+      yield: async () => { if (stage === 'yield') { entered.resolve(); await gate.promise; } },
+      update: () => { updates++; },
+    });
+    await entered.promise; control.abort();
+    await assert.rejects(work, MediaCacheStopped);
+    assert.notEqual(job.status, 'completed');
+    const stoppedUpdates = updates;
+    gate.resolve(); await Promise.resolve(); await Promise.resolve();
+    assert.equal(updates, stoppedUpdates);
+    if (stage === 'page') assert.equal(h.rows.size, 0);
+    if (stage === 'process') assert.equal((await h.repo.stats()).lyrics.pending, 1);
+  }
+});

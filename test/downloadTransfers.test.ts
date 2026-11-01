@@ -5,12 +5,14 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import * as scheduler from '../src/lib/downloadQueue';
 import type { Song } from '../src/api/subsonic';
+import type { BackgroundWorkLease, BackgroundWorkProgress, BackgroundWorkInterruption } from '../src/lib/backgroundWorkControl';
 
 const executable = ts.transpileModule(readFileSync(new URL('../src/store/downloads.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 const tick = async () => { for (let index = 0; index < 100; index++) await Promise.resolve(); };
 const song = (id = 'one'): Song => ({ id, title: id, artist: 'Artist', album: 'Album', albumId: 'album', duration: 100, suffix: 'mp3' });
+function gate() { let resolve!: () => void; const promise = new Promise<void>((yes) => { resolve = yes; }); return { promise, resolve }; }
 function observable<T extends object>(initial: T) {
   let state = initial; const listeners = new Set<(state: T, before: T) => void>();
   return { getState: () => state,
@@ -26,12 +28,39 @@ function harness() {
   const settings = observable({ downloadConcurrency: 1, downloadWifiOnly: false, downloadBitRate: 0, downloadFormat: '', downloadLosslessOnly: true });
   const network = observable({ connected: true, cellular: false });
   const files = new Map<string, number>(), transfers: Transfer[] = [], records: { dir: string; song: Song }[] = [];
+  const app = { currentState: 'active' };
+  const appListeners = new Set<() => void>();
+  const protections: { updates: BackgroundWorkProgress[]; released: boolean; waits: number[];
+    interrupt(reason: BackgroundWorkInterruption): void; current(): boolean }[] = [];
+  let protectionGate: Promise<void> | undefined, protectionFailure = false, networkGate: Promise<void> | undefined;
   let moveGate: (() => Promise<void>) | undefined, catalogGate: (() => Promise<void>) | undefined;
   const dependencies: Record<string, unknown> = {
     zustand: { create: (create: (set: any, get: any) => object) => {
       const store = observable({} as any); store.setState(create(store.setState, store.getState)); return store;
     } },
-    'expo-network': { getNetworkStateAsync: async () => ({ type: 'WIFI' }), NetworkStateType: { CELLULAR: 'CELLULAR' } },
+    'react-native': { Platform: { OS: 'android' }, AppState: {
+      get currentState() { return app.currentState; },
+      addEventListener: (_name: string, listener: () => void) => { appListeners.add(listener); return { remove: () => appListeners.delete(listener) }; },
+    } },
+    '@/lib/backgroundWork': { acquireBackgroundWork: async (_owner: string, initial: BackgroundWorkProgress,
+      interrupted: (reason: BackgroundWorkInterruption) => void, current: () => boolean,
+      signal?: AbortSignal): Promise<BackgroundWorkLease> => {
+      const protection = { updates: [initial], released: false, waits: [] as number[], current,
+        interrupt(reason: BackgroundWorkInterruption) { protection.released = true; if (current()) interrupted(reason); } };
+      protections.push(protection);
+      if (protectionGate) await new Promise<void>((resolve, reject) => {
+        const abort = () => { protection.released = true; reject(new Error('Protection cancelled')); };
+        if (signal?.aborted) { abort(); return; }
+        signal?.addEventListener('abort', abort, { once: true });
+        void protectionGate!.then(() => { signal?.removeEventListener('abort', abort); resolve(); }, reject);
+      });
+      if (protectionFailure || !current()) { protection.released = true; throw new Error('Protection unavailable'); }
+      return { active: () => !protection.released && current(),
+        update: (next) => { if (!protection.released && current()) protection.updates.push(next); },
+        release: async () => { protection.released = true; },
+        wait: async (delay) => { protection.waits.push(delay); if (!current()) throw new Error('Interrupted'); } };
+    } },
+    'expo-network': { getNetworkStateAsync: async () => { await networkGate; return { type: 'WIFI' }; }, NetworkStateType: { CELLULAR: 'CELLULAR' } },
     'expo-file-system/legacy': {
       documentDirectory: 'file:///test/', makeDirectoryAsync: async () => {},
       getInfoAsync: async (path: string) => files.has(path) ? { exists: true, size: files.get(path) } : { exists: false },
@@ -72,14 +101,117 @@ function harness() {
     './toast': { useToast: { getState: () => ({ show: () => {} }) } }, '@/lib/downloadQueue': scheduler,
   };
   const exported: Record<string, any> = {};
-  runInNewContext(executable, { exports: exported, setTimeout: (callback: () => void, delay: number) => {
+  runInNewContext(executable, { exports: exported, AbortController, setTimeout: (callback: () => void, delay: number) => {
     if (delay >= 1500) { void Promise.resolve().then(callback); return 0; }
     return setTimeout(callback, delay);
   }, clearTimeout,
     require(name: string) { assert.ok(Object.hasOwn(dependencies, name), name); return dependencies[name]; } });
-  return { store: exported.useDownloads, files, transfers, records, auth, settings, network,
+  return { store: exported.useDownloads, files, transfers, records, auth, settings, network, protections,
+    setAppState(value: string) { app.currentState = value; for (const listener of appListeners) listener(); },
+    protectionGate: (gate: Promise<void> | undefined) => { protectionGate = gate; },
+    protectionFailure: (value: boolean) => { protectionFailure = value; },
+    networkGate: (gate: Promise<void> | undefined) => { networkGate = gate; },
     moveGate: (gate: typeof moveGate) => { moveGate = gate; }, catalogGate: (gate: typeof catalogGate) => { catalogGate = gate; } };
 }
+
+test('protection is promoted before first audio, survives lock, drains the next song and releases on completion', async () => {
+  const h = harness(), promotion = gate(); h.protectionGate(promotion.promise);
+  const work = h.store.getState().downloadSongs([song('one'), song('two')]); await tick();
+  assert.equal(h.protections.length, 1); assert.equal(h.transfers.length, 0);
+  h.setAppState('background'); promotion.resolve(); await tick();
+  assert.equal(h.transfers.length, 1); assert.equal(h.protections[0].released, false);
+  h.transfers[0].progress(40, 100); h.transfers[0].finish(); await tick();
+  assert.equal(h.transfers.length, 2, 'a locked queue starts the next actual song without another user action');
+  assert.equal(h.protections.length, 1, 'all groups and successive songs share one music service owner');
+  h.transfers[1].finish(); await work; await tick();
+  assert.equal(h.records.length, 2); assert.equal(h.protections[0].released, true);
+  assert.ok(h.protections[0].updates.some((value) => value.total === 2 && value.completed === 1));
+});
+
+test('the explicit action protects its asynchronous Wi-Fi preflight before the phone can lock', async () => {
+  const h = harness(), network = gate();
+  h.settings.setState({ downloadWifiOnly: true }); h.networkGate(network.promise);
+  const work = h.store.getState().downloadSong(song()); await tick();
+  assert.equal(h.protections.length, 1); assert.equal(h.protections[0].released, false);
+  assert.equal(h.transfers.length, 0);
+  h.setAppState('background'); network.resolve(); await tick();
+  assert.equal(h.transfers.length, 1); h.transfers[0].finish(); await work; await tick();
+  assert.equal(h.protections[0].released, true);
+});
+
+test('pause, cancel and offline during a pending promotion cannot start late music or leave a native claim', async () => {
+  for (const operation of ['pause', 'cancel', 'offline'] as const) {
+    const h = harness(), promotion = gate(); h.protectionGate(promotion.promise);
+    const work = h.store.getState().downloadSong(song()); await tick();
+    const stop = operation === 'pause' ? h.store.getState().pauseAll()
+      : operation === 'cancel' ? h.store.getState().cancelAll() : Promise.resolve(h.auth.setState({ offline: true }));
+    await stop; await work; await tick();
+    assert.equal(h.transfers.length, 0, operation);
+    assert.equal(h.protections[0].released, true, operation);
+    assert.equal(h.store.getState().backgroundError, undefined, 'intent cancellation is not a protection failure');
+    promotion.resolve(); await tick(); assert.equal(h.transfers.length, 0, 'a late OS acknowledgement remains inert');
+  }
+});
+
+test('cancelling the last pending group aborts an accepted-but-waiting native job immediately', async () => {
+  const h = harness(), promotion = gate(); h.protectionGate(promotion.promise);
+  const work = h.store.getState().downloadSong(song()); await tick();
+  h.store.getState().cancelDownload('song:one'); await work; await tick();
+  assert.equal(h.protections[0].released, true); assert.equal(h.transfers.length, 0);
+  promotion.resolve(); await tick(); assert.equal(h.transfers.length, 0);
+});
+
+test('cancelling one group during shared promotion does not revoke another group', async () => {
+  const h = harness(), promotion = gate(); h.protectionGate(promotion.promise);
+  const one = h.store.getState().downloadSong(song('one'));
+  const two = h.store.getState().downloadSong(song('two')); await tick();
+  assert.equal(h.protections.length, 1);
+  h.store.getState().cancelDownload('song:one'); promotion.resolve(); await tick();
+  assert.equal(h.transfers.length, 1); assert.equal(h.protections[0].released, false);
+  h.transfers[0].finish(); await Promise.all([one, two]); await tick();
+  assert.equal(h.records.length, 1); assert.equal(h.store.getState().files.one, undefined);
+  assert.ok(h.store.getState().files.two); assert.equal(h.protections[0].released, true);
+});
+
+test('native notification pause preserves the partial and timeout exposes a protection error separately from audio', async () => {
+  const h = harness(), work = h.store.getState().downloadSong(song()); await tick();
+  h.transfers[0].progress(40, 100); h.setAppState('background');
+  h.protections[0].interrupt('pause'); await tick();
+  assert.equal(h.store.getState().queue[0].status, 'paused'); assert.equal(h.store.getState().backgroundError, undefined);
+  h.setAppState('active'); await h.store.getState().resumeAll(); await tick();
+  assert.equal(h.transfers.length, 2); assert.equal(h.transfers[1].resumeData, '40');
+  h.protections[1].interrupt('timeout'); await tick();
+  assert.equal(h.store.getState().queue[0].status, 'paused');
+  assert.equal(h.store.getState().queue[0].error, undefined);
+  assert.equal(h.store.getState().backgroundError, 'Background downloads stopped');
+  await h.store.getState().cancelAll(); await work;
+});
+
+test('a denied protection restart leaves a paused song resumable without a foreground restart loop', async () => {
+  const h = harness(), work = h.store.getState().downloadSong(song()); await tick();
+  h.transfers[0].progress(40, 100); await h.store.getState().pauseAll(); await tick();
+  const pending = gate(); h.protectionGate(pending.promise);
+  h.protectionFailure(true); await h.store.getState().resumeAll(); await tick();
+  h.setAppState('background'); pending.resolve(); await tick();
+  assert.equal(h.store.getState().queue[0].status, 'paused'); assert.equal(h.transfers.length, 1);
+  assert.equal(h.store.getState().backgroundError, 'Background downloads could not start');
+  const attempts = h.protections.length; await tick(); assert.equal(h.protections.length, attempts);
+  h.setAppState('active'); h.protectionGate(undefined);
+  h.protectionFailure(false); await h.store.getState().resumeAll(); await tick();
+  assert.equal(h.transfers.length, 2); assert.equal(h.store.getState().backgroundError, undefined);
+  h.transfers[1].finish(); await work; await tick(); assert.equal(h.records.length, 1);
+});
+
+test('Wi-Fi/offline policy blocks service admission and retries use the protected native wait', async () => {
+  const h = harness(); h.network.setState({ cellular: true }); h.settings.setState({ downloadWifiOnly: true });
+  await h.store.getState().downloadSong(song());
+  assert.equal(h.protections.length, 0); assert.equal(h.transfers.length, 0);
+  h.settings.setState({ downloadWifiOnly: false });
+  const work = h.store.getState().downloadSong(song()); await tick();
+  h.transfers[0].finish(503); await tick();
+  assert.deepEqual(h.protections[0].waits, [1500]); assert.equal(h.transfers.length, 2);
+  h.transfers[1].finish(); await work; await tick(); assert.equal(h.protections[0].released, true);
+});
 
 test('real download pause preserves its partial, resumes with the actual Range, and commits one complete audio file', async () => {
   const h = harness(), work = h.store.getState().downloadSong(song()); await tick();

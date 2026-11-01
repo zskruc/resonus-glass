@@ -17,6 +17,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Network from 'expo-network';
 import { create } from 'zustand';
+import { AppState, Platform } from 'react-native';
 
 import {
   COVER,
@@ -54,7 +55,8 @@ import { useAuthStore } from './auth';
 import { useLibraryMirror } from './libraryMirror';
 import { useSettings } from './settings';
 import { useToast } from './toast';
-import { createDownloadQueue, DownloadInterrupted, type DownloadContext, type DownloadQueueItem } from '@/lib/downloadQueue';
+import { createDownloadQueue, DownloadInterrupted, type DownloadContext, type DownloadQueueItem, type DownloadQueueActivity } from '@/lib/downloadQueue';
+import { acquireBackgroundWork, type BackgroundWorkLease, type BackgroundWorkProgress } from '@/lib/backgroundWork';
 import { useNetworkType } from './networkType';
 export type { DownloadQueueItem } from '@/lib/downloadQueue';
 
@@ -838,6 +840,7 @@ interface DownloadsState {
   active: Record<string, GroupProgress>;
   queue: DownloadQueueItem[];
   queuePaused: boolean;
+  backgroundError?: 'Background downloads could not start' | 'Background downloads stopped';
   pauseAll: () => Promise<void>;
   resumeAll: () => Promise<void>;
   cancelAll: () => Promise<void>;
@@ -914,15 +917,98 @@ async function onMobileData(): Promise<boolean> {
 
 export const useDownloads = create<DownloadsState>((set, get) => {
   const groupRuns = new Map<string, { token: object; keys: string[]; cancel: () => void }>();
+  type Preflight = { auth: SubsonicAuth; epoch: number; songs: Song[]; cancelled(): boolean };
+  type Protection = { auth: SubsonicAuth; epoch: number; work?: Promise<BackgroundWorkLease>;
+    lease?: BackgroundWorkLease; pending?: AbortController };
+  const preflights = new Set<Preflight>();
+  let protection: Protection | undefined, protectionEpoch = 0;
   let sequence = 0;
   const scope = (auth: SubsonicAuth) => hashKey(`${primaryUrl(auth)}|${auth.username}`);
-  const allowed = () => {
+  const policyAllowed = () => {
     const state = useAuthStore.getState();
     return !!state.auth && !state.offline && useNetworkType.getState().connected
       && !(useSettings.getState().downloadWifiOnly && useNetworkType.getState().cellular);
   };
+  const currentPreflights = () => [...preflights].filter((claim) => claim.auth === useAuthStore.getState().auth
+    && claim.epoch === protectionEpoch && claim.songs.length > 0 && !claim.cancelled());
+  const allowed = () => policyAllowed() && (AppState.currentState === 'active' || !!protection?.lease?.active()
+    || Platform.OS === 'android' && (currentPreflights().length > 0 || !!protection && !protection.lease
+      && protection.epoch === protectionEpoch && protection.auth === useAuthStore.getState().auth));
+  const protectionReady = () => !!protection?.lease?.active()
+    || Platform.OS !== 'android' && AppState.currentState === 'active';
+  const progress = (activity: DownloadQueueActivity): BackgroundWorkProgress => {
+    const pending = new Set(currentPreflights().flatMap((claim) => claim.songs.map((song) => song.id)));
+    for (const item of get().queue ?? []) if (item.status !== 'cancelled') pending.delete(item.song.id);
+    const failed = (get().queue ?? []).filter((item) => item.status === 'failed').length;
+    return { completed: activity.completed + failed, total: activity.total + pending.size, failed,
+      bytesDone: activity.bytesWritten, bytesTotal: activity.bytesTotal, phase: 'music' };
+  };
+  const releaseProtection = async () => {
+    const previous = protection;
+    protection = undefined;
+    if (!previous) return;
+    if (!previous.lease) previous.pending?.abort();
+    // A late native promotion must also be stopped after pause/cancel/account change.
+    const lease = previous.lease ?? await previous.work?.catch(() => undefined);
+    await lease?.release();
+  };
+  const reconcileProtection = (activity: DownloadQueueActivity) => {
+    const own = protection;
+    if (!own) return;
+    const hasPreflight = currentPreflights().length > 0;
+    const keep = own.lease ? activity.active || hasPreflight
+      : !activity.queuePaused && activity.queued + activity.downloading > 0 || hasPreflight;
+    if (own.auth !== useAuthStore.getState().auth || own.epoch !== protectionEpoch || !policyAllowed() || !keep) {
+      void releaseProtection(); return;
+    }
+    own.lease?.update(progress(activity));
+  };
+  const ensureProtection = async (auth: SubsonicAuth, current: () => boolean): Promise<boolean> => {
+    if (!current() || !policyAllowed()) return false;
+    let own = protection;
+    if (!own || own.auth !== auth || own.epoch !== protectionEpoch) {
+      if (own) void releaseProtection();
+      own = { auth, epoch: protectionEpoch, pending: new AbortController() };
+      const ticket = own;
+      protection = ticket;
+      const owns = () => protection === ticket && ticket.epoch === protectionEpoch
+        && useAuthStore.getState().auth === auth && policyAllowed();
+      ticket.work = acquireBackgroundWork('music', progress(queue.getActivity()), (reason) => {
+        if (!owns()) return;
+        protectionEpoch++;
+        protection = undefined;
+        set({ backgroundError: reason === 'pause' || reason === 'cancel' ? undefined : 'Background downloads stopped' });
+        if (reason === 'cancel') {
+          for (const [key, group] of groupRuns) if (key.startsWith(scope(auth) + '|')) group.cancel();
+          void queue.cancelAll();
+        } else void queue.pauseAll();
+        useToast.getState().show(tg('Download stopped'));
+      }, owns, ticket.pending!.signal);
+    }
+    try {
+      const lease = own.lease ?? await own.work!;
+      if (protection !== own || own.epoch !== protectionEpoch) {
+        await lease.release();
+        return false;
+      }
+      own.lease = lease;
+      own.pending = undefined;
+      // Two explicit groups can share the same in-flight promotion. Cancelling
+      // one caller must not revoke the other group's valid native ownership.
+      if (!current()) return false;
+      set({ backgroundError: undefined });
+      return lease.active() || Platform.OS !== 'android' && AppState.currentState === 'active';
+    } catch (error) {
+      const wasCurrent = current();
+      if (protection === own) protection = undefined;
+      if (wasCurrent) set({ backgroundError: 'Background downloads could not start' });
+      throw error;
+    }
+  };
   const queue = createDownloadQueue({ owner: () => useAuthStore.getState().auth, profile: scope, allowed,
     limit: () => useSettings.getState().downloadConcurrency,
+    preparation: { ready: protectionReady, start: ensureProtection },
+    activity: reconcileProtection,
     update: (items, paused) => {
       const active: Record<string, GroupProgress> = {};
       const groups = new Map<string, GroupProgress & { pending: boolean }>();
@@ -941,6 +1027,10 @@ export const useDownloads = create<DownloadsState>((set, get) => {
     },
   });
   useAuthStore.subscribe((state, previous) => {
+    if (state.auth !== previous.auth || state.offline !== previous.offline) {
+      protectionEpoch++; void releaseProtection();
+      set({ backgroundError: undefined });
+    }
     if (previous.auth && !state.auth) {
       const old = scope(previous.auth);
       for (const [key, group] of groupRuns) if (key.startsWith(old + '|')) { group.cancel(); groupRuns.delete(key); }
@@ -956,16 +1046,16 @@ export const useDownloads = create<DownloadsState>((set, get) => {
   useSettings.subscribe((state, previous) => {
     if (state.downloadConcurrency !== previous.downloadConcurrency || state.downloadWifiOnly !== previous.downloadWifiOnly) queue.sync();
   });
+  AppState.addEventListener('change', () => queue.sync());
 
   /** Existing group entry points all feed one per-account, per-song queue. */
   async function downloadGroup(groupKey: string, songs: Song[], albums: Album[]): Promise<void> {
     const intent = useAuthStore.getState().auth;
-    if (!intent || useAuthStore.getState().offline) return;
-    if (useSettings.getState().downloadWifiOnly && await onMobileData()) {
-      if (useAuthStore.getState().auth === intent) useToast.getState().show(tg('Connect to Wi-Fi to download'));
+    if (!intent || !policyAllowed()) {
+      if (intent && useSettings.getState().downloadWifiOnly && useNetworkType.getState().cellular)
+        useToast.getState().show(tg('Connect to Wi-Fi to download'));
       return;
     }
-    if (useAuthStore.getState().auth !== intent || !allowed()) return;
     const groupId = `${scope(intent)}|${groupKey}`;
     if (groupRuns.has(groupId)) return;
     const seen = new Set<string>();
@@ -974,10 +1064,23 @@ export const useDownloads = create<DownloadsState>((set, get) => {
       seen.add(song.id); return true;
     });
     if (!pending.length) return;
-    let cancel!: () => void;
-    const stopped = new Promise<'cancelled'>((resolve) => { cancel = () => resolve('cancelled'); });
+    let cancel!: () => void, cancelled = false;
+    const stopped = new Promise<'cancelled'>((resolve) => { cancel = () => { cancelled = true; resolve('cancelled'); }; });
     const group = { token: {}, keys: pending.map((song) => song.id), cancel };
     groupRuns.set(groupId, group);
+    const preflight: Preflight = { auth: intent, epoch: protectionEpoch, songs: pending, cancelled: () => cancelled };
+    preflights.add(preflight);
+    const current = () => pending.length > 0 && preflight.epoch === protectionEpoch && !cancelled && groupRuns.get(groupId) === group
+      && useAuthStore.getState().auth === intent && policyAllowed();
+    try {
+    // Promote protection from the explicit user action, before an asynchronous
+    // Wi-Fi preflight can finish after the phone has already locked.
+    if (!await ensureProtection(intent, current) || !current()) return;
+    if (useSettings.getState().downloadWifiOnly && await onMobileData()) {
+      if (current()) useToast.getState().show(tg('Connect to Wi-Fi to download'));
+      return;
+    }
+    if (!current() || !allowed()) return;
     const dir = serverDir(intent);
     const albumById = new Map(albums.map((album) => [album.id, album]));
     const albumWork = new Map<string, Promise<void>>(), artistWork = new Map<string, Promise<void>>();
@@ -1130,7 +1233,10 @@ export const useDownloads = create<DownloadsState>((set, get) => {
               const status = error instanceof TransferError ? error.status : undefined;
               if (!moved) { response = undefined; transfer = undefined; resume = false; offset = 0; await cleanup(); }
               if (attempt === ATTEMPTS || !worthRetrying(status)) throw error;
-              await new Promise((resolve) => setTimeout(resolve, RETRY_PAUSE_MS * attempt)); context.check();
+              const lease = protection?.auth === context.auth ? protection.lease : undefined;
+              if (lease) await lease.wait(RETRY_PAUSE_MS * attempt);
+              else await new Promise((resolve) => setTimeout(resolve, RETRY_PAUSE_MS * attempt));
+              context.check();
             }
           }
         } catch (error) {
@@ -1141,6 +1247,7 @@ export const useDownloads = create<DownloadsState>((set, get) => {
         }
       }, true, cleanup);
     });
+    preflights.delete(preflight);
     queue.sync();
     try {
       const result = await Promise.race([Promise.all(promises), stopped]);
@@ -1158,17 +1265,34 @@ export const useDownloads = create<DownloadsState>((set, get) => {
       if (groupRuns.get(groupId) === group) groupRuns.delete(groupId);
       queue.sync();
     }
+    } catch {
+      // Service promotion errors already surface at their source. No audio
+      // starts under an unprotected Android owner; existing tasks stay paused.
+    } finally {
+      preflights.delete(preflight);
+      if (groupRuns.get(groupId) === group) groupRuns.delete(groupId);
+      queue.sync();
+    }
   }
 
   return {
     files: {},
     dlBitRates: {},
-    active: {}, queue: [], queuePaused: false,
-    pauseAll: () => queue.pauseAll(), resumeAll: () => queue.resumeAll(),
+    active: {}, queue: [], queuePaused: false, backgroundError: undefined,
+    pauseAll: async () => {
+      protectionEpoch++;
+      set({ backgroundError: undefined });
+      await queue.pauseAll();
+      await releaseProtection();
+    },
+    resumeAll: () => queue.resumeAll(),
     cancelAll: async () => {
+      protectionEpoch++;
+      set({ backgroundError: undefined });
       const auth = useAuthStore.getState().auth;
       if (auth) for (const [key, group] of groupRuns) if (key.startsWith(scope(auth) + '|')) group.cancel();
       await queue.cancelAll();
+      await releaseProtection();
     },
     hydrated: false,
 
@@ -1304,6 +1428,12 @@ export const useDownloads = create<DownloadsState>((set, get) => {
     },
 
     deleteSongs: async (songIds) => {
+      const removed = new Set(songIds), auth = useAuthStore.getState().auth;
+      for (const claim of preflights) if (claim.auth === auth) {
+        for (let index = claim.songs.length - 1; index >= 0; index--) {
+          if (removed.has(claim.songs[index].id)) claim.songs.splice(index, 1);
+        }
+      }
       queue.forget(songIds);
       // The state goes first, before touching the disk: deleting used to show
       // nothing at all until the files were gone, and behind an ongoing
@@ -1369,6 +1499,8 @@ export const useDownloads = create<DownloadsState>((set, get) => {
     },
 
     clearAll: async () => {
+      protectionEpoch++;
+      set({ backgroundError: undefined });
       for (const group of groupRuns.values()) group.cancel();
       groupRuns.clear();
       await queue.drainAndClear(async () => {
@@ -1385,6 +1517,7 @@ export const useDownloads = create<DownloadsState>((set, get) => {
       set({ files: {}, dlBitRates: {}, active: {} });
       invalidate();
       });
+      await releaseProtection();
     },
 
     usageBytes: async () => timed('storage used', async () => {

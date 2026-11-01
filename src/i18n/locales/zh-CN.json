@@ -1126,5 +1126,10 @@
   "Artist page layout": "艺人页布局",
   "Compact layout": "紧凑布局",
   "Use the artist-page header for playlists. Compact layout restores the previous playlist layout instantly.": "歌单沿用当前主题的艺人页式页头；选择紧凑布局可立即恢复之前的歌单排版。",
-  "Artist page layout matches your artist and playlist headers. Volta and Minidisc keep their previous layouts in Apple Music style; Spotify uses its original compact layout.": "艺人页布局与艺人和歌单页的页头保持一致。Volta 和 Minidisc 保留 Apple Music 风格下的原有专辑排版；Spotify 风格使用原有紧凑布局。"
+  "Artist page layout matches your artist and playlist headers. Volta and Minidisc keep their previous layouts in Apple Music style; Spotify uses its original compact layout.": "艺人页布局与艺人和歌单页的页头保持一致。Volta 和 Minidisc 保留 Apple Music 风格下的原有专辑排版；Spotify 风格使用原有紧凑布局。",
+  "Background caching was interrupted. Open the app and tap Continue to resume.": "后台缓存已中断。请打开 App，点按“继续”恢复任务。",
+  "Caching continues with the screen locked or while you use other apps. Track or pause it from the download notification.": "锁屏或使用其他 App 时，缓存仍会继续。可在下载通知中查看进度或暂停。",
+  "Background caching could not continue. Open the app and tap Continue to retry; cached files are kept.": "后台缓存未能继续。请打开 App，点按“继续”重试；已缓存的文件会保留。",
+  "Downloads continue with the screen locked or while you use other apps. Track or pause them from the download notification.": "锁屏或使用其他 App 时，下载仍会继续。可在下载通知中查看进度或暂停。",
+  "Background downloads could not continue. Open the app and start the queue again; if it is empty, add your downloads again.": "后台下载未能继续。请打开 App，重新开始队列；若队列为空，请重新添加下载。"
 }

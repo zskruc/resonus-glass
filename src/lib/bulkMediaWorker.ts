@@ -25,6 +25,18 @@ export class MediaCacheStopped extends Error {
   constructor(reason: Exclude<MediaCacheReason, null>) { super(reason); this.reason = reason; }
 }
 
+/** Pausing must not wait for a transport or timer that stopped delivering callbacks. */
+export async function awaitMediaCacheWork<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  let stop: (() => void) | undefined;
+  const interrupted = new Promise<never>((_resolve, reject) => {
+    stop = () => reject(new MediaCacheStopped('user'));
+    signal.addEventListener('abort', stop, { once: true });
+    if (signal.aborted) stop();
+  });
+  try { return await Promise.race([work, interrupted]); }
+  finally { if (stop) signal.removeEventListener('abort', stop); }
+}
+
 /** One sequential worker per explicit run; all state/checkpoints are profile-scoped. */
 export async function runBulkMediaWorker(options: Options): Promise<void> {
   const { job, repository: repo, signal } = options;
@@ -51,7 +63,7 @@ export async function runBulkMediaWorker(options: Options): Promise<void> {
     while (!cursor.complete) {
       check(); job.status = 'discovering'; job.phase = kind;
       await publish();
-      const page = await options.page(kind, cursor.offset, options.pageSize ?? 200);
+      const page = await awaitMediaCacheWork(options.page(kind, cursor.offset, options.pageSize ?? 200), signal);
       check();
       if (page.length === 0) cursor.complete = true;
       else {
@@ -73,7 +85,7 @@ export async function runBulkMediaWorker(options: Options): Promise<void> {
         pages.add(signature); cursor.pageSignature = signature;
         cursor.offset += page.length;
       }
-      await publish(); await yieldUi();
+      await publish(); await awaitMediaCacheWork(yieldUi(), signal);
     }
   }
   job.status = 'running';
@@ -86,7 +98,7 @@ export async function runBulkMediaWorker(options: Options): Promise<void> {
     if (!task) break;
     if (job.phase !== task.kind) { job.phase = task.kind; await publish(); }
     let result: MediaCacheOutcome;
-    try { result = await options.process(task, { signal, current }); }
+    try { result = await awaitMediaCacheWork(options.process(task, { signal, current }), signal); }
     catch (error) {
       check();
       if (error instanceof MediaCacheStopped) throw error;
@@ -99,7 +111,7 @@ export async function runBulkMediaWorker(options: Options): Promise<void> {
     failures = result === 'failed' ? failures + 1 : 0;
     // A server outage or full disk must not produce thousands of retries.
     if (failures >= 3) throw new Error('Media cache stopped after repeated failures');
-    await yieldUi(result === 'cached' || result === 'missing' ? 0 : 30);
+    await awaitMediaCacheWork(yieldUi(result === 'cached' || result === 'missing' ? 0 : 30), signal);
   }
   check(); job.status = 'completed'; job.phase = null; job.reason = null;
   await publish();

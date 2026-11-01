@@ -21,6 +21,7 @@ function harness() {
   const slot = (create: () => any) => { const index = cursor++; return index in slots ? slots[index] : slots[index] = create(); };
   const calls = { load: 0, start: [] as string[][], pause: 0, resume: 0, cancel: 0, retry: 0 };
   const auth = { auth: {} as object | null, offline: false };
+  const platform = { OS: 'android' };
   const stats = Object.fromEntries(kinds.map((kind) => [kind, { total: 20, success: 4, cached: 5, missing: 2, failed: 1, pending: 8 }]));
   const state = { status: 'idle', reason: null as string | null, phase: null as string | null, stats,
     selected: [...kinds], error: null as string | null, hydrated: true,
@@ -44,7 +45,7 @@ function harness() {
   const colors = { text: '#fff', textSecondary: '#aaa', accent: '#0f0', control: '#333', danger: '#f00' };
   const dependencies: Record<string, unknown> = {
     react, 'react/jsx-runtime': { jsx, jsxs: jsx },
-    'react-native': { Text: 'Text', View: 'View', ActivityIndicator: 'Spinner' },
+    'react-native': { Text: 'Text', View: 'View', ActivityIndicator: 'Spinner', Platform: platform },
     'zustand/react/shallow': { useShallow: (selector: unknown) => selector },
     '@/components/DockScrollView': { DockScrollView: 'ScrollView' },
     '@/components/SettingsUI': { SettingRow: 'SettingRow', SettingsGroup: 'SettingsGroup', SettingsPage: 'SettingsPage',
@@ -59,7 +60,7 @@ function harness() {
   runInNewContext(compiled, { exports, require(name: string) { assert.ok(name in dependencies, name); return dependencies[name]; } });
   function render() { cursor = 0; tree = exports.default(); while (effects.length) effects.shift()!(); return tree; }
   render();
-  return { state, auth, calls, render, tree: () => tree,
+  return { state, auth, calls, platform, render, tree: () => tree,
     row: (label: string) => find(tree, (node) => node.type === 'SettingRow' && node.props.label === label)!,
     options: () => find(tree, (node) => node.type === 'SwitchList')!.props.options,
     unmount: () => cleanups.forEach((close) => close()) };
@@ -115,4 +116,18 @@ test('progress uses all outcomes and displays unavailable separately from failed
   assert.ok(find(h.tree(), (node) => node.type === 'Text' && node.props.children === 'Unavailable at source'));
   assert.ok(find(h.tree(), (node) => node.type === 'Text' && node.props.children === 'Failed'));
   assert.ok(find(h.tree(), (node) => node.type === 'Text' && node.props.children === 'Already cached'));
+});
+
+test('Android protection loss keeps Continue available and explains background recovery separately from connection errors', () => {
+  const h = harness(); h.state.status = 'paused'; h.state.reason = 'background';
+  h.state.error = 'Background cache protection stopped'; h.render();
+  assert.match(h.row('Paused').props.description, /Background caching was interrupted/);
+  const alert = find(h.tree(), (node) => node.props.accessibilityRole === 'alert');
+  assert.match(alert!.props.children, /Background caching could not continue/);
+  assert.equal(typeof h.row('Continue').props.onPress, 'function');
+  assert.equal(h.calls.resume, 0);
+  h.state.error = null; h.platform.OS = 'ios'; h.render();
+  assert.match(h.row('Paused').props.description, /Paused while the app was in the background/);
+  assert.equal(find(h.tree(), (node) => node.type === 'Text'
+    && String(node.props.children).startsWith('Caching continues with the screen locked')), undefined);
 });

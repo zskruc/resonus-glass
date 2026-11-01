@@ -1,7 +1,7 @@
 /** Manual audio downloads, backed by the same queue as album/song actions. */
 import { FlashList } from '@shopify/flash-list';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Text, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useShallow } from 'zustand/react/shallow';
 
@@ -88,7 +88,7 @@ export default function DownloadManager() {
   const lang = useSettings((state) => state.language);
   const owner = useAuthStore((state) => state.auth);
   const offline = useAuthStore((state) => state.offline);
-  const task = useDownloads(useShallow((state) => ({ queue: state.queue, queuePaused: state.queuePaused,
+  const task = useDownloads(useShallow((state) => ({ queue: state.queue, queuePaused: state.queuePaused, backgroundError: state.backgroundError,
     pauseAll: state.pauseAll, resumeAll: state.resumeAll, cancelAll: state.cancelAll })));
   const scrollHandler = useLiquidDockScrollHandler();
   const bottomPadding = useScreenBottomPadding();
@@ -132,6 +132,9 @@ export default function DownloadManager() {
         <Text style={[settingsStyles.sectionDescription, { marginTop: 0 }]}>
           {t('Downloads added from songs, albums, playlists and artists appear here. These are audio files kept for offline playback.')}
         </Text>
+        {Platform.OS === 'android' ? <Text style={settingsStyles.sectionDescription}>
+          {t('Downloads continue with the screen locked or while you use other apps. Track or pause them from the download notification.')}
+        </Text> : null}
         <Text style={settingsStyles.sectionTitle}>{t('Overall progress')}</Text>
         <SettingsGroup>
           <View style={styles.summaryCard}>
@@ -165,8 +168,10 @@ export default function DownloadManager() {
           <ActivityIndicator size="small" color={colors.accent} />
           <Text style={styles.secondary}>{t('Updating download queue…')}</Text>
         </View> : null}
-        {actionError ? <Text accessibilityRole="alert" style={styles.error}>
-          {t("Couldn't complete the action. Check your connection and try again.")}
+        {task.backgroundError || actionError ? <Text accessibilityRole="alert" style={styles.error}>
+          {task.backgroundError
+            ? t('Background downloads could not continue. Open the app and start the queue again; if it is empty, add your downloads again.')
+            : t("Couldn't complete the action. Check your connection and try again.")}
         </Text> : null}
         <Text style={settingsStyles.sectionDescription}>
           {t('Downloaded songs stay on your phone after restarting the app. Add unfinished downloads again.')}

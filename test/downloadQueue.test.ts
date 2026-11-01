@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createDownloadQueue, type DownloadContext, type DownloadQueueItem } from '../src/lib/downloadQueue';
+import { createDownloadQueue, type DownloadContext, type DownloadQueueItem, type DownloadQueueActivity } from '../src/lib/downloadQueue';
 import type { Song, SubsonicAuth } from '../src/api/subsonic';
 
 const tick = async () => { for (let index = 0; index < 40; index++) await Promise.resolve(); };
@@ -8,13 +8,91 @@ const auth = (username: string) => ({ username, serverUrl: 'https://test' }) as 
 const song = (id: string): Song => ({ id, title: id, duration: 100 });
 function deferred<T>() { let resolve!: (value: T) => void;
   const promise = new Promise<T>((yes) => { resolve = yes; }); return { promise, resolve }; }
-function harness() {
+function harness(preparation?: { ready(): boolean; start(auth: SubsonicAuth, current: () => boolean): Promise<boolean> }) {
   const state = { auth: auth('A') as SubsonicAuth | null, allowed: true, limit: 1 };
   let items: DownloadQueueItem[] = [], paused = false;
+  const activities: DownloadQueueActivity[] = [];
   const queue = createDownloadQueue({ owner: () => state.auth, profile: (value) => value.username,
-    allowed: () => state.allowed, limit: () => state.limit, update: (next, value) => { items = next; paused = value; } });
-  return { state, queue, items: () => items, paused: () => paused };
+    allowed: () => state.allowed, limit: () => state.limit, update: (next, value) => { items = next; paused = value; },
+    activity: (activity) => activities.push(activity), preparation });
+  return { state, queue, activities, items: () => items, paused: () => paused };
 }
+
+test('queue admission awaits protection, preserves a pending pause, and restarts only on explicit resume', async () => {
+  let ready = false, starts = 0, runs = 0;
+  let gate = deferred<void>();
+  const h = harness({ ready: () => ready, start: async (_auth, current) => {
+    starts++; const own = gate; await own.promise;
+    if (current()) ready = true;
+    return ready;
+  } });
+  const work = h.queue.add(song('one'), 'one', async () => { runs++; });
+  await tick(); assert.equal(starts, 1); assert.equal(runs, 0); assert.equal(h.items()[0].status, 'queued');
+  await h.queue.pauseAll(); gate.resolve(); await tick();
+  assert.equal(runs, 0); assert.equal(h.items()[0].status, 'paused'); assert.equal(h.queue.getActivity().active, false);
+  gate = deferred<void>(); await h.queue.resumeAll(); await tick();
+  assert.equal(starts, 2); assert.equal(runs, 0);
+  gate.resolve(); assert.equal(await work, 'completed'); await tick();
+  assert.equal(runs, 1); assert.equal(h.queue.getActivity().active, false);
+});
+
+test('a late promotion from before pause cannot replace a newer resume intent', async () => {
+  let ready = false, starts = 0, runs = 0;
+  const first = deferred<void>(), second = deferred<void>();
+  const h = harness({ ready: () => ready, start: async (_auth, current) => {
+    const own = ++starts === 1 ? first : second; await own.promise;
+    if (current()) ready = true;
+    return ready;
+  } });
+  const work = h.queue.add(song('one'), 'one', async () => { runs++; }); await tick();
+  await h.queue.pauseAll(); await h.queue.resumeAll();
+  first.resolve(); await tick();
+  assert.equal(starts, 2); assert.equal(runs, 0); assert.equal(h.paused(), false);
+  second.resolve(); assert.equal(await work, 'completed'); await tick(); assert.equal(runs, 1);
+});
+
+test('failed service admission pauses real queue entries without retrying or classifying them as bad audio', async () => {
+  let ready = false, starts = 0, runs = 0;
+  const h = harness({ ready: () => ready, start: async () => {
+    if (++starts === 1) throw new Error('OS rejected service start');
+    ready = true; return true;
+  } });
+  const work = h.queue.add(song('one'), 'one', async () => { runs++; }); await tick();
+  assert.equal(starts, 1); assert.equal(runs, 0); assert.equal(h.items()[0].status, 'paused');
+  assert.equal(h.items()[0].error, undefined);
+  await tick(); assert.equal(starts, 1, 'a blocked background start cannot spin');
+  await h.queue.resumeAll(); assert.equal(await work, 'completed'); await tick(); assert.equal(runs, 1);
+});
+
+test('activity counts deduplicated audio and releases the final cleanup lease after cancellation', async () => {
+  const h = harness(), gate = deferred<void>(), cancelled = deferred<void>();
+  let context!: DownloadContext;
+  const one = h.queue.add(song('one'), 'album', async (value) => {
+    context = value;
+    value.transfer({ pause: async () => gate.resolve(), cancel: async () => { gate.resolve(); await cancelled.promise; } });
+    await gate.promise; value.check();
+  });
+  const duplicate = h.queue.add(song('one'), 'playlist', async () => {});
+  await tick(); context.progress(40, 100); h.queue.sync();
+  assert.equal(h.queue.getActivity().total, 1); assert.equal(h.queue.getActivity().bytesWritten, 40);
+  assert.equal(h.queue.getActivity().bytesTotal, 100); assert.equal(h.queue.getActivity().active, true);
+  const stop = h.queue.cancelAll(); await tick();
+  assert.equal(h.queue.getActivity().active, true, 'native cancellation still owns its file lease');
+  cancelled.resolve(); await stop; await Promise.all([one, duplicate]); await tick();
+  assert.equal(h.activities.at(-1)?.active, false); assert.equal(h.activities.at(-1)?.running, false);
+});
+
+test('activity excludes other account leases and stops immediately for offline policy', async () => {
+  const h = harness(), gate = deferred<void>();
+  const work = h.queue.add(song('one'), 'one', async (value) => { await gate.promise; value.check(); }); await tick();
+  assert.equal(h.queue.getActivity().active, true);
+  h.state.allowed = false; h.queue.sync(); assert.equal(h.queue.getActivity().active, false);
+  h.state.auth = auth('B'); h.state.allowed = true; h.queue.sync();
+  assert.equal(h.queue.getActivity().profile, 'B'); assert.equal(h.queue.getActivity().total, 0);
+  assert.equal(h.queue.getActivity().running, false);
+  gate.resolve(); await tick();
+  h.state.auth = auth('A'); h.queue.sync(); await h.queue.cancelAll(); await work;
+});
 
 test('one per-profile song serves overlapping groups, while cancelling one group keeps the other owner', async () => {
   const h = harness(), finish = deferred<void>(); let runs = 0;

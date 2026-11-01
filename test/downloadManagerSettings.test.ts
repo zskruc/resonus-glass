@@ -41,7 +41,7 @@ function harness(queue: QueueItem[] = []) {
   const calls = { pause: 0, resume: 0, cancel: 0 };
   let pauseWork = async () => {};
   const auth = { auth: {} as object | null, offline: false };
-  const state = { queue, queuePaused: false,
+  const state = { queue, queuePaused: false, backgroundError: undefined as string | undefined,
     pauseAll: async () => {
       calls.pause++; await pauseWork(); state.queuePaused = true;
       state.queue = state.queue.map((value) => ['queued', 'downloading'].includes(value.status) ? { ...value, status: 'paused' } : value);
@@ -80,7 +80,7 @@ function harness(queue: QueueItem[] = []) {
   const dependencies: Record<string, unknown> = {
     react, 'react/jsx-runtime': { jsx, jsxs: jsx },
     '@shopify/flash-list': { FlashList: 'QueueList' },
-    'react-native': { ActivityIndicator: 'Spinner', Text: 'Text', View: 'View' },
+    'react-native': { ActivityIndicator: 'Spinner', Text: 'Text', View: 'View', Platform: { OS: 'android' } },
     'react-native-reanimated': { __esModule: true, default: { createAnimatedComponent: (value: unknown) => value } },
     'zustand/react/shallow': { useShallow: (selector: unknown) => selector },
     '@/components/SettingsUI': { SettingRow: 'SettingRow', SettingsGroup: 'SettingsGroup', SettingsPage: 'SettingsPage',
@@ -187,4 +187,13 @@ test('queue text follows light and dark theme tokens, including a failed item wi
   assert.equal(title.props.style.color, '#111');
   const secondary = findAll(h.row(h.state.queue[0]), (node) => node.props.children === 'Artist')[0];
   assert.equal(secondary.props.style.color, '#444');
+});
+
+test('background protection errors explain resuming the queue without pretending the server failed', () => {
+  const h = harness([item('one', 'paused')]);
+  h.state.queuePaused = true; h.state.backgroundError = 'Background downloads stopped'; h.render();
+  assert.match(text(h.tree()), /Background downloads could not continue/);
+  assert.doesNotMatch(text(h.tree()), /Check your connection/);
+  assert.equal(typeof h.action('Start all').props.onPress, 'function');
+  assert.deepEqual(h.calls, { pause: 0, resume: 0, cancel: 0 });
 });

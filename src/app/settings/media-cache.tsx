@@ -1,6 +1,6 @@
 /** Settings › Downloads › Bulk artwork & lyrics. Opening only reads a saved task. */
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Text, View } from 'react-native';
 import { useShallow } from 'zustand/react/shallow';
 
 import { DockScrollView } from '@/components/DockScrollView';
@@ -60,8 +60,12 @@ export default function MediaCacheSettings() {
     ? t('Paused while the server is unavailable or offline mode is on. Restore the connection, then continue.')
     : task.reason === 'wifi' ? t('Paused by Wi-Fi only. Connect to Wi-Fi, then continue.')
     : task.reason === 'profile' ? t('Paused after switching accounts. Return to the original account to continue its task.')
-    : task.reason === 'background' ? t('Paused while the app was in the background. Tap Continue when you are ready.')
+    : task.reason === 'background' ? Platform.OS === 'android'
+      ? t('Background caching was interrupted. Open the app and tap Continue to resume.')
+      : t('Paused while the app was in the background. Tap Continue when you are ready.')
     : task.reason === 'user' ? t('Continue to resume this saved task.') : undefined;
+  const protectionError = task.error === 'Background cache protection could not start'
+    || task.error === 'Background cache protection stopped';
 
   return (
     <SettingsPage title={t('Bulk artwork & lyrics')}>
@@ -69,6 +73,9 @@ export default function MediaCacheSettings() {
         <Text style={[settingsStyles.sectionDescription, { marginTop: 0 }]}>
           {t('Cache lyrics, album covers and artist portraits from your entire server library for offline use. This does not download audio or delete existing files.')}
         </Text>
+        {Platform.OS === 'android' ? <Text style={settingsStyles.sectionDescription}>
+          {t('Caching continues with the screen locked or while you use other apps. Track or pause it from the download notification.')}
+        </Text> : null}
         <Text style={settingsStyles.sectionTitle}>{t('What to cache')}</Text>
         <SettingsGroup>
           <SwitchList options={KINDS.map((kind) => ({
@@ -109,7 +116,9 @@ export default function MediaCacheSettings() {
           {t('Continue keeps the current task selection. Changing the switches affects only your next scan.')}
         </Text> : null}
         {task.error || actionError ? <Text accessibilityRole="alert" style={styles.error}>
-          {t("Couldn't complete the action. Check your connection and try again.")}
+          {protectionError
+            ? t('Background caching could not continue. Open the app and tap Continue to retry; cached files are kept.')
+            : t("Couldn't complete the action. Check your connection and try again.")}
         </Text> : null}
 
         <Text style={settingsStyles.sectionTitle}>{t('Progress by type')}</Text>

@@ -1123,5 +1123,10 @@
   "Artist page layout": "Artist page layout",
   "Compact layout": "Compact layout",
   "Use the artist-page header for playlists. Compact layout restores the previous playlist layout instantly.": "Use the artist-page header for playlists. Compact layout restores the previous playlist layout instantly.",
-  "Artist page layout matches your artist and playlist headers. Volta and Minidisc keep their previous layouts in Apple Music style; Spotify uses its original compact layout.": "Artist page layout matches your artist and playlist headers. Volta and Minidisc keep their previous layouts in Apple Music style; Spotify uses its original compact layout."
+  "Artist page layout matches your artist and playlist headers. Volta and Minidisc keep their previous layouts in Apple Music style; Spotify uses its original compact layout.": "Artist page layout matches your artist and playlist headers. Volta and Minidisc keep their previous layouts in Apple Music style; Spotify uses its original compact layout.",
+  "Background caching was interrupted. Open the app and tap Continue to resume.": "Background caching was interrupted. Open the app and tap Continue to resume.",
+  "Caching continues with the screen locked or while you use other apps. Track or pause it from the download notification.": "Caching continues with the screen locked or while you use other apps. Track or pause it from the download notification.",
+  "Background caching could not continue. Open the app and tap Continue to retry; cached files are kept.": "Background caching could not continue. Open the app and tap Continue to retry; cached files are kept.",
+  "Downloads continue with the screen locked or while you use other apps. Track or pause them from the download notification.": "Downloads continue with the screen locked or while you use other apps. Track or pause them from the download notification.",
+  "Background downloads could not continue. Open the app and start the queue again; if it is empty, add your downloads again.": "Background downloads could not continue. Open the app and start the queue again; if it is empty, add your downloads again."
 }

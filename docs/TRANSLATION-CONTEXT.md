@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 1125 of them.
+Every string the app can show, under the screen it shows up on. 1130 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -746,6 +746,7 @@ you are actually typing into, which is easier than reading it here.
 | `{bytes} received` |  |
 | `{done} of {total} songs downloaded` |  |
 | `{written} of {total}` |  |
+| `Background downloads could not continue. Open the app and start the queue again; if it is empty, add your downloads again.` |  |
 | `Cancel all` |  |
 | `Cancelled` |  |
 | `Choose Download from a song, album or playlist menu to add it here.` |  |
@@ -755,6 +756,7 @@ you are actually typing into, which is easier than reading it here.
 | `Downloaded songs stay on your phone after restarting the app. Add unfinished downloads again.` |  |
 | `Downloading` | Section header over the download settings. A heading, not something happening right now |
 | `Downloads added from songs, albums, playlists and artists appear here. These are audio files kept for offline playback.` |  |
+| `Downloads continue with the screen locked or while you use other apps. Track or pause them from the download notification.` |  |
 | `Failed` |  |
 | `No download tasks yet` |  |
 | `Overall progress` |  |
@@ -1107,9 +1109,12 @@ you are actually typing into, which is easier than reading it here.
 | `Album covers` |  |
 | `Already cached` |  |
 | `Artist portraits` |  |
+| `Background caching could not continue. Open the app and tap Continue to retry; cached files are kept.` |  |
+| `Background caching was interrupted. Open the app and tap Continue to resume.` |  |
 | `Bulk artwork & lyrics` |  |
 | `Cache lyrics, album covers and artist portraits from your entire server library for offline use. This does not download audio or delete existing files.` |  |
 | `Caching {type}…` |  |
+| `Caching continues with the screen locked or while you use other apps. Track or pause it from the download notification.` |  |
 | `Caching…` |  |
 | `Cancel task` |  |
 | `Choose at least one item type.` |  |

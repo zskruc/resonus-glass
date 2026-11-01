@@ -4,6 +4,11 @@ export type DownloadStatus = 'queued' | 'downloading' | 'paused' | 'completed' |
 export interface DownloadQueueItem {
   key: string; song: Song; status: DownloadStatus; bytesWritten: number; bytesTotal: number; error?: string; groups: string[];
 }
+export interface DownloadQueueActivity {
+  profile: string; active: boolean; running: boolean; queuePaused: boolean;
+  queued: number; downloading: number; completed: number; total: number;
+  bytesWritten: number; bytesTotal: number;
+}
 export type DownloadOutcome = 'completed' | 'failed' | 'cancelled';
 export class DownloadInterrupted extends Error {}
 interface Transfer { pause: () => Promise<unknown>; cancel: () => Promise<unknown> }
@@ -22,6 +27,11 @@ interface Entry {
 interface Options {
   owner: () => SubsonicAuth | null; profile: (auth: SubsonicAuth) => string; allowed: () => boolean;
   limit: () => number; update: (items: DownloadQueueItem[], paused: boolean) => void;
+  activity?: (activity: DownloadQueueActivity) => void;
+  preparation?: {
+    ready: () => boolean;
+    start: (auth: SubsonicAuth, current: () => boolean) => Promise<boolean>;
+  };
 }
 const terminal = (state: DownloadStatus) => state === 'completed' || state === 'failed' || state === 'cancelled';
 
@@ -34,7 +44,10 @@ export function createDownloadQueue(options: Options) {
   const leases = new Map<Promise<void>, string>();
   const hold = (scope: string, work: Promise<void>) => {
     leases.set(work, scope);
-    void work.then(() => leases.delete(work), () => leases.delete(work));
+    // The last worker's finally runs before its promise settles. Report after
+    // removing that lease too, or a foreground-service owner can remain live.
+    const release = () => { leases.delete(work); reportActivity(); };
+    void work.then(release, release);
     return work;
   };
   const settle = async (scope?: string) => {
@@ -45,7 +58,29 @@ export function createDownloadQueue(options: Options) {
     }
   };
   let owner = options.owner(), active = 0, draining = false, timer: ReturnType<typeof setTimeout> | undefined;
+  let preparing: { auth: SubsonicAuth } | undefined;
+  let preparationEpoch = 0;
   const profile = () => { const auth = options.owner(); return auth ? options.profile(auth) : ''; };
+  const activity = (): DownloadQueueActivity => {
+    const scope = profile(), queuePaused = paused.has(scope);
+    let queued = 0, downloading = 0, completed = 0, total = 0, bytesWritten = 0, bytesTotal = 0;
+    for (const entry of entries.values()) {
+      const item = entry.item;
+      if (entry.profile !== scope || entry.hidden || item.status === 'cancelled') continue;
+      total++;
+      if (item.status === 'queued') queued++;
+      if (item.status === 'downloading') downloading++;
+      if (item.status === 'completed') completed++;
+      bytesWritten += item.bytesWritten;
+      bytesTotal += item.bytesTotal;
+    }
+    const running = !!scope && [...leases.values()].some((value) => value === scope);
+    // A paused native transfer/file commit may still be settling. Keep its
+    // process lease until settled, but never retain another account or policy.
+    const active = !!scope && options.allowed() && (running || !queuePaused && queued + downloading > 0);
+    return { profile: scope, active, running, queuePaused, queued, downloading, completed, total, bytesWritten, bytesTotal };
+  };
+  const reportActivity = () => options.activity?.(activity());
   const publish = (immediate = true) => {
     const flush = () => { timer = undefined; const scope = profile();
       options.update([...entries.values()].filter((entry) => entry.profile === scope && !entry.hidden).map((entry) => {
@@ -53,7 +88,7 @@ export function createDownloadQueue(options: Options) {
         if (old && old.status === item.status && old.bytesWritten === item.bytesWritten && old.bytesTotal === item.bytesTotal
           && old.error === item.error && old.groups.length === item.groups.length && old.groups.every((group, index) => group === item.groups[index])) return old;
         return entry.snapshot = { ...item, groups: [...item.groups] };
-      }), paused.has(scope)); };
+      }), paused.has(scope)); reportActivity(); };
     if (immediate) { if (timer) clearTimeout(timer); flush(); }
     else if (!timer) timer = setTimeout(flush, 150);
   };
@@ -76,6 +111,7 @@ export function createDownloadQueue(options: Options) {
     return entry.interrupting;
   };
   const pauseProfile = (scope: string) => {
+    preparationEpoch++;
     paused.add(scope);
     return Promise.all([...entries.values()].filter((entry) => entry.profile === scope).map((entry) => interrupt(entry, false)));
   };
@@ -93,6 +129,30 @@ export function createDownloadQueue(options: Options) {
     if (!auth || !options.allowed()) { publish(); return; }
     const scope = options.profile(auth);
     if (paused.has(scope)) { publish(); return; }
+    const waiting = () => [...entries.values()].some((entry) => entry.profile === scope && entry.item.status === 'queued'
+      && !entry.running && !entry.interrupting && !entry.blocked);
+    if (options.preparation && !options.preparation.ready() && waiting()) {
+      if (!preparing) {
+        const ticket = { auth }; preparing = ticket;
+        const epoch = preparationEpoch;
+        const current = () => epoch === preparationEpoch && options.owner() === auth
+          && options.allowed() && !paused.has(scope) && !draining && waiting();
+        const work = Promise.resolve().then(async () => {
+          if (!current()) return;
+          const ready = await options.preparation!.start(auth, current);
+          if (current() && (!ready || !options.preparation!.ready())) await pauseProfile(scope);
+        }).catch(async () => {
+          // A denied/stale service start keeps the real queue resumable. Do
+          // not turn it into failed audio or keep retrying a background start.
+          if (current()) await pauseProfile(scope);
+        }).finally(() => {
+          if (preparing === ticket) preparing = undefined;
+          publish(); kick();
+        });
+        hold(scope, work);
+      }
+      publish(); return;
+    }
     const limit = Math.max(1, Math.min(20, Math.round(options.limit()) || 1));
     for (const entry of entries.values()) {
       if (active >= limit) break;
@@ -129,6 +189,7 @@ export function createDownloadQueue(options: Options) {
   };
   return {
     sync: kick,
+    getActivity: activity,
     add(song: Song, group: string, run: Entry['run'], defer = false, cleanup?: Entry['cleanup']): Promise<DownloadOutcome> {
       sync(); const auth = options.owner();
       if (draining || !auth || !options.allowed()) return Promise.resolve('cancelled');
@@ -171,11 +232,13 @@ export function createDownloadQueue(options: Options) {
       kick();
     },
     async cancelAll() {
+      preparationEpoch++;
       const scope = profile();
       const work = [...entries.values()].filter((entry) => entry.profile === scope).map((entry) => interrupt(entry, true));
       paused.delete(scope); publish(); await Promise.all(work);
     },
     cancelGroup(group: string) {
+      preparationEpoch++;
       const scope = profile();
       for (const entry of entries.values()) if (entry.profile === scope && entry.item.groups.includes(group)) {
         entry.item.groups = entry.item.groups.filter((value) => value !== group);
@@ -184,6 +247,7 @@ export function createDownloadQueue(options: Options) {
       publish(); kick();
     },
     forget(ids: string[]) {
+      preparationEpoch++;
       const scope = profile();
       for (const id of ids) {
         const key = `${scope}|${id}`, entry = entries.get(key);
@@ -198,6 +262,7 @@ export function createDownloadQueue(options: Options) {
       publish();
     },
     async removeProfile(scope: string) {
+      preparationEpoch++;
       const own = [...entries.values()].filter((entry) => entry.profile === scope);
       await Promise.all(own.map((entry) => interrupt(entry, true)));
       await settle(scope);
@@ -205,6 +270,7 @@ export function createDownloadQueue(options: Options) {
       paused.delete(scope); publish();
     },
     async drainAndClear(work?: () => Promise<void>) {
+      preparationEpoch++;
       draining = true;
       try {
         const current = [...entries.values()];
