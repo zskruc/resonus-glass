@@ -38,6 +38,18 @@ This is a selective adaptation of the two approved batches, including prerequisi
 - Native UPnP release compilation and **19 production-code JUnit tests** passed.
 - Cases cover playlist duplicates/permission/complete offline snapshots and automatic-save/Undo ownership; count migration/failed-save ordering; local SQLite podcast migration and feed pruning; pause/cancel/network changes and accepted commits; long-form resume/source/seek ownership; and download-catalog invalidation/account races.
 
-APK metadata/signature are recorded after the build. No Samsung, live RSS publishing server, or physical DLNA receiver has been used in this adaptation task. A real receiver is still required to validate renderer-specific behavior. A successful build or test run is not a claim of sustained device frame rate or Samsung acceptance.
+No Samsung, live RSS publishing server, or physical DLNA receiver has been used in this adaptation task. A real receiver is still required to validate renderer-specific behavior. A successful build or test run is not a claim of sustained device frame rate or Samsung acceptance.
+
+## APK / 安装包
+
+- Built source commit: `d99642b78124ee419496be738f3e00c23b563aab`.
+- File: `artifacts/Resonus-Glass-v0.8.7.1-preview.1-code147-arm64-v8a.apk`.
+- Package: `com.zskruc.resonus.glasspreview`.
+- Version: `0.8.7.1-preview.1`; Android code: `147`; ABI: `arm64-v8a`.
+- Size: `46,043,004` bytes.
+- APK SHA-256: `b317fef3c862c2380efaaa8fe69ac427d78d53583c18e54ba71ea976e325afb4`.
+- Signing certificate SHA-256: `fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`.
+- APK signature and ZIP integrity checks passed. Signing identity matches the previous code-146 APK; no key or application-identity replacement was performed. This permits an in-place update; no uninstall or data clearing is required.
+- Release build completed with the existing build script. APK metadata, build/check logs and the private machine receipt are retained under `.local-cache/upstream-review-20261102-146/`; they are not public release assets.
 
 No GitHub publication or release is performed by this build-only adaptation task.
