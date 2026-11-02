@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 1162 of them.
+Every string the app can show, under the screen it shows up on. 1161 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -69,10 +69,8 @@ you are actually typing into, which is easier than reading it here.
 | `Genre` | Label of a field in the song information sheet |
 | `Go to album` | Leave this sheet and open the album the song is on |
 | `Go to artist` | Leave this sheet and open the artist |
-| `Go to artist radio` |  |
 | `Lyric poster` |  |
 | `Lyrics tools` |  |
-| `Mix of “{name}”` | What the player calls the queue once it has grown past its album into songs the app picked itself. `{name}` is the song it was grown from |
 | `Mix started` | The toast that says the app is now picking the songs |
 | `Moods` | Mood tags the server has on the song: mellow, energetic… |
 | `Navigation bar` | Settings screen: which tabs are on the bar at the bottom, and in what order |
@@ -358,7 +356,6 @@ you are actually typing into, which is easier than reading it here.
 | `Create your first playlist to get started.` | The line under an empty state |
 | `Episode` |  |
 | `Favorite shows or episodes to see them here.` |  |
-| `Go to artist radio` |  |
 | `Grid view` | Show the list as cards in a grid |
 | `List view` | Show it as rows, one under the other |
 | `No favorite albums` | Empty state heading on the favourites tab |
@@ -372,6 +369,7 @@ you are actually typing into, which is easier than reading it here.
 | `Recently added` | A sort order, and a section: newest first (in Favorites, last favorited first) |
 | `Star albums to see them here.` | The line under an empty state, saying how to fill it |
 | `Star artists to see them here.` | The line under an empty state, saying how to fill it |
+| `Start mix` | Start an auto-generated radio mix from this song |
 | `Your library` | The tab with your albums, artists and playlists |
 | `Your playlists and what you star show up here.` |  |
 | `Yours` |  |
@@ -468,7 +466,6 @@ you are actually typing into, which is easier than reading it here.
 | `History` | The listening history: what was played and when |
 | `Local audio` |  |
 | `Media volume` |  |
-| `Mix of “{name}”` | What the player calls the queue once it has grown past its album into songs the app picked itself. `{name}` is the song it was grown from |
 | `No devices found` |  |
 | `No lyrics available for this song.` | Empty state on the lyrics screen |
 | `Now playing` | Heading on the queue screen over the song sounding right now. The player's own label is `NOW PLAYING`, a different string |
@@ -603,7 +600,6 @@ you are actually typing into, which is easier than reading it here.
 | `Explicit` | A value of `Content`: the recording carries a parental advisory (strong language). Also read out for the E badge next to a title |
 | `Get the server's queue` | Queue screen action: replace what is playing here with the queue the server has, which is the one left on another player |
 | `History` | The listening history: what was played and when |
-| `Mix of “{name}”` | What the player calls the queue once it has grown past its album into songs the app picked itself. `{name}` is the song it was grown from |
 | `Next from {name}` | Heading on the queue screen: what is coming, and where it comes from. `{name}` is an album, a playlist or a mix |
 | `Next in queue` | Queue screen header: the track that plays next |
 | `Now playing` | Heading on the queue screen over the song sounding right now. The player's own label is `NOW PLAYING`, a different string |
@@ -1636,6 +1632,7 @@ you are actually typing into, which is easier than reading it here.
 | `Manage playlists` |  |
 | `Mark as played` |  |
 | `Mark as unplayed` |  |
+| `Mix of “{name}”` | What the player calls the queue once it has grown past its album into songs the app picked itself. `{name}` is the song it was grown from |
 | `Monospace` | A typeface whose characters all have the same width, in Settings › Font |
 | `More` | A "see more" action, and the third button of the selection bar, the one that opens the rest of what it can do |
 | `More options` | Read out by the screen reader for the three-dot button, which is ⋮ on a song row and in the player and ⋯ in a screen's header |

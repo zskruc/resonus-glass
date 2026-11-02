@@ -11,7 +11,7 @@ This is a selective adaptation of the two approved batches, including prerequisi
 | Area | Source | Glass integration |
 | --- | --- | --- |
 | Profile play counts | [#282](https://github.com/juananzzz/resonus/pull/282) | Profile ownership, serialized strict persistence, migration claim and retained legacy recovery copy. A 10,000-record bound preserves substantially more per-artist/per-album history than the upstream top-300 limit. Failed older saves cannot overwrite newer snapshots. |
-| Library behavior | [c9c56cb6](https://github.com/juananzzz/resonus/commit/c9c56cb6bc2913bb7da939c6bfb423bf1d7dfcef) | Keep lists on refresh failure, offline availability/download badges, artist menus, filtering/sort names, preserved result searches, immediate opening after playlist creation, and local podcast favorites with actual favorite/listen timestamps. Existing Apple Music and Spotify layouts remain. |
+| Library behavior | [c9c56cb6](https://github.com/juananzzz/resonus/commit/c9c56cb6bc2913bb7da939c6bfb423bf1d7dfcef) | Keep lists on refresh failure, offline availability/download badges, artist menus, filtering/sort names, preserved result searches, immediate opening after playlist creation, and local podcast favorites with actual favorite/listen timestamps. Artist menus start the existing mix engine rather than navigating to an absent upstream radio page. Existing Apple Music and Spotify layouts remain. |
 | Downloaded albums | [169af424](https://github.com/juananzzz/resonus/commit/169af424afbfd983fa2beffaad8babe59eef124b) | Explore chip reads the existing local SQL catalog online too, without changing the main library or scanning all downloaded songs for the shelf. |
 | Settings padding | [9c85d702](https://github.com/juananzzz/resonus/commit/9c85d702aebd0209c7d802ea540da17df61895e5) | Dynamic dock/safe-area padding through the current Settings context and DockScrollView, preserving UI-thread scroll interactions and caller padding. |
 | Playlist auto-save | [#296](https://github.com/juananzzz/resonus/pull/296), final behavior [2b9c5b41](https://github.com/juananzzz/resonus/commit/2b9c5b41a3614267fb69f87f6d92b10e84dd0a23) | Overlay-only reorder mode, occurrence keys, one in-flight write/latest pending order, fresh editable snapshots and permission/sequence checks. Ordinary FlashList stays mounted. The delete/Undo contract is separate from permutation-only reordering. |
@@ -32,7 +32,7 @@ This is a selective adaptation of the two approved batches, including prerequisi
 
 ## Validation / 验证
 
-- Full JavaScript/TypeScript regression suite: **1,262 passed, 0 failed**, followed by the Navidrome canonical-ID check.
+- Full JavaScript/TypeScript regression suite: **1,265 passed, 0 failed**, followed by the Navidrome canonical-ID check.
 - TypeScript: passed. Translation/dictionary/generated context checks: passed.
 - Full ESLint: **0 errors, 143 warnings**. Scoped checks for the new implementations passed; warnings are not represented as a warning-free full repository.
 - Native UPnP release compilation and **19 production-code JUnit tests** passed.

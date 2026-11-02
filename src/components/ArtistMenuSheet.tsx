@@ -2,7 +2,6 @@
  * What a long press on an artist offers: play them, their radio, the heart.
  * The rest lives in the ⋯ of the artist's own screen, a tap away.
  */
-import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
@@ -47,14 +46,20 @@ export function ArtistMenuSheet() {
   }, []);
 
   /** The same popular songs the Play button of the artist's screen starts. */
-  async function play(artist: Artist) {
+  async function play(artist: Artist, mix = false) {
     const request = context.current;
+    const queue = usePlayerStore.getState().queue;
     const current = () => request === context.current && request.profile === profileScopeId()
-      && request.owner === useAuthStore.getState().auth;
+      && request.owner === useAuthStore.getState().auth && usePlayerStore.getState().queue === queue;
     try {
       const songs = await getTopSongs(artist.name, 20, artist.id);
       if (!current()) return;
-      if (songs.length > 0) await playQueue(songs, 0, artist.name, `/artist/${artist.id}`);
+      if (songs.length > 0) {
+        if (mix) {
+          const started = await usePlayerStore.getState().startRadio(songs[0], t('Mix of “{name}”', { name: artist.name }));
+          if (request.profile === profileScopeId() && request.owner === useAuthStore.getState().auth) toast(t(started ? 'Mix started' : "Couldn't find anything to mix with this song"));
+        } else await playQueue(songs, 0, artist.name, `/artist/${artist.id}`);
+      }
       else toast(t('Not available offline'));
     } catch {
       if (current()) toast(t("Couldn't complete the action"));
@@ -69,7 +74,7 @@ export function ArtistMenuSheet() {
       if (request.profile !== profileScopeId() || request.owner !== useAuthStore.getState().auth) return;
       applyStarChange('artist', artist.id, true, artist);
     } catch {
-      toast(t("Couldn't complete the action"));
+      if (request.profile === profileScopeId() && request.owner === useAuthStore.getState().auth) toast(t("Couldn't complete the action"));
     }
   }
 
@@ -108,9 +113,7 @@ export function ArtistMenuSheet() {
             })}
             {offline || !radiosEnabled
               ? null
-              : row('radio-outline', t('Go to artist radio'), () =>
-                  close(() => router.push(`/artist-radio/${artist.id}`)),
-                )}
+              : row('radio-outline', t('Start mix'), () => { close(); void play(artist, true); })}
             {row(
               hearted ? 'heart' : 'heart-outline',
               hearted ? t('Remove from favorites') : t('Add to favorites'),
