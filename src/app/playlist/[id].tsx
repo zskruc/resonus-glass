@@ -11,7 +11,6 @@ import { NavigationBar } from 'expo-navigation-bar';
 import { useShallow } from 'zustand/react/shallow';
 
 import {
-  coverArtUrl,
   songCoverUrl,
   deletePlaylist,
   getPlaylist,
@@ -36,10 +35,13 @@ import { PlaylistReorder } from '@/components/PlaylistReorder';
 import { SheetModal } from '@/components/SheetModal';
 import { TrackListSkeleton } from '@/components/TrackListSkeleton';
 import { TrackListView } from '@/components/TrackListView';
+import { PrimuseAlbumLoading } from '@/components/primuse/PrimuseAlbumLoading';
+import { useArtistPagePalette } from '@/components/volta/ArtistPagePalette';
 import { useCanShare } from '@/hooks/useCanShare';
 import { useDownloadMessage } from '@/hooks/useDownloadMessage';
 import { usePlaylistStars } from '@/hooks/usePlaylistStars';
 import { useServerCover } from '@/hooks/useServerCover';
+import { usePlaylistCover } from '@/hooks/usePlaylistCover';
 import { useSongSort } from '@/hooks/useSongSort';
 import { songsLabel, useT } from '@/i18n';
 import { formatTotalDuration } from '@/lib/format';
@@ -110,6 +112,10 @@ function SuggestedTracks({
   playlistName: string;
   onAdded: () => void;
 }) {
+  useTheme();
+  const pagePalette = useArtistPagePalette();
+  const textColor = pagePalette?.text ?? colors.text;
+  const secondaryColor = pagePalette?.textSecondary ?? colors.textSecondary;
   const t = useT();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -261,8 +267,8 @@ function SuggestedTracks({
 
   return (
     <View style={suggestedStyles.section}>
-      <Text style={suggestedStyles.title}>{t('Suggested tracks')}</Text>
-      <Text style={suggestedStyles.subtitle}>
+      <Text style={[suggestedStyles.title, { color: textColor }]}>{t('Suggested tracks')}</Text>
+      <Text style={[suggestedStyles.subtitle, { color: secondaryColor }]}>
         {t('Based on the tracks in this playlist')}
       </Text>
       {visible.map((song) => (
@@ -278,14 +284,15 @@ function SuggestedTracks({
             <Text
               style={[
                 suggestedStyles.songTitle,
-                previewing === song.id && { color: colors.accent },
+                { color: textColor },
+                previewing === song.id && { color: pagePalette?.accent ?? colors.accent },
               ]}
               numberOfLines={1}
             >
               {song.title}
             </Text>
             {song.artist ? (
-              <Text style={suggestedStyles.artist} numberOfLines={1}>
+              <Text style={[suggestedStyles.artist, { color: secondaryColor }]} numberOfLines={1}>
                 {song.artist}
               </Text>
             ) : null}
@@ -300,18 +307,20 @@ function SuggestedTracks({
               pressed && { opacity: 0.6 },
             ]}
           >
-            <Icon name="add-circle-outline" size={26} color={colors.text} />
+            <Icon name="add-circle-outline" size={26} color={textColor} />
           </Pressable>
         </Pressable>
       ))}
       <GlassPressable variant="regular"
+        buttonMaterial={pagePalette ? false : undefined}
         onPress={() => void refresh()}
         style={({ pressed }) => [
           suggestedStyles.refreshButton,
+          pagePalette && { backgroundColor: pagePalette.controlFill },
           pressed && { opacity: 0.6 },
         ]}
       >
-        <Text style={suggestedStyles.refreshText}>{t('Refresh')}</Text>
+        <Text style={[suggestedStyles.refreshText, { color: textColor }]}>{t('Refresh')}</Text>
       </GlassPressable>
     </View>
   );
@@ -411,6 +420,7 @@ export default function PlaylistScreen() {
     queryFn: () => getPlaylist(id),
     enabled: (!!auth || offline) && !!id,
   });
+  const playlistCover = usePlaylistCover(data?.playlist.coverArt ?? data?.playlist.id);
 
   const songIds = (data?.songs ?? []).map((s) => s.id);
   // Exact, unlike the album menu's guess: the songs are right here, so the
@@ -619,7 +629,7 @@ export default function PlaylistScreen() {
   }
 
   if (isLoading) {
-    return <TrackListSkeleton />;
+    return playlistStyle === 'primuse' ? <PrimuseAlbumLoading uri={playlistCover} offline={offline} focused={focused} /> : <TrackListSkeleton />;
   }
 
   // Only when there's nothing to show: a failed refresh with data already
@@ -655,14 +665,17 @@ export default function PlaylistScreen() {
 
   return (
     <>
-      {playlistStyle === 'artist' && appleMusic && focused ? <><StatusBar style="light" /><NavigationBar style="light" /></> : null}
+      {(playlistStyle === 'primuse' || playlistStyle === 'artist' && appleMusic) && focused
+        ? <><StatusBar style="light" /><NavigationBar style="light" /></> : null}
       <TrackListView
         playlistPresentation
+        primuseAlbumPresentation={playlistStyle === 'primuse'
+          ? { sourceHref: `/playlist/${id}`, meta: metaParts.slice(1).join(' · ') } : undefined}
         title={data.playlist.name}
         subtitle={data.playlist.owner}
         description={showPlaylistDescription ? data.playlist.comment : undefined}
         meta={metaParts.join(' · ')}
-        coverUri={coverArtUrl(data.playlist.coverArt ?? data.playlist.id, playlistStyle === 'artist' ? COVER.full : COVER.card)}
+        coverUri={playlistCover}
         onCoverPress={
           data.playlist.coverArt || data.songs.length > 0 ? () => setCoverOpen(true) : undefined
         }
@@ -726,7 +739,7 @@ export default function PlaylistScreen() {
       />
       <CoverViewer
         visible={coverOpen}
-        uri={coverChange.pickedUri ?? coverArtUrl(data.playlist.coverArt ?? data.playlist.id, COVER.full)}
+        uri={coverChange.pickedUri ?? playlistCover}
         onClose={coverChange.askPassword ? coverChange.cancelPassword : () => setCoverOpen(false)}
         footer={
           coverChange.enabled ? (
@@ -910,7 +923,7 @@ export default function PlaylistScreen() {
           comment: data.playlist.comment ?? '',
           public: data.playlist.public ?? false,
         }}
-        coverUri={coverArtUrl(data.playlist.coverArt ?? data.playlist.id, COVER.card)}
+        coverUri={playlistCover}
         hidePublic={offline}
         coverUploadId={!offline && auth?.serverType === 'navidrome' ? id : undefined}
         localCoverId={offline ? id : undefined}

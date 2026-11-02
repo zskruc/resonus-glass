@@ -8,6 +8,8 @@ import { isValidElement } from 'react';
 
 import { voltaDetailBackground } from '../src/lib/voltaPalette';
 import { buildMinidiscAlbumPalette, minidiscAlbumCoverSize } from '../src/lib/minidiscAlbumPalette';
+import { buildPrimuseAlbumPalette } from '../src/lib/primuseAlbumPalette';
+import { primuseAlbumLayout } from '../src/lib/primuseAlbumLayout';
 import { type PlaylistStyle, type UiStyle } from '../src/lib/uiStyle';
 import { VOLTA_ARTIST_FALLBACK } from '../src/lib/voltaArtistPalette';
 import { artistHeroGeometry } from '../src/lib/artistHeroGeometry';
@@ -101,6 +103,7 @@ const colors = { accent: '#f00', background: '#111', text: '#fff', textSecondary
 const theme = { colors, spacing: { sm: 8, md: 12, lg: 16 }, radius: { pill: 999 },
   fontSize: {}, tracking: {}, themed: (factory: (c: unknown) => unknown) => factory(colors), useTheme() {} };
 const native = { View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView',
+  useWindowDimensions: () => ({ width: 400, height: 800, scale: 1, fontScale: 1 }),
   TextInput: 'TextInput', ActivityIndicator: 'ActivityIndicator', Keyboard: { dismiss() {} },
   Animated: { Value: class { value: number; constructor(value: number) { this.value = value; } }, View: 'NativeAnimatedView',
     timing: () => ({ start() {} }) }, StyleSheet: { create: (styles: unknown) => styles, absoluteFill: {} } };
@@ -161,6 +164,7 @@ function list() {
   const removed: number[][] = [];
   const navigated: string[] = [];
   const artistPickers: unknown[][] = [];
+  const artworkEvents: string[] = [];
   let playbackToggles = 0;
   const player = { shuffle: false, queueDealt: false, sourceHref: '', isPlaying: false,
     toggle() { playbackToggles++; } };
@@ -203,6 +207,19 @@ function list() {
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) },
     '@/hooks/useDominantColor': { useCoverTint: () => ({ color: '#333', known: true }) },
     '@/hooks/useVoltaArtistArtwork': { useVoltaArtistArtwork: () => ({ palette: VOLTA_ARTIST_FALLBACK, ready: true }) },
+    // Native image preparation is a local boundary; real scene lifecycle is
+    // exercised with React in primuseAlbumScene.test.ts.
+    '@/hooks/usePrimuseAlbumPalette': { usePrimuseAlbumPalette: (uri?: string) => ({
+      palette: buildPrimuseAlbumPalette('#315b7f', true), ready: true, textureScale: 1.2,
+      textureUri: uri ? 'file:///cache/primuse-field.png' : undefined,
+      onArtworkLoad: (source: string) => artworkEvents.push(`load:${source}`),
+      onArtworkError: (source?: string) => artworkEvents.push(`error:${source}`),
+    }) },
+    '@/components/primuse/PrimuseAlbumHeader': { PrimuseAlbumHeader: 'PrimuseAlbumHeader' },
+    '@/components/primuse/PrimuseAlbumBackdrop': { PrimuseAlbumBackdrop: 'PrimuseAlbumBackdrop' },
+    '@/components/primuse/PrimuseAlbumScene': { PrimuseAlbumScene: 'PrimuseAlbumScene' },
+    '@/components/primuse/PrimuseTrackPanelRow': { PrimuseTrackPanelRow: 'PrimuseTrackPanelRow' },
+    '@/lib/primuseAlbumLayout': { primuseAlbumLayout },
     '@/hooks/useScreenBottomPadding': { useScreenBottomPadding: () => 20 },
     '@/hooks/useLiquidDock': { useLiquidDockScrollHandler: () => dock },
     '@/hooks/useScreenSize': { centredPadding: () => 16, useScreenSize: () => ({ width: 400, height: 800 }) },
@@ -251,7 +268,7 @@ function list() {
   const search = () => find(recycler().props.ListHeaderComponent, (node) => node.type === 'TextInput')!;
   render();
   return { render, recycler, row, search, played, removed, gestures, scrolls, dock, timings, animatedValues: anim.values,
-    navigated, artistPickers, playbackToggles: () => playbackToggles,
+    navigated, artistPickers, artworkEvents, playbackToggles: () => playbackToggles,
     setPlayer(next: Partial<typeof player>) { Object.assign(player, next); return render(); },
     setUiStyle(style: UiStyle) { settings.uiStyle = style; return render(); },
     setPlaylistStyle(style: PlaylistStyle) { settings.playlistStyle = style; return render(); },
@@ -280,6 +297,24 @@ function renderArtistHeader(h: ReturnType<typeof list>) {
   assert.ok(header, 'the actual shared album header must be active');
   runtime.begin();
   const tree = module.PlaylistArtistHeader(header.props);
+  runtime.commit();
+  return tree;
+}
+
+/** Run the actual new header/callbacks; only native hosts and image events are boundaries. */
+function renderPrimuseHeader(h: ReturnType<typeof list>) {
+  const runtime = hooks();
+  const anim = animation(runtime);
+  const module = load('components/primuse/PrimuseAlbumHeader.tsx', runtime.react, {
+    'react-native': native, 'react-native-reanimated': anim.api, 'expo-router': { Link: 'Link' },
+    '@/components/Cover': { Cover: 'Cover' }, '@/components/ExplicitBadge': { ExplicitBadge: 'Explicit' },
+    '@/components/Icon': icon, '@/i18n': { useT: () => (value: string) => value },
+    './PrimuseAlbumScene': { usePrimuseAlbumScene: () => ({ coverDisplayed() {}, fieldDisplayed() {} }) },
+  });
+  const header = find(h.recycler().props.ListHeaderComponent, (node) => node.type === 'PrimuseAlbumHeader');
+  assert.ok(header, 'the production Primuse header must be selected');
+  runtime.begin();
+  const tree = module.PrimuseAlbumHeader(header.props);
   runtime.commit();
   return tree;
 }
@@ -572,7 +607,7 @@ describe('recycled shared playlist rendering and positions', () => {
     assert.equal(JSON.stringify(h.removed), '[[12]]', 'the selected occurrence keeps its original server position');
   });
 
-  it('retains multi-disc positions, selection and scroll ownership across artist, Volta and Minidisc albums', () => {
+  it('retains multi-disc positions, selection and scroll ownership across Primuse, artist, Volta and Minidisc albums', () => {
     const h = list();
     const selected: unknown[][] = [];
     const artist = { sourceHref: '/album/album-one' };
@@ -582,6 +617,7 @@ describe('recycled shared playlist rendering and positions', () => {
       numbered: true, discHeaders: { 0: 'Disc one', 2: 'Disc two' },
       selection: { onAddTo: (songs: unknown[]) => selected.push(songs) }, albumArtistPresentation: artist });
     const initial = h.recycler();
+    const initialScene = find(h.tree(), (node) => node.type === 'PrimuseAlbumScene')!;
     const oldPress = h.row(2).props.onPress;
     oldPress();
     assert.deepEqual(h.played, [2], 'the repeated track retains the album queue position');
@@ -591,10 +627,11 @@ describe('recycled shared playlist rendering and positions', () => {
     h.row(2).props.onLongPress(); h.render();
     for (const ui of ['appleMusic', 'spotify', 'appleMusic'] as const) {
       h.setUiStyle(ui);
-      for (const style of ['artist', 'volta', 'minidisc', 'artist'] as const) {
+      for (const style of ['primuse', 'artist', 'volta', 'minidisc', 'primuse', 'artist'] as const) {
         h.render({ albumArtistPresentation: style === 'artist' ? artist : undefined,
           albumActionLayout: style === 'volta' ? 'volta' : undefined,
-          albumPresentation: style === 'minidisc' ? minidisc : undefined });
+          albumPresentation: style === 'minidisc' ? minidisc : undefined,
+          primuseAlbumPresentation: style === 'primuse' ? { sourceHref: '/album/album-one' } : undefined });
         const current = h.recycler();
         assert.equal(current.type, initial.type);
         assert.equal(current.props.ref, initial.props.ref);
@@ -610,6 +647,10 @@ describe('recycled shared playlist rendering and positions', () => {
         const secondDisc = find(current.props.renderItem({ item: current.props.data[2], index: 2 }),
           (node) => node.type?.name === 'DiscHeader');
         assert.equal(secondDisc?.props.label, 'Disc two');
+        const scene = find(h.tree(), (node) => node.type === 'PrimuseAlbumScene')!;
+        assert.equal(scene.type, initialScene.type, 'the presentation provider must remain at the same parent position');
+        assert.equal(scene.props.enabled, style === 'primuse');
+        assert.equal(!!find(current.props.ListHeaderComponent, (node) => node.type === 'PrimuseAlbumHeader'), style === 'primuse');
         assert.equal(!!find(current.props.ListHeaderComponent, (node) => node.type === 'PlaylistArtistHeader'), style === 'artist');
         assert.equal(!!find(current.props.ListHeaderComponent, (node) => node.type === 'MinidiscAlbumHeader'), style === 'minidisc' && ui === 'appleMusic');
       }
@@ -619,6 +660,93 @@ describe('recycled shared playlist rendering and positions', () => {
     assert.equal(selected.length, 1);
     assert.equal(selected[0].length, 1);
     assert.equal(selected[0][0], songA, 'album batch operations retain the selected original Song');
+    h.render();
+    h.row(2).props.onPressIn();
+    oldPress();
+    assert.deepEqual(h.played, [2, 2], 'a retained occurrence callback survives every header presentation');
+  });
+
+  it('retains measured Primuse geometry when a durable HD cover replaces the server URI', () => {
+    const h = list();
+    h.render({ primuseAlbumPresentation: { sourceHref: '/playlist/p1' }, coverUri: 'https://example.invalid/cover' });
+    const header = () => find(h.recycler().props.ListHeaderComponent, (node) => node.type === 'PrimuseAlbumHeader')!;
+    header().props.onCoverCenterY(192);
+    header().props.onLayout({ nativeEvent: { layout: { height: 520 } } });
+    h.render();
+    assert.equal(find(h.tree(), (node) => node.type === 'PrimuseAlbumScene')!.props.prepared, true);
+    h.render({ coverUri: 'file:///cache/durable-playlist-HD.jpg' });
+    // Identical native layout does not send a second onLayout event.
+    const backdrop = find(h.tree(), (node) => node.type === 'PrimuseAlbumBackdrop')!;
+    assert.equal(backdrop.props.height, 520);
+    assert.equal(backdrop.props.layout.coverCenterY, 192);
+    assert.equal(header().props.coverUri, 'file:///cache/durable-playlist-HD.jpg');
+    assert.equal(find(h.tree(), (node) => node.type === 'PrimuseAlbumScene')!.props.prepared, true,
+      'a source update must still be able to complete the image-ready gate');
+  });
+
+  it('closes the Primuse panel at visible list boundaries without changing duplicate queue/server positions', () => {
+    const h = list();
+    h.render({ primuseAlbumPresentation: { sourceHref: '/playlist/p1' }, discHeaders: { 0: 'Disc one', 2: 'Disc two' } });
+    const panel = (index: number) => h.recycler().props.renderItem({ item: h.recycler().props.data[index], index });
+    assert.equal(panel(0).type, 'PrimuseTrackPanelRow');
+    assert.equal(panel(0).props.first, true);
+    assert.equal(panel(0).props.last, false);
+    assert.equal(panel(1).props.divider, false, 'a new disc supplies the section gap instead of a doubled separator');
+    assert.equal(panel(2).props.last, true);
+    const initial = h.recycler();
+    h.search().props.onChangeText('alpha'); h.render();
+    assert.equal(h.recycler().type, initial.type);
+    assert.equal(panel(0).props.first, true);
+    assert.equal(panel(0).props.divider, true);
+    assert.equal(panel(1).props.first, false);
+    assert.equal(panel(1).props.last, true, 'filtered boundaries use visible occurrences, not the original index');
+    h.row(1).props.onPress();
+    assert.deepEqual(h.played, [2]);
+    assert.equal(h.row(1).props.menuContext.index, 12);
+    h.render({ primuseAlbumPresentation: undefined });
+    assert.equal(find(panel(0), (node) => node.type === 'PrimuseTrackPanelRow'), undefined);
+  });
+
+  it('keeps Primuse artist, cover, play and shuffle controls bound to the displayed album', () => {
+    const h = list();
+    const played: { index: number; shuffled?: boolean }[] = [];
+    let covers = 0;
+    h.render({ title: 'Primuse Album', subtitle: 'Singer', artistId: 'artist-one',
+      playlistId: undefined, playlistIndices: undefined, coverUri: 'file:///cache/album.jpg',
+      primuseAlbumPresentation: { sourceHref: '/album/primuse', meta: '2026 · 3 songs' },
+      onPlay: (index: number, options?: { shuffled?: boolean }) => played.push({ index, ...options }),
+      onCoverPress: () => { covers++; }, explicit: 'explicit', genres: ['Rock'] });
+    const header = () => find(h.recycler().props.ListHeaderComponent, (node) => node.type === 'PrimuseAlbumHeader')!;
+    let tree = renderPrimuseHeader(h);
+    const artist = find(tree, (node) => node.type === 'Pressable' && node.props.onPress === header().props.onSubtitlePress);
+    assert.ok(artist, 'the artist remains a real link target in the actual new header');
+    artist.props.onPress();
+    assert.deepEqual(h.navigated, ['/artist/artist-one']);
+    find(tree, (node) => node.type === 'Pressable' && node.props.accessibilityRole === 'imagebutton')!.props.onPress();
+    assert.equal(covers, 1);
+    find(tree, (node) => node.type === 'Pressable' && node.props.accessibilityLabel === 'Play')!.props.onPress();
+    assert.deepEqual(played, [{ index: 0 }]);
+    h.setPlayer({ sourceHref: '/album/primuse', isPlaying: true });
+    tree = renderPrimuseHeader(h);
+    find(tree, (node) => node.type === 'Pressable' && node.props.accessibilityLabel === 'Pause')!.props.onPress();
+    assert.equal(h.playbackToggles(), 1, 'the active album pauses its current queue');
+    h.setPlayer({ sourceHref: '/playlist/unrelated', isPlaying: true });
+    tree = renderPrimuseHeader(h);
+    find(tree, (node) => node.type === 'Pressable' && node.props.accessibilityLabel === 'Play')!.props.onPress();
+    find(tree, (node) => node.type === 'Pressable' && node.props.accessibilityLabel === 'Shuffle')!.props.onPress();
+    assert.deepEqual(played, [{ index: 0 }, { index: 0 }, { index: 0, shuffled: true }]);
+    assert.equal(h.playbackToggles(), 1, 'an unrelated queue never receives the album action');
+    assert.ok(find(tree, (node) => node.type === 'Explicit'));
+    assert.ok(find(tree, (node) => node.type === 'Link' && node.props.href === '/genre/Rock'));
+    const cover = find(tree, (node) => node.type === 'Cover')!;
+    cover.props.onImageDisplay('file:///cache/album.jpg');
+    cover.props.onImageError('file:///cache/album.jpg');
+    assert.deepEqual(h.artworkEvents, ['load:file:///cache/album.jpg', 'error:file:///cache/album.jpg']);
+    h.render({ artists: [{ id: 'artist-one', name: 'Singer' }, { id: 'artist-two', name: 'Guest' }] });
+    tree = renderPrimuseHeader(h);
+    find(tree, (node) => node.type === 'Pressable' && node.props.onPress === header().props.onSubtitlePress)!.props.onPress();
+    assert.equal(h.artistPickers.length, 1);
+    assert.deepEqual(h.artistPickers[0].map((target: any) => target.id), ['artist-one', 'artist-two']);
   });
 
   it('binds artist-header playback to the displayed album and retains badges, genre links and artist navigation', () => {

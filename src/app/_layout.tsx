@@ -46,6 +46,7 @@ import { startPerfLog } from '@/lib/perfLog';
 import { queryClient } from '@/lib/query';
 import { primaryUrl } from '@/lib/serverUrls';
 import { playerModalAnimation } from '@/lib/amllPlayerTransition';
+import { buildPrimuseAlbumPalette } from '@/lib/primuseAlbumPalette';
 import { useAuthStore } from '@/store/auth';
 import { useAutoDownloads } from '@/store/autoDownloads';
 import { checkAutoUrlNow, initAutoUrl } from '@/store/autoUrl';
@@ -184,6 +185,9 @@ export default function RootLayout() {
   // their own, because a stack keeps them mounted and out of this render.
   const palette = useTheme();
   const playerPresentation = useSettings((state) => state.playerPresentation);
+  const primuseAlbum = useSettings((state) => state.albumStyle === 'primuse');
+  const primusePlaylist = useSettings((state) => state.playlistStyle === 'primuse');
+  const primuseLoadingColor = buildPrimuseAlbumPalette(undefined, themeMode() === 'dark').backgroundTop;
   // The window behind everything the app draws. It shows through for an instant
   // between screens and under an overscroll, and left at the launch colour it
   // was a dark flash in the middle of the light theme.
@@ -371,7 +375,11 @@ export default function RootLayout() {
                 // parking older page state. Native freezing here would prevent
                 // that release from ever reaching Fabric.
                 freezeOnBlur: false,
-                contentStyle: { backgroundColor: colors.background },
+                // The native route exists before its React artwork scene.
+                // Match Primuse's loading field rather than exposing a white
+                // light-theme frame at the start of its transition.
+                contentStyle: { backgroundColor: route.name === 'album/[id]' && primuseAlbum
+                  || route.name === 'playlist/[id]' && primusePlaylist ? primuseLoadingColor : colors.background },
               })}
             >
               <Stack.Protected guard={ready}>

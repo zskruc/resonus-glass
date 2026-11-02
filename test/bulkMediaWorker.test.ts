@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { MediaCacheStopped, runBulkMediaWorker, type MediaCacheRepository } from '../src/lib/bulkMediaWorker';
 import { emptyMediaCacheStats, newMediaCacheJob, type MediaCacheKind, type MediaCacheOutcome, type MediaCacheTask } from '../src/lib/mediaCacheTypes';
+import { LyricsFallbackError } from '../src/lib/lyricsLookupError';
 
 const item = (id: number, kind: MediaCacheKind = 'lyrics'): MediaCacheTask => ({ kind, id: String(id), data: { id } });
 function repository() {
@@ -128,4 +129,196 @@ test('pause interrupts unresolved discovery, processing and protected yields wit
     if (stage === 'page') assert.equal(h.rows.size, 0);
     if (stage === 'process') assert.equal((await h.repo.stats()).lyrics.pending, 1);
   }
+});
+
+function lyricPoolRepository() {
+  const h = repository();
+  const limits: number[] = [];
+  h.repo.nextLyrics = async (limit) => {
+    limits.push(limit);
+    return [...h.rows.values()].filter((row) => row.task.kind === 'lyrics' && row.result === 'pending')
+      .slice(0, limit).map((row) => row.task);
+  };
+  return { ...h, limits };
+}
+const settle = async () => { for (let index = 0; index < 100; index++) await Promise.resolve(); };
+
+test('three lyric lanes continue around one slow item, never duplicate a task, and commit counters serially', { timeout: 2000 }, async (t) => {
+  const h = lyricPoolRepository(), job = newMediaCacheJob(['lyrics']), slow = deferred<void>();
+  const fastFinished = deferred<void>(), control = new AbortController();
+  t.after(() => { control.abort(); slow.resolve(); });
+  await h.repo.addPage(Array.from({ length: 10 }, (_, i) => item(i))); job.cursors.lyrics.complete = true;
+  let active = 0, peak = 0, commits = 0, commitPeak = 0, finishedFast = 0;
+  const called: string[] = [], pending: number[] = [];
+  const finish = h.repo.finish;
+  h.repo.finish = async (task, outcome) => {
+    commitPeak = Math.max(commitPeak, ++commits); await Promise.resolve();
+    await finish(task, outcome); commits--;
+    if (task.id !== '0' && ++finishedFast === 9) fastFinished.resolve();
+  };
+  const work = runBulkMediaWorker({ job, repository: h.repo, signal: control.signal, policy: () => null,
+    page: async () => [],
+    process: async (task) => {
+      called.push(task.id); peak = Math.max(peak, ++active);
+      if (task.id === '0') await slow.promise; else await Promise.resolve();
+      active--; return 'success';
+    },
+    update: (_job, stats) => pending.push(stats.lyrics.pending), yield: async () => {},
+  });
+  await fastFinished.promise;
+  assert.equal(h.rows.get('lyrics|0')?.result, 'pending', 'the slow first request does not hold up later songs');
+  assert.equal(peak, 3); assert.equal(commitPeak, 1);
+  assert.equal(called.length, 10); assert.equal(new Set(called).size, 10);
+  slow.resolve(); await work;
+  assert.equal(job.status, 'completed');
+  assert.equal((await h.repo.stats()).lyrics.success, 10);
+  assert.ok(pending.every((value, index) => value >= 0 && (index === 0 || value <= pending[index - 1])));
+  assert.ok(h.limits.every((limit) => limit === 3), 'each refill has a bounded lookahead');
+});
+
+test('artist and album work stays sequential and never overlaps the three-lane lyric phase', { timeout: 2000 }, async () => {
+  const h = lyricPoolRepository(), job = newMediaCacheJob(['artistCovers', 'albumCovers', 'lyrics']);
+  await h.repo.addPage([item(0, 'artistCovers'), item(1, 'artistCovers'), item(2, 'albumCovers'), item(3, 'albumCovers'),
+    item(4), item(5), item(6), item(7)]);
+  for (const kind of job.selected) job.cursors[kind].complete = true;
+  const active = { artistCovers: 0, albumCovers: 0, lyrics: 0 };
+  const peak = { ...active }, lyricBatch = deferred<void>();
+  await runBulkMediaWorker({ job, repository: h.repo, signal: new AbortController().signal, policy: () => null,
+    page: async () => [],
+    process: async (task) => {
+      peak[task.kind] = Math.max(peak[task.kind], ++active[task.kind]);
+      if (task.kind === 'lyrics') {
+        assert.equal(active.artistCovers + active.albumCovers, 0);
+        if (active.lyrics === 3) lyricBatch.resolve();
+        await lyricBatch.promise;
+      } else { assert.equal(active.lyrics, 0); await Promise.resolve(); }
+      active[task.kind]--; return 'success';
+    }, update: () => {}, yield: async () => {},
+  });
+  assert.deepEqual(peak, { artistCovers: 1, albumCovers: 1, lyrics: 3 });
+});
+
+test('pausing a lyric pool returns promptly and invalidates every late cache writer without completing pending rows', { timeout: 2000 }, async () => {
+  const h = lyricPoolRepository(), job = newMediaCacheJob(['lyrics']), control = new AbortController();
+  const entered = deferred<void>(), late = deferred<void>();
+  await h.repo.addPage(Array.from({ length: 5 }, (_, i) => item(i))); job.cursors.lyrics.complete = true;
+  const contexts: { signal: AbortSignal; current: () => boolean }[] = [];
+  let writes = 0, updates = 0;
+  const work = runBulkMediaWorker({ job, repository: h.repo, signal: control.signal, policy: () => null,
+    page: async () => [],
+    process: async (_task, context) => {
+      contexts.push(context); if (contexts.length === 3) entered.resolve();
+      await late.promise; if (context.current()) writes++; return 'success';
+    }, update: () => { updates++; }, yield: async () => {},
+  });
+  await entered.promise; control.abort();
+  await assert.rejects(work, MediaCacheStopped);
+  assert.ok(contexts.every((context) => context.signal.aborted && !context.current()));
+  assert.equal((await h.repo.stats()).lyrics.pending, 5);
+  const stoppedUpdates = updates; late.resolve(); await settle();
+  assert.equal(writes, 0); assert.equal(updates, stoppedUpdates);
+  assert.equal((await h.repo.stats()).lyrics.pending, 5);
+});
+
+test('three failed lyric completions stop bounded work and close slow peers instead of marking them missing', { timeout: 2000 }, async () => {
+  const h = lyricPoolRepository(), job = newMediaCacheJob(['lyrics']), late = deferred<void>();
+  await h.repo.addPage(Array.from({ length: 8 }, (_, i) => item(i))); job.cursors.lyrics.complete = true;
+  const contexts: { signal: AbortSignal; current: () => boolean }[] = [];
+  let calls = 0, writes = 0;
+  await assert.rejects(runBulkMediaWorker({ job, repository: h.repo, signal: new AbortController().signal, policy: () => null,
+    page: async () => [],
+    process: async (task, context) => {
+      calls++;
+      if (['1', '2', '3'].includes(task.id)) throw new Error('provider offline');
+      contexts.push(context); await late.promise; if (context.current()) writes++; return 'success';
+    }, update: () => {}, yield: async () => {},
+  }), /repeated failures/);
+  const stats = await h.repo.stats();
+  assert.equal(stats.lyrics.failed, 3); assert.equal(stats.lyrics.missing, 0); assert.equal(stats.lyrics.pending, 5);
+  assert.ok(calls <= 5, 'the failure budget permits only the bounded peers already in flight');
+  assert.ok(contexts.every((context) => context.signal.aborted && !context.current()));
+  late.resolve(); await settle(); assert.equal(writes, 0);
+  assert.equal((await h.repo.stats()).lyrics.pending, 5);
+});
+
+test('policy changes while lyric requests are outstanding leave their rows pending and prevent late cache publication', { timeout: 2000 }, async () => {
+  for (const reason of ['offline', 'wifi', 'profile'] as const) {
+    const h = lyricPoolRepository(), job = newMediaCacheJob(['lyrics']), entered = deferred<void>(), late = deferred<void>();
+    await h.repo.addPage([item(0), item(1), item(2)]); job.cursors.lyrics.complete = true;
+    let policy: typeof reason | null = null, count = 0, writes = 0;
+    const contexts: { signal: AbortSignal; current: () => boolean }[] = [];
+    const work = runBulkMediaWorker({ job, repository: h.repo, signal: new AbortController().signal, policy: () => policy,
+      page: async () => [], process: async (_task, context) => {
+        contexts.push(context); if (++count === 3) entered.resolve();
+        await late.promise; if (context.current()) writes++; return 'success';
+      }, update: () => {}, yield: async () => {},
+    });
+    await entered.promise; policy = reason; late.resolve();
+    await assert.rejects(work, (error: unknown) => error instanceof MediaCacheStopped && error.reason === reason);
+    assert.equal(writes, 0); assert.equal((await h.repo.stats()).lyrics.pending, 3);
+    assert.ok(contexts.every((context) => context.signal.aborted && !context.current()));
+  }
+});
+
+test('external fallback failures after healthy empty server lyrics remain failed without blocking later server-backed songs', async () => {
+  for (const pooled of [false, true]) {
+    const h = pooled ? lyricPoolRepository() : repository(), job = newMediaCacheJob(['lyrics']);
+    await h.repo.addPage(Array.from({ length: 8 }, (_, i) => item(i))); job.cursors.lyrics.complete = true;
+    await runBulkMediaWorker({ job, repository: h.repo, signal: new AbortController().signal, policy: () => null,
+      page: async () => [], process: async (task) => {
+        if (Number(task.id) < 3) throw new LyricsFallbackError(new Error('External provider timed out'));
+        return 'success';
+      }, update: () => {}, yield: async () => {},
+    });
+    const stats = await h.repo.stats();
+    assert.equal(job.status, 'completed');
+    assert.equal(stats.lyrics.failed, 3, 'source failures remain individually visible and retryable');
+    assert.equal(stats.lyrics.success, 5); assert.equal(stats.lyrics.missing, 0); assert.equal(stats.lyrics.pending, 0);
+    for (let i = 0; i < 3; i++) assert.equal(h.rows.get(`lyrics|${i}`)?.result, 'failed');
+  }
+});
+
+test('an isolated fallback failure resets the main-service failure streak but ordinary failures still stop after three', async () => {
+  const h = repository(), job = newMediaCacheJob(['lyrics']);
+  await h.repo.addPage(Array.from({ length: 8 }, (_, i) => item(i))); job.cursors.lyrics.complete = true;
+  await assert.rejects(runBulkMediaWorker({ job, repository: h.repo, signal: new AbortController().signal, policy: () => null,
+    page: async () => [], process: async (task) => {
+      if (task.id === '2') throw new LyricsFallbackError(new Error('External provider failed'));
+      throw new Error('Main server or disk failure');
+    }, update: () => {}, yield: async () => {},
+  }), /repeated failures/);
+  const stats = await h.repo.stats();
+  assert.equal(stats.lyrics.failed, 6); assert.equal(stats.lyrics.pending, 2);
+  assert.equal(stats.lyrics.missing, 0);
+});
+
+test('failure observers receive original errors while observer throws and rejections cannot change the failure budget', async () => {
+  const h = repository(), job = newMediaCacheJob(['lyrics']);
+  await h.repo.addPage(Array.from({ length: 5 }, (_, i) => item(i))); job.cursors.lyrics.complete = true;
+  const errors = Array.from({ length: 3 }, () => new Error('original process failure'));
+  const observed: { id: string; error: unknown }[] = [];
+  await assert.rejects(runBulkMediaWorker({ job, repository: h.repo, signal: new AbortController().signal, policy: () => null,
+    page: async () => [], process: async (task) => { throw errors[Number(task.id)]; },
+    onFailure: (task, error) => { observed.push({ id: task.id, error });
+      if (task.id === '0') throw new Error('observer must not replace original failure');
+      return Promise.reject(new Error('asynchronous diagnostics failed'));
+    }, update: () => {}, yield: async () => {},
+  }), /repeated failures/);
+  assert.deepEqual(observed.map((value) => value.id), ['0', '1', '2']);
+  assert.ok(observed.every((value, index) => value.error === errors[index]));
+  const stats = await h.repo.stats();
+  assert.equal(stats.lyrics.failed, 3); assert.equal(stats.lyrics.pending, 2); assert.equal(stats.lyrics.missing, 0);
+});
+
+test('late process failures after pause cannot emit failure diagnostics or complete a pending row', async () => {
+  const h = repository(), job = newMediaCacheJob(['lyrics']), control = new AbortController();
+  await h.repo.addPage([item(1)]); job.cursors.lyrics.complete = true;
+  const entered = deferred<void>(), release = deferred<void>(); let failures = 0;
+  const work = runBulkMediaWorker({ job, repository: h.repo, signal: control.signal, policy: () => null,
+    page: async () => [], process: async () => { entered.resolve(); await release.promise; throw new Error('late private error'); },
+    onFailure: () => { failures++; }, update: () => {}, yield: async () => {},
+  });
+  await entered.promise; control.abort(); await assert.rejects(work, MediaCacheStopped);
+  release.resolve(); await settle();
+  assert.equal(failures, 0); assert.equal((await h.repo.stats()).lyrics.pending, 1);
 });

@@ -8,6 +8,7 @@ import * as Db from '@/lib/mediaCacheDb';
 import { MEDIA_CACHE_KINDS, emptyMediaCacheStats, newMediaCacheJob,
   type MediaCacheJob, type MediaCacheKind, type MediaCacheReason, type MediaCacheStats, type MediaCacheStatus } from '@/lib/mediaCacheTypes';
 import { makeMediaCacheRuntime } from '@/lib/mediaCacheRuntime';
+import { sanitizeMediaCacheFailure } from '@/lib/mediaCacheFailure';
 import { useAuthStore } from './auth';
 import { useNetworkType } from './networkType';
 import { useSettings } from './settings';
@@ -56,13 +57,17 @@ async function launch(preparation: number, intentAuth: typeof owner): Promise<vo
   let protection: BackgroundWorkLease | undefined;
   runJob.status = 'discovering'; runJob.reason = null; runJob.error = null;
   useBulkMediaCache.setState({ status: 'discovering', reason: null, error: null });
-  let initialCellular = useNetworkType.getState().cellular;
-  let initialConnected = useNetworkType.getState().connected;
+  // An explicit Start/Continue must inspect the current connection. Cached
+  // watcher values can still describe the network before the phone reconnected.
+  let cellular = false;
+  let connected = true;
+  let networkReady = false;
+  let networkRevision = 0;
   const policy = (): MediaCacheReason => {
     const state = useAuthStore.getState();
     if (!owned() || state.auth !== auth) return 'profile';
-    if (state.offline || !initialConnected || !useNetworkType.getState().connected) return 'offline';
-    if (useSettings.getState().downloadWifiOnly && (initialCellular || useNetworkType.getState().cellular)) return 'wifi';
+    if (state.offline || networkReady && !connected) return 'offline';
+    if (networkReady && useSettings.getState().downloadWifiOnly && cellular) return 'wifi';
     // The explicit Android intent may still be waiting on DB/native setup
     // when the user locks. Let native enforce its foreground-start rules;
     // no library work begins until acquisition below confirms protection.
@@ -72,7 +77,8 @@ async function launch(preparation: number, intentAuth: typeof owner): Promise<vo
     return null;
   };
   const unsubscribeNetwork = useNetworkType.subscribe((state) => {
-    initialCellular = state.cellular; initialConnected = state.connected;
+    ++networkRevision;
+    cellular = state.cellular; connected = state.connected;
     const reason = policy(); if (reason) stop(reason);
   });
   const unsubscribeAuth = useAuthStore.subscribe(() => { const reason = policy(); if (reason) stop(reason); });
@@ -107,18 +113,37 @@ async function launch(preparation: number, intentAuth: typeof owner): Promise<vo
       const protectedReason = policy();
       if (protectedReason) throw new MediaCacheStopped(protectedReason);
       let network: Awaited<ReturnType<typeof Network.getNetworkStateAsync>>;
+      const inspectedRevision = networkRevision;
       try { network = await awaitMediaCacheWork(Network.getNetworkStateAsync(), runController.signal); }
       catch (error) {
         if (error instanceof MediaCacheStopped) throw error;
         throw new MediaCacheStopped('wifi');
       }
-      initialCellular = network.type === Network.NetworkStateType.CELLULAR;
-      initialConnected = network.isConnected !== false && network.isInternetReachable !== false;
+      if (!current()) throw new MediaCacheStopped(policy() ?? 'user');
+      // A connection event delivered while inspection was pending is newer
+      // than that inspection's starting point. Never overwrite it with a late
+      // result; later events keep updating the same snapshot throughout the run.
+      if (networkRevision === inspectedRevision) {
+        cellular = network.type === Network.NetworkStateType.CELLULAR;
+        connected = network.isConnected !== false && network.isInternetReachable !== false;
+      }
+      networkReady = true;
+      if (networkRevision === inspectedRevision) {
+        const cached = useNetworkType.getState();
+        // Keep the watcher's baseline current too. Otherwise its change-only
+        // publisher could suppress a later genuine disconnect because it was
+        // still comparing against the stale preflight "disconnected" value.
+        if (cached.cellular !== cellular || cached.connected !== connected) {
+          useNetworkType.setState({ cellular, connected });
+        }
+      }
       await runBulkMediaWorker({ job: runJob, signal: runController.signal, policy,
         repository: { saveJob: (value) => Db.saveMediaCacheJob(runProfile, value),
           addPage: (tasks) => Db.addMediaCacheTasks(runProfile, tasks), next: (selected) => Db.nextMediaCacheTask(runProfile, selected),
+          nextLyrics: (limit) => Db.nextMediaCacheLyrics(runProfile, limit),
           finish: (task, outcome) => Db.finishMediaCacheTask(runProfile, task, outcome), stats: () => Db.mediaCacheStats(runProfile) },
         page: runtime.page, process: runtime.process,
+        onFailure: (task, error) => { console.warn('[media-cache-failure]', JSON.stringify(sanitizeMediaCacheFailure(task, error))); },
         update: (value, stats) => { if (current()) { apply(value, stats); protection?.update(progress(value, stats)); } },
         // Native service keeps both the JS runtime and this yield alive while
         // locked; a plain RN timeout alone stops with the Activity lifecycle.

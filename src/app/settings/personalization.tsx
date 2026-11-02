@@ -104,6 +104,7 @@ export default function AppearanceSettings() {
         <SelectList<AlbumStyle>
           collapsible={false}
           options={[
+            { value: 'primuse', label: t('Primuse') },
             { value: 'artist', label: t('Artist page layout') },
             { value: 'volta', label: t('Volta') },
             { value: 'minidisc', label: t('Minidisc') },
@@ -112,12 +113,13 @@ export default function AppearanceSettings() {
           onChange={setAlbumStyle}
         />
         <Text style={settingsStyles.sectionDescription}>
-          {t('Artist page layout matches your artist and playlist headers. Volta and Minidisc keep their previous layouts in Apple Music style; Spotify uses its original compact layout.')}
+          {t('Primuse centers the cover over a soft artwork background. Artist page layout matches artist and playlist headers; Volta and Minidisc retain their previous layouts.')}
         </Text>
         <Text style={settingsStyles.sectionTitle}>{t('Playlist page style')}</Text>
         <SelectList<PlaylistStyle>
           collapsible={false}
           options={[
+            { value: 'primuse', label: t('Primuse') },
             { value: 'artist', label: t('Artist page layout') },
             { value: 'compact', label: t('Compact layout') },
           ]}
@@ -125,7 +127,7 @@ export default function AppearanceSettings() {
           onChange={setPlaylistStyle}
         />
         <Text style={settingsStyles.sectionDescription}>
-          {t('Use the artist-page header for playlists. Compact layout restores the previous playlist layout instantly.')}
+          {t('Primuse uses the album-page cover layout and soft artwork background. Artist page layout follows your artist headers; Compact layout restores the previous playlist layout.')}
         </Text>
         <SettingsGroup>
           <SettingRow

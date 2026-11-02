@@ -65,30 +65,30 @@ test('missing and invalid album preferences use the artist header without changi
   }
 });
 
-test('album style persists per profile, exports and imports independently, and resets to artist', async () => {
+test('Primuse album style persists per profile, exports and imports independently, and resets to artist', async () => {
   useSettings.getState().setUiStyle('appleMusic');
   useSettings.getState().setBlurMiniPlayer(false);
   const before = exportedSettings();
-  useSettings.getState().setAlbumStyle('minidisc');
-  assert.deepEqual(exportedSettings(), { ...before, albumStyle: 'minidisc' });
-  assert.equal(JSON.parse(storage.items.get('resonus.settings.one')!).albumStyle, 'minidisc');
+  useSettings.getState().setAlbumStyle('primuse');
+  assert.deepEqual(exportedSettings(), { ...before, albumStyle: 'primuse' });
+  assert.equal(JSON.parse(storage.items.get('resonus.settings.one')!).albumStyle, 'primuse');
   await useSettings.getState().hydrate();
-  assert.equal(useSettings.getState().albumStyle, 'minidisc');
+  assert.equal(useSettings.getState().albumStyle, 'primuse');
   storage.profile = 'two';
   await useSettings.getState().hydrate();
   assert.equal(useSettings.getState().albumStyle, 'artist');
-  useSettings.getState().importSettings({ ...before, albumStyle: 'minidisc' });
-  assert.equal(useSettings.getState().albumStyle, 'minidisc');
+  useSettings.getState().importSettings({ ...before, albumStyle: 'primuse' });
+  assert.equal(useSettings.getState().albumStyle, 'primuse');
   assert.equal(useSettings.getState().blurMiniPlayer, false);
   useSettings.getState().resetToDefaults();
   assert.equal(useSettings.getState().albumStyle, 'artist');
   storage.profile = 'one';
   await useSettings.getState().hydrate();
-  assert.equal(useSettings.getState().albumStyle, 'minidisc');
+  assert.equal(useSettings.getState().albumStyle, 'primuse');
 });
 
 test('explicit album choices survive startup and import, including both previous layouts', async () => {
-  for (const albumStyle of ['artist', 'volta', 'minidisc'] as const) {
+  for (const albumStyle of ['artist', 'volta', 'minidisc', 'primuse'] as const) {
     assert.equal(normalizeAlbumStyle(albumStyle), albumStyle);
     storage.items.set('resonus.settings.one', JSON.stringify({ uiStyle: 'appleMusic', albumStyle }));
     await useSettings.getState().hydrate();
@@ -108,7 +108,7 @@ test('changing album layout affects only its preference and normalizes programma
   settings.setBlurMiniPlayer(false);
   const before = exportedSettings();
   storage.lookCalls.length = 0;
-  for (const albumStyle of ['volta', 'minidisc', 'artist'] as const) {
+  for (const albumStyle of ['volta', 'minidisc', 'primuse', 'artist'] as const) {
     settings.setAlbumStyle(albumStyle);
     assert.deepEqual(exportedSettings(), { ...before, albumStyle });
   }
@@ -161,11 +161,12 @@ test('each server profile retains its own UI selection', async () => {
   assert.equal(useSettings.getState().uiStyle, 'appleMusic');
 });
 
-test('old and invalid playlist preferences preview the artist header; compact remains an explicit valid choice', async () => {
+test('old and invalid playlist preferences retain the artist header; compact and Primuse stay explicit valid choices', async () => {
   assert.equal(useSettings.getState().playlistStyle, 'artist');
   assert.equal(normalizePlaylistStyle('artist'), 'artist');
   assert.equal(normalizePlaylistStyle('compact'), 'compact');
-  for (const value of [undefined, null, 'Artist', 'Compact', 'future', 0, true, {}, ['compact']]) {
+  assert.equal(normalizePlaylistStyle('primuse'), 'primuse');
+  for (const value of [undefined, null, 'Artist', 'Compact', 'Primuse', 'future', 0, true, {}, ['compact']]) {
     assert.equal(normalizePlaylistStyle(value), 'artist');
     storage.items.set('resonus.settings.one', JSON.stringify({ uiStyle: 'appleMusic', albumStyle: 'minidisc', playlistStyle: value }));
     await useSettings.getState().hydrate();
@@ -179,30 +180,32 @@ test('old and invalid playlist preferences preview the artist header; compact re
   }
 });
 
-test('playlist layout round-trips per profile, exports and restores independently, then resets to the preview default', async () => {
-  useSettings.getState().setUiStyle('appleMusic');
-  useSettings.getState().setAlbumStyle('minidisc');
-  const before = exportedSettings();
-  useSettings.getState().setPlaylistStyle('compact');
-  assert.equal(JSON.parse(storage.items.get('resonus.settings.one')!).playlistStyle, 'compact');
-  await useSettings.getState().hydrate();
-  assert.deepEqual(exportedSettings(), { ...before, playlistStyle: 'compact' });
+for (const playlistStyle of ['compact', 'primuse'] as const) {
+  test(`${playlistStyle} playlist layout round-trips per profile independently, then resets to the existing default`, async () => {
+    useSettings.getState().setUiStyle('appleMusic');
+    useSettings.getState().setAlbumStyle('minidisc');
+    const before = exportedSettings();
+    useSettings.getState().setPlaylistStyle(playlistStyle);
+    assert.equal(JSON.parse(storage.items.get('resonus.settings.one')!).playlistStyle, playlistStyle);
+    await useSettings.getState().hydrate();
+    assert.deepEqual(exportedSettings(), { ...before, playlistStyle });
 
-  storage.profile = 'two';
-  // A delayed screen from the old account cannot write the new account's blob.
-  useSettings.getState().setPlaylistStyle('artist');
-  assert.equal(storage.items.has('resonus.settings.two'), false);
-  assert.equal(JSON.parse(storage.items.get('resonus.settings.one')!).playlistStyle, 'compact');
-  await useSettings.getState().hydrate();
-  assert.equal(useSettings.getState().playlistStyle, 'artist');
-  useSettings.getState().importSettings({ ...before, playlistStyle: 'compact' });
-  assert.deepEqual(exportedSettings(), { ...before, playlistStyle: 'compact' });
-  useSettings.getState().resetToDefaults();
-  assert.equal(useSettings.getState().playlistStyle, 'artist');
-  storage.profile = 'one';
-  await useSettings.getState().hydrate();
-  assert.deepEqual(exportedSettings(), { ...before, playlistStyle: 'compact' });
-});
+    storage.profile = 'two';
+    // A delayed screen from the old account cannot write the new account's blob.
+    useSettings.getState().setPlaylistStyle('artist');
+    assert.equal(storage.items.has('resonus.settings.two'), false);
+    assert.equal(JSON.parse(storage.items.get('resonus.settings.one')!).playlistStyle, playlistStyle);
+    await useSettings.getState().hydrate();
+    assert.equal(useSettings.getState().playlistStyle, 'artist');
+    useSettings.getState().importSettings({ ...before, playlistStyle });
+    assert.deepEqual(exportedSettings(), { ...before, playlistStyle });
+    useSettings.getState().resetToDefaults();
+    assert.equal(useSettings.getState().playlistStyle, 'artist');
+    storage.profile = 'one';
+    await useSettings.getState().hydrate();
+    assert.deepEqual(exportedSettings(), { ...before, playlistStyle });
+  });
+}
 
 test('switching the playlist layout changes only its preference and normalizes programmatic invalid values', () => {
   const settings = useSettings.getState();
@@ -215,6 +218,9 @@ test('switching the playlist layout changes only its preference and normalizes p
   storage.lookCalls.length = 0;
   settings.setPlaylistStyle('compact');
   assert.deepEqual(exportedSettings(), { ...before, playlistStyle: 'compact' });
+  assert.deepEqual(storage.lookCalls, []);
+  settings.setPlaylistStyle('primuse');
+  assert.deepEqual(exportedSettings(), { ...before, playlistStyle: 'primuse' });
   assert.deepEqual(storage.lookCalls, []);
   settings.setPlaylistStyle('artist');
   assert.deepEqual(exportedSettings(), before);

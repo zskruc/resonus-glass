@@ -17,7 +17,7 @@ import {
   readAlbumCache,
   writeAlbumCache,
 } from '@/store/libraries';
-import { hashKey } from '@/lib/localLibrary';
+import { hashKey, localCoverSize } from '@/lib/localLibrary';
 import { bump } from '@/lib/perfLog';
 import { queryClient } from '@/lib/query';
 import { getItem, setItem } from '@/lib/storage';
@@ -27,6 +27,7 @@ import { outboxFileFor, useOfflineQueue, type PlayOp, type QueuePlaylist } from 
 import { usePlayHistory } from '@/store/playHistory';
 import { isManualOffline } from './netGate';
 import { getLocalLyrics, getOnlineLyrics } from '@/lib/localLyrics';
+import { LyricsFallbackError } from '@/lib/lyricsLookupError';
 import { useSettings, type LyricsSource } from '@/store/settings';
 import { cachedUri } from '@/store/songCache';
 import * as Navidrome from './navidrome';
@@ -255,6 +256,18 @@ export function coverArtUrl(id: string | undefined, _size?: number): string | un
     return CACHED_COVER + Subsonic.coverArtUrl(auth(), id, _size);
   }
   return Subsonic.coverArtUrl(auth(), id, _size);
+}
+
+/** Online playlist heroes must not substitute an old small local thumbnail. */
+export function playlistCoverUrl(id: string | undefined, size: number = Subsonic.COVER.full): string | undefined {
+  if (!id) return undefined;
+  if (isRemoteArt(id) || /^(file|content):/i.test(id)) return id;
+  const local = Local.coverUrl(id);
+  if (local && (isOffline() || localCoverSize(id) >= size)) return local;
+  const owner = useAuthStore.getState().auth;
+  if (!owner) return local;
+  if (isOffline()) return coverArtUrl(id, size);
+  return Subsonic.coverArtUrl(owner, id, size);
 }
 
 /** The artist hero must not mistake an older 600px library cover for 1200px art. */
@@ -1697,7 +1710,7 @@ export function search(query: string): Promise<Subsonic.SearchResult> {
 export async function getSongLyrics(
   song: Song,
   source: LyricsSource,
-  options: { strict?: boolean; stillCurrent?: () => boolean } = {},
+  options: { strict?: boolean; stillCurrent?: () => boolean; /** The batch caller owns the durable cache read/write. */ cache?: 'caller' } = {},
 ): Promise<Subsonic.SongLyrics | null> {
   const owner = useAuthStore.getState().auth;
   const current = () => useAuthStore.getState().auth === owner && (!options.stillCurrent || options.stillCurrent());
@@ -1710,12 +1723,14 @@ export async function getSongLyrics(
       const own = await getLocalLyrics({ ...song, localUri: downloaded }, false); check();
       if (own) return own;
     }
-    const saved = await MediaCache.readSavedLyrics(profile, song.id, source).catch(() => undefined); check();
-    if (saved) return saved;
+    if (options.cache !== 'caller') {
+      const saved = await MediaCache.readSavedLyrics(profile, song.id, source).catch(() => undefined); check();
+      if (saved) return saved;
+    }
   }
   const result = await getSongLyricsUncached(song, source, { ...options, stillCurrent: current }, owner);
   check();
-  if (profile && result?.lines.length) {
+  if (options.cache !== 'caller' && profile && result?.lines.length) {
     const write = MediaCache.saveLyrics(profile, song.id, source, result, current);
     if (options.strict) await write; else await write.catch(() => {});
   }
@@ -1731,6 +1746,23 @@ async function getSongLyricsUncached(
   const check = () => { if (options.stillCurrent && !options.stillCurrent()) throw new Error('Lyrics profile changed'); };
   const allowOnline = source !== 'off';
   const preferOnline = source === 'online';
+  const fallback = async () => {
+    // A downloaded sidecar/embedded lyric can still exist after the server has
+    // no lyric. Read that recording's local copy before the optional provider.
+    const uri = downloaded();
+    if (uri) {
+      const own = await getLocalLyrics({ ...song, localUri: uri }, false); check();
+      if (own) return own;
+    }
+    try { return await getOnlineLyrics(song, options); }
+    catch (error) {
+      check();
+      // A healthy server with no lyric is different from a failed server.
+      // Batch work retains this failed item while processing other server lyrics.
+      if (options.strict) throw new LyricsFallbackError(error);
+      throw error;
+    }
+  };
   const downloaded = () =>
     song.localUri ?? useDownloads.getState().files[song.id] ?? cachedUri(song.id);
   // Offline: the phone first, and the question is whether anything else is
@@ -1768,7 +1800,7 @@ async function getSongLyricsUncached(
       // already given: seventy of them in a twenty three minute session, queued
       // in front of what the screens were waiting for (#50). Only a server that
       // rejects the modern one, which throws, gets the old question.
-      return allowOnline && !preferOnline ? getOnlineLyrics(song, options) : null;
+      return allowOnline && !preferOnline ? fallback() : null;
     } catch (error) {
       check();
       if (options.strict && (!(error instanceof Subsonic.SubsonicRequestError) || error.network || error.code !== 0)) throw error;
@@ -1779,7 +1811,7 @@ async function getSongLyricsUncached(
     check();
     if (plain) return { synced: false, lines: plain.split('\n').map((value) => ({ value })) };
     // The server has none: LRCLIB if allowed and not already tried above.
-    if (allowOnline && !preferOnline) return getOnlineLyrics(song, options);
+    if (allowOnline && !preferOnline) return fallback();
     return null;
   } catch (e) {
     if (options.strict) throw e;

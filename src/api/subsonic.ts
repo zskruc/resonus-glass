@@ -423,6 +423,9 @@ function buildUrl(
 }
 
 const REQUEST_TIMEOUT_MS = 15000;
+// A lyric without a sidecar may require opening cold media on the NAS. This
+// bounded allowance starts only after the shared two-request slot is acquired.
+const LYRICS_REQUEST_TIMEOUT_MS = 30000;
 
 /**
  * What a server may answer by asking the internet first (Navidrome goes to
@@ -432,9 +435,11 @@ const REQUEST_TIMEOUT_MS = 15000;
  * A mix asking for a dozen artists' top songs, or a screen of suggestions, took
  * every slot, and opening an album then waited behind them; the queued ones
  * also ran out their timeout before leaving the phone. Two at a time leaves the
- * others free, and the timeout starts when the request does.
+ * others free, and the timeout starts when the request does. Lyrics without a
+ * sidecar may also require a slow media-file read on the server; they share the
+ * same two-request budget rather than queueing three cold reads on the NAS.
  */
-const AGENT_ENDPOINTS = new Set(['getSimilarSongs2.view', 'getTopSongs.view', 'getArtistInfo2.view']);
+const AGENT_ENDPOINTS = new Set(['getSimilarSongs2.view', 'getTopSongs.view', 'getArtistInfo2.view', 'getLyricsBySongId.view']);
 const agentSlots = createSlots(2);
 
 /** Makes a request and unwraps the Subsonic response. */
@@ -527,7 +532,8 @@ async function request<T>(
     }
   }
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), endpoint === 'getLyricsBySongId.view'
+    ? LYRICS_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
 
   let res: Response;
   try {

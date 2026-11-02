@@ -13,6 +13,97 @@ preserved upstream history.
 Releases before 0.2.1 are only listed on the
 [GitHub releases page](https://github.com/juananzzz/resonus/releases).
 
+## [0.8.5.2-preview.14] - 2026-11-02
+
+### Added
+
+- 可独立选择的 Primuse 专辑／歌单页：居中封面、专辑取色、柔和静态背景、重排的标题和艺人信息，以及半透明歌曲底板；原布局可随时切回。
+- 艺人和专辑页的「常听歌曲」，最多显示 5 首有真实个人播放记录的歌曲；不以热门或随机歌曲填充空历史。
+- Primuse 来源及完整 MIT 许可证说明。
+
+### Changed
+
+- 汇总 `136–145` 的歌单 1200px 取图与旧缓存升级、批量任务启动修复、歌词缓存并行处理、外部服务有限退避及失败项补跑修复。
+- 详情页封面、模糊背景、标题与内容协调显隐；缓存重验时保留已显示画面，高清换源时保留页头尺寸以避免永久等待；搜索展开后的模糊区域向上延伸，调整推荐区可读性。
+- 保留播放器布局、Mini Player／底栏交互、已保存的玻璃参数、登录与离线资料；这是选择性适配，不是上游完整合并。
+
+### Fixed
+
+- 移除碟片标题附近额外的硬边横线；Primuse 歌曲底板跨碟片时不再增加重复分隔。
+- 保留正常歌曲行分隔、碟片标题、列表回收、搜索、选择和播放回调。
+
+### Notes
+
+- ARM64 预发布，Android `versionCode 146`；使用现有 Glass 包名和签名，可覆盖更新。正式更新渠道仍为 `0.8.5.1`。
+- 已有三星证据覆盖 `142` 的专辑进出／常听区及 `145` 的 ASMR 页面、搜索和推荐区。`146` 仅完成安装与版本确认，横线修复尚未实机视觉复核。
+- 自动检查和详细限制见[本版说明](./docs/RELEASE-0.8.5.2-preview.14.md)。预览不保证持续 120 fps、全页面无闪烁或长期内存恒定；外部歌词服务仍可能失败，原失败项保留为可重试。
+
+### English
+
+- Adds independently selectable Primuse album/playlist pages with centered artwork, album colors, a soft static background, revised metadata and translucent track panels. Previous layouts remain available. Artist and album pages show up to five personally played tracks, never global-popularity or random substitutes.
+- Collects codes `136–145`: HD playlist artwork/cache upgrades, bulk-cache startup fixes, parallel lyric processing, bounded external-service backoff and failed-item recovery. Coordinates detail appearance, HD replacement and search-background gradients while preserving the player, dock, glass profiles and offline data. This is a selective adaptation, not a full upstream merge.
+- Removes redundant disc-group lines while preserving normal row dividers and list behavior. ARM64 prerelease, code `146`, using the existing Glass package/signature; stable update checks remain on `0.8.5.1`.
+- Samsung evidence covers code `142` album transitions/frequently played songs and code `145` ASMR/search/recommendations. Code `146` was installed and version-verified only; its line fix still needs a device visual check. See the [release notes](./docs/RELEASE-0.8.5.2-preview.14.md) for checks and limits. No sustained 120 fps, universally flash-free navigation or constant long-session memory is claimed.
+
+## [0.8.5.2-preview.8] - 2026-11-02
+
+### Fixed
+
+- NAS 歌词读取加入两请求配额，实际发出后才开始有限的 30 秒等待；普通交互请求仍为 15 秒。
+- 批量失败保留安全的错误分类诊断，帮助区分主服务器读取与外部歌词回退；不记录凭据、歌词正文、错误消息或原始堆栈。
+
+### Notes
+
+- 本地 ARM64 测试版，Android `versionCode 140`；包含 preview.7 的外部服务退避和纯音乐识别修复。未发布 Release。
+
+## [0.8.5.2-preview.7] - 2026-11-02
+
+### Fixed
+
+- 外部歌词请求按 LRCLIB 当前要求独立串行、节流，并对临时过载和限流遵守 `Retry-After` 做有限重试；网络排队和退避不再占用请求自身的超时预算。
+- 精确匹配确认纯音乐后直接保留无歌词结果，不再额外搜索而误记失败；超长录音不向接口发送超出范围的时长参数。
+- 服务器无词时，先核对该曲已下载的旁档或内嵌歌词，再查询外部来源，避免忽略手机已有的歌词副本。
+- 保留 NAS 歌词并行、逐词时间信息和原有缓存，失败项通过原队列补跑。
+
+### Notes
+
+- 本地 ARM64 测试版，Android `versionCode 139`；未发布 Release。
+
+## [0.8.5.2-preview.6] - 2026-11-02
+
+### Fixed
+
+- 批量歌词缓存使用最多 3 个并行请求，慢查询不再挡住其余歌词；封面仍逐项处理，共享网络配额保留。
+- 去除批量歌词路径的重复缓存读取和完整歌词写入；保留逐词时间轴、原任务断点及来源设置。
+- 暂停、网络变化或连续失败停止时，关闭未完成请求的缓存写入资格，未完成项目留待继续。
+- 主服务器已确认无词后，外部歌词回退失败按单项失败保留，不再错误停止整个健康服务器的缓存队列；主服务器和写盘连续失败保护保留。
+
+### Notes
+
+- 本地 ARM64 测试版，Android `versionCode 138`；包含 preview.4/5 修复。未发布 Release。
+
+## [0.8.5.2-preview.5] - 2026-11-01
+
+### Fixed
+
+- 批量封面与歌词任务启动、继续时实时核验网络，避免陈旧的断网或蜂窝网络状态阻止已恢复的连接；仍保留离线模式和仅 Wi-Fi 限制。
+- 无法启动任务时显示明确原因，准备期间显示加载反馈；保留现有缓存文件及继续任务的原检查点。
+
+### Notes
+
+- 本地 ARM64 测试版，Android `versionCode 137`；包含 preview.4 的歌单高清取图与旧缓存升级。三星已验证离线点击反馈、原检查点续跑及后台进度推进；任务仍运行，个别失败独立保留。未发布 Release。
+
+## [0.8.5.2-preview.4] - 2026-11-01
+
+### Fixed
+
+- 歌单详情、编辑预览及放大查看使用 1200px 封面，在线时不再将旧的低清本地图当作高清图。
+- 正常载入歌单时自动升级旧封面缓存；新图使用独立文件路径，成功保存后切换，失败及离线时保留旧图。
+
+### Notes
+
+- 本地 ARM64 测试版，Android `versionCode 136`；沿用现有 Glass 包名和签名。三星已验收 16 张旧 600px 缓存自动升级为实际 1200px，离线冷启动及放大查看通过，原登录和离线文件清单保留。未发布 Release。
+
 ## [0.8.5.1] - 2026-11-01
 
 ### Changed

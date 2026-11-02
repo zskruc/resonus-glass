@@ -19,6 +19,12 @@ class AmllBackgroundModule : Module() {
         ArtistArtworkField.prepare(context, localUri, heroAspectRatio, extensionRatio)
       }
     }
+    AsyncFunction("preparePrimuseAlbumArtwork") Coroutine { localUri: String, blurRatio: Double ->
+      val context = appContext.reactContext?.applicationContext ?: return@Coroutine null
+      withContext(Dispatchers.Default) {
+        PrimuseAlbumArtwork.prepare(context, localUri, blurRatio)
+      }
+    }
     View(AmllBackgroundView::class) {
       Prop("localUri") { view: AmllBackgroundView, uri: String? -> view.setArtwork(uri) }
       Prop("active") { view: AmllBackgroundView, active: Boolean -> view.setActive(active) }

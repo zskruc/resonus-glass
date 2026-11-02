@@ -11,6 +11,7 @@
 // Not the global `fetch`: it never resolves in the background. See the note
 // in `src/api/subsonic.ts`.
 import { fetch } from 'expo/fetch';
+import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system/legacy';
 
 import { type Song, type SongLyrics } from '@/api/subsonic';
@@ -19,11 +20,15 @@ import { parseLrc } from './lrc';
 import { parseTtml } from './ttml';
 import { isManualOffline } from '@/api/netGate';
 import { PROJECT_NAME, REPOSITORY_URL } from './project';
-import { withDeadline } from '@/api/deadline';
+import { delay } from '../../modules/background-downloads';
+import { createLyricsProviderRequest } from './lyricsProviderRequest';
 
 const LRCLIB_CACHE_DIR = FileSystem.documentDirectory + 'lyrics-cache/';
 /** Who is asking, for LRCLIB. Sent as both headers: see `fetchLrclib`. */
-const CLIENT_UA = `${PROJECT_NAME} (${REPOSITORY_URL})`;
+const CLIENT_UA = `${PROJECT_NAME} v${Constants.expoConfig?.version ?? '0.0.0'} (${REPOSITORY_URL})`;
+// Server lyrics may run in parallel; the public fallback has its own single
+// queue, pacing and Retry-After handling, including response-body reads.
+const { requestJson: requestLrclib } = createLyricsProviderRequest({ fetch, wait: delay });
 const AUDIO_EXT_RE = /\.[a-z0-9]{1,5}$/i;
 
 /** URI of a sibling file next to an audio file (works for `file://` and SAF). */
@@ -99,13 +104,14 @@ export async function getOnlineLyrics(song: Song, options: { strict?: boolean; s
   const cached = await readTextIfExists(file);
   if (options.stillCurrent && !options.stillCurrent()) throw new Error('Lyrics request stopped');
   if (cached) return parseLrc(cached);
-  const text = options.strict
-    ? await withDeadline(15000, (signal) => fetchLrclib(song, { ...options, signal }))
-    : await fetchLrclib(song, options);
+  const text = await fetchLrclib(song, options);
   if (!text) return null;
   if (options.stillCurrent && !options.stillCurrent()) throw new Error('Lyrics request stopped');
+  await FileSystem.makeDirectoryAsync(LRCLIB_CACHE_DIR, { intermediates: true }).catch(() => {});
+  // Directory preparation can outlive a pause/profile change. Do not publish
+  // the fallback file for a request whose batch no longer owns it.
+  if (options.stillCurrent && !options.stillCurrent()) throw new Error('Lyrics request stopped');
   try {
-    await FileSystem.makeDirectoryAsync(LRCLIB_CACHE_DIR, { intermediates: true }).catch(() => {});
     await FileSystem.writeAsStringAsync(file, text);
   } catch {
     // Without cache we still work; it would just repeat the request.
@@ -117,11 +123,17 @@ interface LrclibResult {
   syncedLyrics?: string | null;
   plainLyrics?: string | null;
   instrumental?: boolean;
+  lyricsfile?: string | null;
 }
 
 function pickLrclibText(r: LrclibResult | undefined): string | null {
   if (!r || r.instrumental) return null;
-  return r.syncedLyrics?.trim() || r.plainLyrics?.trim() || null;
+  const text = r.syncedLyrics?.trim() || r.plainLyrics?.trim();
+  if (text) return text;
+  // Do not turn a provider format we cannot read into "no lyrics". A strict
+  // batch keeps it failed/retryable rather than saving a false missing marker.
+  if (r.lyricsfile?.trim()) throw new Error('Lyrics provider format is not supported');
+  return null;
 }
 
 /** Searches LRCLIB for lyrics by artist+title. Returns LRC/plain text. */
@@ -159,29 +171,35 @@ async function fetchLrclib(song: Song, options: { strict?: boolean; stillCurrent
   };
   try {
     check();
-    // /api/get requires the full signature (album + duration); if we have it,
-    // it's the most precise path. If not (or 404), /api/search and the first match.
-    if (song.album && song.duration) {
+    // Exact metadata lookup accepts an optional album/duration. Never send an
+    // out-of-range duration (long ASMR files can exceed the provider's 1h cap).
+    if (song.album || song.duration) {
       const params = new URLSearchParams({
         artist_name: song.artist,
         track_name: song.title,
-        album_name: song.album,
-        duration: String(Math.round(song.duration)),
       });
-      const res = await fetch(`https://lrclib.net/api/get?${params}`, { headers, signal: options.signal });
+      if (song.album) params.set('album_name', song.album);
+      const duration = typeof song.duration === 'number' ? Math.round(song.duration) : Number.NaN;
+      if (Number.isFinite(duration) && duration >= 1 && duration <= 3600) params.set('duration', String(duration));
+      const res = await requestLrclib(`https://lrclib.net/api/get?${params}`, { headers, ...options });
       trace(`get ${res.status}`, song);
       if (res.ok) {
-        const text = pickLrclibText((await res.json()) as LrclibResult);
+        const record = res.data as LrclibResult;
+        // An exact instrumental match is a complete answer. Searching again
+        // could turn that confirmed result into an unrelated overload failure.
+        if (record.instrumental === true) return null;
+        const text = pickLrclibText(record);
         if (text) return text;
       }
       else if (options.strict && res.status !== 404) throw new Error('Lyrics provider failed');
     }
     check();
     const params = new URLSearchParams({ artist_name: song.artist, track_name: song.title });
-    const res = await fetch(`https://lrclib.net/api/search?${params}`, { headers, signal: options.signal });
+    const res = await requestLrclib(`https://lrclib.net/api/search?${params}`, { headers, ...options });
     trace(`search ${res.status}`, song);
     if (!res.ok) { if (options.strict) throw new Error('Lyrics provider failed'); return null; }
-    const results = (await res.json()) as LrclibResult[];
+    if (!Array.isArray(res.data)) throw new Error('Unexpected lyrics provider response');
+    const results = res.data as LrclibResult[];
     for (const r of results) {
       const text = pickLrclibText(r);
       if (text) return text;

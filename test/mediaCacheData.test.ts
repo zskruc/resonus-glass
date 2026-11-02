@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
+import { LyricsFallbackError } from '../src/lib/lyricsLookupError';
 
 const executable = ts.transpileModule(readFileSync(new URL('../src/api/data.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -29,11 +30,12 @@ function harness() {
   let fetchLyrics: () => Promise<any> = async () => lyrics;
   let localLyrics: any = null;
   let onlineLyrics: any = null;
+  let onlineError: Error | undefined;
   let fileExists = true;
   let fileGate: Promise<void> | undefined;
   const covers = new Map<string, string>();
   const coverRequests: { id: string; size: number }[] = [];
-  const calls = { detail: 0, info: 0, structured: 0, classic: 0, online: 0, sidecar: 0 };
+  const calls = { detail: 0, info: 0, structured: 0, classic: 0, online: 0, sidecar: 0, lyricReads: 0 };
   const writes: unknown[][] = [], published: unknown[][] = [], timers: (() => void)[] = [];
   class ApiError extends Error { network = true; code?: number; }
   const dependencies: Record<string, unknown> = {
@@ -48,7 +50,7 @@ function harness() {
       readSavedArtist: () => cacheRead(),
       saveArtistDetail: async (...args: unknown[]) => { writes.push(['detail', ...args]); },
       saveArtistInfo: async (...args: unknown[]) => { writes.push(['info', ...args]); },
-      readSavedLyrics: async (_profile: string, _id: string, source: string) => savedLyrics?.[source],
+      readSavedLyrics: async (_profile: string, _id: string, source: string) => { calls.lyricReads++; return savedLyrics?.[source]; },
       saveLyrics: async (...args: unknown[]) => { writes.push(['lyrics', ...args.slice(0, 4)]); },
     },
     '@/lib/netBudget': { withSpeculativeSlot: async (current: () => boolean, work: () => Promise<unknown>) => current() ? work() : undefined },
@@ -66,7 +68,8 @@ function harness() {
     '@/lib/localQueries': { serverArtistId: async () => undefined, coverUrl: (id: string) => covers.get(id) },
     './netGate': { isManualOffline: () => state.offline },
     '@/lib/localLyrics': { getLocalLyrics: async () => { calls.sidecar++; return localLyrics; },
-      getOnlineLyrics: async () => { calls.online++; return onlineLyrics; } },
+      getOnlineLyrics: async () => { calls.online++; if (onlineError) throw onlineError; return onlineLyrics; } },
+    '@/lib/lyricsLookupError': { LyricsFallbackError },
   };
   for (const name of ['@/store/libraries', '@/lib/localLibrary', '@/lib/perfLog', '@/lib/storage', '@/store/lastPlayed',
     '@/store/playHistory', '@/store/offlineQueue', './navidrome', './subsonic']) dependencies[name] = {};
@@ -81,6 +84,7 @@ function harness() {
     infoRequest: (work: typeof fetchInfo) => { fetchInfo = work; },
     lyricsRequest: (work: typeof fetchLyrics) => { fetchLyrics = work; },
     local: (value: unknown) => { localLyrics = value; }, online: (value: unknown) => { onlineLyrics = value; },
+    onlineError: (value: Error) => { onlineError = value; },
     fileExists: (value: boolean) => { fileExists = value; },
     fileGate: (value: Promise<void>) => { fileGate = value; },
     refresh: async () => { for (const callback of timers.splice(0)) callback(); await tick(); },
@@ -181,6 +185,15 @@ test('server lyrics retain complete word timing and source selection in the pers
   assert.deepEqual(plain(await h.api.getSongLyrics(song, 'off')), own);
 });
 
+test('the batch cache owner receives complete word timing without duplicate durable reads or writes', async () => {
+  const h = harness();
+  const song = { id: 'song', title: 'Title', artist: 'Artist' };
+  assert.deepEqual(plain(await h.api.getSongLyrics(song, 'off', { strict: true, cache: 'caller' })), lyrics);
+  assert.equal(h.calls.structured, 1);
+  assert.equal(h.calls.lyricReads, 0);
+  assert.equal(h.writes.length, 0);
+});
+
 test('bulk strict lyrics distinguish a failed provider from a confirmed absent lyric', async () => {
   const h = harness(), song = { id: 'song', artist: 'Artist', title: 'Song' };
   h.lyricsRequest(async () => { throw new Error('HTTP 503'); });
@@ -189,6 +202,33 @@ test('bulk strict lyrics distinguish a failed provider from a confirmed absent l
   h.lyricsRequest(async () => null);
   assert.equal(await h.api.getSongLyrics(song, 'local', { strict: true }), null);
   assert.equal(h.calls.online, 1); assert.equal(h.writes.length, 0);
+});
+
+test('only a failed external fallback after a healthy empty server response is isolated from a server outage', async () => {
+  const song = { id: 'song', title: 'Title', artist: 'Artist' };
+  const fallback = harness(); fallback.lyricsRequest(async () => null);
+  const providerError = new Error('provider timeout'); fallback.onlineError(providerError);
+  await assert.rejects(fallback.api.getSongLyrics(song, 'local', { strict: true }),
+    (error: unknown) => error instanceof LyricsFallbackError && error.cause === providerError);
+  assert.equal(fallback.writes.length, 0, 'a failed lookup is never saved as confirmed missing');
+  assert.equal(fallback.calls.structured, 1); assert.equal(fallback.calls.online, 1);
+
+  const primary = harness(); const serverError = new Error('server timeout');
+  primary.lyricsRequest(async () => { throw serverError; });
+  await assert.rejects(primary.api.getSongLyrics(song, 'local', { strict: true }), (error: unknown) => error === serverError);
+  assert.equal(primary.calls.online, 0);
+
+  const preferred = harness(); preferred.onlineError(providerError);
+  await assert.rejects(preferred.api.getSongLyrics(song, 'online', { strict: true }), (error: unknown) => error === providerError);
+  assert.equal(preferred.calls.structured, 0, 'an online-first failure has not established a healthy server');
+});
+
+test('a healthy server without lyrics reuses the exact downloaded sidecar before calling the external provider', async () => {
+  const h = harness(); h.files.song = 'file:///downloads/song.flac';
+  h.lyricsRequest(async () => null); h.local(lyrics); h.onlineError(new Error('HTTP503'));
+  assert.deepEqual(plain(await h.api.getSongLyrics({ id: 'song', artist: 'Artist', title: 'Title' }, 'local', { strict: true })), lyrics);
+  assert.equal(h.calls.structured, 1); assert.equal(h.calls.sidecar, 1); assert.equal(h.calls.online, 0);
+  assert.deepEqual(plain(h.writes), [['lyrics', 'one', 'song', 'local', lyrics]]);
 });
 
 test('a lyric response after replacing credentials is neither cached nor delivered to the new owner', async () => {

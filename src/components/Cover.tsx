@@ -71,6 +71,10 @@ interface Props {
   onAnimatedDetected?: (uri: string, isAnimated: boolean) => void;
   /** Intrinsic decoder dimensions, bound to this exact URI/native image request. */
   onImageMetadata?: (uri: string, metadata: CoverImageMetadata) => void;
+  /** Presentation owners may reveal a composed scene after the image draws. */
+  onImageDisplay?: (uri: string) => void;
+  /** Includes a completed offline cache miss, rather than only decoder errors. */
+  onImageError?: (uri?: string) => void;
 }
 
 /**
@@ -334,6 +338,8 @@ export function Cover({
   style,
   onAnimatedDetected,
   onImageMetadata,
+  onImageDisplay,
+  onImageError,
 }: Props) {
   const imageLease = useRouteImageLease();
   // A recycled row must render the new artwork immediately, rather than keep
@@ -382,6 +388,13 @@ export function Cover({
   const animation = useImageAnimation(imageRef, imageLease.active && autoplay && !failed, shown, redraw.nonce);
   const corner = useCoverRadius(size);
   const borderRadius = rounded ? radius.pill : corner;
+  const notifiedError = useRef<typeof binding | null>(null);
+  const terminalError = imageLease.active && (failed || cacheOnly && !!cached && cached.uri === uri && !cached.path);
+  useEffect(() => {
+    if (!terminalError || currentBinding.current !== binding || notifiedError.current === binding) return;
+    notifiedError.current = binding;
+    onImageError?.(uri);
+  }, [binding, terminalError, onImageError, uri]);
   if (!imageLease.active || !shown || failed) {
     return (
       <View
@@ -411,7 +424,7 @@ export function Cover({
       // native image when a recycled slot changes source, so a delayed event
       // cannot be delivered to another source's newest React callback. Covers
       // from the same album keep the image; the row and its hooks still recycle.
-      key={resetKey === undefined && !onImageMetadata ? redraw.nonce : `${shown}:${redraw.nonce}`}
+      key={resetKey === undefined && !onImageMetadata && !onImageDisplay && !onImageError ? redraw.nonce : `${shown}:${redraw.nonce}`}
       ref={imageRef}
       source={{ uri: shown }}
       style={[{ width: size, height: size, borderRadius }, style as StyleProp<ImageStyle>]}
@@ -427,6 +440,7 @@ export function Cover({
         if (currentBinding.current !== binding) return;
         redraw.onDisplay();
         animation.onDisplay();
+        if (uri) onImageDisplay?.(uri);
       }}
       onLoad={(e) => {
         if (currentBinding.current !== binding) return;

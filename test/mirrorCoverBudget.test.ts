@@ -37,14 +37,15 @@ function harness() {
         return { status: 200 };
       },
     },
-    '@/api/backend': { COVER: { card: 600 }, coverArtUrl: (_auth: unknown, id: string) => `https://covers.test/${id}` },
+    '@/api/backend': { COVER: { card: 600, full: 1200 }, coverArtUrl: (_auth: unknown, id: string) => `https://covers.test/${id}` },
     '@/api/netGate': { isOfflineMode: () => state.offline },
     '@/lib/idle': { whenIdle: (callback: () => void) => { if (delayIdle) idle.push(callback); else callback(); } },
     '@/lib/netBudget': { withSpeculativeSlot: (wanted: () => boolean, work: () => Promise<unknown>, _slots: unknown, gate: PlaybackLoadGate) => withSpeculativeSlot(wanted, work, pool, gate) },
     '@/lib/playbackLoadGate': { playbackLoadGate: playbackGate },
     '@/lib/perfLog': { bump: () => {}, netTally: () => {} },
     '@/lib/localLibrary': { hashKey: (id: string) => id, localCoverUrl: () => undefined,
-      registerCover: (id: string, file: string) => registered.push({ id, file }) },
+      registerCover: (id: string, file: string) => registered.push({ id, file }),
+      replaceCover: (id: string, file: string) => registered.push({ id, file }), forgetCover: () => {} },
     './mirrorDb': { allCovers: async () => [], putCovers: async () => {} },
   };
   runInNewContext(executable, { exports: exported, Date,

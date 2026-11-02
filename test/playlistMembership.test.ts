@@ -101,7 +101,7 @@ function harness(initial: string[] = ['a', 'b', 'a'], localApi: Record<string, u
   };
   for (const name of ['@/lib/localLibrary', '@/lib/perfLog', '@/lib/storage', '@/store/lastPlayed',
     '@/store/playHistory', './netGate', '@/lib/localLyrics', './navidrome', './subsonic', '@/lib/mediaCacheDb',
-    'expo-file-system/legacy', '@/lib/netBudget', '@/store/songCache']) dependencies[name] = {};
+    'expo-file-system/legacy', '@/lib/netBudget', '@/store/songCache', '@/lib/lyricsLookupError']) dependencies[name] = {};
   const api = load('api/data.ts', dependencies);
   return { api, state, originalAuth, mirror, queueData, stored, versions, calls, saves, invalidates, cached, snapshot,
     ids: () => tracklist.map((value) => value.id),

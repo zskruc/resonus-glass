@@ -56,6 +56,7 @@ import { MenuGlassCardHeader } from '@/components/MenuGlassCard';
 import { SheetModal } from '@/components/SheetModal';
 import { StarRating } from '@/components/StarRating';
 import { TrackRow } from '@/components/TrackRow';
+import { FrequentlyPlayedSection } from '@/components/FrequentlyPlayedSection';
 import { VoltaArtistScrollBackdrop } from '@/components/volta/VoltaArtistScrollBackdrop';
 import { artistHeroGeometry } from '@/lib/artistHeroGeometry';
 import { selectArtistPortrait } from '@/lib/artistPortrait';
@@ -66,6 +67,7 @@ import { VoltaArtistHeaderBackdrop } from '@/components/volta/VoltaArtistHeaderB
 import { artistHeaderFromLayout } from '@/lib/artistHeaderTransition';
 import { useDominantColor } from '@/hooks/useDominantColor';
 import { useVoltaArtistArtwork } from '@/hooks/useVoltaArtistArtwork';
+import { useArtistFrequentCandidates } from '@/hooks/useArtistFrequentCandidates';
 import { useDownloadMessage } from '@/hooks/useDownloadMessage';
 import { useFavoriteIds } from '@/hooks/useFavoriteIds';
 import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
@@ -283,6 +285,7 @@ export default function ArtistScreen() {
   // Like in the album: the heart reads from the central favorites list, which
   // does refresh on starring (getArtist's `starred` becomes stale).
   const favArtistIds = useFavoriteIds(canFetch, 'artist');
+  const frequentCandidates = useArtistFrequentCandidates(id, name, data?.albums, topSongs, focused);
 
   if (isLoading) {
     return (
@@ -621,6 +624,10 @@ export default function ArtistScreen() {
             </DetailLink>
           </View>
         ) : null}
+
+        {frequentCandidates.length ? <View style={[styles.section, { paddingHorizontal: spacing.lg }]}>
+          <FrequentlyPlayedSection songs={frequentCandidates} sourceName={data.artist.name} sourceHref={`/artist/${id}`} />
+        </View> : null}
 
         {top.length > 0 ? (
           <View style={styles.section}>

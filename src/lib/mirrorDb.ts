@@ -61,7 +61,8 @@ CREATE TABLE IF NOT EXISTS covers (
   id TEXT PRIMARY KEY NOT NULL,
   -- NULL for the one the file is named after; the target for the others.
   alias_of TEXT,
-  bytes INTEGER
+  bytes INTEGER,
+  size INTEGER NOT NULL DEFAULT 0
 );
 `;
 
@@ -116,6 +117,10 @@ export function mirrorDb(dir: string, profile: string): Promise<SQLite.SQLiteDat
     );
     await db.execAsync(SCHEMA);
     await addSummaryColumns(db);
+    const coverColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(covers)');
+    if (!coverColumns.some((column) => column.name === 'size')) {
+      await db.execAsync('ALTER TABLE covers ADD COLUMN size INTEGER NOT NULL DEFAULT 0');
+    }
     await migrateFromJson(db, jsonFile(dir, profile));
     return db;
   })().catch((e) => {
@@ -415,17 +420,19 @@ export interface CoverRow {
   id: string;
   aliasOf: string | null;
   bytes: number;
+  /** Requested image tier; 0 means the legacy filename/unknown resolution. */
+  size?: number;
 }
 
 /** Everything known about this profile's covers, in one query. */
 export async function allCovers(dir: string, profile: string): Promise<CoverRow[]> {
   const db = await mirrorDb(dir, profile);
   const rows = await timed('mirror covers read', () =>
-    db.getAllAsync<{ id: string; alias_of: string | null; bytes: number | null }>(
-      'SELECT id, alias_of, bytes FROM covers',
+    db.getAllAsync<{ id: string; alias_of: string | null; bytes: number | null; size: number | null }>(
+      'SELECT id, alias_of, bytes, size FROM covers',
     ),
   );
-  return rows.map((r) => ({ id: r.id, aliasOf: r.alias_of, bytes: r.bytes ?? 0 }));
+  return rows.map((r) => ({ id: r.id, aliasOf: r.alias_of, bytes: r.bytes ?? 0, size: r.size ?? 0 }));
 }
 
 /**
@@ -438,16 +445,22 @@ export async function putCovers(dir: string, profile: string, rows: CoverRow[]):
   if (rows.length === 0) return;
   const db = await mirrorDb(dir, profile);
   await serialized(async () => {
-    for (let i = 0; i < rows.length; i += 200) {
-      const part = rows.slice(i, i + 200);
-      const marks = part.map(() => '(?, ?, ?)').join(',');
-      const params: (string | number | null)[] = [];
-      for (const r of part) params.push(r.id, r.aliasOf, r.bytes);
-      await db.runAsync(
-        `INSERT OR REPLACE INTO covers (id, alias_of, bytes) VALUES ${marks}`,
-        params,
-      );
-    }
+    const write = async () => {
+      for (let i = 0; i < rows.length; i += 200) {
+        const part = rows.slice(i, i + 200);
+        const marks = part.map(() => '(?, ?, ?, ?)').join(',');
+        const params: (string | number | null)[] = [];
+        for (const r of part) params.push(r.id, r.aliasOf, r.bytes, r.size ?? 0);
+        await db.runAsync(
+          `INSERT OR REPLACE INTO covers (id, alias_of, bytes, size) VALUES ${marks}`,
+          params,
+        );
+      }
+    };
+    // A single INSERT is already atomic. Larger alias sets must not leave a
+    // canonical row pointing at a file whose upgrade was rolled back.
+    if (rows.length > 200) await db.withTransactionAsync(write);
+    else await write();
   });
 }
 

@@ -51,8 +51,8 @@ function harness() {
     React.useLayoutEffect(() => { if (ready !== undefined) report?.(ready); }, [report, ready]);
     return element('page', { saved }, element('button', { accessibilityLabel: 'Play' }));
   }
-  const render = (identity: string, enabled = true, ready?: boolean, onCancel?: () => void) => element(exports.DetailHeroScene,
-    { identity, enabled, loadingColor: '#223344', style: { minHeight: 100 }, onCancel }, element(Content, { ready }));
+  const render = (identity: string, enabled = true, ready?: boolean, onCancel?: () => void, background?: React.ReactNode) => element(exports.DetailHeroScene,
+    { identity, enabled, loadingColor: '#223344', style: { minHeight: 100 }, onCancel, background }, element(Content, { ready }));
   const advance = (duration: number) => {
     clock += duration;
     for (const [id, timer] of [...timers]) if (timer.at <= clock) { timers.delete(id); timer.callback(); }
@@ -80,10 +80,26 @@ test('the complete scene reveals immediately on readiness while keeping page lay
     assert.equal(h.content(renderer).props.accessibilityElementsHidden, false);
     assert.equal(h.timers.size, 0);
     await act(async () => { h.reporter()!(false); });
-    assert.equal(h.content(renderer).props.style.at(-1).opacity, 0);
+    assert.equal(h.content(renderer).props.style.at(-1).opacity, 1, 'same-identity local revalidation cannot retract painted content');
     assert.equal(h.state(), saved); assert.equal(h.mounted(), 1);
   } finally { await act(async () => { renderer?.unmount(); }); }
   assert.equal(h.mounted(), 0); assert.equal(h.timers.size, 0);
+});
+
+test('the final background remains outside readiness and a slow overlay does not replace it with a solid flash', async () => {
+  const h = harness(); let renderer!: ReactTestRenderer;
+  const background = element('gradient', { colors: ['#223344', '#112233'] });
+  try {
+    await act(async () => { renderer = create(h.render('background', true, undefined, undefined, background)); });
+    const gradient = host(renderer, 'gradient');
+    assert.equal(gradient.parent?.type, 'view', 'background belongs to the outer scene, not hidden content');
+    assert.equal(h.content(renderer).props.style.at(-1).opacity, 0);
+    await act(async () => { h.advance(150); });
+    assert.equal(h.loading(renderer)[0].props.style.at(-1).backgroundColor, 'transparent');
+    await act(async () => { h.reporter()!(true); });
+    assert.equal(host(renderer, 'gradient'), gradient, 'revealing keeps the same final background');
+    assert.equal(h.loading(renderer).length, 0);
+  } finally { await act(async () => { renderer?.unmount(); }); }
 });
 
 test('warm readiness from a child layout effect does not show a loading flash or remount the scene', async () => {

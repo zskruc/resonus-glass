@@ -24,7 +24,10 @@ export default function MediaCacheSettings() {
     load: state.load, start: state.start, pause: state.pause, resume: state.resume,
     cancel: state.cancel, retryFailed: state.retryFailed })));
   const [draft, setDraft] = useState<{ owner: typeof owner; kinds: MediaCacheKind[] }>();
-  const [actionError, setActionError] = useState(false);
+  const [actionError, setActionError] = useState<{ owner: typeof owner }>();
+  const [actionNotice, setActionNotice] = useState<{ owner: typeof owner; message: string }>();
+  const [preparation, setPreparation] = useState<{ owner: typeof owner }>();
+  const preparingAction = useRef<typeof preparation>(undefined);
   const load = task.load;
   const mounted = useRef(false);
   useEffect(() => {
@@ -34,20 +37,50 @@ export default function MediaCacheSettings() {
   useEffect(() => {
     let active = true;
     // No discovery, metadata request or download until an explicit Start tap.
-    void load().catch(() => { if (active) setActionError(true); });
+    void load().catch(() => { if (active) setActionError({ owner }); });
     return () => { active = false; };
   }, [load, owner]);
 
   const selected = draft && draft.owner === owner ? draft.kinds : task.selected;
   const busy = task.status === 'discovering' || task.status === 'running';
-  const canRequest = !!owner && !offline && task.hydrated;
+  const preparing = preparation?.owner === owner && !busy;
+  useEffect(() => {
+    // start/resume resolve only when the whole worker finishes. Once the store
+    // owns the operation, its Pause/Continue controls must remain available.
+    if (busy && preparingAction.current?.owner === owner) {
+      preparingAction.current = undefined;
+      setPreparation(undefined);
+    }
+  }, [busy, owner]);
   const failures = KINDS.reduce((sum, kind) => sum + task.stats[kind].failed, 0);
   const label = (kind: MediaCacheKind) => kind === 'lyrics' ? t('Lyrics')
     : kind === 'albumCovers' ? t('Album covers') : t('Artist portraits');
   const count = (value: number) => value.toLocaleString(lang);
-  function run(action: () => Promise<void>) {
-    setActionError(false);
-    void action().catch(() => { if (mounted.current) setActionError(true); });
+  function run(action: () => Promise<void>, needsSelection = false) {
+    const current = useAuthStore.getState();
+    if (current.auth !== owner) return;
+    const unavailable = !owner ? t('Connect to a server to start.')
+      : current.offline ? t('Return online to start or continue this task.')
+      : !task.hydrated ? t('Loading…')
+      : needsSelection && selected.length === 0 ? t('Choose at least one item type.') : undefined;
+    if (unavailable) { setActionNotice({ owner, message: unavailable }); return; }
+    if (preparingAction.current?.owner === owner) return;
+    const intent = { owner };
+    preparingAction.current = intent;
+    setPreparation(intent); setActionError(undefined); setActionNotice(undefined);
+    void (async () => {
+      try { await action(); }
+      catch {
+        if (mounted.current && preparingAction.current === intent && useAuthStore.getState().auth === owner) {
+          setActionError({ owner });
+        }
+      } finally {
+        if (preparingAction.current === intent) {
+          preparingAction.current = undefined;
+          if (mounted.current && useAuthStore.getState().auth === owner) setPreparation(undefined);
+        }
+      }
+    })();
   }
   const statusText = task.status === 'discovering' ? t('Scanning the entire library…')
     : task.status === 'running' ? task.phase ? t('Caching {type}…', { type: label(task.phase) }) : t('Caching…')
@@ -79,7 +112,7 @@ export default function MediaCacheSettings() {
         <Text style={settingsStyles.sectionTitle}>{t('What to cache')}</Text>
         <SettingsGroup>
           <SwitchList options={KINDS.map((kind) => ({
-            label: label(kind), value: selected.includes(kind), disabled: busy || !task.hydrated,
+            label: label(kind), value: selected.includes(kind), disabled: busy || preparing || !task.hydrated,
             onChange: (enabled) => setDraft({ owner, kinds: enabled
               ? KINDS.filter((value) => value === kind || selected.includes(value))
               : selected.filter((value) => value !== kind) }),
@@ -90,24 +123,24 @@ export default function MediaCacheSettings() {
         </Text>
         <Text style={settingsStyles.sectionTitle}>{t('Current task')}</Text>
         <SettingsGroup>
-          <SettingRow label={task.hydrated ? statusText : t('Loading…')}
+          <SettingRow label={task.hydrated && !preparing ? statusText : t('Loading…')}
             description={task.status === 'paused' ? pauseDescription : undefined} />
-          {busy ? <View style={styles.working}>
+          {busy || preparing ? <View style={styles.working}>
             <ActivityIndicator size="small" color={colors.accent} />
-            <Text style={styles.secondary}>{t('You can pause this task at any time.')}</Text>
+            <Text style={styles.secondary}>{preparing ? t('Loading…') : t('You can pause this task at any time.')}</Text>
           </View> : null}
           {task.status === 'paused' ? <SettingRow label={t('Continue')}
-            icon="play-outline" onPress={canRequest ? () => run(task.resume) : undefined} /> : null}
+            icon="play-outline" onPress={preparing ? undefined : () => run(task.resume)} /> : null}
           {busy ? <SettingRow label={t('Pause')} icon="pause-outline" onPress={task.pause} /> : null}
           {!busy ? <SettingRow label={t('Scan selected items')}
             icon="download-outline" description={!owner ? t('Connect to a server to start.')
               : offline ? t('Return online to start or continue this task.')
               : selected.length === 0 ? t('Choose at least one item type.')
               : t('Starts an incremental scan of the entire library.')}
-            onPress={canRequest && selected.length > 0 ? () => run(() => task.start(selected)) : undefined} /> : null}
+            onPress={preparing ? undefined : () => run(() => task.start(selected), true)} /> : null}
           {!busy && failures > 0 ? <SettingRow label={t('Retry failed items only')}
             icon="refresh-outline" right={count(failures)}
-            onPress={canRequest ? () => run(task.retryFailed) : undefined} /> : null}
+            onPress={preparing ? undefined : () => run(task.retryFailed)} /> : null}
           {busy || task.status === 'paused' ? <SettingRow label={t('Cancel task')}
             description={t('Stops the remaining work and keeps files already cached.')}
             icon="close-circle-outline" destructive onPress={task.cancel} /> : null}
@@ -115,7 +148,10 @@ export default function MediaCacheSettings() {
         {task.status === 'paused' ? <Text style={settingsStyles.sectionDescription}>
           {t('Continue keeps the current task selection. Changing the switches affects only your next scan.')}
         </Text> : null}
-        {task.error || actionError ? <Text accessibilityRole="alert" style={styles.error}>
+        {actionNotice?.owner === owner ? <Text accessibilityRole="alert" style={styles.secondary}>
+          {actionNotice.message}
+        </Text> : null}
+        {task.error || actionError?.owner === owner ? <Text accessibilityRole="alert" style={styles.error}>
           {protectionError
             ? t('Background caching could not continue. Open the app and tap Continue to retry; cached files are kept.')
             : t("Couldn't complete the action. Check your connection and try again.")}

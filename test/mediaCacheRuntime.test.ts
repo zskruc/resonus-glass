@@ -118,3 +118,56 @@ test('a lost cache owner cannot publish metadata or a downloaded hero into exist
     assert.equal(h.client.getQueryData(['artist', 'stopped']), undefined);
   } finally { h.client.clear(); }
 });
+
+function lyricsHarness() {
+  const words = { synced: true, lines: [{ start: 100, value: 'two words', words: [
+    { start: 100, end: 200, value: 'two ' }, { start: 200, end: 300, value: 'words' },
+  ] }] };
+  let old: 'cached' | 'missing' | undefined;
+  let fetch: () => Promise<typeof words | null> = async () => words;
+  let reads = 0;
+  const requests: any[] = [], writes: unknown[][] = [];
+  const dependencies: Record<string, unknown> = {
+    '@/api/backend': {}, '@/api/navidrome': {}, './query': {}, './mirrorCovers': {},
+    './bulkMediaWorker': { MediaCacheStopped },
+    '@/api/data': { getSongLyrics: async (...args: any[]) => { requests.push(args); return fetch(); } },
+    './mediaCacheDb': {
+      lyricsCacheState: async () => { reads++; return old; },
+      saveLyrics: async (...args: any[]) => { assert.ok(args[4]()); writes.push(args.slice(0, 4)); },
+      saveMissingLyrics: async (...args: any[]) => { assert.ok(args[3]()); writes.push(args.slice(0, 3)); },
+    },
+    './netBudget': { withSpeculativeSlot: async (active: () => boolean, work: () => Promise<unknown>) => active() ? work() : undefined },
+  };
+  const exports: Record<string, any> = {};
+  runInNewContext(executable, { exports,
+    require(name: string) { assert.ok(Object.hasOwn(dependencies, name), name); return dependencies[name]; },
+  });
+  const runtime = exports.makeMediaCacheRuntime({ serverType: 'navidrome' }, 'profile', () => true);
+  const task = { kind: 'lyrics', id: 'song', data: { song: { id: 'song' }, source: 'local' } };
+  return { words, writes, requests, reads: () => reads,
+    old: (value: typeof old) => { old = value; }, fetch: (work: typeof fetch) => { fetch = work; },
+    process: (context = { signal: new AbortController().signal, current: () => true }) => runtime.process(task, context),
+  };
+}
+
+test('batch lyrics perform one durable lookup and one complete write, and reuse positive/negative cache entries', async () => {
+  const h = lyricsHarness();
+  assert.equal(await h.process(), 'success');
+  assert.equal(h.reads(), 1); assert.equal(h.requests.length, 1); assert.equal(h.writes.length, 1);
+  assert.equal(h.requests[0][2].cache, 'caller');
+  assert.equal(h.requests[0][2].strict, true);
+  assert.deepEqual(plain(h.writes[0]), ['profile', 'song', 'local', h.words]);
+  for (const old of ['cached', 'missing'] as const) {
+    h.old(old); assert.equal(await h.process(), old);
+  }
+  assert.equal(h.requests.length, 1); assert.equal(h.writes.length, 1);
+});
+
+test('a stopped concurrent lane cannot save a late lyric or a negative result', async () => {
+  for (const found of [true, false]) {
+    const h = lyricsHarness(); let active = true;
+    h.fetch(async () => { active = false; return found ? h.words : null; });
+    await assert.rejects(h.process({ signal: new AbortController().signal, current: () => active }), MediaCacheStopped);
+    assert.equal(h.writes.length, 0);
+  }
+});

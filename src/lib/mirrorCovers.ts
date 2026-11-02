@@ -28,7 +28,7 @@ import { whenIdle } from '@/lib/idle';
 import { withSpeculativeSlot } from '@/lib/netBudget';
 import { playbackLoadGate } from '@/lib/playbackLoadGate';
 import { bump, netTally } from '@/lib/perfLog';
-import { hashKey, localCoverUrl, registerCover } from '@/lib/localLibrary';
+import { forgetCover, hashKey, localCoverUrl, registerCover, replaceCover } from '@/lib/localLibrary';
 import * as Db from './mirrorDb';
 
 /** The mirror's own folder, which is where its database is opened. */
@@ -71,20 +71,27 @@ const MAX = 10000;
 export interface CoverWant {
   from: string;
   keys: string[];
+  /** Large playlist art upgrades older mirror files; ordinary albums stay bounded. */
+  size?: number;
 }
 
 /** Cover ids already on disk for the loaded profile, and what they take. */
 let known = new Set<string>();
 /** Lookup id → the id whose file it is. Only for the ones that differ. */
 let aliases = new Map<string, string>();
+/** Persisted tiers also select immutable image-loader identities on disk. */
+let sizes = new Map<string, number>();
+let fileBytes = new Map<string, number>();
 let bytes = 0;
 let loaded = '';
+let loading: { profile: string; work: Promise<void> } | undefined;
+let loadGeneration = 0;
 let saving: Promise<unknown> = Promise.resolve();
 /** How many covers are fetched at the same time. */
 const FETCH_AT_ONCE = 4;
 
 /** Ids being fetched right now, so two screens don't fetch the same one. */
-const inFlight = new Set<string>();
+const inFlight = new Map<string, { size: number }>();
 // Automatic mirror writes and explicit full-resolution upgrades share the
 // same filename. Serialize each file so an older small download cannot finish
 // after its upgrade and replace it. Other pictures still run independently.
@@ -109,8 +116,8 @@ function indexFile(profile: string): string {
   return `${DIR}${profile}.json`;
 }
 
-function fileFor(profile: string, coverId: string): string {
-  return `${DIR}${profile}_${hashKey(coverId)}.jpg`;
+function fileFor(profile: string, coverId: string, size = sizes.get(coverId) ?? 0): string {
+  return `${DIR}${profile}_${hashKey(coverId)}${size > SIZE ? `_s${size}` : ''}.jpg`;
 }
 
 /**
@@ -146,32 +153,44 @@ function parseIndex(raw: string): {
  * names each file answers to.
  */
 export async function loadMirrorCovers(profile: string): Promise<void> {
-  if (!profile || loaded === profile) return;
+  if (!profile) return;
+  if (loaded === profile) return loading?.profile === profile ? loading.work : undefined;
+  const generation = ++loadGeneration;
   loaded = profile;
   known = new Set();
   aliases = new Map();
+  sizes = new Map();
+  fileBytes = new Map();
   bytes = 0;
-  try {
+  const work = (async () => { try {
     let rows = await Db.allCovers(BASE, profile);
     if (rows.length === 0) rows = await migrateIndex(profile);
-    if (loaded !== profile) return;
+    if (loaded !== profile || generation !== loadGeneration) return;
     for (const r of rows) {
       if (r.aliasOf) continue;
       known.add(r.id);
+      sizes.set(r.id, r.size ?? 0);
+      fileBytes.set(r.id, r.bytes);
       bytes += r.bytes;
-      registerCover(r.id, fileFor(profile, r.id));
+      const publish = (r.size ?? 0) > SIZE ? replaceCover : registerCover;
+      publish(r.id, fileFor(profile, r.id), r.size ?? 0);
     }
     // The other names the same file answers to. No second copy on disk: the
     // album's cover and the one its songs ask for are one picture.
     for (const r of rows) {
       if (!r.aliasOf || !known.has(r.aliasOf)) continue;
       aliases.set(r.id, r.aliasOf);
-      registerCover(r.id, fileFor(profile, r.aliasOf));
+      const size = sizes.get(r.aliasOf) ?? 0;
+      const publish = size > SIZE ? replaceCover : registerCover;
+      publish(r.id, fileFor(profile, r.aliasOf), size);
     }
   } catch {
     // A table that cannot be read leaves the shelves as placeholders, which is
     // what they were before any of this, rather than taking the screen down.
-  }
+    if (loaded === profile && generation === loadGeneration) loaded = '';
+  } })();
+  loading = { profile, work };
+  try { await work; } finally { if (loading?.work === work) loading = undefined; }
 }
 
 /**
@@ -221,7 +240,7 @@ function alias(profile: string, key: string, from: string): boolean {
   // a name rather than as something saved.
   if (known.has(key)) return false;
   aliases.set(key, from);
-  registerCover(key, fileFor(profile, from));
+  registerCover(key, fileFor(profile, from), sizes.get(from) ?? 0);
   return true;
 }
 
@@ -265,9 +284,7 @@ export function keepMirrorCovers(
   }, wait);
 }
 
-/** Explicit whole-library caching uses the same durable files/index as the
- * mirror, with a size marker so a small earlier thumbnail cannot pass for
- * a cached artist hero. It is awaited to report real success/missing/failure. */
+/** Explicit requests and automatic upgrades share one per-file transaction. */
 export async function cacheManagedCover(
   profile: string,
   auth: SubsonicAuth,
@@ -277,44 +294,79 @@ export async function cacheManagedCover(
 ): Promise<{ outcome: 'success' | 'cached' | 'missing'; uri?: string }> {
   return abortable(withCoverFile(profile, request.from, () => cacheManagedCoverFile(profile, auth, request, stillOwner, signal)), signal);
 }
+
+/** Leave the file lease before waiting for playback, so explicit taps cannot deadlock behind it. */
+class BackgroundCoverDeferred extends Error {}
+
 async function cacheManagedCoverFile(
   profile: string,
   auth: SubsonicAuth,
   request: { from: string; url?: string; keys: string[]; size: number },
   stillOwner: () => boolean,
   signal: AbortSignal,
+  background = false,
 ): Promise<{ outcome: 'success' | 'cached' | 'missing'; uri?: string }> {
   const current = () => !signal.aborted && !isOfflineMode() && stillOwner() && loaded === profile;
   if (!stillOwner() || signal.aborted || isOfflineMode()) throw new Error('Media cache stopped');
   await loadMirrorCovers(profile);
   if (!current()) throw new Error('Media cache stopped');
   const id = request.from;
-  const fullMarker = `full-${request.size}|${id}`;
-  const file = fileFor(profile, id);
-  const info = await FileSystem.getInfoAsync(file);
+  const tier = Math.max(SIZE, Math.round(request.size));
+  const previousTier = sizes.get(id) ?? 0;
+  const previousFile = fileFor(profile, id, previousTier);
+  const oldBytes = fileBytes.get(id) ?? 0;
+  const existing = await FileSystem.getInfoAsync(previousFile);
   if (!current()) throw new Error('Media cache stopped');
-  const register = async (size: number) => {
+  let durable = false;
+  let moved = false;
+
+  // This publishes only after SQLite knows the exact filename tier. A separate
+  // URI stops Expo's decoded small bitmap surviving an in-place file upgrade.
+  const commit = async (file: string, tier: number, length: number) => {
     if (!current()) throw new Error('Media cache stopped');
-    const rows: Db.CoverRow[] = [];
-    bytes += size - (known.has(id) && info.exists ? info.size ?? 0 : 0);
-    known.add(id); rows.push({ id, aliasOf: null, bytes: size });
-    registerCover(id, file);
-    aliases.set(fullMarker, id); rows.push({ id: fullMarker, aliasOf: id, bytes: 0 });
-    for (const key of request.keys) {
-      if (key && alias(profile, key, id)) rows.push({ id: key, aliasOf: id, bytes: 0 });
-    }
+    // Memoized cards may still hold this legacy URI. Keep the bounded fallback
+    // until the profile/cover is explicitly removed, and count its real bytes.
+    const legacyFile = fileFor(profile, id, 0);
+    const legacy = tier > SIZE && legacyFile !== file
+      ? await FileSystem.getInfoAsync(legacyFile).catch(() => null) : null;
+    if (!current()) throw new Error('Media cache stopped');
+    const storedBytes = length + (legacy?.exists ? legacy.size ?? 0 : 0);
+    const marker = `full-${tier}|${id}`;
+    const keys = new Set<string>([marker]);
+    for (const [key, from] of aliases) if (from === id) keys.add(key);
+    for (const key of request.keys) if (key && key !== id && !known.has(key)) keys.add(key);
+    const rows: Db.CoverRow[] = [{ id, aliasOf: null, bytes: storedBytes, size: tier },
+      ...[...keys].map((key) => ({ id: key, aliasOf: id, bytes: 0, size: 0 }))];
     await Db.putCovers(BASE, profile, rows);
+    durable = true;
+    // A profile/credential change during the DB write must never publish the
+    // previous owner's image into the currently active index.
+    if (!current()) {
+      if (loaded === profile) loaded = '';
+      return false;
+    }
+    bytes += storedBytes - oldBytes;
+    known.add(id); sizes.set(id, tier); fileBytes.set(id, storedBytes);
+    replaceCover(id, file, tier);
+    for (const key of keys) {
+      aliases.set(key, id);
+      replaceCover(key, file, tier);
+    }
+    return true;
   };
-  if (info.exists && (info.size ?? 0) > 100 && aliases.get(fullMarker) === id) {
-    await register(info.size ?? 0);
-    return { outcome: 'cached', uri: file };
+  if (known.has(id) && previousTier >= tier && existing.exists && (existing.size ?? 0) > 100) {
+    await commit(previousFile, previousTier, existing.size ?? 0);
+    if (!current()) throw new Error('Media cache stopped');
+    return { outcome: 'cached', uri: previousFile };
   }
-  const url = request.url ?? coverArtUrl(auth, request.from, request.size);
+  const url = request.url ?? coverArtUrl(auth, id, tier);
   if (!url) return { outcome: 'missing' };
+  const file = fileFor(profile, id, tier);
   const part = file + '.part';
   await FileSystem.makeDirectoryAsync(DIR, { intermediates: true });
   try {
-    const result = await withSpeculativeSlot(current, async () => {
+    const canRequest = () => current() && (!background || !playbackLoadGate.held);
+    const result = await withSpeculativeSlot(canRequest, async () => {
       const download = FileSystem.createDownloadResumable(url, part);
       const abort = () => { void download.pauseAsync().catch(() => {}); };
       signal.addEventListener('abort', abort, { once: true });
@@ -322,6 +374,7 @@ async function cacheManagedCoverFile(
       finally { signal.removeEventListener('abort', abort); }
     });
     if (!current()) throw new Error('Media cache stopped');
+    if (!result && background && playbackLoadGate.held) throw new BackgroundCoverDeferred();
     if (result?.status === 404 || result?.status === 410) return { outcome: 'missing' };
     if (!result || result.status !== 200) throw new Error('Cover download failed');
     const mime = Object.entries(result.headers ?? {}).find(([key]) => key.toLowerCase() === 'content-type')?.[1];
@@ -330,10 +383,17 @@ async function cacheManagedCoverFile(
     if (!current()) throw new Error('Media cache stopped');
     if (!saved.exists || (saved.size ?? 0) <= 100) throw new Error('Invalid cover file');
     await FileSystem.moveAsync({ from: part, to: file });
-    await register(saved.size ?? 0);
+    moved = true;
+    if (!current()) throw new Error('Media cache stopped');
+    const published = await commit(file, tier, saved.size ?? 0);
+    if (!published) throw new Error('Media cache stopped');
     return { outcome: 'success', uri: file };
   } finally {
     await FileSystem.deleteAsync(part, { idempotent: true }).catch(() => {});
+    // A failed DB commit cannot destroy the previously indexed usable file.
+    if (moved && !durable && file !== previousFile) {
+      await FileSystem.deleteAsync(file, { idempotent: true }).catch(() => {});
+    }
   }
 }
 
@@ -363,7 +423,6 @@ function runCovers(
       // difference between saving them on the first run and on some later one.
       await loadMirrorCovers(profile);
       if (isOfflineMode() || !stillOwner() || loaded !== profile) return;
-      if (known.size >= MAX) return;
       // Deduplicated by what is being LOOKED UP, not by what is fetched. Twenty
       // favourites off one record ask for twenty different pictures as far as
       // the server is concerned, since each song has a cover id of its own, and
@@ -377,6 +436,7 @@ function runCovers(
         if (!w.from || w.keys.length === 0) continue;
         const seen = byFrom.get(w.from);
         if (seen) {
+          seen.size = Math.max(seen.size ?? SIZE, w.size ?? SIZE);
           for (const k of w.keys) {
             if (claimed.has(k)) continue;
             claimed.add(k);
@@ -386,19 +446,25 @@ function runCovers(
         }
         if (w.keys.every((k) => claimed.has(k))) continue;
         for (const k of w.keys) claimed.add(k);
-        byFrom.set(w.from, { from: w.from, keys: [...w.keys] });
+        byFrom.set(w.from, { from: w.from, keys: [...w.keys], size: w.size ?? SIZE });
       }
       // A want whose keys can all be found already is nothing to do. That is
       // what makes running this over a whole library cheap after the first time.
-      const wanted = [...byFrom.values()].filter(
-        (w) =>
-          !inFlight.has(`${profile}\0${w.from}`) &&
-          w.keys.some((k) => !localCoverUrl(k)) &&
-          !(known.has(w.from) && w.keys.every((k) => localCoverUrl(k))),
-      );
-      const taking = wanted.slice(0, MAX - known.size);
+      const wanted = [...byFrom.values()].filter((w) => {
+        const tier = w.size ?? SIZE;
+        const running = inFlight.get(`${profile}\0${w.from}`);
+        return (!running || running.size < tier)
+          && ((tier > SIZE && (sizes.get(w.from) ?? 0) < tier)
+            || w.keys.some((key) => !localCoverUrl(key)));
+      });
+      // Existing files can be upgraded at the cap. A second, larger request
+      // queues behind a small in-flight write rather than being lost forever.
+      let room = Math.max(0, MAX - known.size);
+      const taking = wanted.filter((w) => known.has(w.from)
+        || inFlight.has(`${profile}\0${w.from}`) || room-- > 0);
       if (taking.length === 0) return;
-      for (const w of taking) inFlight.add(`${profile}\0${w.from}`);
+      const tokens = new Map(taking.map((w) => [w.from, { size: w.size ?? SIZE }]));
+      for (const w of taking) inFlight.set(`${profile}\0${w.from}`, tokens.get(w.from)!);
       // What this run has to write down, gathered as it goes and written in one
       // statement at the end rather than a file rewritten per cover.
       const written: Db.CoverRow[] = [];
@@ -418,6 +484,16 @@ function runCovers(
             await withCoverFile(profile, id, async () => {
               if (!stillWanted()) return;
               if (playbackLoadGate.held) { retryAfterPlayback = true; return; }
+              if ((w.size ?? SIZE) > SIZE) {
+                try {
+                  await cacheManagedCoverFile(profile, auth, { ...w, size: w.size! }, stillOwner,
+                    new AbortController().signal, true);
+                } catch (error) {
+                  if (error instanceof BackgroundCoverDeferred) { retryAfterPlayback = true; return; }
+                  throw error;
+                }
+                return;
+              }
               // Already on disk, and only the other names for it were missing: the
               // picture does not need fetching twice.
               if (known.has(id)) {
@@ -448,28 +524,29 @@ function runCovers(
               });
               if (!fetched && blockedByPlayback && stillWanted()) { retryAfterPlayback = true; return; }
               if (!fetched || !stillWanted()) return;
-              known.add(id);
-              registerCover(id, file);
+              // Counted as it is written: walking thousands of files to add up
+              // what they take is not something a settings screen should do.
+              const info = await FileSystem.getInfoAsync(file).catch(() => null);
+              if (!stillWanted()) return;
+              const size = info?.exists ? (info.size ?? 0) : 0;
+              // Commit the file's size before releasing its write lease; a later
+              // full-size upgrade must not be overwritten by a delayed batch row.
+              await Db.putCovers(BASE, profile, [{ id, aliasOf: null, bytes: size, size: SIZE }]);
+              if (!stillWanted()) return;
+              bytes += size - (fileBytes.get(id) ?? 0);
+              known.add(id); sizes.set(id, SIZE); fileBytes.set(id, size);
+              registerCover(id, file, SIZE);
               for (const key of w.keys) {
                 if (alias(profile, key, id)) written.push({ id: key, aliasOf: id, bytes: 0 });
               }
               bump('cover saved');
-              // Counted as it is written: walking thousands of files to add up
-              // what they take is not something a settings screen should do.
-              const info = await FileSystem.getInfoAsync(file).catch(() => null);
-              if (loaded !== profile) return;
-              const size = info?.exists ? (info.size ?? 0) : 0;
-              bytes += size;
-              // Commit the file's size before releasing its write lease; a later
-              // full-size upgrade must not be overwritten by a delayed batch row.
-              await Db.putCovers(BASE, profile, [{ id, aliasOf: null, bytes: size }]);
             });
           } while (retryAfterPlayback && stillWanted());
         } catch {
           // Network, disk, whatever: it stays unknown and can be tried again.
           bump('cover fetch failed');
         } finally {
-          inFlight.delete(`${profile}\0${id}`);
+          if (inFlight.get(`${profile}\0${id}`) === tokens.get(id)) inFlight.delete(`${profile}\0${id}`);
         }
       };
 
@@ -525,12 +602,26 @@ export function coverSourceOf(id: string | undefined): string {
  * download's cover.
  */
 export function forgetMirrorCover(profile: string, coverId: string | undefined): void {
-  if (!profile || !coverId || !known.delete(coverId)) return;
+  if (!profile || !coverId || loaded !== profile) return;
+  coverId = aliases.get(coverId) ?? coverId;
+  if (!known.delete(coverId)) return;
+  const file = fileFor(profile, coverId);
+  const oldBytes = fileBytes.get(coverId) ?? 0;
+  sizes.delete(coverId); fileBytes.delete(coverId); bytes -= oldBytes;
   // The other names for it go too, or they would keep pointing at a file that
   // is no longer there. One statement takes the lot.
-  for (const [key, from] of aliases) if (from === coverId) aliases.delete(key);
-  void FileSystem.deleteAsync(fileFor(profile, coverId), { idempotent: true }).catch(() => {});
-  saving = saving.then(() => Db.dropCover(BASE, profile, coverId).catch(() => {}));
+  for (const [key, from] of aliases) if (from === coverId) {
+    aliases.delete(key);
+    if (localCoverUrl(key) === file) forgetCover(key);
+  }
+  if (localCoverUrl(coverId) === file) forgetCover(coverId);
+  const id = coverId;
+  saving = saving.then(() => withCoverFile(profile, id, async () => {
+    await Db.dropCover(BASE, profile, id);
+    await FileSystem.deleteAsync(file, { idempotent: true }).catch(() => {});
+    const legacy = fileFor(profile, id, 0);
+    if (legacy !== file) await FileSystem.deleteAsync(legacy, { idempotent: true }).catch(() => {});
+  }).catch(() => {}));
 }
 
 /**
@@ -539,9 +630,9 @@ export function forgetMirrorCover(profile: string, coverId: string | undefined):
  * takes them one by one rather than deleting the folder.
  */
 export async function removeMirrorCovers(profile: string): Promise<void> {
-  let ids: string[] = [];
+  let rows: Db.CoverRow[] = [];
   try {
-    ids = (await Db.allCovers(BASE, profile)).filter((r) => !r.aliasOf).map((r) => r.id);
+    rows = (await Db.allCovers(BASE, profile)).filter((r) => !r.aliasOf);
   } catch {
     // No table yet: the files, if any, cannot be told apart from another
     // profile's, and they are bounded and harmless.
@@ -549,11 +640,15 @@ export async function removeMirrorCovers(profile: string): Promise<void> {
   if (loaded === profile) {
     known = new Set();
     aliases = new Map();
+    sizes = new Map();
+    fileBytes = new Map();
     bytes = 0;
     loaded = '';
+    ++loadGeneration;
   }
-  for (const id of ids) {
-    await FileSystem.deleteAsync(fileFor(profile, id), { idempotent: true }).catch(() => {});
+  for (const row of rows) {
+    await FileSystem.deleteAsync(fileFor(profile, row.id, row.size ?? 0), { idempotent: true }).catch(() => {});
+    if ((row.size ?? 0) > SIZE) await FileSystem.deleteAsync(fileFor(profile, row.id, 0), { idempotent: true }).catch(() => {});
   }
   await Db.dropCovers(BASE, profile).catch(() => {});
   // The index this used to be kept in, for an install that never got as far as
@@ -577,9 +672,12 @@ export async function mirrorCoversInfo(
   const rows: Db.CoverRow[] = [];
   for (const id of known) {
     const info = await FileSystem.getInfoAsync(fileFor(profile, id)).catch(() => null);
-    const size = info?.exists ? (info.size ?? 0) : 0;
+    const legacy = (sizes.get(id) ?? 0) > SIZE
+      ? await FileSystem.getInfoAsync(fileFor(profile, id, 0)).catch(() => null) : null;
+    const size = (info?.exists ? info.size ?? 0 : 0) + (legacy?.exists ? legacy.size ?? 0 : 0);
     total += size;
-    rows.push({ id, aliasOf: null, bytes: size });
+    fileBytes.set(id, size);
+    rows.push({ id, aliasOf: null, bytes: size, size: sizes.get(id) ?? 0 });
   }
   bytes = total;
   persist(profile, rows);

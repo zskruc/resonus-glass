@@ -16,6 +16,8 @@ Resonus Glass 基于 [juananzzz/resonus](https://github.com/juananzzz/resonus)�
 
 从 [本仓库最新 Release](https://github.com/zskruc/resonus-glass/releases/latest) 下载 **Resonus Glass APK**。当前正式版为 `0.8.5.1`，APK 为 `Resonus-Glass-v0.8.5.1-arm64-v8a.apk`，适用于 ARM64 Android 设备。原项目 Releases 中的 APK 是原版 Resonus，不包含本分支的改动。
 
+新功能测试请下载 **[0.8.5.2-preview.14 预发布](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.2-preview.14)**，Android 更新编号 `146`。包含可选 Primuse 专辑／歌单页及近期缓存修复；这是预览版，需手动下载安装，App 的正式更新检查不会选取它。[本版改动与验证范围](./docs/RELEASE-0.8.5.2-preview.14.md)。
+
 Android 13 及以上支持原生折射和定向高光；Android 12 使用 GPU 模糊；更早版本使用界面回退效果。实际效果与流畅度取决于设备和系统状态。
 
 构建时启用 `RESONUS_GLASS_PREVIEW=1`，应用名为 **Resonus Glass**，Android 包名为 `com.zskruc.resonus.glasspreview`，可与原版并存。两者的登录和离线资料互相独立。覆盖更新已有 Glass 安装时，包名和签名必须一致；请勿通过卸载来解决签名不一致，否则会丢失应用内资料。
@@ -55,17 +57,19 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
   </tr>
 </table>
 
-专辑页可在 **设置 → 外观 → 专辑页风格** 选择「艺人页布局」、Volta 或 Minidisc；歌单页可选「艺人页布局」或「紧凑布局」。截图仅展示部分选项，更多功能见下方版本说明。
+专辑页可在 **设置 → 外观 → 专辑页风格** 选择 Primuse、「艺人页布局」、Volta 或 Minidisc；歌单页可选 Primuse、「艺人页布局」或「紧凑布局」。Primuse 采用居中封面、封面取色和柔和背景，独立保存选择，保留原播放器与玻璃参数。现有截图展示部分旧布局，不代表本版全部选项。
 
 ## 版本与上游同步
 
 | 渠道 | 版本 | Android 更新编号 | 获取方式 |
 | --- | --- | --- | --- |
-| 当前源码 | `0.8.5.2-preview.3` | `135` | `glass` 分支，未发布 Release · [后台缓存说明](./docs/BACKGROUND-CACHE-PREVIEW-135.md) |
+| 当前源码／预发布 | `0.8.5.2-preview.14` | `146` | [预发布 APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.2-preview.14) · [改动与验证](./docs/RELEASE-0.8.5.2-preview.14.md) |
 | 正式版 | `0.8.5.1` | `132` | [Release 与 APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1) · [改动与验证](./docs/RELEASE-0.8.5.1.md) |
 | 测试预发布 | `0.8.5.1-preview.6` | `128` | [Release 与 APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1-preview.6) · [改动与验证](./docs/ALBUM-ARTIST-PREVIEW-6.md) |
 
-当前 `glass` 源码包含重复详情导航与取色缓存容量优化、详情页整体显示／退出修复，以及封面、歌词和离线音乐的锁屏／后台缓存支持，保留现有播放器布局与玻璃参数。实现和三星验证范围见[内存与详情页说明](./docs/MEMORY-SCENE-PREVIEW-134.md)及[后台缓存说明](./docs/BACKGROUND-CACHE-PREVIEW-135.md)。本轮仅同步源码，**不发布新的 Release**；正式下载和 App 检查更新仍以 `0.8.5.1` 为准。
+本次预发布汇总 `136–146` 的修改：可选 Primuse 专辑／歌单页、个人常听歌曲、详情页统一显隐、搜索背景渐变与高清换图衔接，以及碟片分组多余横线的代码修复。保留已在三星验收的[歌单高清封面与旧缓存升级](./docs/PLAYLIST-HD-PREVIEW-136.md)、[批量任务启动修复](./docs/BULK-CACHE-START-PREVIEW-137.md)、[歌词缓存提速](./docs/LYRICS-CACHE-SPEED-PREVIEW-138.md)与[失败项补跑修复](./docs/LYRICS-RECOVERY-PREVIEW-140.md)。这是 Glass 的增量适配，不是上游全部更新的整体合并。
+
+三星已检查 `142` 的专辑进出和常听区，以及 `145` 的 ASMR 页面、搜索与推荐区；`146` 仅完成覆盖安装和版本确认，**碟片横线的实机观感尚未复核**。具体边界见[本版说明](./docs/RELEASE-0.8.5.2-preview.14.md)；此前内存／后台缓存验证见[详情页说明](./docs/MEMORY-SCENE-PREVIEW-134.md)及[后台缓存说明](./docs/BACKGROUND-CACHE-PREVIEW-135.md)。正式下载与 App 检查更新仍以 `0.8.5.1` 为准，不保证持续 120 fps 或长期内存恒定。
 
 `0.8.5.1` 将艺人照片移动调整为参考画面中约 0.4 倍的内容位移，让完整照片、静态模糊延伸与共同遮罩在同一持久层移动，并按实际姓名／名字图的底边平滑交接顶栏。使用艺人页布局的专辑与歌单同步采用；Android 页面脱离窗口时释放原生遮罩位图，返回时重新生成。发布范围和性能验收边界见[本版说明](./docs/RELEASE-0.8.5.1.md)。
 
@@ -95,7 +99,7 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 
 `.27` 新增参考 [Volta](https://github.com/countervolts/Volta) 的 **Apple Music风格**，可在 **设置 → 外观 → 界面风格** 与 **Spotify风格** 之间切换。首页、资料库、艺人和专辑／歌单详情采用可切换的页面布局，保留现有播放器、玻璃参数及用户资料。范围和验证限制见 [双风格预览说明](./docs/VOLTA-UI-PREVIEW.md)。下方早期版本说明保留为开发历史。
 
-当前正式版为 `v0.8.5.1`；各版本 tag 固定对应各自的发布源码，`glass` 分支另包含上方列出的未发布修复，之前的 `.preview.6` 测试包继续保留。播放页结合 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 派生的原生控件与 SVG，以及独立实现的封面／歌词界面和网格流动背景。「设置 → 播放器 → 播放器布局」可切回 Resonus 原有布局；下方「播放器背景」仅影响原有布局。控件与 SVG 的 **AGPL-3.0-only** 来源、保留的原有许可证和实现范围见 [第三方声明](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) 与 [预览说明](./docs/AMLL-PLAYER-PREVIEW.md)。
+当前正式版为 `v0.8.5.1`；各版本 tag 固定对应各自的发布源码，`glass` 分支包含上方列出的 `.preview.14` 预发布改动，之前的 `.preview.6` 测试包继续保留。播放页结合 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 派生的原生控件与 SVG，以及独立实现的封面／歌词界面和网格流动背景。「设置 → 播放器 → 播放器布局」可切回 Resonus 原有布局；下方「播放器背景」仅影响原有布局。控件与 SVG 的 **AGPL-3.0-only** 来源、保留的原有许可证和实现范围见 [第三方声明](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) 与 [预览说明](./docs/AMLL-PLAYER-PREVIEW.md)。
 
 `.15` 保留 `.14` 的五项修改：移除播放／歌词页顶部白条，保留原高度、顶部下拉和封面无障碍关闭；移除随机／循环按钮，仅保留原位置的上一首、播放／暂停、下一首，播放模式仍可在菜单设置；返回时冻结底栏已绘制进度，等来源页面状态恢复就绪后再交接，并保留来源页选中透镜透明度；逐字歌词只预备当前与下一行遮罩，下一行延后 720ms 准备，不改模糊、光学或歌词计时；有完整歌单镜像时先显示保存内容并在后台请求服务器，离线复用元数据避免重复 SQL，本地只查询当前歌单的歌曲 ID。没有缓存的首次打开仍可能等待，不能保证所有歌单立即出现。
 
@@ -168,6 +172,7 @@ bash scripts/build-glass-preview.sh
 
 | 内容 | 链接 |
 | --- | --- |
+| 本次预发布 | [preview.14：Primuse、缓存与验证范围（中英）](./docs/RELEASE-0.8.5.2-preview.14.md) |
 | 版本变化与 APK | [更新日志](./CHANGELOG.md) · [Releases](https://github.com/zskruc/resonus-glass/releases) |
 | 功能与验证范围 | [Glass 说明](./docs/LIQUID-GLASS-PREVIEW.md) |
 | 歌单双布局与七项音乐工具 | [入口、用法、边界与后续建议（中英）](./docs/PLAYLIST-MUSIC-TOOLS-PREVIEW-3.md) |
@@ -187,7 +192,7 @@ bash scripts/build-glass-preview.sh
 - [Resonus](https://github.com/juananzzz/resonus)：原作者 **juananzzz** 及原项目贡献者；原有源码保留 **GPL-3.0-or-later**，根 [LICENSE](./LICENSE) 不变；本预览新增的 AGPL 派生控件另见下项及第三方声明。支持原作者可前往其 [Ko-fi](https://ko-fi.com/juananzzz)。
 - [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)：**Apache-2.0**。原生材质依赖 Backdrop 1.0.0，并适配其 Bottom Tabs 示例；[许可证](./modules/liquid-glass/ANDROID_LIQUID_GLASS_LICENSE)。
 - [sdegenaar/liquid_glass_widgets](https://github.com/sdegenaar/liquid_glass_widgets)：**MIT**，Copyright © 2024–2026 Sebastian Degenaar。参考并适配其联动布局和最小化控制器；未引入 Flutter 引擎；[许可证](./modules/liquid-glass/LIQUID_GLASS_WIDGETS_LICENSE)。
-- [Primuse](https://github.com/chenqi92/primuse)：**MIT**，Copyright © 2026 Welape。已有歌词动效来源见 [第三方声明](./THIRD_PARTY_NOTICES.md)；七项音乐工具参考固定版本功能并在 React Native／Kotlin 中重写，见[来源与边界](./docs/PLAYLIST-MUSIC-TOOLS-PREVIEW-3.md#来源与实现--provenance-and-implementation)。
+- [Primuse](https://github.com/chenqi92/primuse)：**MIT**，Copyright © 2026 Welape。可选专辑／歌单布局与取色适配，以及已有歌词动效来源见 [第三方声明](./THIRD_PARTY_NOTICES.md)；[完整 MIT 许可证](./licenses/PRIMUSE-MIT.txt)。七项音乐工具参考固定版本功能并在 React Native／Kotlin 中重写，见[来源与边界](./docs/PLAYLIST-MUSIC-TOOLS-PREVIEW-3.md#来源与实现--provenance-and-implementation)。
 - [react-native-view-shot](https://github.com/gre/react-native-view-shot)：**MIT**，本预览使用 5.1.0 生成真实 PNG 歌词海报。
 - [f728743/AppleMusicStylePlayer](https://github.com/f728743/AppleMusicStylePlayer)：**MIT**，Copyright © 2025 Alexey Vorobyov。适配共享封面转场、背景轮廓与下拉规则；[完整许可证](./licenses/APPLE-MUSIC-STYLE-PLAYER-MIT.txt)及[实现范围](./docs/APPLE-MUSIC-TRANSITION.md)。
 - [LNPopupController](https://github.com/LeoNatan/LNPopupController)：**MIT**，Copyright © 2015-2025 Léo Natan；[完整许可](./licenses/LNPOPUPCONTROLLER-MIT.txt)与[适配范围](./docs/LNPOPUP-TRANSITION.md)。

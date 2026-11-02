@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS cache_job (id INTEGER PRIMARY KEY CHECK(id=1), data T
 CREATE TABLE IF NOT EXISTS cache_tasks (kind TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL,
   result TEXT NOT NULL DEFAULT 'pending', PRIMARY KEY(kind,id));
 CREATE INDEX IF NOT EXISTS cache_tasks_pending ON cache_tasks(result,kind);
+CREATE INDEX IF NOT EXISTS cache_tasks_pending_order ON cache_tasks(result);
 CREATE TABLE IF NOT EXISTS saved_lyrics (id TEXT NOT NULL, source TEXT NOT NULL, data TEXT NOT NULL, updated_at INTEGER NOT NULL,
   PRIMARY KEY(id,source));
 CREATE TABLE IF NOT EXISTS saved_artists (id TEXT PRIMARY KEY, detail TEXT, info TEXT, cover_key TEXT,
@@ -97,6 +98,14 @@ export async function nextMediaCacheTask(profile: string, selected: MediaCacheKi
 }
 export async function finishMediaCacheTask(profile: string, task: MediaCacheTask, outcome: MediaCacheOutcome): Promise<void> {
   const value = await db(profile); await value.runAsync('UPDATE cache_tasks SET result=? WHERE kind=? AND id=?', outcome, task.kind, task.id);
+}
+/** A bounded lookahead; the single worker excludes its in-flight IDs in memory. */
+export async function nextMediaCacheLyrics(profile: string, limit: number): Promise<MediaCacheTask[]> {
+  const value = await db(profile);
+  const rows = await value.getAllAsync<{ kind: MediaCacheKind; id: string; data: string }>(
+    "SELECT kind,id,data FROM cache_tasks WHERE result='pending' AND kind='lyrics' ORDER BY rowid LIMIT ?",
+    Math.max(1, Math.min(3, Math.floor(limit))));
+  return rows.map((row) => ({ kind: row.kind, id: row.id, data: JSON.parse(row.data) }));
 }
 export async function retryMediaCacheFailures(profile: string): Promise<void> {
   const value = await db(profile); await value.runAsync("UPDATE cache_tasks SET result='pending' WHERE result='failed'");

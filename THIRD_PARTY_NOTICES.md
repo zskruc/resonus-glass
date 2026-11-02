@@ -29,6 +29,32 @@ No Volta screenshots, artist photos, Apple fonts or Apple image assets are
 included in the APK by this adaptation. Existing third-party notices and
 their licenses remain applicable.
 
+## Optional Primuse album and playlist presentation
+
+The selectable `Primuse` album/playlist styles adapt
+[chenqi92/primuse](https://github.com/chenqi92/primuse), pinned commit
+[`294e3f55b2625832a2118cb2a19f15996a87f3f5`](https://github.com/chenqi92/primuse/tree/294e3f55b2625832a2118cb2a19f15996a87f3f5).
+Copyright (c) 2026 Welape. The complete upstream MIT license is retained
+unchanged in [licenses/PRIMUSE-MIT.txt](./licenses/PRIMUSE-MIT.txt).
+
+`AlbumDetailView`, `CoverTintProvider`, `ThemeService`,
+`ArtworkAccentPixelPolicy` and `LibraryDetailTintPolicy` inform the centered
+cover, album/artist metadata hierarchy, local artwork field and album color
+mapping in `src/components/primuse/`, `src/lib/primuseAlbumLayout.ts`,
+`src/lib/primuseAlbumPalette.ts`, `src/hooks/usePrimuseAlbumPalette.ts`, and
+`modules/amll-background/android/src/main/java/expo/modules/amllbackground/PrimuseAlbumArtwork*.kt`.
+The playlist presentation and personal frequently played section are Resonus
+integrations using existing library/playback data.
+
+This React Native/Kotlin adaptation does not embed Primuse's SwiftUI runtime,
+playback/server stack, fonts, artist photos or album art. Static Android image
+sampling, color quantization and Gaussian blur are platform adaptations, not
+a claim of pixel equivalence to SwiftUI or Apple's private implementation.
+Existing playback, recycled lists, dock and saved glass profiles remain in
+use. These MIT portions do not replace the separate licenses for Resonus,
+glass, AMLL controls or other existing components. Scope and validation:
+[preview.14 release notes](./docs/RELEASE-0.8.5.2-preview.14.md).
+
 ## Primuse lyric motion and depth effect
 
 The word-level lyric sweep and bounce in `src/components/KaraokeWords.tsx`,

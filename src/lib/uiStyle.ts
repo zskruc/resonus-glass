@@ -1,19 +1,19 @@
 /** Page layout is independent from the colour theme, player and glass tuning. */
 export const UI_STYLES = ['spotify', 'appleMusic'] as const;
 export type UiStyle = (typeof UI_STYLES)[number];
-export const ALBUM_STYLES = ['artist', 'volta', 'minidisc'] as const;
+export const ALBUM_STYLES = ['artist', 'volta', 'minidisc', 'primuse'] as const;
 export type AlbumStyle = (typeof ALBUM_STYLES)[number];
-export const PLAYLIST_STYLES = ['artist', 'compact'] as const;
+export const PLAYLIST_STYLES = ['artist', 'compact', 'primuse'] as const;
 export type PlaylistStyle = (typeof PLAYLIST_STYLES)[number];
 
-/** Preview the artist-page header while retaining the compact layout as a reversible choice. */
+/** Keep explicit playlist layouts without replacing existing profile choices. */
 export function normalizePlaylistStyle(value: unknown): PlaylistStyle {
-  return value === 'compact' ? 'compact' : 'artist';
+  return value === 'compact' || value === 'primuse' ? value : 'artist';
 }
 
-/** Preview the shared artist header; retain explicit prior album choices. */
+/** Keep explicit album choices while unknown profiles retain the artist header. */
 export function normalizeAlbumStyle(value: unknown): AlbumStyle {
-  return value === 'volta' || value === 'minidisc' ? value : 'artist';
+  return value === 'volta' || value === 'minidisc' || value === 'primuse' ? value : 'artist';
 }
 
 /** Old profiles and unrecognised imported values retain the original layout. */

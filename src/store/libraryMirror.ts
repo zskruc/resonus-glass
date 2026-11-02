@@ -19,7 +19,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { create } from 'zustand';
 
-import type { Album, Artist, Playlist, Song, Starred, SubsonicAuth } from '@/api/subsonic';
+import { COVER, type Album, type Artist, type Playlist, type Song, type Starred, type SubsonicAuth } from '@/api/subsonic';
 import { hashKey } from '@/lib/localLibrary';
 import { whenIdle } from '@/lib/idle';
 import * as Db from '@/lib/mirrorDb';
@@ -352,7 +352,7 @@ export const useLibraryMirror = create<MirrorState>((set, get) => ({
     writeMirror('playlists', async (dir, profile) => {
       keepCovers(
         profile,
-        playlists.map((p) => ({ from: p.coverArt ?? p.id, keys: [p.coverArt ?? p.id, p.id] })),
+        playlists.map((p) => ({ from: p.coverArt ?? p.id, keys: [p.coverArt ?? p.id, p.id], size: COVER.full })),
       );
       if (samePlaylists(await Db.getPlaylists(dir, profile), playlists)) return;
       await Db.saveEntry(dir, profile, 'playlists', '', playlists);
@@ -366,7 +366,7 @@ export const useLibraryMirror = create<MirrorState>((set, get) => ({
       // songs is a few hundred albums at most, deduplicated against what is
       // already saved and capped like everything else here.
       keepCovers(profile, [
-        { from: playlist.coverArt ?? playlist.id, keys: [playlist.coverArt ?? playlist.id, playlist.id] },
+        { from: playlist.coverArt ?? playlist.id, keys: [playlist.coverArt ?? playlist.id, playlist.id], size: COVER.full },
         ...songs.map((s) => coverOfSong(s)),
       ]);
       // Nothing to write if it is the same playlist as the one stored: opening
@@ -384,7 +384,7 @@ export const useLibraryMirror = create<MirrorState>((set, get) => ({
       keepCovers(profile, [
         ...entries.map((e) => ({
           from: e.playlist.coverArt ?? e.playlist.id,
-          keys: [e.playlist.coverArt ?? e.playlist.id, e.playlist.id],
+          keys: [e.playlist.coverArt ?? e.playlist.id, e.playlist.id], size: COVER.full,
         })),
         ...entries.flatMap((e) => e.songs.map((s) => coverOfSong(s))),
       ]);
@@ -444,10 +444,13 @@ export const useLibraryMirror = create<MirrorState>((set, get) => ({
 
   keepStoredCovers: () => {
     writeMirror('covers', async (dir, profile) => {
-      const rows = await Db.songCoverIds(dir, profile);
+      const [rows, playlists] = await Promise.all([Db.songCoverIds(dir, profile), Db.getPlaylists(dir, profile)]);
       keepCovers(
         profile,
-        rows.map((r) => ({ from: r.cover ?? r.album, keys: [r.album] })),
+        [
+          ...rows.map((r) => ({ from: r.cover ?? r.album, keys: [r.album] })),
+          ...(playlists ?? []).map((p) => ({ from: p.coverArt ?? p.id, keys: [p.coverArt ?? p.id, p.id], size: COVER.full })),
+        ],
       );
     });
   },

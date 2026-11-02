@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 1130 of them.
+Every string the app can show, under the screen it shows up on. 1132 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -22,6 +22,7 @@ you are actually typing into, which is easier than reading it here.
 | `Couldn't load the album.` | Error on the screen, with a Retry button |
 | `Disc {n}` | Heading over the songs of one disc of a multi-disc album. `{n}` is its number |
 | `Find in playlist` | Placeholder of the search box hidden above a tracklist, for finding a song within it |
+| `Frequently played songs` |  |
 | `More from {artist}` | Heading under an album: their other records. `{artist}` is the name |
 | `View cover` | The same as `View image`, for album and playlist artwork |
 
@@ -146,9 +147,9 @@ you are actually typing into, which is easier than reading it here.
 | `EPs` | Shelf heading: records longer than a single and shorter than an album |
 | `Featured` |  |
 | `Field recordings` | Shelf heading: records made of the world itself, nature or a city, rather than of performed music |
+| `Frequently played songs` |  |
 | `Interviews` | Shelf heading: records of somebody being interviewed, usually the artist |
 | `Live` | Shelf heading: records of a performance in front of an audience. Not the verb, and not “currently playing” |
-| `Loading…` |  |
 | `Mixtapes` | Shelf heading: MusicBrainz's “Mixtape/Street”, promotional records with new material, common in rap and hip hop. Kept as-is where the term travels |
 | `Play discography` | Play the lot, in order |
 | `Popular` | The artist's popular / top tracks |
@@ -1127,7 +1128,6 @@ you are actually typing into, which is easier than reading it here.
 | `Current task` |  |
 | `Failed` |  |
 | `Finished. Missing items and failed requests are listed below.` |  |
-| `Loading…` |  |
 | `Lyrics follow your current source settings and keep word-by-word timing when available. Existing cached items are skipped; each scan adds only what is missing.` |  |
 | `Newly cached` |  |
 | `Not selected` |  |
@@ -1188,7 +1188,6 @@ you are actually typing into, which is easier than reading it here.
 | `Appearance` |  |
 | `Apple Music style` |  |
 | `Artist page layout` |  |
-| `Artist page layout matches your artist and playlist headers. Volta and Minidisc keep their previous layouts in Apple Music style; Spotify uses its original compact layout.` |  |
 | `At the top of Home, what is playing in your other apps and devices, ready to carry on here.` |  |
 | `Compact layout` |  |
 | `Cover corners` |  |
@@ -1216,6 +1215,9 @@ you are actually typing into, which is easier than reading it here.
 | `Open the app on` | Which tab the app opens on, and comes back to after a while away |
 | `Playing on other devices` |  |
 | `Playlist page style` |  |
+| `Primuse` |  |
+| `Primuse centers the cover over a soft artwork background. Artist page layout matches artist and playlist headers; Volta and Minidisc retain their previous layouts.` |  |
+| `Primuse uses the album-page cover layout and soft artwork background. Artist page layout follows your artist headers; Compact layout restores the previous playlist layout.` |  |
 | `Quick grid` | The grid of shortcut tiles on Home |
 | `Rounded` | One of the values of “Cover corners” |
 | `Scheduled` |  |
@@ -1230,7 +1232,6 @@ you are actually typing into, which is easier than reading it here.
 | `System` | Two places: a theme setting (use whichever appearance the phone itself is set to, light or dark), and `System::section`, the heading in Settings › Quality & playback over Keep screen on and the battery warning. Add `System::section` to your file if one word cannot do both |
 | `Theme` | The screen where the appearance and the accent colour are chosen, and the name of the row that opens it |
 | `UI style` |  |
-| `Use the artist-page header for playlists. Compact layout restores the previous playlist layout instantly.` |  |
 | `Volta` |  |
 | `With no chip pressed, Your library shows Favorites and your playlists instead of everything mixed together.` |  |
 | `Your library` | The tab with your albums, artists and playlists |
@@ -1598,6 +1599,7 @@ you are actually typing into, which is easier than reading it here.
 | `Home` | The first tab, and a folder in the car |
 | `Library` | The settings section, and a folder in the car |
 | `List` | An option in that menu: one row per item, instead of cards |
+| `Loading…` |  |
 | `Lyrics` | The words of the song. Also a line of the storage bar, where it is their size on the phone |
 | `Manage playlists` |  |
 | `Monospace` | A typeface whose characters all have the same width, in Settings › Font |

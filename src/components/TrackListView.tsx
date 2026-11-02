@@ -20,6 +20,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import Reanimated, {
   Extrapolation,
@@ -62,6 +63,12 @@ import { DetailHeroScene } from '@/components/DetailHeroScene';
 import { VoltaArtistHeaderBackdrop } from '@/components/volta/VoltaArtistHeaderBackdrop';
 import { ArtistPagePaletteProvider, useArtistPagePalette } from '@/components/volta/ArtistPagePalette';
 import { useVoltaArtistArtwork } from '@/hooks/useVoltaArtistArtwork';
+import { usePrimuseAlbumPalette } from '@/hooks/usePrimuseAlbumPalette';
+import { PrimuseAlbumHeader } from '@/components/primuse/PrimuseAlbumHeader';
+import { PrimuseAlbumBackdrop } from '@/components/primuse/PrimuseAlbumBackdrop';
+import { PrimuseAlbumScene } from '@/components/primuse/PrimuseAlbumScene';
+import { PrimuseTrackPanelRow } from '@/components/primuse/PrimuseTrackPanelRow';
+import { primuseAlbumLayout } from '@/lib/primuseAlbumLayout';
 import { artistHeroGeometry } from '@/lib/artistHeroGeometry';
 import { artistHeaderFromLayout } from '@/lib/artistHeaderTransition';
 import { useAuthStore } from '@/store/auth';
@@ -138,6 +145,8 @@ interface Props {
   albumActionLayout?: 'volta';
   /** Album-only Minidisc presentation; playlist and Spotify headers retain their layout. */
   albumPresentation?: { palette: MinidiscAlbumPalette; meta?: string };
+  /** Primuse's centred cover, local artwork field and readable album gradient. */
+  primuseAlbumPresentation?: { sourceHref: string; meta?: string };
   title: string;
   subtitle?: string;
   /** If provided, the subtitle links to the artist when tapped. */
@@ -245,6 +254,7 @@ export function TrackListView({
   albumArtistPresentation,
   albumActionLayout,
   albumPresentation,
+  primuseAlbumPresentation,
   title,
   subtitle,
   artistId,
@@ -283,22 +293,37 @@ export function TrackListView({
   const insets = useSafeAreaInsets();
   const { width: screenW, height: screenH } = useScreenSize();
   const bottomPad = useScreenBottomPadding();
-  const appleMusic = useSettings((s) => s.uiStyle === 'appleMusic');
+  const primuse = !!primuseAlbumPresentation;
+  const appleMusic = useSettings((s) => s.uiStyle === 'appleMusic') || primuse;
   const playlistStyle = useSettings((s) => s.playlistStyle);
-  const artistDetail = !hideCover && (!!albumArtistPresentation || !!playlistPresentation && playlistStyle !== 'compact');
+  const artistDetail = !primuse && !hideCover && (!!albumArtistPresentation || !!playlistPresentation && playlistStyle !== 'compact');
   const offline = useAuthStore((s) => s.offline);
   const inheritedPalette = useArtistPagePalette();
+  const sidePadding = centredPadding(screenW, spacing.lg);
+  const { fontScale } = useWindowDimensions();
+  const primuseLayout = useMemo(() => primuseAlbumLayout(screenW, screenH, insets.top, sidePadding, fontScale),
+    [screenW, screenH, insets.top, sidePadding, fontScale]);
+  const primuseArtwork = usePrimuseAlbumPalette(primuse ? coverUri : undefined, offline, primuseLayout.blurRatio);
+  const primusePalette = primuse ? primuseArtwork.palette : undefined;
+  const [primuseHeader, setPrimuseHeader] = useState({ identity: '', height: 0, coverCenterY: NaN });
+  // An HD disk copy may replace the server URI without changing a single
+  // layout bound. Keep those measurements: native onLayout need not fire
+  // again for a same-size bitmap, and discarding them would block readiness.
+  const primuseIdentity = JSON.stringify([screenW, screenH, fontScale, insets.top]);
+  const primuseHeaderH = primuseHeader.identity === primuseIdentity ? primuseHeader.height : 0;
+  const primuseCenterY = primuseHeader.identity === primuseIdentity ? primuseHeader.coverCenterY : NaN;
+  const primuseBackdropLayout = useMemo(() => Number.isFinite(primuseCenterY)
+    ? { ...primuseLayout, coverCenterY: primuseCenterY } : primuseLayout, [primuseLayout, primuseCenterY]);
   const artistHeaderH = playlistArtistHeaderHeight(screenW, screenH, appleMusic);
   const artistGeometry = artistHeroGeometry(artistHeaderH, 72 + spacing.xl + 56);
   const artistArtwork = useVoltaArtistArtwork(artistDetail && appleMusic ? coverUri : undefined,
     offline, screenW / artistHeaderH, artistGeometry.extensionHeight / artistHeaderH);
   const artistPalette = artistDetail && appleMusic ? artistArtwork.palette : undefined;
-  const pagePalette = artistPalette ?? inheritedPalette;
-  const sidePadding = centredPadding(screenW, spacing.lg);
-  const searchTopInset = artistDetail ? insets.top + TOPBAR_H + spacing.md : 0;
-  const minidisc = appleMusic && !artistDetail ? albumPresentation : undefined;
-  const voltaAlbum = appleMusic && !artistDetail && !minidisc && albumActionLayout === 'volta';
-  const tint = useCoverTint(minidisc || artistPalette ? undefined : coverUri, true);
+  const pagePalette = primusePalette ?? artistPalette ?? inheritedPalette;
+  const searchTopInset = artistDetail || primuse ? insets.top + TOPBAR_H + spacing.md : 0;
+  const minidisc = appleMusic && !artistDetail && !primuse ? albumPresentation : undefined;
+  const voltaAlbum = appleMusic && !artistDetail && !minidisc && !primuse && albumActionLayout === 'volta';
+  const tint = useCoverTint(primuse || minidisc || artistPalette ? undefined : coverUri, true);
   const dominant = tint.color;
   const appleBackground = voltaDetailBackground(dominant, colors.background, colors.text, colors.textSecondary);
   // A cover read for the first time fades its tint in over the page, instead
@@ -309,7 +334,7 @@ export function TrackListView({
     if (!tint.known) return;
     tintIn.set(withTiming(1, { duration: motion.duration.fade, reduceMotion: motion.reduceMotion.decorative }));
   }, [tint.known, tintIn]);
-  const headerColor = artistPalette?.background ?? minidisc?.palette.backgroundTop ?? (appleMusic ? appleBackground : accentColor ?? dominant);
+  const headerColor = primusePalette?.backgroundTop ?? artistPalette?.background ?? minidisc?.palette.backgroundTop ?? (appleMusic ? appleBackground : accentColor ?? dominant);
   const shuffle = usePlayerStore((s) => s.shuffle);
   const queueDealt = usePlayerStore((s) => s.queueDealt);
   // The shuffle button gets tinted only if this list is the one playing;
@@ -341,7 +366,7 @@ export function TrackListView({
   const sourceHref = usePlayerStore((state) => state.sourceHref);
   const isPlaying = usePlayerStore((state) => state.isPlaying);
   const togglePlayback = usePlayerStore((state) => state.toggle);
-  const headerSourceHref = albumArtistPresentation?.sourceHref ?? (playlistId ? `/playlist/${playlistId}` : undefined);
+  const headerSourceHref = primuseAlbumPresentation?.sourceHref ?? albumArtistPresentation?.sourceHref ?? (playlistId ? `/playlist/${playlistId}` : undefined);
   const currentHeaderQueue = !!headerSourceHref && sourceHref === headerSourceHref;
   const scrollY = useSharedValue(0);
   const artistNameLayout = useSharedValue({ y: 0, height: 0 });
@@ -575,7 +600,7 @@ export function TrackListView({
 
   // Without cover, the header is shorter: the gradient and bar collapse adjust
   // to a smaller distance so the transition fits.
-  const art = artistDetail ? artistHeaderH : playlistPresentation ? playlistCoverSize(screenW, screenH, appleMusic) : minidisc ? minidiscAlbumCoverSize(screenW, screenH) : appleMusic
+  const art = primuse ? primuseLayout.coverSide : artistDetail ? artistHeaderH : playlistPresentation ? playlistCoverSize(screenW, screenH, appleMusic) : minidisc ? minidiscAlbumCoverSize(screenW, screenH) : appleMusic
     ? Math.round(Math.min(screenW * 0.76, screenH * 0.43, 360))
     : coverSize(screenW, screenH);
   const cover = hideCover ? 0 : art;
@@ -589,17 +614,20 @@ export function TrackListView({
   }));
   const barContentStyle = useAnimatedStyle(() => ({
     opacity: artistDetail && searchMaterialMounted ? (searching ? 1 : 0)
-      : artistDetail && appleMusic ? artistHeader.get().compactOpacity
+      : (artistDetail || primuse) && appleMusic ? artistHeader.get().compactOpacity
       : interpolate(scrollY.get(), artistDetail ? [art * .45, art * .75]
         : playlistPresentation ? [art + 16, art + 52] : [collapse * .5, collapse * .85], [0, 1], Extrapolation.CLAMP),
   }));
   const barBgOpacity = useDerivedValue(() => artistDetail && searchMaterialMounted ? 1
-    : artistDetail && appleMusic ? artistHeader.get().backgroundOpacity
+    : (artistDetail || primuse) && appleMusic ? artistHeader.get().backgroundOpacity
       : interpolate(scrollY.get(), [0, collapse * .85], [0, 1], Extrapolation.CLAMP));
   const artistCopyOpacity = useDerivedValue(() => searchMaterialMounted ? 0 : barBgOpacity.get());
   const gradientStyle = useAnimatedStyle(() => ({
     opacity: tintIn.get(), transform: [{ translateY: -Math.max(scrollY.get(), 0) }],
   }));
+  // Keep the top shading independent from the search window's expansion;
+  // removing that window at the end of collapse must not move the shading.
+  const primuseShadeStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -scrollY.get() }] }));
 
   // Live filtering; preserves each song's original index so play/enqueue/remove
   // still point to the correct position.
@@ -630,12 +658,28 @@ export function TrackListView({
 
   return (
     <ArtistPagePaletteProvider value={pagePalette}>
-    <DetailHeroScene enabled={artistDetail && appleMusic && !searching && !!coverUri} identity={coverUri}
-      loadingColor={artistPalette?.background ?? minidisc?.palette.background ?? appleBackground} loadingTint={pagePalette?.text}
-      style={[styles.root, appleMusic && { backgroundColor: artistPalette?.background ?? minidisc?.palette.background ?? appleBackground }]}>
+    <DetailHeroScene enabled={!searching && (primuse || artistDetail && appleMusic && !!coverUri)}
+      identity={primuse ? `primuse:${coverUri ?? ''}` : coverUri}
+      loadingColor={primusePalette?.backgroundTop ?? artistPalette?.background ?? minidisc?.palette.background ?? appleBackground} loadingTint={pagePalette?.text}
+      background={primusePalette ? <LinearGradient pointerEvents="none" style={StyleSheet.absoluteFill}
+        colors={[primusePalette.backgroundTop, primusePalette.backgroundTop, primusePalette.background]} locations={[0, .42, 1]} /> : undefined}
+      style={[styles.root, appleMusic && { backgroundColor: primusePalette?.backgroundTop ?? artistPalette?.background ?? minidisc?.palette.background ?? appleBackground }]}>
+      <PrimuseAlbumScene enabled={primuse} uri={coverUri} textureUri={primuseArtwork.textureUri}
+        prepared={primuseArtwork.ready && primuseHeaderH > 0 && Number.isFinite(primuseCenterY)}>
       {minidisc ? <LinearGradient pointerEvents="none" style={StyleSheet.absoluteFill}
-        colors={[minidisc.palette.backgroundTop, minidisc.palette.background]} /> : null}
+          colors={[minidisc.palette.backgroundTop, minidisc.palette.background]} /> : null}
       <View style={{ flex: 1 }}>
+      {primuse && !searching ? <><Animated.View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0,
+        width: screenW, height: primuseHeaderH, transform: [{ translateY: searchH }] }}>
+        <PrimuseAlbumBackdrop textureUri={primuseArtwork.textureUri} textureScale={primuseArtwork.textureScale}
+        textureRevision={primuseArtwork.textureRevision} onTextureError={primuseArtwork.onTextureError}
+        topExtension={searchMaterialMounted ? SEARCH_H + searchTopInset : 0}
+        width={screenW} height={primuseHeaderH} layout={primuseBackdropLayout} scrollY={scrollY} />
+      </Animated.View>
+      <Reanimated.View pointerEvents="none" style={[{ position: 'absolute', top: 0, left: 0, right: 0,
+        height: insets.top + 64 }, primuseShadeStyle]}>
+        <LinearGradient colors={['#0000002E', '#00000000']} style={StyleSheet.absoluteFill} />
+      </Reanimated.View></> : null}
       {artistDetail && appleMusic && !searching ? <Animated.View pointerEvents="none"
         style={{ position: 'absolute', left: 0, top: 0, width: screenW, height: artistHeaderH + artistGeometry.extensionHeight,
           transform: [{ translateY: searchH }] }}>
@@ -705,7 +749,7 @@ export function TrackListView({
         contentContainerStyle={[
           styles.list,
           {
-            paddingTop: artistDetail ? 0 : insets.top + TOPBAR_H + spacing.md,
+            paddingTop: artistDetail || primuse ? 0 : insets.top + TOPBAR_H + spacing.md,
             paddingBottom: bottomPad,
             // Centred on a wide screen instead of stretched across it: a row
             // whose title is at one edge and whose duration is at the other,
@@ -722,7 +766,7 @@ export function TrackListView({
                  goes in a no-padding container: any padding would impose a
                  minimum height and show a sliver. */
               <Animated.View style={[styles.searchClip, { height: searchH }]}>
-              <View style={[styles.searchRow, artistDetail && { height: SEARCH_H + searchTopInset, paddingTop: searchTopInset }]}>
+              <View style={[styles.searchRow, (artistDetail || primuse) && { height: SEARCH_H + searchTopInset, paddingTop: searchTopInset }]}>
                 <View collapsable={false} style={styles.searchBox}>
                   {searchMaterialMounted ? <GlassBackdrop radius={radius.pill} tint={colors.highlight} variant="regular" /> : null}
                   <Icon name="search" size={18} color={pagePalette?.textSecondary ?? colors.textSecondary} />
@@ -757,7 +801,28 @@ export function TrackListView({
             ) : null}
             {/* While searching, the large header is hidden: results stay flush
                 with the bar, which is what Spotify does. */}
-            {searching ? null : artistDetail ? (
+            {searching ? null : primuse ? (
+              <PrimuseAlbumHeader title={title} subtitle={subtitle} onSubtitlePress={onSubtitlePress}
+                meta={primuseAlbumPresentation?.meta ?? meta} explicit={showExplicit} coverUri={coverUri}
+                onCoverPress={onCoverPress} description={description} genres={genres}
+                layout={primuseLayout} palette={primuseArtwork.palette} disabled={songs.length === 0}
+                showPause={currentHeaderQueue && isPlaying} shuffleActive={shuffleActive}
+                onPlay={() => { if (currentHeaderQueue) togglePlayback(); else if (songs.length) void onPlay(0); }}
+                onShuffle={shufflePlay} onArtworkLoad={primuseArtwork.onArtworkLoad} onArtworkError={primuseArtwork.onArtworkError}
+                nameStyle={artistNameStyle} onTitleLayout={(layout) => { artistNameLayout.set(layout); }}
+                onCoverCenterY={(coverCenterY) => {
+                  setPrimuseHeader((previous) => previous.identity === primuseIdentity && Math.abs(previous.coverCenterY - coverCenterY) < .5
+                    ? previous : { identity: primuseIdentity, height: previous.identity === primuseIdentity ? previous.height : 0, coverCenterY });
+                }}
+                onLayout={(event) => {
+                  const height = event.nativeEvent.layout.height;
+                  if (height > 0) setPrimuseHeader((previous) => previous.identity === primuseIdentity && Math.abs(previous.height - height) < .5
+                    ? previous : { identity: primuseIdentity, height, coverCenterY: previous.identity === primuseIdentity ? previous.coverCenterY : NaN });
+                }}
+                favorite={favorite ? <FavoriteButton id={favorite.id} type={favorite.type} starred={favorite.starred}
+                  size={23} glyph="star" style={{ width: 48, height: 48, borderRadius: 999,
+                    alignItems: 'center', justifyContent: 'center', backgroundColor: primuseArtwork.palette.controlFill }} /> : undefined} />
+            ) : artistDetail ? (
               <PlaylistArtistHeader drawBackdrop={false} title={title} owner={subtitle} onOwnerPress={onSubtitlePress} description={description} meta={meta}
                 metadataBadge={showExplicit ? <ExplicitBadge status="explicit" /> : undefined}
                 uri={coverUri} width={screenW} height={artistHeaderH} sidePadding={sidePadding}
@@ -1087,7 +1152,7 @@ export function TrackListView({
           </View>
         }
         extraData={selectedIds}
-        renderItem={({ item }) => {
+        renderItem={({ item, index }) => {
           // The occurrence owns its positions; FlashList's result index is
           // irrelevant to play, remove and numbering, including while filtered.
           const { song, origIndex, rowKey, serverIndex } = item;
@@ -1133,13 +1198,16 @@ export function TrackListView({
               }}
             />
           );
-          if (!discLabel) return row;
-          return (
+          const content = !discLabel ? row : (
             <>
-              <DiscHeader label={discLabel} color={minidisc?.palette.textSecondary} />
+              <DiscHeader label={discLabel} color={primusePalette?.textSecondary ?? minidisc?.palette.textSecondary} />
               {row}
             </>
           );
+          return primuse ? <PrimuseTrackPanelRow first={index === 0} last={index === shownRows.length - 1}
+            divider={index < shownRows.length - 1 && (!!filtered || !discHeaders?.[shownRows[index + 1].origIndex])}>
+            {content}
+          </PrimuseTrackPanelRow> : content;
         }}
         ListEmptyComponent={
           filtered ? (
@@ -1194,10 +1262,11 @@ export function TrackListView({
               scrollY={scrollY} opacity={artistCopyOpacity} />
               {searchMaterialMounted ? <TopBarBackground color={headerColor} opacity={barBgOpacity} /> : null}
             </> : <TopBarBackground color={headerColor} opacity={barBgOpacity} />}
-            <BackChevron size={28} label={t('Close')} color={artistPalette?.text ?? minidisc?.palette.text}
-              style={artistPalette ? [voltaStyles.roundAction, { backgroundColor: 'rgba(0,0,0,0.28)' }] : minidisc ? [voltaStyles.roundAction, { backgroundColor: minidisc.palette.controlFill }] : appleMusic ? voltaStyles.roundAction : undefined} />
+            <BackChevron size={28} label={t('Close')} color={pagePalette?.text}
+              style={artistPalette ? [voltaStyles.roundAction, { backgroundColor: 'rgba(0,0,0,0.28)' }] : primusePalette ? [voltaStyles.roundAction, { backgroundColor: primusePalette.controlFill }] : minidisc ? [voltaStyles.roundAction, { backgroundColor: minidisc.palette.controlFill }] : appleMusic ? voltaStyles.roundAction : undefined} />
             <Reanimated.Text
-              style={[styles.barTitleCentered, { top: insets.top + 10 }, appleMusic && { left: minidisc ? 70 : 76, right: minidisc ? 126 : 76 },
+              style={[styles.barTitleCentered, { top: insets.top + 10 }, appleMusic && { left: minidisc || primuse ? 70 : 76,
+                right: primuse ? 30 + 44 * (Number(!!download) + Number(!!onSort) + Number(!!onMenu)) : minidisc ? 126 : 76 },
                 pagePalette && { color: pagePalette.text }, minidisc && { color: minidisc.palette.text }, barContentStyle]}
               numberOfLines={1}
             >
@@ -1205,12 +1274,22 @@ export function TrackListView({
             </Reanimated.Text>
             {appleMusic ? (
               <View style={voltaStyles.barActions}>
-                {minidisc ? <View style={[minidiscToolbar.group, { backgroundColor: minidisc.palette.controlFill }]}>
-                  {favorite ? <FavoriteButton id={favorite.id} type={favorite.type} starred={favorite.starred}
+                {minidisc || primusePalette ? <View style={[minidiscToolbar.group, { backgroundColor: (primusePalette ?? minidisc!.palette).controlFill }]}>
+                  {primusePalette && onSort ? <Pressable style={minidiscToolbar.button} accessibilityRole="button"
+                    accessibilityLabel={t('Sort')} onPress={onSort}>
+                    <Icon name="swap-vertical" size={22} color={primusePalette.text} />
+                  </Pressable> : null}
+                  {primusePalette && download ? <Pressable style={minidiscToolbar.button} accessibilityRole="button"
+                    accessibilityLabel={download.status === 'done' ? t('Remove download') : t('Download')}
+                    accessibilityValue={download.status === 'active' ? { text: `${Math.round(download.progress * 100)}%` } : undefined}
+                    onPress={download.onPress}>
+                    {download.status === 'active' ? <ActivityIndicator color={primusePalette.text} /> : <Icon
+                      name={download.status === 'done' ? 'checkmark-circle' : 'arrow-down-circle-outline'} size={23} color={primusePalette.text} />}
+                  </Pressable> : minidisc && favorite ? <FavoriteButton id={favorite.id} type={favorite.type} starred={favorite.starred}
                     size={23} glyph="star" style={minidiscToolbar.button} /> : null}
                   {onMenu ? <GlassPressable buttonMaterial={false} style={minidiscToolbar.button} accessibilityRole="button"
                     accessibilityLabel={t('More options')} onPress={onMenu}>
-                    <Icon name="ellipsis-horizontal" size={23} color={minidisc.palette.text} />
+                    <Icon name="ellipsis-horizontal" size={23} color={(primusePalette ?? minidisc!.palette).text} />
                   </GlassPressable> : null}
                 </View> : onMenu ? <GlassPressable style={[voltaStyles.roundAction, artistPalette && { backgroundColor: 'rgba(0,0,0,0.28)' }]} accessibilityRole="button"
                   accessibilityLabel={t('More options')} onPress={onMenu}>
@@ -1236,12 +1315,13 @@ export function TrackListView({
         />
       ) : null}
       {selectionMenu.dialogs}
+      </PrimuseAlbumScene>
     </DetailHeroScene>
     </ArtistPagePaletteProvider>
   );
 }
 
-/** Disc header (thin separator + label) for multi-disc albums. */
+/** Disc heading for multi-disc albums; spacing separates it from the preceding tracks. */
 function DiscHeader({ label, color }: { label: string; color?: string }) {
   return (
     <View style={styles.discHeader}>
@@ -1329,8 +1409,6 @@ const styles = themed((colors) => ({
   },
   addLabel: { color: colors.text, fontSize: fontSize.md, fontWeight: '500' },
   discHeader: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
     paddingTop: spacing.md,
     paddingBottom: spacing.xs,
     marginTop: spacing.xs,

@@ -21,12 +21,14 @@ interface Props {
   identity?: string;
   style?: StyleProp<ViewStyle>;
   loadingColor?: string;
+  /** Stable final page background, kept visible while the composite prepares. */
+  background?: ReactNode;
   loadingTint?: string;
   onCancel?: () => void;
 }
 
 /** Keep page state and layout mounted, revealing one complete scene without per-layer fades. */
-export function DetailHeroScene({ children, enabled = true, identity, style, loadingColor,
+export function DetailHeroScene({ children, enabled = true, identity, style, loadingColor, background,
   loadingTint, onCancel }: Props) {
   const imageLease = useRouteImageLease();
   const insets = useSafeAreaInsets();
@@ -35,7 +37,9 @@ export function DetailHeroScene({ children, enabled = true, identity, style, loa
   const [state, setState] = useState(() => ({ request, ready: false }));
   if (state.request !== request) setState({ request, ready: false });
   const report = useCallback<Reporter>((ready) => {
-    setState((current) => current.request === request && current.ready !== ready ? { request, ready } : current);
+    // A painted scene stays visible for this identity/lease. Revalidating a
+    // local file must not blank the complete page during normal parent renders.
+    setState((current) => current.request === request && ready && !current.ready ? { request, ready: true } : current);
   }, [request]);
   const visible = !enabled || imageLease.active && state.request === request && state.ready;
   const pending = enabled && imageLease.active && !visible;
@@ -46,10 +50,11 @@ export function DetailHeroScene({ children, enabled = true, identity, style, loa
     const timer = setTimeout(() => { if (active) setLoadingRequest(request); }, 150);
     return () => { active = false; clearTimeout(timer); };
   }, [pending, request]);
-  const background = loadingColor ?? colors.background;
+  const backgroundColor = loadingColor ?? colors.background;
   const tint = loadingTint ?? colors.text;
 
-  return <View style={[styles.root, { backgroundColor: background }, style]}>
+  return <View style={[styles.root, { backgroundColor }, style]}>
+    {background}
     <DetailHeroContext.Provider value={enabled ? report : undefined}>
       <Animated.View testID="detail-hero-scene-content" style={[styles.content, { opacity: visible ? 1 : 0 }]}
         pointerEvents={visible ? 'auto' : 'none'} accessibilityElementsHidden={!visible}
@@ -58,7 +63,7 @@ export function DetailHeroScene({ children, enabled = true, identity, style, loa
       </Animated.View>
     </DetailHeroContext.Provider>
     {pending && loadingRequest === request ? <View testID="detail-hero-loading"
-      style={[StyleSheet.absoluteFill, { backgroundColor: background }]}>
+      style={[StyleSheet.absoluteFill, { backgroundColor: background ? 'transparent' : backgroundColor }]}>
       <BackChevron size={28} color={tint} onPress={onCancel}
         style={[styles.back, { top: insets.top + spacing.sm }]} />
       <View pointerEvents="none" style={styles.loading}>

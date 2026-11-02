@@ -17,6 +17,8 @@ import { MoreFromArtist } from '@/components/MoreFromArtist';
 import { PlaylistPickerSheet } from '@/components/PlaylistPickerSheet';
 import { TrackListSkeleton } from '@/components/TrackListSkeleton';
 import { TrackListView } from '@/components/TrackListView';
+import { PrimuseAlbumLoading } from '@/components/primuse/PrimuseAlbumLoading';
+import { FrequentlyPlayedSection } from '@/components/FrequentlyPlayedSection';
 import { ArtistPagePaletteProvider, useArtistPagePalette } from '@/components/volta/ArtistPagePalette';
 import { useDownloadMessage } from '@/hooks/useDownloadMessage';
 import { useFavoriteIds } from '@/hooks/useFavoriteIds';
@@ -130,6 +132,7 @@ export default function AlbumScreen() {
   useTheme();
   const appleMusic = useSettings((s) => s.uiStyle === 'appleMusic');
   const albumStyle = useSettings((s) => s.albumStyle);
+  const primuse = albumStyle === 'primuse';
   const artistLayout = albumStyle === 'artist';
   const minidisc = albumStyle === 'minidisc' && appleMusic;
   const focused = useIsFocused();
@@ -157,7 +160,7 @@ export default function AlbumScreen() {
   // `data.album.starred` from the detail becomes stale after star/unstar.
   const favAlbumIds = useFavoriteIds(canFetch, 'album');
 
-  const { data: fresh, isLoading, isError, refetch } = useQuery({
+  const { data: fresh, isLoading, refetch } = useQuery({
     queryKey: ['album', id],
     queryFn: () => getAlbum(id),
     enabled: canFetch && !!id,
@@ -183,7 +186,7 @@ export default function AlbumScreen() {
   const lastGood = useRef(fresh);
   if (fresh && fresh.songs.length > 0) lastGood.current = fresh;
   const data = vanished ? (lastGood.current ?? fresh) : fresh;
-  const displayedCover = data ? coverArtUrl(data.album.coverArt ?? data.album.id, appleMusic || artistLayout ? COVER.full : COVER.card) : undefined;
+  const displayedCover = data ? coverArtUrl(data.album.coverArt ?? data.album.id, appleMusic || artistLayout || primuse ? COVER.full : COVER.card) : undefined;
   const albumPalette = useMinidiscAlbumPalette(minidisc ? displayedCover : undefined, offline);
 
   const discHeaders = useMemo(
@@ -211,10 +214,12 @@ export default function AlbumScreen() {
   }, [download.status]);
 
   if (isLoading) {
-    return <TrackListSkeleton />;
+    return primuse ? <PrimuseAlbumLoading uri={coverArtUrl(id, COVER.full)} offline={offline} focused={focused} /> : <TrackListSkeleton />;
   }
 
-  if (isError || !data) {
+  // A failed background refresh must not replace the already-rendered album
+  // with the light-theme error page. The last valid query remains playable.
+  if (!data) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center' }}>
         <BackButton />
@@ -275,10 +280,13 @@ export default function AlbumScreen() {
 
   return (
     <ArtistPagePaletteProvider value={minidisc ? albumPalette : undefined}>
-      {artistLayout && appleMusic && focused ? <><StatusBar style="light" /><NavigationBar style="light" /></> : null}
+      {(primuse || artistLayout && appleMusic) && focused ? <><StatusBar style="light" /><NavigationBar style="light" /></> : null}
       <TrackListView
+        primuseAlbumPresentation={primuse ? { sourceHref: `/album/${id}`,
+          meta: [...yearParts, songsLabel(data.songs.length, lang), ...(totalSec > 0 ? [formatTotalDuration(totalSec)] : [])].join(' · '),
+        } : undefined}
         albumArtistPresentation={artistLayout ? { sourceHref: `/album/${id}` } : undefined}
-        albumActionLayout={appleMusic && !minidisc && !artistLayout ? 'volta' : undefined}
+        albumActionLayout={appleMusic && !minidisc && !artistLayout && !primuse ? 'volta' : undefined}
         albumPresentation={minidisc ? {
           palette: albumPalette,
           meta: [genres[0], ...yearParts].filter(Boolean).join(' · '),
@@ -312,8 +320,10 @@ export default function AlbumScreen() {
         }}
         download={!offline ? { ...download, onPress: onDownloadPress } : undefined}
         footer={
-          data.album.artistId || labelText || minidisc ? (
+          data.songs.length > 0 || data.album.artistId || labelText || minidisc ? (
             <>
+              <FrequentlyPlayedSection songs={data.songs} sourceName={data.album.name} sourceHref={`/album/${id}`}
+                style={{ marginTop: spacing.xl }} />
               {minidisc ? <Text style={{ color: albumPalette.textSecondary, fontSize: fontSize.xs,
                 lineHeight: 19, marginTop: spacing.lg }}>{metaParts.join(' · ')}</Text> : null}
               {data.album.artistId ? (

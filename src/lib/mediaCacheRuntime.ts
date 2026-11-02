@@ -17,8 +17,10 @@ export function makeMediaCacheRuntime(auth: SubsonicAuth, profile: string, curre
   let indexedArtists: Artist[] | undefined;
   let nativeArtists = auth.serverType === 'navidrome' && !!(auth.ndPassword ?? auth.password);
   const check = () => { if (!current()) throw new MediaCacheStopped('user'); };
-  async function request<T>(work: () => Promise<T>): Promise<T> {
-    check(); const result = await withSpeculativeSlot(current, work); check();
+  async function request<T>(work: () => Promise<T>, active = current): Promise<T> {
+    if (!active()) throw new MediaCacheStopped('user');
+    const result = await withSpeculativeSlot(active, work);
+    if (!active()) throw new MediaCacheStopped('user');
     if (result === undefined) throw new MediaCacheStopped('user');
     return result;
   }
@@ -47,38 +49,40 @@ export function makeMediaCacheRuntime(auth: SubsonicAuth, profile: string, curre
       indexedArtists ??= await request(() => Backend.getArtists(auth));
       return indexedArtists.slice(offset, offset + size).map((artist) => ({ kind, id: artist.id, data: artist }));
     },
-    process: async (task: MediaCacheTask, context: { signal: AbortSignal }): Promise<MediaCacheOutcome> => {
+    process: async (task: MediaCacheTask, context: { signal: AbortSignal; current?: () => boolean }): Promise<MediaCacheOutcome> => {
+      const active = () => current() && !context.signal.aborted && (!context.current || context.current());
+      const check = () => { if (!active()) throw new MediaCacheStopped('user'); };
       check();
       if (task.kind === 'lyrics') {
         const { song, source } = task.data as { song: Song; source: LyricsSource };
         const old = await Db.lyricsCacheState(profile, song.id, source); check();
         if (old) return old;
-        const lyrics = await request(() => getSongLyrics(song, source, { strict: true, stillCurrent: current }));
+        const lyrics = await request(() => getSongLyrics(song, source, { strict: true, stillCurrent: active, cache: 'caller' }), active);
         check();
         if (!lyrics?.lines.some((line) => line.value.trim())) {
-          await Db.saveMissingLyrics(profile, song.id, source, current); return 'missing';
+          await Db.saveMissingLyrics(profile, song.id, source, active); return 'missing';
         }
-        await Db.saveLyrics(profile, song.id, source, lyrics, current); return 'success';
+        await Db.saveLyrics(profile, song.id, source, lyrics, active); return 'success';
       }
       if (task.kind === 'albumCovers') {
         const album = task.data as Album;
         if (album.coverArt === '') return 'missing';
         const from = album.coverArt ?? album.id;
-        const result = await cacheManagedCover(profile, auth, { from, keys: [from, album.id], size: Backend.COVER.full }, current, context.signal);
+        const result = await cacheManagedCover(profile, auth, { from, keys: [from, album.id], size: Backend.COVER.full }, active, context.signal);
         return result.outcome;
       }
       const artist = task.data as Artist;
       const old = await Db.readSavedArtist(profile, artist.id); check();
       const fresh = old?.detail && old.info && Date.now() - old.detailAt < ARTIST_METADATA_AGE
         && Date.now() - old.infoAt < ARTIST_METADATA_AGE;
-      const detail = fresh ? old.detail! : await request(() => Backend.getArtist(auth, artist.id));
+      const detail = fresh ? old.detail! : await request(() => Backend.getArtist(auth, artist.id), active);
       check();
-      if (!fresh) await Db.saveArtistDetail(profile, artist.id, detail, current);
+      if (!fresh) await Db.saveArtistDetail(profile, artist.id, detail, active);
       check();
-      const info = fresh ? old.info! : await request(() => Backend.getArtistInfo(auth, artist.id));
+      const info = fresh ? old.info! : await request(() => Backend.getArtistInfo(auth, artist.id), active);
       check();
       if (!info.imageUrl && detail.artist.coverArt === '') {
-        await Db.saveArtistInfo(profile, artist.id, info, undefined, current); return 'missing';
+        await Db.saveArtistInfo(profile, artist.id, info, undefined, active); return 'missing';
       }
       const from = detail.artist.coverArt || `ar-${artist.id}`;
       // A real cover hash can request the application's 1200px hero tier.
@@ -86,9 +90,9 @@ export function makeMediaCacheRuntime(auth: SubsonicAuth, profile: string, curre
       // resize; do not mistake that smaller response for a full hero. Other
       // servers without an artist cover hash retain their supplied large art.
       const result = await cacheManagedCover(profile, auth, { from, url: detail.artist.coverArt ? undefined : info.imageUrl,
-        keys: [from, artist.id], size: Backend.COVER.full }, current, context.signal);
+        keys: [from, artist.id], size: Backend.COVER.full }, active, context.signal);
       check();
-      await Db.saveArtistInfo(profile, artist.id, info, result.uri, current);
+      await Db.saveArtistInfo(profile, artist.id, info, result.uri, active);
       check();
       // SQLite owns the full-library cache. Refresh already-opened queries,
       // without creating two in-memory metadata entries for every unseen artist.

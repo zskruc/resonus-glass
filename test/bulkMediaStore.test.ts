@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { awaitMediaCacheWork, MediaCacheStopped, runBulkMediaWorker } from '../src/lib/bulkMediaWorker';
 import * as types from '../src/lib/mediaCacheTypes';
+import { sanitizeMediaCacheFailure } from '../src/lib/mediaCacheFailure';
 
 const source = ts.transpileModule(readFileSync(new URL('../src/store/bulkMediaCache.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -52,6 +53,8 @@ function harness() {
   let saveGate: ((profile: string) => Promise<void>) | undefined;
   let retryGate: ((profile: string) => Promise<void>) | undefined;
   let pageGate: ((profile: string) => Promise<void>) | undefined;
+  let processError: unknown;
+  const warnings: unknown[][] = [];
   const profileRows = (profile: string) => {
     if (!rows.has(profile)) rows.set(profile, []);
     return rows.get(profile)!;
@@ -77,6 +80,8 @@ function harness() {
     },
     nextMediaCacheTask: async (profile: string, selected: types.MediaCacheKind[]) =>
       profileRows(profile).find((row) => row.result === 'pending' && selected.includes(row.task.kind))?.task,
+    nextMediaCacheLyrics: async (profile: string, limit: number) =>
+      profileRows(profile).filter((row) => row.result === 'pending' && row.task.kind === 'lyrics').slice(0, limit).map((row) => row.task),
     finishMediaCacheTask: async (profile: string, task: types.MediaCacheTask, outcome: types.MediaCacheOutcome) => {
       profileRows(profile).find((row) => row.task.id === task.id && row.task.kind === task.kind)!.result = outcome;
     },
@@ -116,19 +121,21 @@ function harness() {
       runBulkMediaWorker({ ...options, yield: options.yield ?? (async () => {}) }),
       MediaCacheStopped, awaitMediaCacheWork },
     '@/lib/mediaCacheDb': db, '@/lib/mediaCacheTypes': types,
+    '@/lib/mediaCacheFailure': { sanitizeMediaCacheFailure },
     '@/lib/mediaCacheRuntime': { makeMediaCacheRuntime: (owner: Auth) => ({
       page: async (kind: types.MediaCacheKind, offset: number) => {
         calls.page.push(owner.username); await pageGate?.(owner.username);
         return offset === 0 ? [{ kind, id: owner.username, data: {} }] : [];
       },
-      process: async () => { calls.process.push(owner.username); return 'success'; },
+      process: async () => { calls.process.push(owner.username); if (processError) throw processError; return 'success'; },
     }) },
     './auth': { useAuthStore: auth }, './networkType': { useNetworkType: network }, './settings': { useSettings: settings },
   };
   const exported: Record<string, any> = {};
-  runInNewContext(source, { exports: exported, AbortController,
+  runInNewContext(source, { exports: exported, AbortController, console: { warn: (...args: unknown[]) => { warnings.push(args); } },
     require(name: string) { assert.ok(Object.hasOwn(dependencies, name), `Unexpected bulk-store import ${name}`); return dependencies[name]; } });
-  return { store: exported.useBulkMediaCache, auth, settings, network, calls, jobs, rows, leases, platform,
+  return { store: exported.useBulkMediaCache, auth, settings, network, calls, jobs, rows, leases, platform, warnings,
+    processFailure: (error: unknown) => { processError = error; },
     gateAcquire: (gate: typeof acquireGate) => { acquireGate = gate; },
     interrupt: (index: number, reason: Interruption) => { const record = leases[index]; record.healthy = false;
       if (record.current()) record.interrupt(reason); },
@@ -139,6 +146,20 @@ function harness() {
     appState: (state: string) => { app.currentState = state; for (const listener of appListeners) listener(state); },
   };
 }
+
+test('the actual store logs only the sanitized task failure and preserves its failed result', async () => {
+  const h = harness();
+  h.processFailure({ name: 'SubsonicRequestError', network: true, message: 'https://user:password@private.test/token',
+    stack: 'SubsonicRequestError: private lyrics\n at work (address at index.android.bundle:1:12345)' });
+  await h.store.getState().start(['lyrics']);
+  assert.equal(h.warnings.length, 1); assert.equal(h.warnings[0][0], '[media-cache-failure]');
+  const body = JSON.parse(h.warnings[0][1] as string);
+  assert.deepEqual(body, { kind: 'lyrics', id: 'A', errorChain: [{ name: 'SubsonicRequestError', network: true }],
+    locations: [{ line: 1, column: 12345 }] });
+  assert.equal(h.store.getState().stats.lyrics.failed, 1);
+  assert.equal(h.store.getState().stats.lyrics.missing, 0);
+  assert.equal(h.store.getState().status, 'completed');
+});
 
 test('a Start waiting for saved state cannot become permission to scan the newly selected account', async () => {
   const h = harness(), gate = deferred<void>(); h.gateRead((profile) => profile === 'A' ? gate.promise : Promise.resolve());
@@ -209,6 +230,92 @@ test('preflight keeps offline and Wi-Fi policy, while native protection enforces
     assert.equal(h.store.getState().status, 'paused'); assert.equal(h.store.getState().reason, reason);
     assert.deepEqual(h.calls.page, []); assert.deepEqual(h.calls.process, []);
   }
+});
+
+test('explicit Start and Continue inspect fresh Wi-Fi before stale disconnected or cellular cache can veto them', async () => {
+  for (const action of ['start', 'resume'] as const) for (const stale of ['disconnected', 'cellular'] as const) {
+    const h = harness(); let probes = 0;
+    const saved = types.newMediaCacheJob(['artistCovers']);
+    saved.status = 'paused'; saved.reason = 'offline';
+    saved.cursors.artistCovers = { offset: 200, complete: true };
+    h.jobs.set('A', saved);
+    h.rows.set('A', [
+      { task: { kind: 'artistCovers', id: 'existing', data: {} }, result: 'success' },
+      { task: { kind: 'artistCovers', id: 'pending', data: {} }, result: 'pending' },
+    ]);
+    await h.store.getState().load();
+    h.network.setState(stale === 'disconnected' ? { connected: false, cellular: false } : { connected: true, cellular: true });
+    h.networkRequest(async () => { probes++; return { type: 'WIFI', isConnected: true, isInternetReachable: true }; });
+    if (action === 'start') await h.store.getState().start(['lyrics']);
+    else await h.store.getState().resume();
+    assert.equal(probes, 1, `${action}/${stale} must inspect the actual connection`);
+    assert.equal(h.store.getState().status, 'completed');
+    assert.equal(h.calls.process.length, 1);
+    if (action === 'resume') {
+      assert.deepEqual(h.calls.begin, [], 'Continue never resets the persisted task');
+      assert.equal(h.rows.get('A')?.length, 2);
+      assert.equal(h.rows.get('A')?.[0].result, 'success');
+      assert.equal(h.jobs.get('A')?.cursors.artistCovers.offset, 200);
+      assert.deepEqual(h.calls.page, [], 'completed discovery cursors remain complete');
+    }
+  }
+});
+
+test('manual offline mode blocks explicit work before network inspection or native protection', async () => {
+  for (const action of ['start', 'resume'] as const) {
+    const h = harness(); let probes = 0;
+    h.auth.setState({ offline: true });
+    h.networkRequest(async () => { probes++; return { type: 'WIFI', isConnected: true, isInternetReachable: true }; });
+    if (action === 'start') await h.store.getState().start(['lyrics']);
+    else await h.store.getState().resume();
+    assert.equal(probes, 0); assert.equal(h.leases.length, 0);
+    assert.equal(h.store.getState().status, 'paused'); assert.equal(h.store.getState().reason, 'offline');
+    assert.deepEqual(h.calls.page, []); assert.deepEqual(h.calls.process, []);
+  }
+});
+
+test('fresh offline and cellular connections still enforce connection and Wi-Fi-only policy', async () => {
+  for (const reason of ['offline', 'wifi'] as const) {
+    const h = harness(); let probes = 0;
+    h.networkRequest(async () => { probes++; return reason === 'offline'
+      ? { type: 'WIFI', isConnected: false, isInternetReachable: false }
+      : { type: 'CELLULAR', isConnected: true, isInternetReachable: true }; });
+    await h.store.getState().resume();
+    assert.equal(probes, 1); assert.equal(h.store.getState().status, 'paused');
+    assert.equal(h.store.getState().reason, reason);
+    assert.deepEqual(h.calls.page, []); assert.deepEqual(h.calls.process, []);
+    assert.equal(h.leases[0].released, 1);
+  }
+});
+
+test('a network event during inspection is not overwritten by an older Wi-Fi probe result', async () => {
+  for (const reason of ['offline', 'wifi'] as const) {
+    const h = harness(), probe = deferred<{ type: string; isConnected: boolean; isInternetReachable: boolean }>();
+    h.networkRequest(() => probe.promise);
+    const work = h.store.getState().resume(); await tick();
+    h.network.setState(reason === 'offline' ? { connected: false } : { cellular: true });
+    probe.resolve({ type: 'WIFI', isConnected: true, isInternetReachable: true });
+    await work;
+    assert.equal(h.store.getState().status, 'paused'); assert.equal(h.store.getState().reason, reason);
+    assert.deepEqual(h.calls.page, []); assert.deepEqual(h.calls.process, []);
+  }
+});
+
+test('fresh Wi-Fi remains authoritative over stale store values until a new connection event arrives', async () => {
+  const h = harness(), page = deferred<void>();
+  h.network.setState({ connected: false, cellular: true });
+  h.gatePage(() => page.promise);
+  const work = h.store.getState().resume(); await tick();
+  assert.equal(h.store.getState().status, 'discovering');
+  assert.equal(h.network.getState().connected, true, 'refresh the change-only watcher baseline');
+  assert.equal(h.network.getState().cellular, false);
+  h.auth.setState({ offline: false });
+  h.settings.setState({ downloadWifiOnly: false }); h.settings.setState({ downloadWifiOnly: true });
+  assert.equal(h.store.getState().status, 'discovering', 'unrelated subscriptions cannot re-read the stale network snapshot');
+  h.network.setState({ connected: false, cellular: false }); await work;
+  assert.equal(h.store.getState().status, 'paused'); assert.equal(h.store.getState().reason, 'offline');
+  assert.deepEqual(h.calls.process, []);
+  page.resolve(); await tick();
 });
 
 test('an old failed preflight checkpoint cannot overwrite another account while its disk save finishes', async () => {

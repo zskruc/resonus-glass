@@ -35,6 +35,7 @@ import { isFlac, isMp4, readFlacTags, readMp4Tags } from './containerTags';
 import { base64ToUint8, parseID3, type ID3Tags } from './id3';
 import * as Db from './localDb';
 import { getItem, setItem } from './storage';
+import { createCoverIndex } from './coverIndex';
 
 const AUDIO_EXT = /\.(mp3|flac|m4a|aac|ogg|opus|wav|wma|alac|aif|aiff)$/i;
 
@@ -932,10 +933,10 @@ async function fillArtistKeys(src: Db.Source): Promise<void> {
 
 // ── The cover index ───────────────────────────────────────────────────────
 
-const coverIndex = new Map<string, string>();
+const coverIndex = createCoverIndex();
 
-export function registerCover(id: string, uri?: string) {
-  if (uri && !coverIndex.has(id)) coverIndex.set(id, uri);
+export function registerCover(id: string, uri?: string, size = 0) {
+  coverIndex.register(id, uri, size);
 }
 
 /**
@@ -945,21 +946,22 @@ export function registerCover(id: string, uri?: string) {
  * An artist's own picture arriving where an album cover was standing in for it
  * is the case this exists for.
  */
-export function replaceCover(id: string, uri?: string) {
-  if (uri) coverIndex.set(id, uri);
+export function replaceCover(id: string, uri?: string, size = 0) {
+  coverIndex.replace(id, uri, size);
 }
 
 /** Takes one out, for a picture whose file is being deleted. */
 export function forgetCover(id: string) {
-  coverIndex.delete(id);
+  coverIndex.forget(id);
 }
 
 export function localCoverUrl(id: string | undefined): string | undefined {
-  if (!id) return undefined;
-  // A playlist's own uploaded cover already arrives as a file URI.
-  if (id.startsWith('file://')) return id;
-  return coverIndex.get(id);
+  return coverIndex.uri(id);
 }
+
+/** Zero means a legacy file whose resolution has not been established. */
+export const localCoverSize = coverIndex.size;
+export const subscribeLocalCover = coverIndex.subscribe;
 
 /** Throws away the cached catalog and covers, as when the source changes. */
 export function clearLocalCatalog(): void {
