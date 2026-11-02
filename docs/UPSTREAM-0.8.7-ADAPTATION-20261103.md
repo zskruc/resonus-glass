@@ -38,7 +38,7 @@ This is a selective adaptation of the two approved batches, including prerequisi
 - Native UPnP release compilation and **19 production-code JUnit tests** passed.
 - Cases cover playlist duplicates/permission/complete offline snapshots and automatic-save/Undo ownership; count migration/failed-save ordering; local SQLite podcast migration and feed pruning; pause/cancel/network changes and accepted commits; long-form resume/source/seek ownership; and download-catalog invalidation/account races.
 
-No Samsung, live RSS publishing server, or physical DLNA receiver has been used in this adaptation task. A real receiver is still required to validate renderer-specific behavior. A successful build or test run is not a claim of sustained device frame rate or Samsung acceptance.
+The original build-only stage used no device. Subsequent Samsung smoke checks are recorded below. A real receiver is still required to validate renderer-specific behavior. A successful build or test run is not a claim of sustained device frame rate or complete device acceptance.
 
 ## APK / 安装包
 
@@ -53,3 +53,17 @@ No Samsung, live RSS publishing server, or physical DLNA receiver has been used 
 - Release build completed with the existing build script. APK metadata, build/check logs and the private machine receipt are retained under `.local-cache/upstream-review-20261102-146/`; they are not public release assets.
 
 No GitHub publication or release is performed by this build-only adaptation task.
+
+## Samsung smoke check / 三星基本检查
+
+2026-11-03，Samsung SM-S9380 / Android 17，使用现有签名从 code 146 覆盖安装到 **147**，系统回读版本为 `0.8.7.1-preview.1`。未卸载、清除资料或改动实际歌单顺序。
+
+- 首页保留原登录状态、暂停中的歌曲、Mini Player 与玻璃底栏。
+- 探索的「下载内容」可列出本机缓存专辑；播客空状态及添加入口显示正常。
+- 有声书设置的中文、默认关闭的进度开关、10 秒回退量及书架入口正常；当前未检出符合媒介标签的有声书，显示有效空状态，没有启用开关或清除进度。
+- 大歌单可打开并显示歌曲与操作菜单；本轮没有执行会写入实际顺序的拖动或删除。
+- Mini Player 主体点击展开播放器、封面下拉回到 Mini Player、退后台再返回的稳定画面正常。早先一次名称区域的自动点击未确认导航，后续主体点击确认展开；不据此声称所有触点均已验收。
+- 同一应用进程维持到检查结束；本轮 PID 日志未出现致命异常、JS 异常或 OOM，系统退出记录没有本轮新增异常退出。旧的内存回收记录早于本次安装，不冒充新版本结果。日志中有非致命的图片读入器回收与下载进度反射回退警告，未观察到对应业务失败。
+- 已回读确认恢复 **30000ms 息屏 / 充电常亮 0**，停止本轮日志采集；结束时返回首页并保留原歌曲的暂停状态。
+
+本轮不包含真实播客下载／锁屏续传、带媒介标签的有声书续播、实际歌单排序保存、DLNA 接收设备或持续帧率验收。私人屏幕和原始日志保存在本机忽略目录，不作为公开截图上传。
