@@ -13,6 +13,38 @@ preserved upstream history.
 Releases before 0.2.1 are only listed on the
 [GitHub releases page](https://github.com/juananzzz/resonus/releases).
 
+## [0.8.7.1-preview.1] - 2026-11-03
+
+### Added
+
+- 探索新增「已下载」专辑筛选；在线也可浏览本机离线专辑，沿用当前封面、列表／网格与滚动联动。
+- 播客节目／单集收藏、收听进度、断点续播、已播标记、手动下载及逐节目「下载新单集」。播客下载接入现有统一队列、1–20 并发、进度、暂停／继续／取消和后台工作保护。
+- 有声书书架、按账号保存的章节位置与可跨章节回退的「继续播放」，设置中提供保存开关、回退时间和清除进度。
+
+### Changed
+
+- 歌单排序使用独立覆盖层，落下后自动串行保存最新顺序；普通 FlashList 和详情背景保持挂载，保留原布局与玻璃参数。
+- 音乐库刷新失败保留已有内容；补齐离线可用性、下载标识、艺人长按菜单、过滤与返回搜索，创建歌单后直接打开。
+- 设置页根据实际底栏／Mini Player 和安全区动态预留底部空间。
+
+### Fixed
+
+- 本地播放次数按账号隔离，安全继承旧记录并保留恢复副本；记录有界，延迟保存与失败重试不再覆盖更新的计数。
+- 歌单编辑重新核对权限、完整序列、重复歌曲和账号；离线排序保留未下载条目，延迟删除与撤销不覆盖新账号或后续编辑。
+- 成组适配 DLNA 投放状态与切曲修复；播放器恢复队列和下载目录读取增加归属／代际校验，拒绝旧异步结果。
+
+### Notes
+
+- 本地 ARM64 测试包，Android `versionCode 147`。保留 Glass 包名、签名、现有布局、AMLL 播放器及玻璃参数；不表示完整合并上游 0.8.7。
+- 播客自动下载仅针对启用后发现的新单集，每批最多 3 集。启动、回到前台或刷新节目时检查，不是 App 被终止后的持续 RSS 轮询；手动离线和下载全暂停仍有效。
+- 本轮未发布 GitHub Release；设备验收结果另行记录，不以自动检查代替三星／真实投放设备验证。来源与完整范围见[适配说明](./docs/UPSTREAM-0.8.7-ADAPTATION-20261103.md)。
+
+### English
+
+- Adds downloaded-album browsing, podcast favorites/resume/downloads/new-episode automation through the existing managed queue, and a profile-owned audiobook shelf/resume workflow.
+- Adapts playlist drag auto-save without replacing the normal FlashList, improves library refresh/offline behavior and dynamic settings padding, and retains all current page styles and glass profiles.
+- Fixes profile-owned play counts, stale queue/catalog results, playlist mutation safeguards and DLNA queue progression. Local ARM64 preview, code `147`; not a complete upstream merge. No GitHub publication or device acceptance is implied. See the adaptation notes for sources and limits.
+
 ## [0.8.5.2-preview.14] - 2026-11-02
 
 ### Added

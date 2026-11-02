@@ -24,6 +24,7 @@ import { useDownloadMessage } from '@/hooks/useDownloadMessage';
 import { useFavoriteIds } from '@/hooks/useFavoriteIds';
 import { useMinidiscAlbumPalette } from '@/hooks/useMinidiscAlbumPalette';
 import { songsLabel, useT } from '@/i18n';
+import { useAudiobookResume } from '@/hooks/useAudiobookResume';
 import { formatTotalDuration } from '@/lib/format';
 import { useAuthStore } from '@/store/auth';
 import { groupDownloadState, useDownloads } from '@/store/downloads';
@@ -186,6 +187,8 @@ export default function AlbumScreen() {
   const lastGood = useRef(fresh);
   if (fresh && fresh.songs.length > 0) lastGood.current = fresh;
   const data = vanished ? (lastGood.current ?? fresh) : fresh;
+  const resumeSongs = useMemo(() => data?.songs ?? [], [data?.songs]);
+  const { resumeAction } = useAudiobookResume(data?.album, resumeSongs, `/album/${id}`);
   const displayedCover = data ? coverArtUrl(data.album.coverArt ?? data.album.id, appleMusic || artistLayout || primuse ? COVER.full : COVER.card) : undefined;
   const albumPalette = useMinidiscAlbumPalette(minidisc ? displayedCover : undefined, offline);
 
@@ -282,6 +285,7 @@ export default function AlbumScreen() {
     <ArtistPagePaletteProvider value={minidisc ? albumPalette : undefined}>
       {(primuse || artistLayout && appleMusic) && focused ? <><StatusBar style="light" /><NavigationBar style="light" /></> : null}
       <TrackListView
+        resumeAction={resumeAction}
         primuseAlbumPresentation={primuse ? { sourceHref: `/album/${id}`,
           meta: [...yearParts, songsLabel(data.songs.length, lang), ...(totalSec > 0 ? [formatTotalDuration(totalSec)] : [])].join(' · '),
         } : undefined}

@@ -5,6 +5,7 @@ import { create } from 'zustand';
 import { isLanguage, LANGUAGE_NAMES, type Language } from '@/i18n/languages';
 import { type TabSegment } from '@/lib/tabOrigin';
 import { hashKey } from '@/lib/localLibrary';
+import { cleanAudiobookContinueRewindSec } from '@/lib/audiobook';
 import { normalizeHomeTitle } from '@/lib/homeTitle';
 import { normalizeAccentSource, type AccentSource } from '@/lib/appAccent';
 import { normalizeAlbumStyle, normalizePlaylistStyle, normalizeUiStyle, type AlbumStyle, type PlaylistStyle, type UiStyle } from '@/lib/uiStyle';
@@ -171,7 +172,8 @@ export type GridKey =
   | 'browsePlaylists'
   | 'browseSongs'
   | 'discography'
-  | 'genre';
+  | 'genre'
+  | 'audiobooks';
 
 /**
  * How a grid is remembered on a big screen, which is not the same answer.
@@ -194,6 +196,7 @@ export const GRID_DEFAULT_COLUMNS: Record<GridKey, number> = {
   browseSongs: 2,
   discography: 2,
   genre: 2,
+  audiobooks: 2,
 };
 
 /** What the menu offers. Two is a poster, four is about as far as a cover can
@@ -502,7 +505,8 @@ export type HomeChipKey =
   | 'genres'
   | 'podcasts'
   | 'radio'
-  | 'history';
+  | 'history'
+  | 'audiobooks';
 
 /** Chip with its state (order is determined by its position in the list). */
 export interface HomeChip {
@@ -520,6 +524,7 @@ const HOME_CHIP_KEYS: HomeChipKey[] = [
   'podcasts',
   'radio',
   'history',
+  'audiobooks',
 ];
 
 /** Default order and state: the usual ones, all hidden until
@@ -534,6 +539,7 @@ export const DEFAULT_HOME_CHIPS: HomeChip[] = [
   { key: 'genres', enabled: false },
   { key: 'podcasts', enabled: false },
   { key: 'radio', enabled: false },
+  { key: 'audiobooks', enabled: false },
 ];
 
 /** One of the pills at the top of Explore. `genres`, `radio` and `folders`
@@ -546,7 +552,8 @@ export type ExploreSectionKey =
   | 'genres'
   | 'radio'
   | 'podcasts'
-  | 'folders';
+  | 'folders'
+  | 'downloads';
 
 /** A section with its state, the shape the Home chips already have (order is
  *  its position in the list). */
@@ -564,6 +571,7 @@ const EXPLORE_SECTION_KEYS: ExploreSectionKey[] = [
   'radio',
   'podcasts',
   'folders',
+  'downloads',
 ];
 
 /**
@@ -834,6 +842,9 @@ type CustomSetter =
   | 'setBackgroundTint';
 
 interface SettingsState extends Omit<AutoSetters, CustomSetter> {
+  saveAudiobookProgress: boolean;
+  audiobookContinueRewindSec: number;
+  audiobooksLayout: ListLayout;
   /** Streaming quality over Wi-Fi (and any non-cellular network). */
   maxBitRate: number;
   /** Streaming quality over cellular. */
@@ -1239,6 +1250,9 @@ function snapshot(get: () => SettingsState): Persisted {
 
 /** Factory default values for all preferences. */
 const DEFAULTS = {
+  saveAudiobookProgress: false,
+  audiobookContinueRewindSec: 10,
+  audiobooksLayout: 'grid' as ListLayout,
   maxBitRate: 0,
   maxBitRateCellular: 0,
   downloadBitRate: 0,
@@ -1417,6 +1431,7 @@ function autoSetters(
   for (const key of PERSISTED_KEYS) {
     out[`set${key[0].toUpperCase()}${key.slice(1)}`] = (value) => {
       if (key === 'downloadConcurrency') value = normalizeDownloadConcurrency(value);
+      if (key === 'audiobookContinueRewindSec') value = cleanAudiobookContinueRewindSec(typeof value === 'number' ? value : 10);
       if (key === 'albumStyle') value = normalizeAlbumStyle(value);
       if (key === 'playlistStyle') value = normalizePlaylistStyle(value);
       set({ [key]: value } as Partial<SettingsState>);
@@ -1474,6 +1489,8 @@ function applySaved(raw: unknown, set: (partial: Partial<SettingsState>) => void
     if (typeof DEFAULTS[key] === 'boolean' && typeof value === 'boolean') flags[key] = value;
   }
   set(flags as Partial<SettingsState>);
+  if (parsed.audiobookContinueRewindSec !== undefined) set({ audiobookContinueRewindSec: cleanAudiobookContinueRewindSec(parsed.audiobookContinueRewindSec) });
+  if (parsed.audiobooksLayout === 'grid' || parsed.audiobooksLayout === 'list') set({ audiobooksLayout: parsed.audiobooksLayout });
   set({ uiStyle: normalizeUiStyle(parsed.uiStyle) });
   set({ albumStyle: normalizeAlbumStyle(parsed.albumStyle) });
   set({ playlistStyle: normalizePlaylistStyle(parsed.playlistStyle) });

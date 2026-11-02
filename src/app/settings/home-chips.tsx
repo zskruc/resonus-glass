@@ -43,6 +43,7 @@ const LABEL: Record<HomeChipKey, string> = {
   songs: 'Songs',
   genres: 'Genres',
   podcasts: 'Podcasts',
+  audiobooks: 'Audiobooks',
   radio: 'Radio',
   history: 'History',
 };

@@ -10,7 +10,7 @@ import { usePlayCounts } from '@/store/playCounts';
 import { usePlayHistory } from '@/store/playHistory';
 import { type Album, type Artist, type ArtistInfo, type GuestAlbum, type Playlist, type SearchResult, type Song, type SongListSort, type StarType, type Starred } from '@/api/subsonic';
 import { queryClient } from '@/lib/query';
-import { deleteItem, getItem, setItem } from '@/lib/storage';
+import { deleteItem, getItem, setItem, setItemStrict } from '@/lib/storage';
 import { activeServerDir, getDownloadShelf, getDownloadsCatalog } from '@/store/downloads';
 import * as Cat from './downloadsDb';
 import * as LocalCat from './localDb';
@@ -1006,7 +1006,7 @@ export async function editPlaylistTracklist(id: string, edit: (ids: string[]) =>
   const next = list.map((playlist) => playlist.id === id ? { ...playlist, songIds: ids } : playlist);
   // Capture the storage key before the write. A profile switch during native
   // persistence cannot write these IDs into the replacement account.
-  await setItem(key, JSON.stringify(next));
+  await setItemStrict(key, JSON.stringify(next));
   if (current() && playlistsKey() === key) { playlistCache = next; playlistCacheKey = key; }
   return ids;
 }

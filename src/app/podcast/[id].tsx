@@ -3,7 +3,7 @@ import Animated from 'react-native-reanimated';
 import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { GlassPressable } from '@/components/glass';
 import { useQuery } from '@tanstack/react-query';
-import { useLocalSearchParams } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -14,7 +14,11 @@ import {
   View,
 } from 'react-native';
 
-import { getChannel, listEpisodes, episodeToSong, refreshChannel, type PodcastEpisode } from '@/api/podcasts';
+import { getChannel, listEpisodes, episodeToSong, refreshChannel, podcastCover, playedEpisodeIds, type PodcastEpisode } from '@/api/podcasts';
+import { isManualOffline } from '@/api/netGate';
+import { openPodcastMenu, openPodcastEpisodeMenu } from '@/components/PodcastMenuSheet';
+import { usePodcastDownloads } from '@/store/podcastDownloads';
+import { usePodcastFavoriteIds } from '@/lib/podcastFavorites';
 import { COVER, coverArtUrl } from '@/api/data';
 import { BackButton } from '@/components/BackButton';
 import { Cover } from '@/components/Cover';
@@ -53,6 +57,11 @@ export default function PodcastScreen() {
   const playQueue = usePlayerStore((s) => s.playQueue);
   const playingId = usePlayerStore((s) => currentSong(s)?.id);
   const [refreshing, setRefreshing] = useState(false);
+  const files = usePodcastDownloads((state) => state.files);
+  const favorites = usePodcastFavoriteIds();
+  const played = useQuery({ queryKey: ['podcastPlayed', id], queryFn: () => playedEpisodeIds(id), enabled: !!id });
+  const refetchPlayed = played.refetch;
+  useFocusEffect(useCallback(() => { void refetchPlayed(); }, [refetchPlayed]));
 
   const channel = useQuery({
     queryKey: ['podcastChannel', id],
@@ -91,7 +100,8 @@ export default function PodcastScreen() {
     (list: PodcastEpisode[], from: number) => {
       const ch = channel.data;
       if (!ch) return;
-      const playable = list.filter((e) => !!e.url);
+      const playable = list.filter((e) => (e.url || files[e.id]) && (!isManualOffline() || files[e.id]));
+      if (!playable.length) { toast(t('Not available offline')); return; }
       const start = playable.findIndex((e) => e.id === list[from]?.id);
       void playQueue(
         playable.map((e) => episodeToSong(e, ch)),
@@ -100,7 +110,7 @@ export default function PodcastScreen() {
         `/podcast/${ch.id}`,
       );
     },
-    [channel.data, playQueue],
+    [channel.data, playQueue, files, toast, t],
   );
 
   if (channel.isLoading || episodes.isLoading) {
@@ -111,7 +121,7 @@ export default function PodcastScreen() {
     );
   }
 
-  if (channel.isError || !channel.data) {
+  if (!channel.data) {
     return (
       <View style={styles.center}>
         <BackButton />
@@ -122,7 +132,7 @@ export default function PodcastScreen() {
 
   const ch = channel.data;
   const list = episodes.data ?? [];
-  const siteUrl = ch.siteUrl;
+  const siteUrl = /^https?:\/\//i.test(ch.siteUrl ?? '') ? ch.siteUrl : undefined;
 
   return (
     <Animated.FlatList
@@ -138,7 +148,7 @@ export default function PodcastScreen() {
       ListHeaderComponent={
         <View style={styles.header}>
           <Cover
-            uri={coverArtUrl(ch.imageUrl, COVER.card)}
+            uri={coverArtUrl(podcastCover(ch), COVER.card)}
             size={160}
             rounded
             placeholderIcon="headset-outline"
@@ -174,17 +184,24 @@ export default function PodcastScreen() {
                 <Text style={styles.secondaryText}>{t('Website')}</Text>
               </GlassPressable>
             ) : null}
+            <GlassPressable variant="regular" style={styles.secondary} onPress={() => openPodcastMenu(ch)} accessibilityLabel={t('More')}>
+              <Icon name="ellipsis-horizontal" size={22} color={colors.text} />
+            </GlassPressable>
           </View>
           {list.length > 0 ? <Text style={styles.sectionTitle}>{t('Episodes')}</Text> : null}
         </View>
       }
       renderItem={({ item, index }: { item: PodcastEpisode; index: number }) => {
         const playing = playingId === item.id;
+        const unavailable = isManualOffline() && !files[item.id];
+        const done = !!played.data?.has(item.id);
+        const fresh = !!ch.newSinceAt && (item.firstSeenAt ?? 0) >= ch.newSinceAt && !done;
         return (
           <Pressable
-            style={({ pressed }) => [styles.episode, pressed && { opacity: 0.6 }]}
-            disabled={!item.url}
-            onPress={() => play(list, index)}
+            style={({ pressed }) => [styles.episode, pressed && { opacity: 0.6 }, unavailable && { opacity: .45 }]}
+            disabled={!item.url && !files[item.id]}
+            onPress={() => unavailable ? toast(t('Not available offline')) : play(list, index)}
+            onLongPress={() => openPodcastEpisodeMenu(ch, item)}
           >
             <View style={{ flex: 1 }}>
               <Text
@@ -194,16 +211,17 @@ export default function PodcastScreen() {
                 {item.title || t('Untitled episode')}
               </Text>
               <Text style={styles.episodeSub} numberOfLines={1}>
-                {[item.publishedAt ? dayLabel(item.publishedAt, lang) : null, formatDuration(item.duration)]
+                {[fresh ? t('New') : done ? t('Played') : null, item.publishedAt ? dayLabel(item.publishedAt, lang) : null, formatDuration(item.duration)]
                   .filter(Boolean)
                   .join(' · ')}
               </Text>
+              {item.description ? <Text style={styles.episodeSub} numberOfLines={2}>{item.description}</Text> : null}
             </View>
-            {item.url ? (
-              <Icon name="play" size={18} color={playing ? colors.accent : colors.textSecondary} />
-            ) : (
-              <Text style={styles.unplayable}>{t('No audio available')}</Text>
-            )}
+            {files[item.id] ? <Icon name="download-outline" size={17} color={colors.accent} /> : null}
+            {favorites.has(item.id) ? <Icon name="heart" size={16} color={colors.accent} /> : null}
+            <Pressable hitSlop={10} onPress={(event) => { event.stopPropagation(); openPodcastEpisodeMenu(ch, item); }} accessibilityLabel={t('More')}>
+              <Icon name="ellipsis-horizontal" size={22} color={colors.textSecondary} />
+            </Pressable>
           </Pressable>
         );
       }}

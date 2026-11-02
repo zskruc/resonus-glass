@@ -216,6 +216,8 @@ interface Props {
    * reshuffle).
    */
   addAction?: { label: string; icon?: keyof typeof Icon.glyphMap; onPress: () => void };
+  /** Optional long-form listening position; ordinary albums render no row. */
+  resumeAction?: { label: string; detail: string; onPress: () => void };
   /** Extra content at the bottom of the list (e.g. "More from this artist"). */
   footer?: ReactNode;
   /** What to show below the header when there are no songs (e.g. empty playlist). */
@@ -241,6 +243,8 @@ interface Props {
     onAddTo?: (songs: Song[]) => void;
     /** Bulk download. */
     onDownload?: (songs: Song[]) => void;
+    /** Open the canonical-order drag surface without replacing this recycler. */
+    onReorder?: () => void;
     /** Favorites screen: there, "Remove" already is unfavouriting. */
     favorites?: boolean;
   };
@@ -280,6 +284,7 @@ export function TrackListView({
   playlistIndices,
   onSort,
   addAction,
+  resumeAction,
   footer,
   emptyState,
   showArtwork,
@@ -1149,6 +1154,16 @@ export function TrackListView({
             ) : null}
           </View>
             )}
+            {!searching && resumeAction ? <GlassPressable variant="subtle" buttonMaterial={false}
+              accessibilityRole="button" accessibilityLabel={`${resumeAction.label}, ${resumeAction.detail}`}
+              onPress={resumeAction.onPress} style={[styles.resumeRow,
+                { backgroundColor: pagePalette?.controlFill ?? colors.surface }]}>
+              <Icon name="play-circle-outline" size={24} color={pagePalette?.text ?? colors.text} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.resumeLabel, { color: pagePalette?.text ?? colors.text }]} numberOfLines={1}>{resumeAction.label}</Text>
+                <Text style={[styles.resumeDetail, { color: pagePalette?.textSecondary ?? colors.textSecondary }]} numberOfLines={2}>{resumeAction.detail}</Text>
+              </View>
+            </GlassPressable> : null}
           </View>
         }
         extraData={selectedIds}
@@ -1309,6 +1324,11 @@ export function TrackListView({
           // the one behind ⋯.
           actions={[...addToAction, ...(removeAction.length > 0 ? removeAction : downloadAction)]}
           menu={[
+            ...(selection?.onReorder ? [{ icon: 'swap-vertical' as const, label: t('Reorder'), onPress: () => {
+              setSelectedIds(null);
+              justLongPressed.current = null;
+              selection.onReorder?.();
+            } }] : []),
             ...(removeAction.length > 0 ? downloadAction : []),
             ...selectionMenu.actions,
           ]}
@@ -1408,6 +1428,9 @@ const styles = themed((colors) => ({
     justifyContent: 'center',
   },
   addLabel: { color: colors.text, fontSize: fontSize.md, fontWeight: '500' },
+  resumeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, marginTop: 10, marginBottom: 16 },
+  resumeLabel: { fontSize: 15, lineHeight: 20, fontWeight: '600' },
+  resumeDetail: { fontSize: 13, lineHeight: 18, marginTop: 2 },
   discHeader: {
     paddingTop: spacing.md,
     paddingBottom: spacing.xs,

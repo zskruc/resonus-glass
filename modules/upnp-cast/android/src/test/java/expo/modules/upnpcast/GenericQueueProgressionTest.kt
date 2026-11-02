@@ -14,29 +14,28 @@ class GenericQueueProgressionTest {
     assertEquals(2, GenericQueueProgression.nextIndex(3, 2, "REPEAT_ONE"))
   }
 
-  @Test fun retainedPreStopValuesRecogniseShortTrackEnds() {
-    assertTrue(GenericQueueProgression.isNaturalEnd(true, false, 5_000, 6_000))
-    assertTrue(GenericQueueProgression.isNaturalEnd(true, false, 17_000, 19_000))
+  @Test fun nearEndIsMeasuredAgainstTheShorterLength() {
+    assertTrue(GenericQueueProgression.isNearEnd(5_000, 6_000, 0))
+    assertTrue(GenericQueueProgression.isNearEnd(17_000, 19_000, 0))
+    assertFalse(GenericQueueProgression.isNearEnd(2_000, 60_000, 0))
+    // A renderer guessing a transcoded stream at 300 s that runs out at 240 s.
+    assertTrue(GenericQueueProgression.isNearEnd(239_000, 300_000, 240_000))
+    assertFalse(GenericQueueProgression.isNearEnd(100_000, 300_000, 240_000))
   }
 
-  @Test fun explicitOrUnobservedStopsNeverAdvance() {
-    assertFalse(GenericQueueProgression.isNaturalEnd(true, true, 19_000, 19_000))
-    assertFalse(GenericQueueProgression.isNaturalEnd(false, false, 19_000, 19_000))
-    assertFalse(GenericQueueProgression.isNaturalEnd(true, false, 2_000, 60_000))
+  @Test fun unknownLengthIsAnEndOnlyWhenAsked() {
+    assertTrue(GenericQueueProgression.isNearEnd(1_000, 0, 0))
+    assertFalse(GenericQueueProgression.isNearEnd(1_000, 0, 0, unknownIsEnd = false))
   }
 
-  @Test fun unknownDurationMatchesExistingFallbackIntent() {
-    assertTrue(GenericQueueProgression.isNaturalEnd(true, false, 1_000, 0))
-  }
-
-  @Test fun seamlessRendererHandoffIsRecognisedWithoutStoppedOrTrackUri() {
-    assertTrue(GenericQueueProgression.isStagedHandoff("PLAYING", 0, 16_000, 26_000, 28_000, 16_000))
-    assertTrue(GenericQueueProgression.isStagedHandoff("PLAYING", 3_000, 70_000, 14_000, 16_000, 70_000))
-  }
-
-  @Test fun ordinaryProgressOrAnUnrelatedDurationIsNotAHandoff() {
-    assertFalse(GenericQueueProgression.isStagedHandoff("PLAYING", 15_000, 28_000, 14_000, 28_000, 16_000))
-    assertFalse(GenericQueueProgression.isStagedHandoff("PLAYING", 0, 41_000, 26_000, 28_000, 16_000))
-    assertFalse(GenericQueueProgression.isStagedHandoff("PAUSED", 0, 16_000, 26_000, 28_000, 16_000))
+  @Test fun addressesCompareAsRenderersHandThemBack() {
+    val url = "http://nas:4533/rest/stream.view?id=a%2Fb&u=me&t=x+y"
+    assertTrue(GenericQueueProgression.sameUri(url, url))
+    assertTrue(GenericQueueProgression.sameUri(url, url.replace("&", "&amp;")))
+    assertTrue(GenericQueueProgression.sameUri(url, "http://nas:4533/rest/stream.view?id=a/b&u=me&t=x+y"))
+    assertTrue(GenericQueueProgression.sameUri(" $url ", url))
+    assertFalse(GenericQueueProgression.sameUri(url, url.replace("id=a", "id=c")))
+    assertFalse(GenericQueueProgression.sameUri(url, ""))
+    assertFalse(GenericQueueProgression.sameUri(null, url))
   }
 }

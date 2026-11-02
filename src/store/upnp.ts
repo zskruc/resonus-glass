@@ -14,6 +14,7 @@ import { COVER } from '@/api/data';
 import { transcodeTarget } from '@/lib/audioQuality';
 import { localFileUrl, publishLocalFiles, stopLocalHttp } from '@/lib/localHttp';
 import { localCoverUrl } from '@/lib/localLibrary';
+import { note } from '@/lib/perfLog';
 import { useAuthStore } from './auth';
 import { castStop } from './castMedia';
 import { useSettings } from './settings';
@@ -24,8 +25,17 @@ export interface RemoteEvents {
   onConnected: () => void;
   /** Session ended: return to the local player at this position. */
   onDisconnected: (lastPositionSec: number) => void;
-  /** Renderer advanced to a different track in its queue. */
-  onTrackChanged: (index: number, positionSec: number, durationSec: number) => void;
+  /**
+   * The renderer went away (stopped answering) or another app took it over.
+   * Said just before the disconnect that follows, so the player can tell why.
+   */
+  onLost?: (reason: 'unreachable' | 'replaced', deviceName: string) => void;
+  /**
+   * Renderer advanced to a different track in its queue. `id` is the song it
+   * plays, when the native side knows it: the index alone can point at the
+   * wrong song in a queue reordered since the native copy was synced.
+   */
+  onTrackChanged: (index: number, positionSec: number, durationSec: number, id?: string) => void;
   onProgress: (positionSec: number, durationSec: number) => void;
   onPlayingChanged: (isPlaying: boolean, isBuffering: boolean) => void;
   onRepeatChanged?: (repeat: 'off' | 'all' | 'one') => void;
@@ -68,7 +78,11 @@ interface NativeState {
   nativeQueueManaged?: boolean;
   /** Authoritative zero-based index for a native-managed ordinary renderer. */
   queueIndex?: number;
+  /** The id of the song at `queueIndex`, for a native-managed ordinary renderer. */
+  trackId?: string;
   volume?: number;
+  /** False while the renderer is not answering (the session may yet be lost). */
+  reachable?: boolean;
 }
 
 const native = requireOptionalNativeModule('UpnpCast');
@@ -77,6 +91,8 @@ export const upnpAvailable = !!native;
 
 let events: RemoteEvents | null = null;
 let stateSub: { remove: () => void } | undefined;
+let lostSub: { remove: () => void } | undefined;
+let noteSub: { remove: () => void } | undefined;
 let lastPositionSec = 0;
 let lastDurationSec = 0;
 /** Prevents advancing the queue twice for the same track end. */
@@ -89,6 +105,7 @@ let wasPlaying = false;
 let pausedByUs = false;
 let lastNativeTrackNumber = 0;
 let lastNativeQueueIndex = -1;
+let lastNativeTrackId: string | undefined;
 let lastRemoteRepeat: 'off' | 'all' | 'one' | null = null;
 
 interface CachedDevice {
@@ -126,10 +143,19 @@ function repeatForPlayMode(playMode?: string): 'off' | 'all' | 'one' | null {
 
 function onNativeState(e: NativeState) {
   if (!isUpnpConnected()) return;
+  // Not answering: the clock is not to be read, and the player shows it is
+  // waiting on something. Either it comes back or the session is lost.
+  if (e.reachable === false) {
+    events?.onPlayingChanged(true, true);
+    return;
+  }
   if (e.volume != null && e.volume >= 0) {
     events?.onVolumeChanged?.(e.volume / 100);
   }
-  const repeat = repeatForPlayMode(e.playMode);
+  // A queue kept natively repeats by what the app told it. The renderer's own
+  // mode is not ours to follow: taken as the app's, a renderer saying REPEAT_ONE
+  // held the queue on one track (#285).
+  const repeat = e.nativeQueueManaged ? null : repeatForPlayMode(e.playMode);
   if (repeat != null && repeat !== lastRemoteRepeat) {
     lastRemoteRepeat = repeat;
     events?.onRepeatChanged?.(repeat);
@@ -141,10 +167,15 @@ function onNativeState(e: NativeState) {
   if (pos > 0) lastPositionSec = pos;
   if (dur > 0) lastDurationSec = dur;
   if (e.nativeQueueManaged && nativeQueueIndex >= 0) {
-    const changed = nativeQueueIndex !== lastNativeQueueIndex;
+    // Followed by the song's id when there is one: a queue reordered here
+    // (shuffle) keeps the native copy's index pointing at another song until
+    // the next sync, and following the index put the wrong one on screen.
+    const trackId = e.trackId || undefined;
+    const changed = trackId ? trackId !== lastNativeTrackId : nativeQueueIndex !== lastNativeQueueIndex;
     lastNativeQueueIndex = nativeQueueIndex;
+    lastNativeTrackId = trackId;
     if (changed && !loading) {
-      events?.onTrackChanged(nativeQueueIndex, pos, dur || lastDurationSec);
+      events?.onTrackChanged(nativeQueueIndex, pos, dur || lastDurationSec, trackId);
     }
   } else if (trackNumber > 0) {
     const changed = trackNumber !== lastNativeTrackNumber;
@@ -155,6 +186,10 @@ function onNativeState(e: NativeState) {
   }
   switch (e.playbackState) {
     case 'PLAYING':
+      // A change swallowed while loading (the renderer moving on by itself
+      // just then) is looked at again with the next event; the player
+      // ignores it when it is the song already on screen.
+      if (loading) lastNativeTrackId = undefined;
       loading = false;
       finishedFired = false;
       wasPlaying = true;
@@ -172,6 +207,14 @@ function onNativeState(e: NativeState) {
       break;
     case 'STOPPED':
     case 'IDLE':
+      // The native queue only says STOPPED once it has made up its mind: a
+      // stop halfway by nobody here, or the end of the queue. Between tracks
+      // it says BUFFERING. Shown as paused, so the screen is not left playing
+      // a clock that has stopped (#285); Play picks it up again.
+      if (e.nativeQueueManaged) {
+        if (!loading) events?.onPlayingChanged(false, false);
+        break;
+      }
       // UPnP doesn't distinguish "ended" from "stopped": we infer a natural end
       // from a STOPPED that arrives after having been playing (not a pause we
       // requested). Wide window towards the end (10% of track, min 5 s):
@@ -269,12 +312,17 @@ export async function upnpConnect(device: UpnpDevice): Promise<boolean> {
   lastDurationSec = 0;
   lastNativeTrackNumber = 0;
   lastNativeQueueIndex = -1;
+  lastNativeTrackId = undefined;
   lastRemoteRepeat = null;
   finishedFired = false;
   wasPlaying = false;
   pausedByUs = false;
   stateSub?.remove();
   stateSub = native.addListener('state', onNativeState);
+  lostSub?.remove();
+  lostSub = native.addListener('lost', onNativeLost);
+  noteSub?.remove();
+  noteSub = native.addListener('note', (e: { text: string }) => note(`cast: ${e.text}`));
   useUpnp.setState({ connected: true, deviceId: device.id });
   try {
     const initialVol = (await native.getVolume()) as number;
@@ -288,12 +336,30 @@ export async function upnpConnect(device: UpnpDevice): Promise<boolean> {
   return true;
 }
 
+/**
+ * The native side gave the session up: the renderer stopped answering for long
+ * enough, or another app is playing on it (#285). It has already let go of it,
+ * so this only brings playback back to the phone, saying why.
+ */
+function onNativeLost(e: { reason: string }) {
+  if (!isUpnpConnected()) return;
+  const reason = e.reason === 'replaced' ? 'replaced' : 'unreachable';
+  const name = currentUpnpDevice()?.name ?? '';
+  note(`cast lost (${reason}) on ${name || '?'}`);
+  events?.onLost?.(reason, name);
+  void upnpDisconnect();
+}
+
 /** Cuts the session; with silent it doesn't notify the player (e.g. when switching to cast). */
 export async function upnpDisconnect(silent = false): Promise<void> {
   if (!isUpnpConnected()) return;
   const disconnectedAtSec = lastPositionSec;
   stateSub?.remove();
   stateSub = undefined;
+  lostSub?.remove();
+  lostSub = undefined;
+  noteSub?.remove();
+  noteSub = undefined;
   // Closes the casting media session on any disconnect path
   // (including silent ones: output switch, reset), not just the normal one.
   castStop();
@@ -303,6 +369,7 @@ export async function upnpDisconnect(silent = false): Promise<void> {
   useUpnp.setState({ connected: false, deviceId: null });
   lastNativeTrackNumber = 0;
   lastNativeQueueIndex = -1;
+  lastNativeTrackId = undefined;
   lastRemoteRepeat = null;
   lastPositionSec = 0;
   lastDurationSec = 0;
@@ -441,10 +508,10 @@ function buildUpnpQueuePayload(queue: Song[]) {
     const url = buildUpnpTrackUrl(song);
     if (!url) return null;
     const info = buildUpnpTrackInfo(song);
-    return { url, mime: castMime(song, transcodedTo(song)), ...info };
+    return { id: song.id, url, mime: castMime(song, transcodedTo(song)), ...info };
   });
   if (tracks.some((track) => track == null)) return null;
-  return tracks as (ReturnType<typeof buildUpnpTrackInfo> & { url: string; mime: string })[];
+  return tracks as (ReturnType<typeof buildUpnpTrackInfo> & { id: string; url: string; mime: string })[];
 }
 
 /**

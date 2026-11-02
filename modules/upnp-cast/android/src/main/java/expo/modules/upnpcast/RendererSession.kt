@@ -4,11 +4,23 @@ import android.util.Log
 
 class RendererSession(
   val deviceId: String,
-  val address: String,
-  val location: String,
+  address: String,
+  location: String,
   initialDescription: DeviceDescription
 ) {
   val isSonos: Boolean get() = description.isSonos
+
+  /** The device's own id, the one thing about it that survives a restart. */
+  val udn: String? get() = description.udn
+
+  /** Where the device was last found; a restart can move it (see `relocate`). */
+  @Volatile
+  var address: String = address
+    private set
+
+  @Volatile
+  var location: String = location
+    private set
 
   enum class NextUriResult { ACCEPTED, UNSUPPORTED, FAILED }
 
@@ -793,13 +805,14 @@ class RendererSession(
     ).ok
   }
 
-  suspend fun getVolume(): Int? {
+  suspend fun getVolume(timeoutMs: Int = Soap.DEFAULT_TIMEOUT_MS): Int? {
     val control = renderingControl ?: return null
     val result = Soap.call(
       control,
       Services.RENDERING_CONTROL,
       "GetVolume",
-      "<InstanceID>0</InstanceID><Channel>Master</Channel>"
+      "<InstanceID>0</InstanceID><Channel>Master</Channel>",
+      timeoutMs
     )
     if (!result.ok) return null
     return Soap.argument(result.body, "CurrentVolume")?.toIntOrNull()
@@ -816,23 +829,52 @@ class RendererSession(
     ).ok
   }
 
-  suspend fun state(): State? {
+  /**
+   * One poll of the renderer, or null when it could not be read.
+   *
+   * The state and the position both have to come back: a poll that got the
+   * state but lost the position used to go out as position zero, and the bar
+   * jumped back to the start for a second. The play mode and the volume are
+   * extras, and a poll goes out without them rather than not at all; with
+   * `extras` false they are not asked for, which halves a poll.
+   */
+  suspend fun state(timeoutMs: Int = Soap.POLL_TIMEOUT_MS, extras: Boolean = true): State? {
     val control = avTransport ?: return null
-    val transport = Soap.call(control, Services.AV_TRANSPORT, "GetTransportInfo", INSTANCE)
+    val transport = Soap.call(control, Services.AV_TRANSPORT, "GetTransportInfo", INSTANCE, timeoutMs)
     val playbackState = Soap.argument(transport.body, "CurrentTransportState") ?: return null
-    val position = Soap.call(control, Services.AV_TRANSPORT, "GetPositionInfo", INSTANCE)
-    val settings = Soap.call(control, Services.AV_TRANSPORT, "GetTransportSettings", INSTANCE)
+    val position = Soap.call(control, Services.AV_TRANSPORT, "GetPositionInfo", INSTANCE, timeoutMs)
+    if (!position.ok) return null
+    val settings = if (extras) Soap.call(control, Services.AV_TRANSPORT, "GetTransportSettings", INSTANCE, timeoutMs) else null
     val trackNumber = Soap.argument(position.body, "Track")?.toIntOrNull()
-    val volume = getVolume()
+    val volume = if (extras) getVolume(timeoutMs) else null
     return State(
       playbackState = playbackState,
       positionMs = Didl.parseDuration(Soap.argument(position.body, "RelTime")),
       durationMs = Didl.parseDuration(Soap.argument(position.body, "TrackDuration")),
       trackNumber = trackNumber,
-      playMode = Soap.argument(settings.body, "PlayMode"),
+      playMode = Soap.argument(settings?.body, "PlayMode"),
       currentUri = Soap.argument(position.body, "TrackURI"),
       volume = volume
     )
+  }
+
+  /**
+   * Reads the device's description again from where it was found, and with it
+   * the addresses its services answer on. False when the device did not answer.
+   */
+  suspend fun refreshDescription(): Boolean = refreshControlUrl() != null
+
+  /**
+   * Points the session at the same device found somewhere else: a renderer
+   * that restarts can come back on another port, and an app that serves one
+   * (a TV's, a stick's) often does. Only for the device with this UDN.
+   */
+  suspend fun relocate(newLocation: String, newAddress: String): Boolean {
+    val fresh = Soap.fetch(newLocation)?.let { DeviceDescription.parse(it, newLocation) } ?: return false
+    if (fresh.udn == null || fresh.udn != description.udn) return false
+    location = newLocation
+    address = newAddress
+    return refreshControlUrl() != null
   }
 
   private suspend fun refreshControlUrl(): String? {

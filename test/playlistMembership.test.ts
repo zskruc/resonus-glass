@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import type { Playlist, Song } from '../src/api/subsonic';
 import * as rules from '../src/lib/playlistMembership';
+import * as reorderRules from '../src/lib/playlistReorderRules';
 
 const song = (id: string): Song => ({ id, title: id, duration: 10 });
 const plain = (value: unknown) => JSON.parse(JSON.stringify(value));
@@ -52,7 +53,7 @@ test('edit queue serializes the same playlist, releases failures, and does not b
   assert.equal(await queue.run('one', async () => 4), 4);
 });
 
-function harness(initial: string[] = ['a', 'b', 'a'], localApi: Record<string, unknown> = {}) {
+function harness(initial: string[] = ['a', 'b', 'a'], localApi: Record<string, unknown> = {}, allowReorder = false) {
   const originalAuth = { url: 'https://one.test', username: 'me' };
   const state = { auth: originalAuth as typeof originalAuth | null, offline: false };
   let profile = 'one';
@@ -81,7 +82,10 @@ function harness(initial: string[] = ['a', 'b', 'a'], localApi: Record<string, u
     removeFromPlaylist: async (owner: unknown, id: string, value: number) => {
       calls.push({ action: 'remove', owner, id, value }); tracklist.splice(value, 1); await afterRemove(value);
     },
-    reorderPlaylist: async () => { throw new Error('Must never rewrite an online playlist'); },
+    reorderPlaylist: async (owner: unknown, id: string, ids: string[]) => {
+      if (!allowReorder) throw new Error('Must never rewrite an online playlist');
+      calls.push({ action: 'reorder', owner, id, value: ids.join('|') }); tracklist = ids.map(song);
+    },
   };
   const dependencies: Record<string, unknown> = {
     '@/store/auth': { useAuthStore: { getState: () => state }, profileScopeId: () => profile },
@@ -96,6 +100,7 @@ function harness(initial: string[] = ['a', 'b', 'a'], localApi: Record<string, u
       setQueryData: (key: unknown, update: (value: unknown) => unknown) => cached.push([key, update([playlist])]) } },
     './backend': backend,
     '@/lib/playlistMembership': rules,
+    '@/lib/playlistReorderRules': reorderRules,
     '@/lib/localQueries': localApi,
     '@/store/libraries': { enabledFolderIds: () => ['visible-library-only'] },
   };
@@ -239,7 +244,7 @@ function localHarness() {
     'expo-file-system/legacy': { documentDirectory: 'file:///app/' }, '@/i18n': {},
     '@/store/auth': { profileScopeId: () => profile, useAuthStore: { getState: () => ({ auth: null }) } },
     '@/store/playCounts': {}, '@/store/playHistory': {}, '@/lib/query': {}, '@/store/downloads': {}, './downloadsDb': {}, './localDb': {},
-    '@/lib/storage': { getItem: (key: string) => reader(key), setItem: (key: string, value: string) => writer(key, value) },
+    '@/lib/storage': { getItem: (key: string) => reader(key), setItem: (key: string, value: string) => writer(key, value), setItemStrict: (key: string, value: string) => writer(key, value) },
     './localLibrary': { hashKey: (value: string) => value },
   };
   const api = load('lib/localQueries.ts', dependencies);
@@ -321,4 +326,63 @@ test('pure local picker edits to different playlists share a profile lock and pr
   assert.deepEqual(records[0].songIds, ['missing', 'a', 'x', 'a', 'new']);
   assert.deepEqual(records[1].songIds, []);
   assert.equal(h.calls.length, 0);
+});
+
+
+test('safe reorder preserves duplicate occurrences and the captured original account', async () => {
+  const h = harness(['a', 'b', 'a'], {}, true);
+  await h.api.reorderPlaylist('p', ['a', 'a', 'b'], ['a', 'b', 'a']);
+  assert.deepEqual(plain(h.ids()), ['a', 'a', 'b']);
+  assert.equal(h.calls.filter((value) => value.action === 'reorder').length, 1);
+  assert.equal(h.calls.every((value) => value.owner === h.originalAuth), true);
+});
+
+test('reorder refuses readonly, stale sequence, incomplete metadata and accidental duplicate loss', async () => {
+  for (const problem of ['readonly', 'owner', 'stale', 'partial', 'duplicate']) {
+    const h = harness(['a', 'b', 'a'], {}, true);
+    if (problem === 'readonly') h.setPlaylist({ readonly: true });
+    if (problem === 'owner') h.setPlaylist({ owner: 'someone' });
+    if (problem === 'partial') h.setPlaylist({ songCount: 10 });
+    const expected = problem === 'stale' ? ['b', 'a', 'a'] : ['a', 'b', 'a'];
+    await assert.rejects(h.api.reorderPlaylist('p', problem === 'duplicate' ? ['a', 'b', 'b'] : ['a', 'a', 'b'], expected), /cannot be edited|Playlist changed/);
+    assert.equal(h.calls.some((value) => value.action === 'reorder'), false);
+  }
+});
+
+test('a delayed reorder read cannot write after switching account or entering offline', async () => {
+  for (const change of ['auth', 'profile', 'offline']) {
+    const h = harness(['a', 'b'], {}, true), pending = deferred<ReturnType<typeof h.snapshot>>();
+    h.setReader(() => pending.promise);
+    const work = h.api.reorderPlaylist('p', ['b', 'a'], ['a', 'b']); await tick();
+    if (change === 'auth') h.state.auth = { ...h.originalAuth };
+    if (change === 'profile') h.setProfile('two');
+    if (change === 'offline') h.state.offline = true;
+    pending.resolve(h.snapshot()); await assert.rejects(work, /profile changed/);
+    assert.equal(h.calls.some((value) => value.action === 'reorder'), false);
+  }
+});
+
+test('a local editing snapshot keeps unavailable track occurrences instead of deleting them on reorder', async () => {
+  let ids = ['missing', 'a', 'missing'];
+  const h = harness(['a'], {
+    playlistTracklists: async () => new Map([['p', ids]]),
+    getPlaylist: async () => ({ playlist: { id: 'p', name: 'Local', songCount: 1 }, songs: [song('a')] }),
+    editPlaylistTracklist: async (_id: string, edit: (value: string[]) => string[], current: () => boolean) => {
+      assert.equal(current(), true); ids = edit(ids); return ids;
+    },
+  }, true);
+  h.state.auth = null; h.state.offline = true;
+  const detail = await h.api.getPlaylistForEditing('p');
+  assert.deepEqual(plain(detail.songs.map((value: Song) => value.id)), ids);
+  await h.api.reorderPlaylist('p', ['a', 'missing', 'missing'], ids);
+  assert.deepEqual(plain(ids), ['a', 'missing', 'missing']);
+});
+
+
+test('failed local persistence rejects an automatic reorder and preserves the saved tracklist', async () => {
+  const h = localHarness(), before = h.storage.get('resonus.localPlaylists.local');
+  h.setWriter(async () => { throw new Error('storage full'); });
+  await assert.rejects(h.api.editPlaylistTracklist('lp_p', (ids: string[]) => ids.reverse(), () => true), /storage full/);
+  assert.equal(h.storage.get('resonus.localPlaylists.local'), before);
+  assert.deepEqual(plain((await h.api.playlistTracklists()).get('lp_p')), ['missing', 'a', 'x', 'a']);
 });

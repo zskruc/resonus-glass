@@ -73,6 +73,8 @@ export function VoltaLibraryOverview({
     { label: 'Albums', icon: 'albums-outline', href: '/browse/albums' },
     { label: 'Songs', icon: 'musical-notes-outline', href: '/browse/songs' },
     { label: 'Favorites', icon: 'star-outline', onPress: onFavorites },
+    { label: 'Podcasts', icon: 'headset-outline', href: '/podcast-favorites' },
+    { label: 'Audiobooks', icon: 'book-outline', href: '/audiobooks' },
     ...(auth ? [{ label: 'Downloads & offline', icon: 'download-outline' as const, href: '/settings/downloads' }] : []),
     ...(auth && !offline && auth.serverType !== 'jellyfin' && showFolders
       ? [{ label: 'Folders', icon: 'folder-outline' as const, href: '/explore?section=folders' }]

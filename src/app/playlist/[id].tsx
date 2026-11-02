@@ -3,7 +3,7 @@ import { GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
 import { StatusBar } from 'expo-status-bar';
@@ -14,11 +14,13 @@ import {
   songCoverUrl,
   deletePlaylist,
   getPlaylist,
-  removeFromPlaylist,
+  getPlaylistForEditing,
   reorderPlaylist,
+  replacePlaylistTracklist,
   updatePlaylist,
   addToPlaylist,
   getSimilarSongs,
+  canEditPlaylist,
   COVER,
 } from '@/api/data';
 import { streamUrl } from '@/api/backend';
@@ -45,8 +47,10 @@ import { usePlaylistCover } from '@/hooks/usePlaylistCover';
 import { useSongSort } from '@/hooks/useSongSort';
 import { songsLabel, useT } from '@/i18n';
 import { formatTotalDuration } from '@/lib/format';
+import { createPlaylistOrderWriter, playlistOrderRows } from '@/lib/playlistReorder';
+import { sameTracklist } from '@/lib/playlistMembership';
 import { useSharePicker } from '@/store/sharePicker';
-import { useAuthStore } from '@/store/auth';
+import { profileScopeId, useAuthStore } from '@/store/auth';
 import { useAutoDownloads } from '@/store/autoDownloads';
 import { groupDownloadState, useDownloads } from '@/store/downloads';
 import { usePins } from '@/store/pins';
@@ -59,6 +63,8 @@ const SEED_COUNT = 5;
 const SIMILAR_PER_SEED = 3;
 const SUGGESTION_MAX = 5;
 const SEEDS_AT_ONCE = 2;
+type PlaylistDetail = Awaited<ReturnType<typeof getPlaylist>>;
+type OrderWriter = ReturnType<typeof createPlaylistOrderWriter>;
 
 /** Stops the preview playing on whichever playlist screen started it, so a
  *  second screen never plays over the first. */
@@ -376,6 +382,25 @@ export default function PlaylistScreen() {
   const router = useRouter();
   const auth = useAuthStore((s) => s.auth);
   const offline = useAuthStore((s) => s.offline);
+  const profile = profileScopeId();
+  const orderScope = useMemo(() => ({ id, auth, offline, profile }), [id, auth, offline, profile]);
+  const liveOrderScope = useRef<typeof orderScope | null>(null);
+  const orderWriter = useRef<{ scope: typeof orderScope; writer: OrderWriter; key: string } | null>(null);
+  const openOrderWriter = useRef<OrderWriter | null>(null);
+  const openOrderRequest = useRef<{ scope: typeof orderScope } | null>(null);
+  const nextOrderSession = useRef(0);
+  useLayoutEffect(() => {
+    liveOrderScope.current = orderScope;
+    return () => {
+      if (liveOrderScope.current === orderScope) liveOrderScope.current = null;
+      if (orderWriter.current?.scope === orderScope) {
+        orderWriter.current.writer.dispose();
+        if (openOrderWriter.current === orderWriter.current.writer) openOrderWriter.current = null;
+        orderWriter.current = null;
+      }
+      if (openOrderRequest.current?.scope === orderScope) openOrderRequest.current = null;
+    };
+  }, [orderScope]);
   const t = useT();
   const lang = useSettings((s) => s.language);
   const showListArtwork = useSettings((s) => s.showListArtwork);
@@ -404,7 +429,9 @@ export default function PlaylistScreen() {
   const [confirmRemoveDl, setConfirmRemoveDl] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
   const [coverOpen, setCoverOpen] = useState(false);
-  const [reordering, setReordering] = useState(false);
+  const [reordering, setReordering] = useState<{ scope: typeof orderScope; writer?: OrderWriter; key: string } | null>(null);
+  const [orderBusy, setOrderBusy] = useState<{ scope: typeof orderScope; value: boolean } | null>(null);
+  const [orderRecovery, setOrderRecovery] = useState<{ scope: typeof orderScope; at: number } | null>(null);
   // Songs selected in selection mode pending "add to another".
   const [addingSongs, setAddingSongs] = useState<Song[] | null>(null);
 
@@ -415,11 +442,12 @@ export default function PlaylistScreen() {
     localCoverId: offline ? id : undefined,
   });
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, refetch, dataUpdatedAt, isFetching } = useQuery({
     queryKey: ['playlist', id],
     queryFn: () => getPlaylist(id),
     enabled: (!!auth || offline) && !!id,
   });
+  const orderRecoveryPending = orderRecovery?.scope === orderScope && (isFetching || dataUpdatedAt <= orderRecovery.at);
   const playlistCover = usePlaylistCover(data?.playlist.coverArt ?? data?.playlist.id);
 
   const songIds = (data?.songs ?? []).map((s) => s.id);
@@ -533,25 +561,124 @@ export default function PlaylistScreen() {
     });
   }
 
-  /** Saves the new order (optimistic) and rewrites it on the server. */
-  async function onReorderSave(songIds: string[]) {
-    setReordering(false);
-    // The view goes back to manual order so the just-made change is visible.
-    setSort({ field: 'recent', dir: 'asc' });
-    const key = ['playlist', id];
-    const prev = queryClient.getQueryData<{ playlist: unknown; songs: Song[] }>(key);
-    if (prev) {
-      const byId = new Map(prev.songs.map((s) => [s.id, s]));
-      const songs = songIds.map((sid) => byId.get(sid)).filter(Boolean) as Song[];
-      queryClient.setQueryData(key, { ...prev, songs });
+  function currentOrderScope() {
+    const state = useAuthStore.getState();
+    return liveOrderScope.current === orderScope && profileScopeId() === profile
+      && state.auth === auth && state.offline === offline;
+  }
+
+  function closeReorder() {
+    openOrderRequest.current = null;
+    openOrderWriter.current = null;
+    setReordering(null);
+    const owned = orderWriter.current;
+    if (owned?.scope === orderScope && !owned.writer.busy) {
+      owned.writer.dispose();
+      orderWriter.current = null;
     }
+  }
+
+  /** Open only from the complete, canonical playlist. Ordinary browsing keeps
+   * its existing FlashList, measured header, glass and scroll host mounted. */
+  async function openReorder() {
+    const key = ['playlist', id];
+    const cached = queryClient.getQueryData<PlaylistDetail>(key);
+    const editable = () => {
+      const latest = queryClient.getQueryData<PlaylistDetail>(key);
+      return currentOrderScope() && !!latest && latest.playlist.id === id && canEditPlaylist(latest.playlist);
+    };
+    if (!editable() || !cached || orderRecoveryPending) return;
+    let owned = orderWriter.current;
+    setSort({ field: 'recent', dir: 'asc' });
+    if (owned?.scope === orderScope && owned.writer.busy && owned.writer.active) {
+      openOrderWriter.current = owned.writer;
+      setReordering(owned);
+      return;
+    }
+    owned?.writer.dispose();
+    orderWriter.current = null;
+    const request = { scope: orderScope };
+    openOrderRequest.current = request;
+    const requested = () => currentOrderScope() && openOrderRequest.current === request;
+    const sessionKey = JSON.stringify([profile, id, ++nextOrderSession.current]);
+    setReordering({ scope: orderScope, key: `${sessionKey}:loading` });
     try {
-      await reorderPlaylist(id, songIds);
+      // The ordinary offline browser may hide undownloaded entries and adjust
+      // its count. Editing must instead keep every occurrence, including those
+      // without local audio/metadata, or saving would silently remove them.
+      const complete = await getPlaylistForEditing(id);
+      if (!requested()) return;
+      if (complete.songs.length < 2) {
+        closeReorder();
+        toast(t('Reorder requires at least two songs'));
+        return;
+      }
+      if (!offline) {
+        await queryClient.cancelQueries({ queryKey: key });
+        if (!requested()) return;
+        queryClient.setQueryData(key, complete);
+      }
+      const rows = playlistOrderRows(complete.songs, sessionKey);
+      const writer = createPlaylistOrderWriter(rows, {
+        current: editable,
+        optimistic: async (next, latest) => {
+          // Do not put full editing rows into the filtered offline browser.
+          if (offline || !latest()) return;
+          await queryClient.cancelQueries({ queryKey: key });
+          if (latest()) queryClient.setQueryData<PlaylistDetail>(key, (previous) => previous
+            ? { ...previous, songs: next.map((row) => row.song) } : previous);
+        },
+        write: (ids, expected) => reorderPlaylist(id, ids, expected),
+        failed: async (_error, confirmed) => {
+          if (!editable()) return;
+          const recovery = { scope: orderScope, at: Date.now() };
+          setOrderRecovery(recovery);
+          closeReorder();
+          toast(t("Couldn't complete the action"));
+          await queryClient.cancelQueries({ queryKey: key });
+          if (!currentOrderScope()) return;
+          // A timeout can have reached the server. This is only a temporary
+          // last-confirmed view, never proof that the failed write was undone.
+          if (!offline) queryClient.setQueryData<PlaylistDetail>(key, (previous) => previous
+            ? { ...previous, songs: confirmed.map((row) => row.song) } : previous, { updatedAt: 0 });
+          try {
+            const fresh = await getPlaylist(id);
+            if (currentOrderScope() && orderWriter.current?.writer === writer) {
+              queryClient.setQueryData(key, fresh);
+              setOrderRecovery(null);
+            }
+          } catch {
+            if (currentOrderScope()) void queryClient.invalidateQueries({ queryKey: key });
+          }
+        },
+        busy: (value) => {
+          if (currentOrderScope() && orderWriter.current?.writer === writer) {
+            setOrderBusy({ scope: orderScope, value });
+            if (!value && writer.failed && openOrderWriter.current !== writer) {
+              writer.dispose();
+              orderWriter.current = null;
+            }
+          }
+        },
+        idle: () => {
+          if (!editable() || orderWriter.current?.writer !== writer) return;
+          void queryClient.invalidateQueries({ queryKey: key });
+          void queryClient.invalidateQueries({ queryKey: ['playlists'] });
+          if (openOrderWriter.current !== writer) {
+            writer.dispose();
+            orderWriter.current = null;
+          }
+        },
+      });
+      owned = { scope: orderScope, writer, key: `${sessionKey}:ready` };
+      orderWriter.current = owned;
+      openOrderWriter.current = writer;
+      setReordering(owned);
     } catch {
+      if (!requested()) return;
+      closeReorder();
       toast(t("Couldn't complete the action"));
-    } finally {
-      queryClient.invalidateQueries({ queryKey: key });
-      queryClient.invalidateQueries({ queryKey: ['playlists'] });
+      void queryClient.invalidateQueries({ queryKey: key });
     }
   }
 
@@ -567,61 +694,68 @@ export default function PlaylistScreen() {
     toast(res.isError ? t("Couldn't complete the action") : t('Updated'));
   }
 
-  const canReorder = (data?.songs.length ?? 0) > 1 && (offline || !!auth);
+  const canReorder = !!data && data.playlist.id === id && (offline || data.songs.length > 1) && (offline || !!auth)
+    && canEditPlaylist(data.playlist)
+    && !orderRecoveryPending;
 
   /** Removes several songs (real indices) with deferred delete and undo. */
   function removeMany(indices: number[]) {
     if ((!auth && !offline) || indices.length === 0) return;
     const key = ['playlist', id];
-    const drop = new Set(indices);
+    const prev = queryClient.getQueryData<PlaylistDetail>(key);
+    if (!prev || !canEditPlaylist(prev.playlist)) return;
+    const drop = new Set(indices.filter((index) => Number.isInteger(index) && index >= 0 && index < prev.songs.length));
+    if (!drop.size) return;
+    const expected = prev.songs.map((song) => song.id);
+    let valid = true;
+    const owns = () => valid && profileScopeId() === profile && useAuthStore.getState().auth === auth
+      && useAuthStore.getState().offline === offline;
+    // A deferred toast can outlive its screen. Remember an intervening account
+    // change permanently rather than accepting an A→B→A return five seconds later.
+    const unsubscribe = useAuthStore.subscribe(() => { if (!owns()) { valid = false; unsubscribe(); } });
     // Optimistic: they disappear from the view immediately; the actual delete
     // is deferred until the toast expires. «Undo» cancels it and restores them
     // in place.
-    const prev = queryClient.getQueryData<{ playlist: unknown; songs: Song[] }>(key);
     // Optimistic count in the Library (`songsLabel`): without this the list's
     // subtitle doesn't update until that screen is reloaded.
     const prevList = queryClient.getQueryData<{ id: string; songCount?: number }[]>(['playlists']);
-    if (prev) {
-      const nextSongs = prev.songs.filter((_, i) => !drop.has(i));
-      queryClient.setQueryData(key, { ...prev, songs: nextSongs });
-      queryClient.setQueryData<{ id: string; songCount?: number }[]>(['playlists'], (list) =>
-        list?.map((p) => (p.id === id ? { ...p, songCount: nextSongs.length } : p)),
-      );
-    }
+    const nextSongs = prev.songs.filter((_, i) => !drop.has(i));
+    queryClient.setQueryData(key, { ...prev, playlist: { ...prev.playlist, songCount: nextSongs.length }, songs: nextSongs });
+    queryClient.setQueryData<{ id: string; songCount?: number }[]>(['playlists'], (list) =>
+      list?.map((p) => (p.id === id ? { ...p, songCount: nextSongs.length } : p)),
+    );
     showUndoToast(
-      indices.length === 1
+      drop.size === 1
         ? t('Removed from playlist')
-        : t('{n} removed from playlist', { n: indices.length }),
+        : t('{n} removed from playlist', { n: drop.size }),
       t('Undo'),
       {
         commit: () => {
           void (async () => {
             try {
-            // We rewrite the list to the final state (the original minus the
-            // removed ones) instead of removing by index: it's a "set", identical
-            // online and offline, so there's no index mismatch or double delete
-            // if the deferred commit falls in offline mode. If the result is an
-            // empty list, the index method is the proven one.
-              if (prev) {
-                const finalIds = prev.songs.filter((_, i) => !drop.has(i)).map((s) => s.id);
-                if (finalIds.length > 0) {
-                  await reorderPlaylist(id, finalIds);
-                } else {
-                  for (const i of [...indices].sort((a, b) => b - a)) {
-                    await removeFromPlaylist(id, i);
-                  }
-                }
+              if (!owns()) return;
+              if (offline) {
+                const complete = await getPlaylistForEditing(id);
+                if (!owns()) return;
+                if (!sameTracklist(complete.songs.map((song) => song.id), expected)) throw new Error('Playlist view is not the complete editing sequence');
               }
+              if (!owns()) return;
+              await replacePlaylistTracklist(id, nextSongs.map((song) => song.id), expected);
             } catch {
-              useToast.getState().show(t("Couldn't complete the action"));
+              if (owns()) useToast.getState().show(t("Couldn't complete the action"));
+            } finally {
+              unsubscribe();
+              if (owns()) {
+                void queryClient.invalidateQueries({ queryKey: key });
+                void queryClient.invalidateQueries({ queryKey: ['playlists'] });
+              }
             }
-            queryClient.invalidateQueries({ queryKey: key });
-            queryClient.invalidateQueries({ queryKey: ['playlists'] });
           })();
         },
         undo: () => {
-          if (prev) queryClient.setQueryData(key, prev);
-          else queryClient.invalidateQueries({ queryKey: key });
+          unsubscribe();
+          if (!owns()) return;
+          queryClient.setQueryData(key, prev);
           if (prevList) queryClient.setQueryData(['playlists'], prevList);
         },
       },
@@ -646,18 +780,7 @@ export default function PlaylistScreen() {
     );
   }
 
-  // Reordering always works on the manual order (raw server), not on the
-  // A-Z/date sorted view.
-  if (reordering) {
-    return (
-      <PlaylistReorder
-        songs={data.songs}
-        title={data.playlist.name}
-        onCancel={() => setReordering(false)}
-        onSave={(ids) => void onReorderSave(ids)}
-      />
-    );
-  }
+  const orderMode = focused && canReorder && reordering?.scope === orderScope && (!reordering.writer || reordering.writer.active) ? reordering : null;
 
   const totalSec = data.songs.reduce((acc, s) => acc + (s.duration ?? 0), 0);
   const metaParts = [t('Playlist'), songsLabel(data.songs.length, lang)];
@@ -667,6 +790,8 @@ export default function PlaylistScreen() {
     <>
       {(playlistStyle === 'primuse' || playlistStyle === 'artist' && appleMusic) && focused
         ? <><StatusBar style="light" /><NavigationBar style="light" /></> : null}
+      <View style={{ flex: 1 }} pointerEvents={orderMode ? 'none' : 'auto'}
+        accessibilityElementsHidden={!!orderMode} importantForAccessibility={orderMode ? 'no-hide-descendants' : 'auto'}>
       <TrackListView
         playlistPresentation
         primuseAlbumPresentation={playlistStyle === 'primuse'
@@ -709,7 +834,8 @@ export default function PlaylistScreen() {
           />
         }
         selection={{
-          onRemove: (_sel, indices) => removeMany(indices),
+          onRemove: canEditPlaylist(data.playlist) ? (_sel, indices) => removeMany(indices) : undefined,
+          onReorder: canReorder ? openReorder : undefined,
           onAddTo: (sel) => setAddingSongs(sel),
           onDownload: !offline
             ? (sel) => {
@@ -732,6 +858,11 @@ export default function PlaylistScreen() {
           playQueue(displaySongs, start, data.playlist.name, `/playlist/${id}`, opts)
         }
       />
+      </View>
+      {orderMode ? <PlaylistReorder key={orderMode.key} rows={orderMode.writer?.rows ?? []}
+        title={data.playlist.name} loading={!orderMode.writer} busy={!orderMode.writer || orderBusy?.scope === orderScope && orderBusy.value}
+        valid={() => currentOrderScope() && !!orderMode.writer && orderWriter.current?.writer === orderMode.writer && orderMode.writer.active}
+        onClose={closeReorder} onOrder={(next) => orderMode.writer?.enqueue(next) ?? false} /> : null}
       <PlaylistPickerSheet
         songs={addingSongs}
         excludeId={id}
@@ -817,7 +948,7 @@ export default function PlaylistScreen() {
               <Pressable
                 style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
                 onPress={() => {
-                  close(() => setReordering(true));
+                  close(openReorder);
                 }}
               >
                 <Icon name="swap-vertical" size={24} color={colors.text} />

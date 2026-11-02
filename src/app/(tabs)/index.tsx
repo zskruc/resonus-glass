@@ -751,6 +751,7 @@ const CHIPS: Record<HomeChipKey, { href?: string; icon: keyof typeof Icon.glyphM
   songs: { href: '/browse/songs', icon: 'musical-notes-outline', label: 'Songs' },
   genres: { href: '/genres', icon: 'pricetags-outline', label: 'Genres' },
   podcasts: { href: '/podcasts', icon: 'headset-outline', label: 'Podcasts' },
+  audiobooks: { href: '/audiobooks', icon: 'book-outline', label: 'Audiobooks' },
   radio: { href: '/radio', icon: 'radio-outline', label: 'Radio' },
   history: { href: '/history', icon: 'time-outline', label: 'History' },
 };
@@ -758,6 +759,7 @@ const CHIPS: Record<HomeChipKey, { href?: string; icon: keyof typeof Icon.glyphM
 // Locally there is shuffle, albums, artists and songs (radio and genres are
 // server-side).
 const OFFLINE_KEYS = new Set<HomeChipKey>([
+  'audiobooks',
   'shuffle',
   'favorites',
   'albums',

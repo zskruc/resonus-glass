@@ -34,6 +34,7 @@ const SCOPED_KEYS = [
   'resonus.autodl',
   'resonus.localFavorites',
   'resonus.localPlaylists',
+  'resonus.localPlayCounts',
   'resonus.librarySizes',
   'resonus.lyricOffsets',
 ];

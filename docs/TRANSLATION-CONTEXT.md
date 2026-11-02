@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 1132 of them.
+Every string the app can show, under the screen it shows up on. 1162 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -19,6 +19,7 @@ you are actually typing into, which is easier than reading it here.
 
 | String | What it is |
 | --- | --- |
+| `Continue playing` |  |
 | `Couldn't load the album.` | Error on the screen, with a Retry button |
 | `Disc {n}` | Heading over the songs of one disc of a multi-disc album. `{n}` is its number |
 | `Find in playlist` | Placeholder of the search box hidden above a tracklist, for finding a song within it |
@@ -32,7 +33,6 @@ you are actually typing into, which is easier than reading it here.
 | --- | --- |
 | `{app} {new} is out. You have {old}.` |  |
 | `{app} {new} is out. You have {old}. The download is about {mb} MB.` |  |
-| `{n} minutes` | A value of the sleep timer, in minutes from now |
 | `{n} more` | Under a heading of the update prompt: how many more lines of that kind the release notes have |
 | `{n} songs, {size}, copied into a folder of their own.` | The line under that title |
 | `1 day` | How long a shared link lasts, counted from the moment it is made |
@@ -69,6 +69,7 @@ you are actually typing into, which is easier than reading it here.
 | `Genre` | Label of a field in the song information sheet |
 | `Go to album` | Leave this sheet and open the album the song is on |
 | `Go to artist` | Leave this sheet and open the artist |
+| `Go to artist radio` |  |
 | `Lyric poster` |  |
 | `Lyrics tools` |  |
 | `Mix of “{name}”` | What the player calls the queue once it has grown past its album into songs the app picked itself. `{name}` is the song it was grown from |
@@ -80,7 +81,6 @@ you are actually typing into, which is easier than reading it here.
 | `Open settings` | Its confirm button: goes to Android's own settings, not the app's |
 | `Pick a date…` | Opens the calendar to choose the day the link stops working |
 | `Pin to top` | Keep this at the top of its list, above everything else. `Unpin` undoes it |
-| `Playback speed` |  |
 | `Playback stopped` | The mini player when there is nothing playing any more |
 | `Plays` | How many times the song has been played |
 | `Previous` | Player control: the previous track (accessibility label) |
@@ -102,7 +102,6 @@ you are actually typing into, which is easier than reading it here.
 | `Share “{name}”` | The sheet's title, with what is being shared |
 | `Shuffle favorites` | Shortcut on the app's launcher icon (long press). Short: launchers cut long labels |
 | `Size` | The size of the quick grid tiles |
-| `Sleep timer` | Stop playing after a while, for falling asleep to |
 | `Sleep timer ({n} min left)` | The menu row while it is counting down. `{n}` is minutes still to go |
 | `Sleep timer (end of song)` | The same row when it is set to stop at the end of this song |
 | `Sleep timer off` | The toast that says it was turned off |
@@ -114,7 +113,6 @@ you are actually typing into, which is easier than reading it here.
 | `This song carries no information.` | Empty state: the file and the server had nothing to say |
 | `Track` | The track number on its album. Not the song itself |
 | `Try again` |  |
-| `Turn off` | Turn off the sleep timer |
 | `Unknown title` | Fallback when the file and the server have no title |
 | `Unpin` | Stop keeping it at the top of its list |
 | `Update` | The button that installs a newer version of Resonus. A verb, not a noun: `Update it`, not `An update` |
@@ -136,7 +134,6 @@ you are actually typing into, which is easier than reading it here.
 | `All songs` |  |
 | `Appears on` | Albums the artist appears on: features, compilations |
 | `Audio dramas` | Shelf heading: a play performed for the ear, with several voices rather than one narrator. Radio drama is the same thing where that name is the familiar one |
-| `Audiobooks` | Shelf heading: a book read aloud by one narrator, no music |
 | `Broadcasts` | Shelf heading: records of something first put out on radio, television or as a podcast |
 | `Compilations` | Shelf heading: records collecting older recordings, a “best of” or a various-artists collection |
 | `Couldn't load the artist.` | Error on the screen, with a Retry button |
@@ -167,7 +164,6 @@ you are actually typing into, which is easier than reading it here.
 | --- | --- |
 | `Appears on` | Albums the artist appears on: features, compilations |
 | `Audio dramas` | Shelf heading: a play performed for the ear, with several voices rather than one narrator. Radio drama is the same thing where that name is the familiar one |
-| `Audiobooks` | Shelf heading: a book read aloud by one narrator, no music |
 | `Broadcasts` | Shelf heading: records of something first put out on radio, television or as a podcast |
 | `Compilations` | Shelf heading: records collecting older recordings, a “best of” or a various-artists collection |
 | `Couldn't load the artist.` | Error on the screen, with a Retry button |
@@ -194,6 +190,14 @@ you are actually typing into, which is easier than reading it here.
 | `No songs here yet` |  |
 | `Nothing to change` | Answer to favouriting a selection that already is one, or unfavouriting one that isn't |
 | `Try exploring another artist.` |  |
+
+## Audiobooks
+
+| String | What it is |
+| --- | --- |
+| `Albums tagged as audiobooks, spoken word or audio drama appear here.` |  |
+| `Audiobooks` | Shelf heading: a book read aloud by one narrator, no music |
+| `No audiobooks yet` |  |
 
 ## Browse › Albums
 
@@ -247,7 +251,6 @@ you are actually typing into, which is easier than reading it here.
 
 | String | What it is |
 | --- | --- |
-| `Add podcast` |  |
 | `Add station` | Title of the sheet for adding an internet radio station |
 | `Couldn't load folders.` | Error on the screen, with a Retry button |
 | `Couldn't load playlists.` | Error on the screen, with a Retry button |
@@ -351,15 +354,20 @@ you are actually typing into, which is easier than reading it here.
 | `Couldn't load artists.` | Error on the screen, with a Retry button |
 | `Couldn't load playlists.` | Error on the screen, with a Retry button |
 | `Couldn't load your library.` |  |
+| `Couldn't refresh your library.` |  |
 | `Create your first playlist to get started.` | The line under an empty state |
+| `Episode` |  |
+| `Favorite shows or episodes to see them here.` |  |
+| `Go to artist radio` |  |
 | `Grid view` | Show the list as cards in a grid |
 | `List view` | Show it as rows, one under the other |
 | `No favorite albums` | Empty state heading on the favourites tab |
 | `No favorite artists` | Empty state heading on the favourites tab |
+| `No favorite podcasts` |  |
 | `No playlists yet` | Empty state heading |
 | `Nothing here yet` |  |
 | `Playlist` | A list saved on the server. Not the queue |
-| `Playlist created` | The toast after making one |
+| `Podcast` |  |
 | `Public` |  |
 | `Recently added` | A sort order, and a section: newest first (in Favorites, last favorited first) |
 | `Star albums to see them here.` | The line under an empty state, saying how to fill it |
@@ -466,13 +474,11 @@ you are actually typing into, which is easier than reading it here.
 | `Now playing` | Heading on the queue screen over the song sounding right now. The player's own label is `NOW PLAYING`, a different string |
 | `NOW PLAYING` | Small label above the cover, in the same place and style as `PLAYING FROM`, when there is nothing to name |
 | `Output` |  |
-| `Playback speed` |  |
 | `Playback stopped` | The mini player when there is nothing playing any more |
 | `PLAYING FROM` | Small label above the cover, followed by the name of the album, playlist or mix it is playing from, or by `Queue` while the song is one that was added to the queue by hand. Written in capitals by the design, so it can be capitals in your language too, or not, whichever reads right |
 | `Previous` | Player control: the previous track (accessibility label) |
 | `Quality & playback` |  |
 | `Quality follows the source and playback settings; the output device may process audio separately.` |  |
-| `Queue` | The list of songs waiting to play. Not a playlist |
 | `Radio` | Internet radio stations. Most languages keep the word |
 | `Remote volume` |  |
 | `Remove from the group` | The − beside `Add to the group`, and the same in reverse: it takes that room out of the group so it stops playing along. Read out by the screen reader, never shown, and Sonos only |
@@ -483,7 +489,6 @@ you are actually typing into, which is easier than reading it here.
 | `Show cover` | Lyrics screen: the button that goes back to the cover art |
 | `Show remaining time` |  |
 | `Show total time` |  |
-| `Sleep timer` | Stop playing after a while, for falling asleep to |
 | `Song info` |  |
 | `Streamed audio` |  |
 | `Synchronized with the phone volume buttons` |  |
@@ -509,6 +514,7 @@ you are actually typing into, which is easier than reading it here.
 | `Auto-download on` | The toast that says it was turned on |
 | `Based on the tracks in this playlist` | Subtitle under the suggested tracks heading |
 | `Change cover` | Replace the cover image of a playlist or station |
+| `Changes are saved automatically` |  |
 | `Confirm your password` | Changing a cover on the server needs the password again. It is not a new password being set |
 | `Couldn't load the playlist.` | Error on the screen, with a Retry button |
 | `Couldn't update the cover` | Toast: the upload failed |
@@ -525,9 +531,10 @@ you are actually typing into, which is easier than reading it here.
 | `Playlist updated` | Toast after saving a change |
 | `Playlists are not available in offline mode.` | Shown instead of a playlist when there is no connection |
 | `Public playlist` | Toggle that makes a playlist public on the server |
-| `Refresh` | Ask the server for this playlist again, in case it changed elsewhere. Also the button under suggested tracks to regenerate them |
 | `Remove cover` | Screen reader label for the small x on a chosen picture |
 | `Removed from playlist` | Toast, with an undo button next to it |
+| `Reorder requires at least two songs` |  |
+| `Saving…` |  |
 | `Share` | Make a link on the server that others can open. Getting the file itself out is `Export` |
 | `Suggested tracks` | Section heading at the bottom of a playlist: songs the server recommends based on what is already in the playlist |
 | `This playlist is empty` | Empty state heading |
@@ -548,20 +555,30 @@ you are actually typing into, which is easier than reading it here.
 | `Couldn't load this podcast.` |  |
 | `Couldn't read this feed` |  |
 | `Episodes` |  |
-| `No audio available` |  |
+| `New` |  |
 | `No episodes` |  |
 | `Play latest` |  |
+| `Played` |  |
 | `Pull down to read the feed again.` |  |
 | `This podcast's feed could not be read, so these episodes may be out of date.` |  |
 | `Untitled episode` |  |
 | `Website` |  |
+
+## Podcast favorites
+
+| String | What it is |
+| --- | --- |
+| `Couldn't load your library.` |  |
+| `Favorite shows or episodes to see them here.` |  |
+| `No favorite podcasts` |  |
+| `Podcast` |  |
+| `Podcasts` |  |
 
 ## Podcasts
 
 | String | What it is |
 | --- | --- |
 | `{n} podcast feeds could not be read.` |  |
-| `Add podcast` |  |
 | `Couldn't load your podcasts.` |  |
 | `Couldn't reach any of your podcast feeds.` |  |
 | `Couldn't read that feed.` |  |
@@ -571,16 +588,11 @@ you are actually typing into, which is easier than reading it here.
 | `No episodes yet` |  |
 | `No podcast found for “{term}”. Try pasting the feed address below.` |  |
 | `No podcasts` |  |
-| `Open website` |  |
 | `Podcasts` |  |
-| `Refresh` | Ask the server for this playlist again, in case it changed elsewhere. Also the button under suggested tracks to regenerate them |
-| `Remove “{name}” and its episodes from this device?` |  |
 | `Search for a podcast` |  |
 | `Search for a show, or paste the address of a feed below.` |  |
 | `Subscribe` |  |
 | `Tap + to subscribe to a show.` |  |
-| `Unsubscribe` |  |
-| `Unsubscribed from “{name}”` |  |
 
 ## Queue
 
@@ -596,7 +608,6 @@ you are actually typing into, which is easier than reading it here.
 | `Next in queue` | Queue screen header: the track that plays next |
 | `Now playing` | Heading on the queue screen over the song sounding right now. The player's own label is `NOW PLAYING`, a different string |
 | `Play a song or album to start the queue.` | The line under the empty queue |
-| `Queue` | The list of songs waiting to play. Not a playlist |
 | `Queue brought over` | The toast that says it worked |
 | `Queue cleared` | Toast |
 | `Removed from queue` | Toast |
@@ -696,6 +707,21 @@ you are actually typing into, which is easier than reading it here.
 | `You're on the latest version` | Answer when that check finds nothing newer |
 | `Your preferences will be replaced by the ones in the file. Your language and accounts stay.` |  |
 | `Your preferences will go back to their defaults. Your language stays.` | The line under that dialog |
+
+## Settings › Audiobooks
+
+| String | What it is |
+| --- | --- |
+| `Audiobook progress could not be saved. Existing positions are retained.` |  |
+| `Audiobook progress deleted` |  |
+| `Audiobooks` | Shelf heading: a book read aloud by one narrator, no music |
+| `Browse audiobooks` |  |
+| `Continue can rewind through earlier chapters. Chapters of unknown length are not skipped.` | The line under “Rewind on resume”, explaining it |
+| `Delete audiobook progress` |  |
+| `Delete saved audiobook positions for all profiles on this device?` |  |
+| `Remember where you stopped in audiobooks. Saved on this device for each profile.` |  |
+| `Rewind on resume` |  |
+| `Save audiobook progress` |  |
 
 ## Settings › Cache
 
@@ -1056,7 +1082,6 @@ you are actually typing into, which is easier than reading it here.
 | String | What it is |
 | --- | --- |
 | `{n} hours` |  |
-| `{n} minutes` | A value of the sleep timer, in minutes from now |
 | `{n} seconds` |  |
 | `A session counts after 30 seconds, or half of a shorter song.` |  |
 | `All-time most played` |  |
@@ -1337,7 +1362,6 @@ you are actually typing into, which is easier than reading it here.
 | `Previous and next` | One of the values of “Buttons next to play” |
 | `Previous appearance` | One of the values of “Floating popup glass” |
 | `Previous button` | What the previous button does when a song is already playing. Its values are the two lines below it |
-| `Queue` | The list of songs waiting to play. Not a playlist |
 | `Regular font weight` | One of the values of “Lyrics weight” |
 | `Resonus layout` |  |
 | `Restart, then previous track` | A value of `Previous button`: the first press goes back to the start of this song, the second to the one before |
@@ -1542,6 +1566,7 @@ you are actually typing into, which is easier than reading it here.
 | --- | --- |
 | `“{name}” will no longer be available offline.` | The line under that title. `{name}` is the album, artist or playlist |
 | `{n} columns` | The other options in that menu: cards, this many across. `{n}` is 2, 3 or 4, so it is always plural |
+| `{n} minutes` | A value of the sleep timer, in minutes from now |
 | `{n} of {m} songs exported` | Toast when only some of them made it |
 | `{n} of {songs}` |  |
 | `{n} removed from favorites` | Toast. `{n}` is a count of songs |
@@ -1550,10 +1575,12 @@ you are actually typing into, which is easier than reading it here.
 | `{n} songs deleted` | Toast after deleting downloads. `{n}` is how many files went |
 | `{n} songs downloaded` | Toast: a whole album or playlist finished |
 | `{n} songs exported` | Toast when it finished |
+| `{name} is playing something else` |  |
 | `{songs} need about {size}, but only {free} is free. The download may stop partway.` | The same line when the phone is nearly full |
 | `{songs} will be saved to this device (about {size}).` | The same line when the size is known. `{size}` is like "340 MB" |
 | `{songs} will be saved to this device.` | The line under that title. `{songs}` is already worded and inflected, "12 songs" |
 | `Add missing songs or remove all matching entries from a selected playlist.` |  |
+| `Add podcast` |  |
 | `Add to a playlist` | Menu action: put this song, album or selection into a playlist |
 | `Add to favorites` | Menu action and screen reader label for the heart. A verb |
 | `Add to queue` | Action: put this song at the end of the queue |
@@ -1583,15 +1610,19 @@ you are actually typing into, which is easier than reading it here.
 | `Created playlist not found` |  |
 | `Default` | Sorting pill: what you get when nothing is sorted, which is the order the server keeps its songs in. Not alphabetical, and not Resonus deciding. On a playlist it is the order the list came in, which is the one you made by dragging the songs if it is an ordinary playlist and the one its rules produced if it is a smart one — hence a word that is true of both rather than "custom" or "pre-defined" |
 | `Delete` | The confirm button of a delete dialog, for a playlist or a radio station |
+| `Delete downloaded episodes` |  |
 | `Delete downloads` | Menu action: delete the downloaded files of everything here |
 | `Descending` | Sort option: the order of a list |
 | `Direction` | Sort sheet: the ascending vs descending toggle. Not a compass direction |
 | `Done` | The button that leaves drag-to-reorder, or accepts a fine-tuned number |
 | `Download` | The confirm button of the download dialog, and what the screen reader calls the download button. A verb |
 | `Download “{name}”?` | Dialog title. `{name}` is an album, artist or playlist |
+| `Download new episodes` |  |
 | `Download stopped` | Toast: the download was stopped part way |
+| `Downloaded audio will be removed. Your shows, favorites and listening progress are kept.` |  |
 | `Downloading…` | Toast: the download has started. The songs arrive one by one after this |
 | `Drag to reorder, toggle to show or hide.` |  |
+| `Episode notes` |  |
 | `Export` | Get the downloaded file itself out of the app, as a file. Not the same as `Share`, which makes a link on the server |
 | `Exporting…` | The file is being copied out |
 | `Favorites` | The songs, albums and artists you starred |
@@ -1600,8 +1631,11 @@ you are actually typing into, which is easier than reading it here.
 | `Library` | The settings section, and a folder in the car |
 | `List` | An option in that menu: one row per item, instead of cards |
 | `Loading…` |  |
+| `Lost the connection to {name}` |  |
 | `Lyrics` | The words of the song. Also a line of the storage bar, where it is their size on the phone |
 | `Manage playlists` |  |
+| `Mark as played` |  |
+| `Mark as unplayed` |  |
 | `Monospace` | A typeface whose characters all have the same width, in Settings › Font |
 | `More` | A "see more" action, and the third button of the selection bar, the one that opens the rest of what it can do |
 | `More options` | Read out by the screen reader for the three-dot button, which is ⋮ on a song row and in the player and ⋯ in a screen's header |
@@ -1615,17 +1649,23 @@ you are actually typing into, which is easier than reading it here.
 | `Nothing to shuffle yet` | Empty state: there is nothing here to play in random order |
 | `Off` | A setting value meaning disabled (crossfade, normalization…) |
 | `Offline` | The toast shown when the app falls into offline mode by itself, and the badge that says it is in it |
+| `Open website` |  |
+| `Output device` |  |
 | `Pause` | Read out by the screen reader for the pause button. A verb |
 | `Pink` |  |
 | `Play` | Read out by the screen reader for the play button. A verb |
 | `Play next` | Action: put this song right after the one playing, without clearing the rest |
+| `Playback speed` |  |
 | `Playing next` | The toast that says `Play next` worked. Not the same string, and not a heading |
 | `Playlist changed. Reopen it and try again.` |  |
 | `Playlist name` | The name field when making or renaming a playlist |
 | `Playlists` | A section on Home and in the library, and a folder in the car |
+| `Queue` | The list of songs waiting to play. Not a playlist |
 | `Rate {n} stars` | Read out by the screen reader for each star. `{n}` is which star it is |
 | `Read-only playlist` |  |
+| `Refresh` | Ask the server for this playlist again, in case it changed elsewhere. Also the button under suggested tracks to regenerate them |
 | `Remove` | Take something out of a list. Deleting for good is `Delete` |
+| `Remove “{name}” and its episodes from this device?` |  |
 | `Remove all matching entries` |  |
 | `Remove download` | Delete the downloaded file, keeping the song in the library |
 | `Remove download?` | Dialog title: delete the files of something already downloaded |
@@ -1644,6 +1684,7 @@ you are actually typing into, which is easier than reading it here.
 | `Show less` | Folds it back |
 | `Show more` | Unfolds the rest of a text that was cut short |
 | `Shuffle` | Play in random order |
+| `Sleep timer` | Stop playing after a while, for falling asleep to |
 | `Song downloaded` | Toast: one song finished |
 | `Songs` | Always a heading, never a count, so it wants the plain plural your language uses for a list of them ("Songs", not "of songs"). Counting songs is a different thing and goes through the plural forms |
 | `Songs already downloaded will be kept.` | The line under that title: stopping does not undo what already arrived |
@@ -1652,12 +1693,16 @@ you are actually typing into, which is easier than reading it here.
 | `Stop` | Stop a download that is running. Not stop playback |
 | `Stop download?` | Dialog title: stop a download that is running |
 | `Subsonic error` |  |
+| `The latest 3 of each new batch, over Wi-Fi only.` |  |
 | `The server did not return a link` |  |
 | `This playlist cannot be edited.` |  |
 | `This song can't be cast` | Toast: the speaker or TV will not take this file |
+| `Turn off` | Turn off the sleep timer |
 | `Undo` | The button in a toast that takes back what just happened. It is there for a few seconds |
 | `Unexpected server response` |  |
 | `Unknown album` | Fallback when the file and the server have no album |
 | `Unknown artist` | Fallback when the file and the server have no artist |
+| `Unsubscribe` |  |
 | `View` | Title of the menu that chooses how a collection is drawn, and the label of the button that opens it. A noun: what you are looking at, not the verb |
+| `When the episode ends` |  |
 | `Wrong username or password` |  |

@@ -39,6 +39,7 @@ function harness() {
   const session = { auth: true as unknown, offline: false };
   const opens: Song[][] = [];
   const requests: { kind: string; id: string; resolve: () => void }[] = [];
+  const podcastFavorites = new Set<string>();
   const write = (kind: string, id: string) => new Promise<void>((resolve) => requests.push({ kind, id, resolve }));
   const react = {
     useRef: <T,>(value: T) => slot(() => ({ current: value })),
@@ -63,6 +64,10 @@ function harness() {
     '@/components/glass': { GlassPressable: 'Pressable' },
     '@/api/data': { canGoIntoPlaylist, star: (id: string) => write('star', id), unstar: (id: string) => write('unstar', id) },
     '@/lib/favoritesCache': { applyStarChange() {}, resyncFavorites() {}, unstarWithUndo() {} },
+    '@/api/podcasts': { invalidatePodcastFavorites() {}, togglePodcastHeart: (id: string) => new Promise<boolean>((resolve) => requests.push({ kind: 'podcast', id, resolve: () => {
+      const added = !podcastFavorites.has(id); if (added) podcastFavorites.add(id); else podcastFavorites.delete(id); resolve(added);
+    } })) },
+    '@/lib/podcastFavorites': { usePodcastFavoriteIds: () => podcastFavorites },
     '@/lib/haptics': { haptic() {} },
     '@/store/auth': { useAuthStore: (select: (value: unknown) => unknown) => select(session) },
     '@/store/pins': { usePins: { getState: () => ({ unpin() {} }) } },
@@ -83,9 +88,10 @@ function harness() {
   let props: Record<string, any> = { id: 'A', starred: false };
   let tree: Element;
   return {
-    opens, requests, session,
+    opens, requests, session, podcastFavorites,
     render(next = props) {
       props = next; cursor = 0; tree = exports.FavoriteButton(props);
+      while (typeof tree.type === 'function') tree = tree.type(tree.props);
       while (effects.length) effects.shift()!(); return tree;
     },
     tree: () => tree,
@@ -189,4 +195,23 @@ it('the real queue menu reads the latest queue after dismissal and offers only p
   after(); assert.deepEqual(opened[0].map((song) => song.id), ['library']);
   exports.run(); queue = [track('radio', { url: 'https://radio/live' })]; after();
   assert.equal(opened.length, 1, 'a queue with no tracks does not open an empty playlist picker');
+});
+
+it('RSS player and Mini Player hearts use the local podcast favorite table and never server star or playlist hold', async () => {
+  const h = harness();
+  const song = track('show/episode', { podcastChannelId: 'show', vod: true, url: 'https://audio.test/one.mp3' });
+  let button = h.render({ id: song.id, starred: false, playlistSong: song });
+  assert.equal(button.props.onLongPress, undefined);
+  const tap = button.props.onPress(event(1));
+  assert.equal(h.requests.length, 1);
+  assert.equal(h.requests[0].kind, 'podcast');
+  h.requests[0].resolve(); await tap;
+  button = h.render();
+  assert.equal(button.props.children.props.name, 'heart');
+  const remove = button.props.onPress(event(2));
+  assert.equal(h.requests[1].kind, 'podcast');
+  h.requests[1].resolve(); await remove;
+  button = h.render();
+  assert.equal(button.props.children.props.name, 'heart-outline');
+  assert.equal(h.opens.length, 0);
 });

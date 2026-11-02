@@ -66,6 +66,7 @@ export default function SettingsScreen({ asTab = false }: { asTab?: boolean }) {
     disabled?: boolean;
   }[] = [
     { key: 'playback', title: 'Quality & playback', icon: 'musical-notes-outline' as const },
+    { key: 'audiobooks', title: 'Audiobooks', icon: 'book-outline' as const },
     { key: 'player', title: 'Player', icon: 'play-circle-outline' as const },
     // Downloads: in server-offline it reduces to used space and delete (no
     // server means no downloading, but freeing space is still useful). In the

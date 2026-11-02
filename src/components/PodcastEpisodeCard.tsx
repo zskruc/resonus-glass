@@ -2,7 +2,8 @@
 import { Pressable, StyleSheet, Text } from 'react-native';
 
 import { COVER, coverArtUrl } from '@/api/data';
-import { episodeToSong, type RecentEpisode } from '@/api/podcasts';
+import { episodeToSong, podcastCover, type RecentEpisode } from '@/api/podcasts';
+import { openPodcastEpisodeMenu } from './PodcastMenuSheet';
 import { haptic } from '@/lib/haptics';
 import { usePlayerStore } from '@/store/player';
 import { fontSize, spacing, themed } from '@/theme';
@@ -17,12 +18,13 @@ export function PodcastEpisodeCard({ item, width = 150 }: Props) {
   const playQueue = usePlayerStore((s) => s.playQueue);
   const { episode, channel } = item;
   // The show's artwork: episode art is often missing or the same image.
-  const cover = coverArtUrl(channel.imageUrl, COVER.card);
+  const cover = coverArtUrl(podcastCover(channel), COVER.card);
 
   return (
     <Pressable
       style={StyleSheet.flatten([styles.container, { width }])}
       accessibilityRole="button"
+      onLongPress={() => { haptic('light'); openPodcastEpisodeMenu(channel, episode); }}
       onPress={() => {
         haptic('light');
         // Just this episode; the show's screen queues the rest.

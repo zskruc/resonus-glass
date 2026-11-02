@@ -18,6 +18,7 @@ import {
 import { useSafeAreaFrame, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAccent } from '@/hooks/useAccent';
+import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
 import { useAppleMusicStyle } from '@/hooks/useAppleMusicStyle';
 import { appleMusicStyles } from '@/theme/appleMusic';
 import { useGlassTuning } from '@/store/glassTuning';
@@ -26,6 +27,7 @@ import { colors, fontSize, radius, spacing, SCREEN_BOTTOM_PADDING, themed, track
 import { BackChevron } from './BackChevron';
 import { MenuGlassPanel, menuGlassScrimColor } from './MenuGlassCard';
 import { DynamicGlassBackdrop, StaticGlassBackdropProvider, useStaticGlassBackdropColor } from './glass/StaticGlassBackdropContext';
+import { SettingsScrollPaddingContext } from './SettingsScrollPaddingContext';
 
 /** A 44dp control plus 6dp above/below; text may grow the row when it wraps. */
 export const SETTINGS_ROW_LAYOUT = { minHeight: 56, paddingVertical: 6 } as const;
@@ -43,10 +45,13 @@ export const SETTINGS_ROW_LAYOUT = { minHeight: 56, paddingVertical: 6 } as cons
  */
 export function SettingsSafeArea({ children }: { children: React.ReactNode }) {
   const insets = useSafeAreaInsets();
+  const bottom = useScreenBottomPadding();
   const background = useTheme().background;
   return (
     <StaticGlassBackdropProvider color={background}>
-      <View style={[settingsStyles.safe, { paddingTop: insets.top }]}>{children}</View>
+      <SettingsScrollPaddingContext.Provider value={bottom}>
+        <View style={[settingsStyles.safe, { paddingTop: insets.top }]}>{children}</View>
+      </SettingsScrollPaddingContext.Provider>
     </StaticGlassBackdropProvider>
   );
 }

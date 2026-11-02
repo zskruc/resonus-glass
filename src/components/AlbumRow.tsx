@@ -25,9 +25,11 @@ interface Props {
   album: Album;
   /** Marks the album as pinned, with a pin next to the artist. */
   pinned?: boolean;
+  dimmed?: boolean;
+  downloaded?: boolean;
 }
 
-export function AlbumRow({ album, pinned }: Props) {
+export function AlbumRow({ album, pinned, dimmed, downloaded }: Props) {
   bump('render · AlbumRow');
   const openMenu = useMediaMenu((s) => s.open);
   // Subscribed, not read straight off `colors`: without it the pin would keep
@@ -44,7 +46,7 @@ export function AlbumRow({ album, pinned }: Props) {
     <Animated.View style={press.style}>
       <DetailLink kind="album" id={album.id} asChild>
         <Pressable
-          style={StyleSheet.flatten([styles.row, appleMusic && appleMusicStyles.mediaRow])}
+          style={StyleSheet.flatten([styles.row, appleMusic && appleMusicStyles.mediaRow, dimmed && { opacity: 0.4 }])}
           onPressIn={press.onPressIn}
           onPressOut={press.onPressOut}
           onLongPress={() => {
@@ -57,8 +59,9 @@ export function AlbumRow({ album, pinned }: Props) {
             <Text style={[styles.name, appleMusic && appleMusicStyles.rowTitle]} numberOfLines={1}>
               {album.name}
             </Text>
-            {album.artist || pinned || explicit ? (
+            {album.artist || pinned || explicit || downloaded ? (
               <View style={styles.subLine}>
+                {downloaded ? <Icon name="arrow-down-circle" size={14} color={accent} /> : null}
                 {pinned ? (
                   <Icon name="pin" size={13} color={accent} />
                 ) : null}

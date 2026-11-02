@@ -570,7 +570,6 @@
 
     // ── Library ──────────────────────────────────────────────────────────────
     "Music": "The name given to the server's folder when it does not have one of its own, browsing by folder",
-    "Playlist created": "The toast after making one",
 
     // ── Settings › Player ────────────────────────────────────────────────────
     "Background": "Section header over what is drawn behind the player. Its two values are `Plain` and `Blurred cover`",
@@ -775,7 +774,6 @@
   "Subscribe": "Button that adds a podcast to your list. Not to an event or a newsletter",
   "Unsubscribe": "Removes a podcast and its episodes from this phone",
   "Play latest": "Button on a podcast's screen: starts the newest episode. It does not resume where you left off",
-  "No audio available": "An episode listed with nothing to play, because the feed gave no file for it",
   "Open website": "Opens the podcast's own web page in the browser, not the feed file",
   "Untitled episode": "An episode the feed gave no name to",
 

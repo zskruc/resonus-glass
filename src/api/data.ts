@@ -1254,6 +1254,7 @@ async function mirrorPlaylists(): Promise<Subsonic.Playlist[]> {
   // The ids are resolved in one go rather than one at a time inside the loop.
   const firstDownloaded = (songIds: string[]) => songIds.find((sid) => files[sid]);
   const firstShowable = (songIds: string[]) => firstDownloaded(songIds) ?? songIds[0];
+  const playable = (songIds: string[]) => songIds.some((songId) => files[songId] ?? cachedUri(songId));
   const wanted: string[] = [];
   for (const edit of Object.values(qpls)) {
     if (!edit.created || edit.deleted) continue;
@@ -1280,6 +1281,7 @@ async function mirrorPlaylists(): Promise<Subsonic.Playlist[]> {
       name: edit.name ?? '',
       songCount: songIds.length,
       coverArt: firstDl ? covers.get(firstDl)?.albumId : undefined,
+      availableOffline: playable(songIds),
       comment: edit.comment,
       public: edit.public,
     });
@@ -1308,6 +1310,7 @@ async function mirrorPlaylists(): Promise<Subsonic.Playlist[]> {
       // downloaded album art is only a fallback for playlists without one,
       // where it's better than nothing.
       coverArt: p.coverArt ?? (firstDl ? covers.get(firstDl)?.albumId : undefined),
+      availableOffline: playable(songIds),
     });
   }
   return out;
@@ -2034,13 +2037,80 @@ export async function removeFromPlaylist(id: string, index: number): Promise<voi
 }
 
 /** Reorder a playlist's tracks (drag and drop). */
-export async function reorderPlaylist(id: string, songIds: string[]): Promise<void> {
-  if (isOffline()) {
-    if (!serverOffline()) return Local.reorderPlaylist(id, songIds);
-    useOfflineQueue.getState().setPlaylist(id, { songIds });
-    return;
+export async function getPlaylistForEditing(id: string): Promise<{ playlist: Subsonic.Playlist; songs: Subsonic.Song[] }> {
+  const context = playlistEditContext();
+  if (!context.offline) {
+    const detail = await Subsonic.getPlaylist(context.owner!, id); context.check();
+    const { completeTracklist } = await import('@/lib/playlistMembership'); context.check();
+    if (detail.playlist.id !== id || !canEditPlaylist(detail.playlist)) throw new Error('This playlist cannot be edited.');
+    if (!completeTracklist(detail.playlist, detail.songs.map((song) => song.id))) throw new Error('Playlist changed. Reopen it and try again.');
+    return detail;
   }
-  return Subsonic.reorderPlaylist(auth(), id, songIds);
+  if (!context.owner) {
+    const stored = await Local.playlistTracklists(); context.check();
+    const ids = stored.get(id);
+    if (!ids) throw new Error('Playlist changed. Reopen it and try again.');
+    const detail = await Local.getPlaylist(id); context.check();
+    const byId = new Map(detail.songs.map((song) => [song.id, song]));
+    return { playlist: { ...detail.playlist, songCount: ids.length },
+      songs: ids.map((songId) => byId.get(songId) ?? { id: songId, title: songId, duration: 0 }) };
+  }
+  const ids = await editableOfflineTracklist(id, context); context.check();
+  const mirror = useLibraryMirror.getState();
+  const detail = await mirror.playlistDetail(id); context.check();
+  const list = await mirror.playlists(); context.check();
+  const edit = useOfflineQueue.getState().data.playlists?.[id];
+  const metadata = edit?.created ? { id, name: edit.name ?? '' } : detail?.playlist ?? list?.find((playlist) => playlist.id === id);
+  if (!metadata) throw new Error('Playlist changed. Reopen it and try again.');
+  const meta = useOfflineQueue.getState().data.songMeta ?? {};
+  if (!edit?.songIds && detail) return { playlist: { ...metadata, songCount: ids.length }, songs: detail.songs.map((song) => meta[song.id] ?? song) };
+  const resolved = await resolveSongs(ids, detail?.songs); context.check();
+  return { playlist: { ...metadata, songCount: ids.length },
+    songs: ids.map((songId) => meta[songId] ?? resolved.get(songId) ?? { id: songId, title: songId, duration: 0 }) };
+}
+
+export async function reorderPlaylist(id: string, songIds: string[], expectedSongIds?: string[]): Promise<void> {
+  return writePlaylistTracklist(id, songIds, expectedSongIds, false);
+}
+
+/** Deferred Undo removals must not use the reorder/permutation contract. */
+export async function replacePlaylistTracklist(id: string, songIds: string[], expectedSongIds: string[]): Promise<void> {
+  return writePlaylistTracklist(id, songIds, expectedSongIds, true);
+}
+
+async function writePlaylistTracklist(id: string, songIds: string[], expectedSongIds: string[] | undefined, removal: boolean): Promise<void> {
+  const context = playlistEditContext();
+  const { PlaylistEditQueue } = await import('@/lib/playlistMembership');
+  const { samePlaylistSequence, isPlaylistPermutation, isPlaylistRemoval } = await import('@/lib/playlistReorderRules');
+  playlistEditQueue ??= new PlaylistEditQueue();
+  const next = [...songIds], expected = expectedSongIds && [...expectedSongIds];
+  return playlistEditQueue.run(JSON.stringify([context.profile, context.offline && !context.owner ? 'local-playlists' : id]), async () => {
+    context.check();
+    const detail = await getPlaylistForEditing(id); context.check();
+    const ids = detail.songs.map((song) => song.id);
+    context.check();
+    if ((expected && !samePlaylistSequence(ids, expected)) || !(removal ? isPlaylistRemoval(ids, next) : isPlaylistPermutation(ids, next))) {
+      throw new Error('Playlist changed. Reopen it and try again.');
+    }
+    if (samePlaylistSequence(ids, next)) return;
+    if (context.offline) {
+      if (!context.owner) await Local.editPlaylistTracklist(id, (actual) => {
+        context.check();
+        if (!samePlaylistSequence(actual, ids)) throw new Error('Playlist changed. Reopen it and try again.');
+        return next;
+      }, context.current);
+      else useOfflineQueue.getState().setPlaylist(id, { songIds: next });
+    } else if (removal && next.length === 0) {
+      const remaining = ids.slice();
+      for (let index = remaining.length - 1; index >= 0; index--) {
+        context.check();
+        const fresh = await Subsonic.getPlaylist(context.owner!, id); context.check();
+        if (!canEditPlaylist(fresh.playlist) || !samePlaylistSequence(fresh.songs.map((song) => song.id), remaining)) throw new Error('Playlist changed. Reopen it and try again.');
+        await Subsonic.removeFromPlaylist(context.owner!, id, index); remaining.pop();
+      }
+    } else await Subsonic.reorderPlaylist(context.owner!, id, next);
+    context.check();
+  });
 }
 
 /** The picker checks editability both before offering a row and on its fresh mutation snapshot. */

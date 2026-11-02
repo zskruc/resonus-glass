@@ -33,6 +33,13 @@ export function byCodepoint(a: string, b: string): number {
   return x < y ? -1 : x > y ? 1 : 0;
 }
 
+/** Mixed library lists keep symbol-prefixed names before ordinary names. */
+export function byLibraryName(a: string, b: string): number {
+  const named = /^[\p{L}\p{N}]/u;
+  const x = named.test(a), y = named.test(b);
+  return x !== y ? (x ? 1 : -1) : x ? byLocale(a, b) : byCodepoint(a, b);
+}
+
 /**
  * Sorts by the chosen criterion: alphabetical by name, or by descending score
  * (last play timestamp / added timestamp) with alphabetical tie-break — the

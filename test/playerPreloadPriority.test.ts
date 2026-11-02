@@ -55,6 +55,7 @@ function harness(enabled = true) {
     usePlayerStore: { getState: () => state },
     localSourceFor: () => undefined, playableOffline: () => true, streamUrl: (_auth: unknown, id: string) => id,
     attachAppState: noop, cancelPlaybackRecovery: noop, pushHistory: noop, forgetHistoryOf: noop,
+    parkLongFormSource: noop, longFormOwner: undefined, observeLongFormState: noop,
     contextKey: () => null, dealt: (songs: unknown[]) => songs, tg: (value: string) => value,
     set, get: () => state, autoplayFetchedFor: null, autoplayRound: null, artistFill: null, queueOrigin: null,
     loadIndexSource: () => { const result = deferred<boolean>(); loads.push({ id: state.queue[state.index].id, result }); return result.promise; },

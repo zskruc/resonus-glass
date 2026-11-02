@@ -109,6 +109,8 @@ function favorite() {
     '@/lib/favoritesCache': { applyStarChange: (...args: unknown[]) => changes.push(args),
       resyncFavorites: () => { resyncs++; },
       unstarWithUndo: (type: string, id: string, revert: () => void) => undos.push({ type, id, revert }) },
+    '@/api/podcasts': { invalidatePodcastFavorites() {}, togglePodcastHeart: async () => true },
+    '@/lib/podcastFavorites': { usePodcastFavoriteIds: () => new Set() },
     '@/lib/haptics': { haptic() {} },
     '@/store/auth': { useAuthStore: (select: (state: unknown) => unknown) => select({ auth: true, offline: false }) },
     '@/store/pins': { usePins: { getState: () => ({ unpin() {} }) } },
@@ -122,7 +124,9 @@ function favorite() {
   let props: Record<string, unknown>;
   const render = (next = props) => {
     props = next;
-    runtime.begin(); tree = module.FavoriteButton(props); runtime.commit(); runtime.passive();
+    runtime.begin(); tree = module.FavoriteButton(props);
+    while (typeof tree.type === 'function') tree = tree.type(tree.props);
+    runtime.commit(); runtime.passive();
     return tree;
   };
   render({ id: 'A', starred: false, resetKey: 'row-A' });

@@ -2,8 +2,8 @@
 import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Link, router, useFocusEffect, useNavigation } from 'expo-router';
+import { cloneElement, useCallback, useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
@@ -27,14 +27,25 @@ import {
   getPlaylists,
   getStarred,
   type Album,
+  type Artist,
   type Playlist,
   COVER,
 } from '@/api/data';
 import { AlbumRow } from '@/components/AlbumRow';
 import { ArtistRow } from '@/components/ArtistRow';
+import { PodcastLibrary } from '@/components/PodcastLibrary';
+import { openPodcastMenu, openPodcastEpisodeMenu } from '@/components/PodcastMenuSheet';
+import { useFavoritePodcasts } from '@/hooks/useFavoritePodcasts';
+import { podcastCover, queueEpisode, type PodcastChannel, type PodcastEpisode } from '@/api/podcasts';
+import { isManualOffline } from '@/api/netGate';
+import { usePodcastDownloads } from '@/store/podcastDownloads';
+import { openArtistMenu } from '@/components/ArtistMenuSheet';
+import { useDownloadShelf } from '@/hooks/useDownloadShelf';
+import { useLibraryPullRefresh } from '@/hooks/useLibraryPullRefresh';
 import { Cover } from '@/components/Cover';
 import { VoltaLibraryOverview } from '@/components/volta/VoltaLibraryOverview';
 import { useHistoryTimes } from '@/hooks/useHistoryTimes';
+import { usePressFeedback } from '@/hooks/usePressFeedback';
 import { Dialog } from '@/components/Dialog';
 import { EmptyState } from '@/components/EmptyState';
 import { FavoritesArt } from '@/components/FavoritesArt';
@@ -47,7 +58,7 @@ import { useAuthStore } from '@/store/auth';
 import { useLastPlayed } from '@/store/lastPlayed';
 import { useMediaMenu } from '@/store/mediaMenu';
 import { usePins } from '@/store/pins';
-import { SORT_LABELS, byCodepoint, matches, normQ, sortItems } from '@/lib/librarySort';
+import { SORT_LABELS, byCodepoint, byLibraryName, matches, normQ, sortItems } from '@/lib/librarySort';
 import { useSettings, type LibrarySort } from '@/store/settings';
 import { useAccent } from '@/hooks/useAccent';
 import { useToast } from '@/store/toast';
@@ -62,12 +73,13 @@ import { haptic } from '@/lib/haptics';
 // Folders used to be a fourth segment here. It browses the server's own
 // directory tree, which is the catalogue rather than your own shelf, so it
 // went to the Explore tab with the rest of it (`FoldersBrowser`).
-type Segment = 'playlists' | 'albums' | 'artists';
+type Segment = 'playlists' | 'albums' | 'artists' | 'podcasts';
 
 const SEGMENTS: { key: Segment; label: string }[] = [
   { key: 'playlists', label: 'Playlists' },
   { key: 'albums', label: 'Albums' },
   { key: 'artists', label: 'Artists' },
+  { key: 'podcasts', label: 'Podcasts' },
 ];
 
 /**
@@ -259,16 +271,19 @@ function PlaylistsTab({
   const times = useLastPlayed((s) => s.times);
   const pins = usePins((s) => s.pins);
   const openMenu = useMediaMenu((s) => s.open);
+  const hideUnavailable = useSettings((s) => s.hideUnavailableOffline);
   const grid = useSettings((s) => s.libraryLayout) === 'grid';
   const bottomPad = useScreenBottomPadding();
   // Rows stop growing at a reading measure and centre themselves (#131).
   const listPad = useListPadding(spacing.lg);
   const { columns } = useGridMetrics();
-  const { data, isLoading, isError, refetch, isFetching } = useQuery({
+  const playlistsQ = useQuery({
     queryKey: ['playlists'],
     queryFn: () => getPlaylists(),
     enabled: canFetch,
   });
+  const { data, isLoading, isError, refetch } = playlistsQ;
+  const pull = useLibraryPullRefresh(playlistsQ);
   // Filtering and sorting are memoised, and the hook goes before the early
   // returns below because hooks cannot be conditional. Without this the whole
   // list was filtered and sorted again on every render of the tab, which
@@ -278,7 +293,8 @@ function PlaylistsTab({
       withPins(
         sortItems(
           (data ?? []).filter(
-            (p) => matches(query, p.name) && (!owner || keeps(p, owner, username)),
+            (p) => matches(query, p.name) && (!owner || keeps(p, owner, username))
+              && !(hideUnavailable && p.availableOffline === false),
           ),
           sort,
           (p) => p.name,
@@ -291,13 +307,15 @@ function PlaylistsTab({
         (p) => `playlist:${p.id}`,
         pins,
       ),
-    [data, query, owner, username, sort, times, pins],
+    [data, query, owner, username, sort, times, pins, hideUnavailable],
   );
   if (isLoading) return <Loader />;
-  if (isError) return <Message text={t("Couldn't load playlists.")} onRetry={() => refetch()} />;
+  if (isError && !data) return <Message text={t("Couldn't load playlists.")} onRetry={() => refetch()} />;
   // In grid, Favorites goes in as the first card (sentinel); in list it
   // remains the full-width header.
-  const listData: Playlist[] = grid ? [{ id: FAVORITES_ID, name: '' }, ...playlists] : playlists;
+  const showFavorites = !query && !owner;
+  const favoritesCard = grid && showFavorites && playlists.length > 0;
+  const listData: Playlist[] = favoritesCard ? [{ id: FAVORITES_ID, name: '' }, ...playlists] : playlists;
   return (
     <Animated.FlatList
       onScroll={dockScroll}
@@ -310,9 +328,9 @@ function PlaylistsTab({
       data={listData}
       keyExtractor={(item) => item.id}
       refreshControl={
-        <RefreshControl refreshing={isFetching} onRefresh={refetch} tintColor={colors.accent} />
+        <RefreshControl {...pull} tintColor={colors.accent} />
       }
-      ListHeaderComponent={grid ? undefined : <FavoritesEntry />}
+      ListHeaderComponent={showFavorites && !favoritesCard ? <FavoritesEntry /> : undefined}
       ListEmptyComponent={
         query ? (
           <NoResults query={query} />
@@ -335,12 +353,13 @@ function PlaylistsTab({
             title={item.name}
             subtitle={songsLabel(item.songCount ?? 0, lang)}
             pinned={!!pins[`playlist:${item.id}`]}
+            dimmed={item.availableOffline === false}
             onLongPress={() => { haptic('light'); openMenu({ kind: 'playlist', playlist: item }); }}
           />
         ) : (
           <Link href={`/playlist/${item.id}`} asChild>
             <Pressable
-              style={styles.row}
+              style={[styles.row, item.availableOffline === false && { opacity: 0.4 }]}
               onLongPress={() => { haptic('light'); openMenu({ kind: 'playlist', playlist: item }); }}
             >
               <Cover uri={coverArtUrl(item.coverArt ?? item.id, COVER.thumb)} size={56} />
@@ -376,18 +395,20 @@ function ArtistsTab({ query }: { query: string }) {
   const { columns } = useGridMetrics();
   const listPad = useListPadding(spacing.lg);
   // Only favorite artists (what's browseable is in Home).
-  const { data, isLoading, isError, refetch, isFetching } = useQuery({
+  const artistsQ = useQuery({
     queryKey: ['starred'],
     queryFn: () => getStarred(),
     enabled: canFetch,
   });
+  const { data, isLoading, isError, refetch } = artistsQ;
+  const pull = useLibraryPullRefresh(artistsQ);
   // See PlaylistsTab: memoised, and before the early returns.
   const artists = useMemo(
     () =>
       sortItems(
         (data?.artists ?? []).filter((a) => matches(query, a.name)),
         sort,
-        (a) => a.name,
+        (a) => a.sortName || a.name,
         sort === 'recent'
           ? (a) => Math.max(times[`/artist/${a.id}`] ?? 0, byArtist.get(a.id) ?? 0)
           : (a) => Date.parse(a.starred ?? '') || 0,
@@ -395,7 +416,7 @@ function ArtistsTab({ query }: { query: string }) {
     [data, query, sort, times, byArtist],
   );
   if (isLoading) return <Loader />;
-  if (isError) return <Message text={t("Couldn't load artists.")} onRetry={() => refetch()} />;
+  if (isError && !data) return <Message text={t("Couldn't load artists.")} onRetry={() => refetch()} />;
   return (
     <Animated.FlatList
       onScroll={dockScroll}
@@ -407,7 +428,7 @@ function ArtistsTab({ query }: { query: string }) {
       data={artists}
       keyExtractor={(item) => item.id}
       refreshControl={
-        <RefreshControl refreshing={isFetching} onRefresh={refetch} tintColor={colors.accent} />
+        <RefreshControl {...pull} tintColor={colors.accent} />
       }
       renderItem={({ item }) =>
         grid ? (
@@ -417,6 +438,7 @@ function ArtistsTab({ query }: { query: string }) {
             rounded
             title={item.name}
             subtitle={albumsLabel(item.albumCount ?? 0, lang)}
+            onLongPress={() => { haptic('light'); openArtistMenu(item); }}
           />
         ) : (
           <ArtistRow artist={item} />
@@ -456,6 +478,8 @@ function AlbumsTab({ query }: { query: string }) {
   const sort = useSettings((s) => s.librarySort);
   const times = useLastPlayed((s) => s.times);
   const pins = usePins((s) => s.pins);
+  const hideUnavailable = useSettings((s) => s.hideUnavailableOffline);
+  const { unavailable, downloaded } = useDownloadShelf();
   const { byAlbum } = useHistoryTimes();
   const openMenu = useMediaMenu((s) => s.open);
   const grid = useSettings((s) => s.libraryLayout) === 'grid';
@@ -463,11 +487,13 @@ function AlbumsTab({ query }: { query: string }) {
   const { columns } = useGridMetrics();
   const listPad = useListPadding(spacing.lg);
   // Only favorite albums (what's browseable is in Home).
-  const { data, isLoading, isError, refetch, isFetching } = useQuery({
+  const albumsQ = useQuery({
     queryKey: ['starred'],
     queryFn: () => getStarred(),
     enabled: canFetch,
   });
+  const { data, isLoading, isError, refetch } = albumsQ;
+  const pull = useLibraryPullRefresh(albumsQ);
   // See PlaylistsTab: memoised, and before the early returns.
   const albums = useMemo(
     () =>
@@ -476,7 +502,7 @@ function AlbumsTab({ query }: { query: string }) {
           // Albums also match by artist: looking for "radiohead" in your
           // favourites should find their records, not just an album literally
           // called that.
-          (data?.albums ?? []).filter((a) => matches(query, a.name, a.artist)),
+          (data?.albums ?? []).filter((a) => matches(query, a.name, a.artist) && !(hideUnavailable && unavailable(a))),
           sort,
           (a) => a.name,
           sort === 'recent'
@@ -486,10 +512,10 @@ function AlbumsTab({ query }: { query: string }) {
         (a) => `album:${a.id}`,
         pins,
       ),
-    [data, query, sort, times, byAlbum, pins],
+    [data, query, sort, times, byAlbum, pins, hideUnavailable, unavailable],
   );
   if (isLoading) return <Loader />;
-  if (isError) return <Message text={t("Couldn't load albums.")} onRetry={() => refetch()} />;
+  if (isError && !data) return <Message text={t("Couldn't load albums.")} onRetry={() => refetch()} />;
   return (
     <Animated.FlatList
       onScroll={dockScroll}
@@ -501,7 +527,7 @@ function AlbumsTab({ query }: { query: string }) {
       data={albums}
       keyExtractor={(item) => item.id}
       refreshControl={
-        <RefreshControl refreshing={isFetching} onRefresh={refetch} tintColor={colors.accent} />
+        <RefreshControl {...pull} tintColor={colors.accent} />
       }
       renderItem={({ item }) =>
         grid ? (
@@ -510,11 +536,11 @@ function AlbumsTab({ query }: { query: string }) {
             uri={coverArtUrl(item.coverArt ?? item.id, COVER.card)}
             title={item.name}
             subtitle={item.artist}
-            pinned={!!pins[`album:${item.id}`]}
+            pinned={!!pins[`album:${item.id}`]} dimmed={unavailable(item)} badge={downloaded(item)}
             onLongPress={() => { haptic('light'); openMenu({ kind: 'album', album: item }); }}
           />
         ) : (
-          <AlbumRow album={item} pinned={!!pins[`album:${item.id}`]} />
+          <AlbumRow album={item} pinned={!!pins[`album:${item.id}`]} dimmed={unavailable(item)} downloaded={downloaded(item)} />
         )
       }
       ListEmptyComponent={
@@ -543,7 +569,7 @@ function AlbumsTab({ query }: { query: string }) {
  * from.
  */
 interface LibItem {
-  kind: 'playlist' | 'album' | 'artist';
+  kind: 'playlist' | 'album' | 'artist' | 'podcast' | 'episode';
   id: string;
   name: string;
   coverArt?: string;
@@ -555,6 +581,10 @@ interface LibItem {
   added: number;
   playlist?: Playlist;
   album?: Album;
+  artist?: Artist;
+  sortName?: string;
+  channel?: PodcastChannel;
+  episode?: PodcastEpisode;
 }
 
 /**
@@ -572,11 +602,16 @@ function AllTab({ query, onNew, favoritesOnly = false }: { query: string; onNew?
   const times = useLastPlayed((s) => s.times);
   const { byAlbum, byArtist } = useHistoryTimes();
   const pins = usePins((s) => s.pins);
+  const hideUnavailable = useSettings((s) => s.hideUnavailableOffline);
+  const { unavailable, downloaded } = useDownloadShelf();
   const openMenu = useMediaMenu((s) => s.open);
   const grid = useSettings((s) => s.libraryLayout) === 'grid';
   const bottomPad = useScreenBottomPadding();
   const { columns } = useGridMetrics();
   const listPad = useListPadding(spacing.lg);
+  const podcasts = useFavoritePodcasts();
+  const episodeFiles = usePodcastDownloads((state) => state.files);
+  const manualOffline = isManualOffline();
   const lists = useQuery({
     queryKey: ['playlists'],
     queryFn: () => getPlaylists(),
@@ -588,8 +623,10 @@ function AllTab({ query, onNew, favoritesOnly = false }: { query: string; onNew?
     enabled: canFetch,
   });
 
+  const pull = useLibraryPullRefresh(...(favoritesOnly ? [starred, podcasts.channels, podcasts.episodes] : [lists, starred, podcasts.channels, podcasts.episodes]));
   const items = useMemo(() => {
     const all: LibItem[] = [
+      ...podcasts.items,
       ...(favoritesOnly ? [] : lists.data ?? []).map((p) => ({
         kind: 'playlist' as const,
         id: p.id,
@@ -614,6 +651,7 @@ function AllTab({ query, onNew, favoritesOnly = false }: { query: string; onNew?
       })),
       ...(starred.data?.artists ?? []).map((a) => ({
         kind: 'artist' as const,
+        artist: a, sortName: a.sortName,
         id: a.id,
         name: a.name,
         coverArt: a.coverArt,
@@ -625,41 +663,45 @@ function AllTab({ query, onNew, favoritesOnly = false }: { query: string; onNew?
     return withPins(
       sortItems(
         // Albums match by artist too, as they do under their own chip.
-        all.filter((i) => matches(query, i.name, i.kind === 'album' ? i.by : undefined)),
+        all.filter((i) => matches(query, i.name, ['album', 'podcast', 'episode'].includes(i.kind) ? i.by : undefined)
+          && !(hideUnavailable && (i.playlist?.availableOffline === false || (i.album && unavailable(i.album)) || (i.episode && manualOffline && !episodeFiles[i.id])))),
         sort,
-        (i) => i.name,
+        (i) => i.sortName || i.name,
         (i) => (sort === 'recent' ? i.recent : i.added),
+        byLibraryName,
       ),
       (i) => `${i.kind}:${i.id}`,
       pins,
     );
-  }, [lists.data, starred.data, query, sort, times, byAlbum, byArtist, pins, favoritesOnly]);
+  }, [lists.data, starred.data, query, sort, times, byAlbum, byArtist, pins, favoritesOnly, hideUnavailable, unavailable, podcasts.items, episodeFiles, manualOffline]);
 
   /** "Playlist · juan", "Album · Rojuu", "Artist". */
   const label = (i: LibItem): string => {
-    const kind = i.kind === 'playlist' ? t('Playlist') : i.kind === 'album' ? t('Album') : t('Artist');
+    const kind = i.kind === 'playlist' ? t('Playlist') : i.kind === 'album' ? t('Album') : i.kind === 'episode' ? t('Episode') : i.kind === 'podcast' ? t('Podcast') : t('Artist');
     return i.by ? `${kind} · ${i.by}` : kind;
   };
 
   const onLongPress = (i: LibItem) => {
     if (i.playlist) openMenu({ kind: 'playlist', playlist: i.playlist });
     else if (i.album) openMenu({ kind: 'album', album: i.album });
+    else if (i.artist) openArtistMenu(i.artist);
+    else if (i.channel && i.episode) openPodcastEpisodeMenu(i.channel, i.episode);
+    else if (i.channel) openPodcastMenu(i.channel);
     else return;
     haptic('light');
   };
 
   const loading = lists.isLoading || starred.isLoading;
-  const refresh = () => {
-    lists.refetch();
-    starred.refetch();
-  };
+  const refresh = () => void pull.onRefresh();
   if (loading) return <Loader />;
-  if (lists.isError && starred.isError) {
+  if ((favoritesOnly || (lists.isError && !lists.data)) && starred.isError && !starred.data) {
     return <Message text={t("Couldn't load your library.")} onRetry={refresh} />;
   }
   // In grid, Favorites goes in as the first card (sentinel); in list it stays
   // the full-width header. The same arrangement the playlists have.
-  const data: LibItem[] = grid
+  const showFavorites = !query && !favoritesOnly;
+  const favoritesCard = grid && showFavorites && items.length > 0;
+  const data: LibItem[] = favoritesCard
     ? [{ kind: 'playlist', id: FAVORITES_ID, name: '', href: '', recent: 0, added: 0 }, ...items]
     : items;
   return (
@@ -674,12 +716,11 @@ function AllTab({ query, onNew, favoritesOnly = false }: { query: string; onNew?
       keyExtractor={(item) => `${item.kind}:${item.id}`}
       refreshControl={
         <RefreshControl
-          refreshing={lists.isFetching || starred.isFetching}
-          onRefresh={refresh}
+          {...pull}
           tintColor={colors.accent}
         />
       }
-      ListHeaderComponent={grid ? undefined : <FavoritesEntry />}
+      ListHeaderComponent={showFavorites && !favoritesCard ? <FavoritesEntry /> : undefined}
       ListEmptyComponent={
         query ? (
           <NoResults query={query} />
@@ -698,18 +739,24 @@ function AllTab({ query, onNew, favoritesOnly = false }: { query: string; onNew?
         ) : grid ? (
           <GridCard
             href={item.href}
-            uri={coverArtUrl(item.coverArt ?? item.id, COVER.card)}
+            uri={item.channel ? podcastCover(item.channel) : coverArtUrl(item.coverArt ?? item.id, COVER.card)}
             rounded={item.kind === 'artist'}
             title={item.name}
             subtitle={label(item)}
             pinned={!!pins[`${item.kind}:${item.id}`]}
+            dimmed={item.playlist?.availableOffline === false || (!!item.album && unavailable(item.album)) || (!!item.episode && manualOffline && !episodeFiles[item.id])}
+            badge={(!!item.album && downloaded(item.album)) || (!!item.episode && !!episodeFiles[item.id])}
+            onPress={item.episode && item.channel ? () => {
+              if (manualOffline && !episodeFiles[item.id]) useToast.getState().show(t('Not available offline'));
+              else queueEpisode(item.episode!, item.channel!);
+            } : undefined}
             onLongPress={() => onLongPress(item)}
           />
         ) : (
-          <Link href={item.href} asChild>
-            <Pressable style={styles.row} onLongPress={() => onLongPress(item)}>
+          <LibraryItemLink href={item.href} episode={item.episode} channel={item.channel} unavailable={manualOffline && !episodeFiles[item.id]}>
+            <Pressable style={[styles.row, (item.playlist?.availableOffline === false || (!!item.album && unavailable(item.album))) && { opacity: 0.4 }]} onLongPress={() => onLongPress(item)}>
               <Cover
-                uri={coverArtUrl(item.coverArt ?? item.id, COVER.thumb)}
+                uri={item.channel ? podcastCover(item.channel) : coverArtUrl(item.coverArt ?? item.id, COVER.thumb)}
                 size={56}
                 rounded={item.kind === 'artist'}
               />
@@ -718,6 +765,7 @@ function AllTab({ query, onNew, favoritesOnly = false }: { query: string; onNew?
                   {item.name}
                 </Text>
                 <View style={styles.rowSubLine}>
+                  {item.album && downloaded(item.album) ? <Icon name="arrow-down-circle" size={14} color={colors.accent} /> : null}
                   {pins[`${item.kind}:${item.id}`] ? (
                     <Icon
                       name="pin"
@@ -731,11 +779,19 @@ function AllTab({ query, onNew, favoritesOnly = false }: { query: string; onNew?
                 </View>
               </View>
             </Pressable>
-          </Link>
+          </LibraryItemLink>
         )
       }
     />
   );
+}
+
+function LibraryItemLink({ href, episode, channel, unavailable, children }: {
+  href: string; episode?: PodcastEpisode; channel?: PodcastChannel; unavailable: boolean; children: ReactElement<{ onPress?: () => void }>;
+}) {
+  const t = useT();
+  if (!episode || !channel) return <Link href={href} asChild>{children}</Link>;
+  return cloneElement(children, { onPress: () => unavailable ? useToast.getState().show(t('Not available offline')) : queueEpisode(episode, channel) });
 }
 
 function Loader() {
@@ -769,7 +825,10 @@ function GridCard({
   title,
   subtitle,
   pinned,
+  dimmed,
+  badge,
   onLongPress,
+  onPress,
 }: {
   href: string;
   uri?: string;
@@ -779,21 +838,28 @@ function GridCard({
   title: string;
   subtitle?: string;
   pinned?: boolean;
+  dimmed?: boolean;
+  badge?: boolean;
   onLongPress?: () => void;
+  onPress?: () => void;
 }) {
   const { card } = useGridMetrics();
-  return (
-    <Link href={href} asChild>
+  const press = usePressFeedback();
+  const cardView = (
       <Pressable
-        style={StyleSheet.flatten([styles.card, { width: card }, rounded && styles.cardCentered])}
+        style={StyleSheet.flatten([styles.card, { width: card }, rounded && styles.cardCentered, dimmed && { opacity: 0.4 }])}
         onLongPress={onLongPress}
+        onPress={onPress}
+        onPressIn={press.onPressIn}
+        onPressOut={press.onPressOut}
       >
         {art ?? <Cover uri={uri} size={card} rounded={rounded} />}
         <Text style={[styles.cardTitle, rounded && styles.centerText]} numberOfLines={1}>
           {title}
         </Text>
-        {subtitle ? (
+        {subtitle || badge ? (
           <View style={styles.cardSubLine}>
+            {badge ? <Icon name="arrow-down-circle" size={14} color={colors.accent} /> : null}
             {pinned ? (
               <Icon name="pin" size={12} color={colors.accent} />
             ) : null}
@@ -803,8 +869,8 @@ function GridCard({
           </View>
         ) : null}
       </Pressable>
-    </Link>
   );
+  return <Animated.View style={press.style}>{onPress ? cardView : <Link href={href} asChild>{cardView}</Link>}</Animated.View>;
 }
 
 /**
@@ -883,7 +949,11 @@ export default function LibraryScreen() {
   // of the results and coming back. The X was the only way out of it, which
   // meant a filter typed once stayed on the Library for the rest of the
   // session.
-  useFocusEffect(useCallback(() => closeSearch, [closeSearch]));
+  const navigation = useNavigation();
+  useEffect(() => navigation.addListener('state', (event) => {
+    const state = event.data.state;
+    if (state.routes[state.index ?? 0]?.name !== 'library') closeSearch();
+  }), [navigation, closeSearch]);
 
   // And Back closes it before it leaves, the way Android expects. Only while
   // the bar is open, so the tab keeps its own behaviour the rest of the time.
@@ -959,9 +1029,10 @@ export default function LibraryScreen() {
     setCreating(false);
     if (!auth && !offline) return;
     try {
-      await createPlaylist(name);
+      const id = await createPlaylist(name);
+      if (useAuthStore.getState().auth !== auth || useAuthStore.getState().offline !== offline) return;
       queryClient.invalidateQueries({ queryKey: ['playlists'] });
-      toast(t('Playlist created'));
+      router.push(`/playlist/${id}`);
     } catch {
       toast(t("Couldn't create the playlist"));
     }
@@ -1176,6 +1247,8 @@ export default function LibraryScreen() {
           <PlaylistsTab onNew={() => setCreating(true)} query={filter} owner={shownOwner} />
         ) : segment === 'albums' ? (
           <AlbumsTab query={filter} />
+        ) : segment === 'podcasts' ? (
+          <PodcastLibrary query={filter} />
         ) : (
           <ArtistsTab query={filter} />
         )}

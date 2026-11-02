@@ -6,7 +6,7 @@
  */
 import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -28,7 +28,9 @@ import { AlbumRowsSkeleton } from '@/components/AlbumRowsSkeleton';
 import { EmptyState } from '@/components/EmptyState';
 import { Message } from '@/components/Message';
 import { useT } from '@/i18n';
-import { useAuthStore } from '@/store/auth';
+import { profileScopeId, useAuthStore } from '@/store/auth';
+import { useDownloads } from '@/store/downloads';
+import * as Local from '@/lib/localQueries';
 import { useSettings } from '@/store/settings';
 import { useAppleMusicStyle } from '@/hooks/useAppleMusicStyle';
 import { appleMusicStyles } from '@/theme/appleMusic';
@@ -96,7 +98,7 @@ export default function BrowseAlbumsScreen() {
   return <AlbumsBrowser />;
 }
 
-export function AlbumsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) {
+export function AlbumsBrowser({ embedded, actionRef, searchOpen, downloaded }: BrowserProps & { downloaded?: boolean }) {
   const appleMusic = useAppleMusicStyle();
   const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
@@ -113,9 +115,9 @@ export function AlbumsBrowser({ embedded, actionRef, searchOpen }: BrowserProps)
    */
   const { sort: sortParam } = useLocalSearchParams<{ sort?: string }>();
   const [sort, setSort] = useBrowseSort<AlbumListType>(
-    'browseAlbums',
+    downloaded ? 'downloadedAlbums' : 'browseAlbums',
     SORTS.map((s) => s.key),
-    'recent',
+    downloaded ? 'newest' : 'recent',
     sortFromParam(sortParam),
   );
   const layout = useSettings((s) => s.browseAlbumsLayout);
@@ -128,10 +130,17 @@ export function AlbumsBrowser({ embedded, actionRef, searchOpen }: BrowserProps)
   });
   const card = cardWidth(columns);
 
+  const files = useDownloads((state) => state.files);
+  const client = useQueryClient();
+  const profile = profileScopeId();
+  useEffect(() => {
+    if (downloaded) void client.invalidateQueries({ queryKey: ['downloadedAlbums', profile] });
+  }, [downloaded, files, client, profile]);
+
   const { data, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useInfiniteQuery({
-      queryKey: ['browseAlbums', sort],
-      queryFn: ({ pageParam }) => getAlbumList(sort, PAGE, pageParam),
+      queryKey: downloaded ? ['downloadedAlbums', profile, sort] : ['browseAlbums', sort],
+      queryFn: ({ pageParam }) => (downloaded ? Local.getAlbumList : getAlbumList)(sort, PAGE, pageParam),
       initialPageParam: 0,
       getNextPageParam: (last, pages) =>
         last.length === PAGE ? pages.length * PAGE : undefined,
@@ -139,7 +148,7 @@ export function AlbumsBrowser({ embedded, actionRef, searchOpen }: BrowserProps)
       // «Recently played» changes with every listen: refreshes on returning to
       // the screen so it feels alive (other orders change little and keep the
       // global staleTime of 5 min).
-      refetchOnMount: sort === 'recent' ? 'always' : undefined,
+      refetchOnMount: downloaded || sort === 'recent' ? 'always' : undefined,
     });
 
   // ── Pull-down search ───────────────────────────────────────────────────
@@ -166,8 +175,8 @@ export function AlbumsBrowser({ embedded, actionRef, searchOpen }: BrowserProps)
     isError: searchError,
     refetch: refetchSearch,
   } = useQuery({
-    queryKey: ['searchAlbums', debounced],
-    queryFn: () => searchAlbums(debounced, SEARCH_COUNT),
+    queryKey: downloaded ? ['searchDownloadedAlbums', profile, debounced] : ['searchAlbums', debounced],
+    queryFn: () => (downloaded ? Local.searchAlbums : searchAlbums)(debounced, SEARCH_COUNT),
     enabled: canFetch && debounced.length > 0,
   });
 
@@ -272,7 +281,7 @@ export function AlbumsBrowser({ embedded, actionRef, searchOpen }: BrowserProps)
           options={SORTS}
           value={sort}
           onChange={setSort}
-          play={{ source: t('Library'), href: '/browse/albums' }}
+          play={downloaded ? undefined : { source: t('Library'), href: '/browse/albums' }}
         />
       )}
 
@@ -284,7 +293,7 @@ export function AlbumsBrowser({ embedded, actionRef, searchOpen }: BrowserProps)
         )
       ) : isSearch && searchError ? (
         <Message text={t("Couldn't load albums.")} onRetry={() => refetchSearch()} />
-      ) : isError ? (
+      ) : isError && !data ? (
         <Message text={t("Couldn't load albums.")} onRetry={() => refetch()} />
       ) : (
         <AnimatedBrowserList
@@ -322,6 +331,8 @@ export function AlbumsBrowser({ embedded, actionRef, searchOpen }: BrowserProps)
                 title={t('No results')}
                 subtitle={t('No results for “{q}”', { q: query.trim() })}
               />
+            ) : downloaded && sort !== 'frequent' && sort !== 'recent' ? (
+              <EmptyState icon="download-outline" title={t('Nothing here is downloaded')} />
             ) : sort === 'frequent' || sort === 'recent' ? (
               <EmptyState
                 icon="play-outline"

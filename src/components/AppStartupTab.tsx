@@ -11,6 +11,7 @@ import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 
 import { mark } from '@/lib/perfLog';
+import { refreshAutoDownloadShows } from '@/api/podcasts';
 import { useAutoDownloads } from '@/store/autoDownloads';
 import { useSettings, type DefaultTab } from '@/store/settings';
 
@@ -73,10 +74,14 @@ export function AppStartupTab() {
   }, []);
 
   useEffect(() => {
+    void refreshAutoDownloadShows().catch(() => {});
     const sub = AppState.addEventListener('change', (state) => {
       // On return, sync auto-download playlists (catch what was added from
       // another client while the app was in the background).
-      if (state === 'active') void useAutoDownloads.getState().reconcileAll();
+      if (state === 'active') {
+        void useAutoDownloads.getState().reconcileAll();
+        void refreshAutoDownloadShows().catch(() => {});
+      }
     });
     return () => sub.remove();
   }, []);

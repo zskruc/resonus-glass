@@ -50,6 +50,7 @@ import { useAppleMusicStyle } from '@/hooks/useAppleMusicStyle';
 import { appleMusicStyles } from '@/theme/appleMusic';
 import { useT } from '@/i18n';
 import { useAuthStore } from '@/store/auth';
+import { anyDownloads, useDownloads } from '@/store/downloads';
 import { useSettings, type ExploreSectionKey, type ListLayout } from '@/store/settings';
 import { colors, fontSize, radius, spacing, themed, useTheme, tracking } from '@/theme';
 
@@ -66,6 +67,7 @@ const LABEL: Record<Section, string> = {
   radio: 'Radio',
   podcasts: 'Podcasts',
   folders: 'Folders',
+  downloads: 'Downloads',
 };
 
 export default function ExploreScreen() {
@@ -80,6 +82,7 @@ export default function ExploreScreen() {
   const auth = useAuthStore((s) => s.auth);
   const offline = useAuthStore((s) => s.offline);
   const showFolderBrowser = useSettings((s) => s.showFolderBrowser);
+  const hasDownloads = useDownloads(anyDownloads);
   const order = useSettings((s) => s.exploreSections);
   const [section, setSection] = useState<Section>('albums');
   /** Filled in by whichever section is on screen (see `BrowserProps`). */
@@ -119,6 +122,8 @@ export default function ExploreScreen() {
         return subsonic && !offline;
       case 'folders':
         return subsonic && !offline && showFolderBrowser;
+      case 'downloads':
+        return !!auth && !offline && hasDownloads;
       case 'playlists':
         // Jellyfin answers for them too, and offline the mirror does; it is
         // the one server-side section the local profile has nothing for.
@@ -180,7 +185,9 @@ export default function ExploreScreen() {
       ? { icon: 'add' as const, label: t('Add station'), size: 28, color: colors.text }
       : current === 'podcasts'
         ? { icon: 'add' as const, label: t('Add podcast'), size: 28, color: colors.text }
-        : current === 'playlists' ||
+        : current === 'downloads'
+          ? { icon: layouts.albums === 'grid' ? ('grid-outline' as const) : ('list' as const), label: t('View'), size: 22, color: colors.textSecondary }
+          : current === 'playlists' ||
             current === 'albums' ||
             current === 'artists' ||
             current === 'songs'
@@ -280,6 +287,8 @@ export default function ExploreScreen() {
           <PlaylistsBrowser embedded actionRef={sectionAction} searchOpen={searchOpen} />
         ) : current === 'albums' ? (
           <AlbumsBrowser embedded actionRef={sectionAction} searchOpen={searchOpen} />
+        ) : current === 'downloads' ? (
+          <AlbumsBrowser key="downloads" downloaded embedded actionRef={sectionAction} searchOpen={searchOpen} />
         ) : current === 'artists' ? (
           <ArtistsBrowser embedded actionRef={sectionAction} searchOpen={searchOpen} />
         ) : current === 'songs' ? (

@@ -85,6 +85,10 @@ import { primaryUrl } from '@/lib/serverUrls';
 import { getItem, setItem } from '@/lib/storage';
 import { StreamWarming } from '@/lib/streamWarming';
 import { playbackLoadGate } from '@/lib/playbackLoadGate';
+import { AudiobookProgressTracker, type AudiobookSample } from '@/lib/audiobookTracking';
+import { audiobookProfileScope, isAudiobookTrack, useAlbumProgress } from './albumProgress';
+import { ownsPodcastProgress, podcastProgressVersion, readPodcastResume, writePodcastProgress } from '@/lib/podcastProgress';
+import { podcastFile, usePodcastDownloads } from './podcastDownloads';
 import { profileScopeId, useAuthStore } from './auth';
 import { SilenceTrimSession } from '@/lib/silenceTrim';
 import { prefetchSilenceBounds, useSilenceTrim } from './silenceTrim';
@@ -329,6 +333,7 @@ function copyOnPhone(song: Song): string | undefined {
  * as a server stream cannot be played and must be skipped.
  */
 function playableOffline(song: Song | null | undefined): boolean {
+  if (song?.podcastChannelId) return !!podcastFile(song);
   return !!song && (!!song.url || !!song.localUri || !!copyOnPhone(song));
 }
 
@@ -376,6 +381,7 @@ const failedSource = new Map<string, 'file' | 'stream'>();
  * where the audio actually comes from.
  */
 export function localSourceFor(song: Song): string | undefined {
+  if (song.podcastChannelId) return podcastFile(song);
   const { auth, offline } = useAuthStore.getState();
   // What the player has already tried and failed to play beats both the setting
   // and the phone's own copy: one of the two is silence, and the other one may
@@ -424,6 +430,8 @@ function sourceFor(song: Song, timeOffsetSec = 0): AudioSource {
   // and not the stream URL: this reaches every connected controller, and the
   // URL carries the credentials.
   const mediaId = song.id;
+  const episodeFile = song.podcastChannelId ? podcastFile(song) : undefined;
+  if (episodeFile) return { uri: episodeFile, metadata, mediaId };
   if (song.url) return { uri: song.url, metadata, mediaId };
   const local = localSourceFor(song);
   // Counted where the decision is acted on, once per install, and not inside
@@ -966,6 +974,9 @@ async function loadIndexSource(index: number, autoplay: boolean, recoveryTicket?
   sourceIntent?: object, requestOwner = useAuthStore.getState().auth): Promise<boolean> {
   if (recoveryTicket && recoveryTargetIndex(recoveryTicket) === null) return false;
   const token = ++loadToken;
+  const progressScope = profileScopeId();
+  const progressCandidate = currentSong({ ...usePlayerStore.getState(), index });
+  const requestedProgressVersion = progressCandidate ? podcastProgressVersion(progressCandidate, progressScope) : 0;
   // Anything asked to play is the app in use, whoever asked: the button, the
   // notification, the car, a headset. The window is only for the track the
   // saved queue brings back on its own.
@@ -1021,6 +1032,7 @@ async function loadIndexSource(index: number, autoplay: boolean, recoveryTicket?
   }
   const song = usePlayerStore.getState().queue[index];
   if (!song) return false;
+  const progressVersion = progressCandidate?.id === song.id ? requestedProgressVersion : podcastProgressVersion(song, progressScope);
   // A song with no duration draws 0:00 and every seek on the bar lands on zero.
   // The keys say which code built the song object, which is the open question.
   if (!song.duration && !song.url) {
@@ -1059,6 +1071,8 @@ async function loadIndexSource(index: number, autoplay: boolean, recoveryTicket?
   // The player is holding this song now and whatever it held before is gone,
   // so the screen follows it here and not one line later: everything below can
   // fail, and none of it can put the old song back.
+  const seekGeneration = resumeSeekGeneration;
+  beginLongFormTrack(song, progressScope, progressVersion, !!song.podcastChannelId && !recoveryTicket);
   usePlayerStore.setState({
     index,
     positionSec: 0,
@@ -1074,6 +1088,21 @@ async function loadIndexSource(index: number, autoplay: boolean, recoveryTicket?
     if (autoplay) p.play();
     applyLockScreen(p, song);
     onTrackChanged(song);
+    if (song.podcastChannelId && !recoveryTicket) {
+      // Resume only the source this load actually installed. A newer tap,
+      // profile switch or manual played mark invalidates the awaited read.
+      void readPodcastResume(song, progressScope, progressVersion).then((position) => {
+        if (token !== loadToken || seekGeneration !== resumeSeekGeneration || profileScopeId() !== progressScope
+          || activePlayer() !== p || currentSong(usePlayerStore.getState())?.id !== song.id
+          || !ownsPodcastProgress(song, progressScope, progressVersion)) return;
+        if (longFormOwner?.songId === song.id) longFormOwner.pendingResume = false;
+        if (position > 0) {
+          seekActive(position, () => token === loadToken && ownsPodcastProgress(song, progressScope, progressVersion));
+          usePlayerStore.setState({ positionSec: position });
+        }
+        observeLongFormState();
+      }).catch(() => {});
+    }
     // `playQueue` installs the queue before this player/source exists, so the
     // store subscription's first attempt to enqueue the following track has
     // nothing to act on. Queue it again now that `replace()` has installed the
@@ -1440,6 +1469,7 @@ export function inspectCurrentSilence() {
 
 /** Now playing / history + syncs the queue on track change. */
 function onTrackChanged(song: Song) {
+  if (!longFormOwner || longFormOwner.songId !== song.id || longFormOwner.scope !== profileScopeId()) beginLongFormTrack(song);
   const playback = usePlayerStore.getState();
   beginSilenceInspection(song, playback.isPlaying && playback.positionSec < 0.05);
   playbackOutage.trackChanged(song.id);
@@ -1805,6 +1835,7 @@ async function maybeQueueAutoplay() {
   if ((repeat !== 'off' && !radioMode) || index < queue.length - 2) return;
   const { auth, offline } = useAuthStore.getState();
   if (!auth || offline) return;
+  if (!radioMode && useSettings.getState().saveAudiobookProgress && isAudiobookTrack(queue[index])) return;
   // Before the mix, and before the autoplay setting has a say: this is not
   // similar music, it is the artist that was asked for. A mix is left alone,
   // since there the drift is the whole point.
@@ -2736,6 +2767,14 @@ function onPlaybackError(message: string, wasPlaying: boolean): void {
     return;
   }
   errorAttempts++;
+  if (song.podcastChannelId && podcastFile(song)) {
+    const token = loadToken, scope = profileScopeId();
+    void usePodcastDownloads.getState().forgetIfMissing(song).catch(() => false).then(() => {
+      if (token !== loadToken || scope !== profileScopeId() || currentSong(usePlayerStore.getState())?.id !== song.id) return;
+      void reloadCurrent(st.positionSec, wasPlaying);
+    });
+    return;
+  }
   // The other copy, and only the first time round: once it is marked, what just
   // failed IS the other copy, and swapping back would be a loop.
   if (!failedSource.has(song.id) && !song.url) {
@@ -2784,6 +2823,71 @@ let lastStatusAt = 0;
 const BACKLOG_GAP_MS = 200;
 const BACKGROUND_POSITION_PUSH_MS = 5000;
 let lastBackgroundPositionPush = 0;
+
+let longFormOwner: { songId: string; scope: string; bookScope: string; version: number; pendingResume: boolean } | undefined;
+let resumeSeekGeneration = 0;
+let longFormInitialized = false;
+let lastPodcastSample: { song: Song; position: number; duration: number; playing: boolean; scope: string; version: number } | undefined;
+const audiobookTracker = new AudiobookProgressTracker({
+  remember: (...args) => useAlbumProgress.getState().remember(...args),
+  clearAlbum: (...args) => useAlbumProgress.getState().clearAlbum(...args),
+  flush: () => useAlbumProgress.getState().flush(),
+});
+function flushPodcastSample() {
+  const previous = lastPodcastSample;
+  if (previous) void writePodcastProgress(previous.song, previous.position, previous.duration, previous.scope, previous.version, true).catch(() => {});
+}
+function beginLongFormTrack(song: Song, scope = profileScopeId(), version = podcastProgressVersion(song, scope), pendingResume = false) {
+  audiobookTracker.begin(); flushPodcastSample(); lastPodcastSample = undefined;
+  longFormOwner = { songId: song.id, scope, bookScope: audiobookProfileScope(), version, pendingResume };
+}
+function parkLongFormSource() {
+  void audiobookTracker.flush().catch(() => {}); flushPodcastSample();
+  const previous = longFormOwner; longFormOwner = undefined;
+  return previous;
+}
+function currentAudiobookSample(): AudiobookSample {
+  const state = usePlayerStore.getState(), song = currentSong(state), owner = longFormOwner;
+  const owned = !!song && owner?.songId === song.id && owner.scope === profileScopeId();
+  return { scope: owner?.bookScope ?? audiobookProfileScope(), albumId: owned ? song.albumId : undefined,
+    trackId: owned ? song.id : undefined, positionSec: state.positionSec, playing: owned && state.isPlaying,
+    enabled: useSettings.getState().saveAudiobookProgress, audiobook: owned && isAudiobookTrack(song) };
+}
+function observeLongFormState() {
+  if (!longFormInitialized) return;
+  audiobookTracker.observe(currentAudiobookSample());
+  const state = usePlayerStore.getState(), song = currentSong(state), owner = longFormOwner;
+  const previous = lastPodcastSample;
+  const owned = !!song?.podcastChannelId && owner?.songId === song.id && owner.scope === profileScopeId() && !owner.pendingResume;
+  if (previous && (!owned || previous.song.id !== song.id || previous.scope !== owner.scope || previous.version !== owner.version)) flushPodcastSample();
+  lastPodcastSample = owned ? { song, position: state.positionSec, duration: state.durationSec,
+    playing: state.isPlaying, scope: owner.scope, version: owner.version } : undefined;
+  if (previous?.playing && !state.isPlaying && lastPodcastSample) flushPodcastSample();
+  if (lastPodcastSample && state.isPlaying) void writePodcastProgress(song!, state.positionSec, state.durationSec,
+    owner!.scope, owner!.version).catch(() => {});
+}
+/** Root calls once. Writes run on status events; no foreground-only save timer. */
+export function initAudiobookProgressTracking() {
+  if (longFormInitialized) return;
+  longFormInitialized = true;
+  void useAlbumProgress.getState().hydrate().catch(() => {});
+  usePlayerStore.subscribe(observeLongFormState);
+  useSettings.subscribe(observeLongFormState);
+  useAuthStore.subscribe(observeLongFormState);
+  AppState.addEventListener('change', (state) => {
+    if (state !== 'active') {
+      void audiobookTracker.flush().catch(() => {}); flushPodcastSample();
+    }
+  });
+  observeLongFormState();
+}
+function clearFinishedAudiobookProgress() {
+  const state = usePlayerStore.getState(), song = currentSong(state), sample = currentAudiobookSample();
+  if (!song?.albumId || !state.sourceHref?.startsWith('/album/') || state.index !== state.queue.length - 1) return;
+  const cached = queryClient.getQueryData<{ songs: Song[] }>(['album', song.albumId]);
+  // An offline-filtered queue may stop before the real final chapter.
+  if (cached?.songs.at(-1)?.id === song.id) audiobookTracker.complete(sample);
+}
 
 /** `live`: read from the player just now, never part of a pile. */
 function onStatus(status: AudioStatus & { playWhenReady?: boolean }, live = false) {
@@ -2931,6 +3035,7 @@ function onStatus(status: AudioStatus & { playWhenReady?: boolean }, live = fals
     }
     const ni = nextIndex(false);
     if (ni == null) {
+      clearFinishedAudiobookProgress();
       usePlayerStore.setState({ isPlaying: false });
     } else {
       pushHistory();
@@ -2983,6 +3088,20 @@ function queueStorageKey(): string | null {
     return `resonus.queue.server.${safeKey(primaryUrl(auth))}.${safeKey(auth.username)}`;
   }
   return null;
+}
+
+/** Disk/server answers belong to the queue intent that asked for them. */
+function queueRequestOwner() {
+  const { auth, offline, offlineSource } = useAuthStore.getState();
+  const { queue, index } = usePlayerStore.getState();
+  return { auth, offline, offlineSource, scope: profileScopeId(), queue, index,
+    load: loadToken, seek: resumeSeekGeneration };
+}
+function ownsQueueRequest(owner: ReturnType<typeof queueRequestOwner>): boolean {
+  const auth = useAuthStore.getState(), state = usePlayerStore.getState();
+  return auth.auth === owner.auth && auth.offline === owner.offline && auth.offlineSource === owner.offlineSource
+    && profileScopeId() === owner.scope && loadToken === owner.load && resumeSeekGeneration === owner.seek
+    && state.queue === owner.queue && state.index === owner.index;
 }
 
 interface StoredQueue {
@@ -3162,6 +3281,7 @@ async function adoptNewerServerQueue(): Promise<void> {
   const { auth, offline } = useAuthStore.getState();
   if (!auth || offline) return;
   const before = usePlayerStore.getState();
+  const owner = queueRequestOwner();
   // Somebody is already listening: their queue is not up for replacing.
   if (before.isPlaying) return;
   // Coming back to the app is a common thing to do, and what this asks for is
@@ -3176,9 +3296,10 @@ async function adoptNewerServerQueue(): Promise<void> {
   } catch {
     return;
   }
+  if (!ownsQueueRequest(owner)) return;
   if (!saved || saved.entries.length === 0) return;
   // Same answer the push guard asks for, already paid for here.
-  lastOwnerCheck = { at: Date.now(), theirs: !!saved.changedBy && saved.changedBy !== CLIENT_NAME };
+  lastOwnerCheck = { at: Date.now(), theirs: !!saved.changedBy && saved.changedBy !== CLIENT_NAME, owner: auth };
   if (!saved.changedBy || saved.changedBy === CLIENT_NAME) return;
   // A server that does not date its queue cannot be shown to be newer, and
   // guessing here is how somebody loses what they were listening to.
@@ -3216,12 +3337,12 @@ function clearPlayedHere(): void {
   playedHere = false;
 }
 
-let lastOwnerCheck = { at: 0, theirs: false };
+let lastOwnerCheck = { at: 0, theirs: false, owner: null as SubsonicAuth | null };
 
 /** A push of our own makes this device the last writer, which is the same
  *  answer the check below would come back with, one request later. */
 function markWeOwnServerQueue(): void {
-  lastOwnerCheck = { at: Date.now(), theirs: false };
+  lastOwnerCheck = { at: Date.now(), theirs: false, owner: useAuthStore.getState().auth };
 }
 
 /** How long that answer is worth reusing. Pausing and then leaving the app is
@@ -3242,7 +3363,8 @@ const OWNER_CHECK_TTL = 10_000;
  * every version before this one had.
  */
 async function serverQueueIsSomeoneElses(auth: SubsonicAuth): Promise<boolean> {
-  if (Date.now() - lastOwnerCheck.at < OWNER_CHECK_TTL) return lastOwnerCheck.theirs;
+  if (lastOwnerCheck.owner === auth && Date.now() - lastOwnerCheck.at < OWNER_CHECK_TTL) return lastOwnerCheck.theirs;
+  const owner = queueRequestOwner(), check = lastOwnerCheck;
   let theirs = false;
   try {
     const saved = await getPlayQueue(auth);
@@ -3254,13 +3376,16 @@ async function serverQueueIsSomeoneElses(auth: SubsonicAuth): Promise<boolean> {
     // asks again rather than inheriting a guess.
     return false;
   }
-  lastOwnerCheck = { at: Date.now(), theirs };
+  // A later push already answered this question, or this reply left its
+  // account/queue while waiting. It cannot replace that newer answer.
+  if (ownsQueueRequest(owner) && lastOwnerCheck === check) lastOwnerCheck = { at: Date.now(), theirs, owner: auth };
   return theirs;
 }
 
 /** Saves the queue on this device and, if there is a session, on the server. */
 function syncQueueNow(force = false, syncRemote = true) {
   saveQueueLocal(force);
+  const owner = queueRequestOwner();
   // The local copy above is the one that matters offline, and it is the only
   // one written there: the server's copy is a request, and offline mode makes
   // none. Without this the queue was pushed every twenty seconds and on every
@@ -3288,7 +3413,7 @@ function syncQueueNow(force = false, syncRemote = true) {
           // Playback may have resumed while the server answered, and then the
           // ids and the second gathered above are already out of date; the
           // tick that comes with playing will push the current ones.
-          if (usePlayerStore.getState().isPlaying) return;
+          if (!ownsQueueRequest(owner) || !playedHere || usePlayerStore.getState().isPlaying) return;
           markWeOwnServerQueue();
           await savePlayQueue(auth, ids, current.id, positionMs);
         })();
@@ -3446,8 +3571,15 @@ export function initRemoteIntegration() {
       void upnpSetCrossfade(crossfadeSec > 0);
       if (queue[index]) void remoteLoadIndex(index, isPlaying, positionSec);
     },
-    onTrackChanged: (index, positionSec, durationSec) => {
+    onTrackChanged: (reportedIndex, positionSec, durationSec, id) => {
       const state = usePlayerStore.getState();
+      // Native owns remote progression while JS may be asleep. Its earlier
+      // queue index must not select a different song after a local reorder.
+      let index = reportedIndex;
+      if (id) {
+        if (state.queue[index]?.id !== id) index = state.queue.findIndex((s) => s.id === id);
+        if (index < 0 || index === state.index) return;
+      }
       const song = state.queue[index];
       if (!song) return;
       usePlayerStore.setState({
@@ -3456,6 +3588,12 @@ export function initRemoteIntegration() {
         durationSec: plausibleDuration(durationSec, song.duration || state.durationSec, song.duration),
       });
       onTrackChanged(song);
+    },
+    onLost: (reason, deviceName) => {
+      const name = deviceName || 'UPnP';
+      useToast.getState().show(reason === 'replaced'
+        ? tg('{name} is playing something else', { name })
+        : tg('Lost the connection to {name}', { name }));
     },
     onDisconnected: (lastPositionSec) => {
       // The casting media session is already closed by `upnpDisconnect` (covers
@@ -3514,6 +3652,7 @@ export function initRemoteIntegration() {
       }
       const ni = nextIndex(false);
       if (ni == null) {
+        clearFinishedAudiobookProgress();
         usePlayerStore.setState({ isPlaying: false });
       }
       else void loadIndex(ni, true);
@@ -3656,6 +3795,8 @@ interface PlayerState {
        * next album you pressed play on come out shuffled too.
        */
       shuffled?: boolean;
+      /** Resume a book in chapter order, regardless of the music shuffle mode. */
+      ordered?: boolean;
     },
   ) => Promise<boolean>;
   /**
@@ -3724,7 +3865,7 @@ interface PlayerState {
   /** Restores the queue saved on this device (without playing).
    *  Returns true if there was a local copy (even an intentionally emptied
    *  queue): in that case the server backup should not enter. */
-  restoreFromStorage: () => Promise<boolean>;
+  restoreFromStorage: (onRestored?: () => void) => Promise<boolean>;
   /** Resumes the last queue: first the local copy; if none, the server's. */
   restoreQueue: () => Promise<void>;
   /** Reloads the current track against the active server URL, preserving
@@ -3862,8 +4003,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // button does, and turning the mode off afterwards puts the album back in
     // its order — that is what `originalQueue` is for. Asking for both deals
     // everything: there was no tapped song to keep.
-    const dealAll = opts?.shuffled && songs.length > 1;
-    const deal = !dealAll && get().shuffle && songs.length > 1;
+    const dealAll = !opts?.ordered && opts?.shuffled && songs.length > 1;
+    const deal = !opts?.ordered && !dealAll && get().shuffle && songs.length > 1;
     const first = songs[startIndex];
     const queued = dealAll
       ? dealt(songs)
@@ -3891,8 +4032,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       radioSeed: get().radioSeed,
     };
     queueOrigin = null;
+    // The desired queue is published before native accepts its source. Its
+    // initial zero is not an observed position of the still-audible chapter.
+    const parkedLongForm = parkLongFormSource();
     set({
       queue: queued,
+      ...(opts?.ordered ? { shuffle: false } : {}),
       index: at,
       queuedCount: 0,
       positionSec: 0,
@@ -3920,7 +4065,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // A later tap owns both playback and its warming hold. Neither a failed
     // older request nor a profile change may restore the queue it replaced.
     if (!ok && streamWarming.owns(warmIntent) && useAuthStore.getState().auth === warmAuth
-      && get().queue === queued && get().index === at && before.queue.length > 0) set(before);
+      && get().queue === queued && get().index === at && before.queue.length > 0) {
+      longFormOwner = parkedLongForm;
+      set(before);
+      observeLongFormState();
+    }
     if (releasedWarming && useAuthStore.getState().auth === warmAuth) warmUpcoming();
     return ok;
   },
@@ -4168,6 +4317,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // module's `handleSeek`). A position the player cannot answer is not a seek
     // that goes nowhere, it is a player that stops.
     if (!Number.isFinite(sec)) return;
+    resumeSeekGeneration++;
+    if (longFormOwner) longFormOwner.pendingResume = false;
     const hadTrimmedEnd = silenceLoopManaged() || silenceTailManaged();
     silenceSession.manualSeek();
     if (hadTrimmedEnd) {
@@ -4427,12 +4578,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   restoreFromServer: async (replace = false) => {
     const { auth, offline } = useAuthStore.getState();
     if (!auth || offline || (!replace && get().queue.length > 0)) return false;
+    const owner = queueRequestOwner();
     let saved;
     try {
       saved = await getPlayQueue(auth);
     } catch {
       return false;
     }
+    if (!ownsQueueRequest(owner)) return false;
     if (!saved || saved.entries.length === 0) return false;
     const songs = saved.entries;
     const index = saved.current
@@ -4466,20 +4619,22 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       queueDealt: false,
     });
     // Load the track (without playing) and leave the position ready.
-    await loadIndex(index, false);
+    const loading = loadIndex(index, false), installation = queueRequestOwner();
+    await loading;
     // A tap that landed while this was loading owns the player now (`loadToken`
     // saw to that). What is left here belongs to the queue being restored, and
     // running it against another one would drop somebody else's song at the
     // position this one was left at, paused.
-    if (get().queue !== songs) return true;
+    if (!ownsQueueRequest(installation)) return true;
     if (positionSec > 0) seekActive(positionSec);
     usePlayerStore.setState({ positionSec, isPlaying: false });
     return true;
   },
 
-  restoreFromStorage: async () => {
+  restoreFromStorage: async (onRestored) => {
     const key = queueStorageKey();
     if (!key || get().queue.length > 0) return true;
+    const owner = queueRequestOwner();
     let saved: StoredQueue | null = null;
     try {
       const raw = await getItem(key);
@@ -4487,6 +4642,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     } catch {
       return false;
     }
+    if (!ownsQueueRequest(owner) || queueStorageKey() !== key) return true;
     if (!saved || !Array.isArray(saved.queue)) return false;
     // What the comparison with the server's copy is made against.
     localSavedAt = saved.savedAt ?? 0;
@@ -4501,6 +4657,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         queueDealt: false,
         repeat: isRepeatMode(saved.repeat) ? saved.repeat : 'off',
       });
+      onRestored?.();
       return true;
     }
     // If something already started playing in the meantime, don't override the queue.
@@ -4534,11 +4691,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       queueDealt: saved.dealt === true,
       repeat: isRepeatMode(saved.repeat) ? saved.repeat : 'off',
     });
-    await loadIndex(index, false);
+    const loading = loadIndex(index, false), installation = queueRequestOwner();
+    await loading;
     // Same as the server restore above: only if this queue is still the one.
-    if (get().queue !== saved.queue) return true;
+    if (!ownsQueueRequest(installation)) return true;
     if (positionSec > 0) seekActive(positionSec);
     usePlayerStore.setState({ positionSec, isPlaying: false });
+    onRestored?.();
     return true;
   },
 
@@ -4555,8 +4714,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // hundred songs of it, and loads its track into the player. That is the
     // last thing the opening waits for.
     await timed('boot queue', async () => {
-      const handled = await get().restoreFromStorage();
-      if (!handled && get().queue.length === 0) {
+      const owner = queueRequestOwner();
+      let restored: ReturnType<typeof queueRequestOwner> | undefined;
+      const handled = await get().restoreFromStorage(() => { restored = queueRequestOwner(); });
+      if (!handled && ownsQueueRequest(owner) && get().queue.length === 0) {
         await get().restoreFromServer();
         return;
       }
@@ -4564,7 +4725,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       // the first screens are asking for what they draw (#50). It replaces this
       // one only if it turns out to be newer, and only while nobody has started
       // listening here.
-      setTimeout(() => void adoptNewerServerQueue(), 4000);
+      // Only a completed restore schedules adoption. A superseded read's
+      // `true` means "do not fall back", not ownership of the new queue.
+      if (restored) {
+        const installed = restored;
+        setTimeout(() => { if (ownsQueueRequest(installed)) void adoptNewerServerQueue(); }, 4000);
+      }
     });
   },
 
@@ -4583,6 +4749,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   reset: async (forProfile = false) => {
+    // Clearing an empty queue also cancels a disk read/native load still on
+    // its way; returning to the same account cannot revive that old intent.
+    loadToken++;
     resetWarmed();
     cancelPlaybackRecovery();
     get().cancelSleepTimer();

@@ -23,8 +23,7 @@ import { useScreenSize } from '@/hooks/useScreenSize';
 import {
   canGoIntoPlaylist,
   songCoverUrl,
-  removeFromPlaylist,
-  reorderPlaylist,
+  replacePlaylistTracklist,
   star,
   unstar,
   type Song,
@@ -39,7 +38,7 @@ import { useSharePicker } from '@/store/sharePicker';
 import { normKey, pickFolder } from '@/lib/localLibrary';
 import { MenuRequestScope } from '@/lib/menuRequest';
 import { useArtistPicker } from '@/store/artistPicker';
-import { useAuthStore } from '@/store/auth';
+import { profileScopeId, useAuthStore } from '@/store/auth';
 import { usePlaylistPicker } from '@/store/playlistPicker';
 import { useLyricToolTarget } from '@/store/lyricToolTarget';
 import { useDownloads } from '@/store/downloads';
@@ -54,6 +53,8 @@ import { Dialog } from './Dialog';
 import { ExplicitBadge, useExplicitBadge } from './ExplicitBadge';
 import { StarRating } from './StarRating';
 import { MenuGlassCardFrame } from './MenuGlassCard';
+import { getChannel, getPodcastEpisode } from '@/api/podcasts';
+import { openPodcastEpisodeMenu } from './PodcastMenuSheet';
 
 const MenuCardContext = createContext(false);
 
@@ -168,10 +169,35 @@ function PlaybackModeActions({ canChange }: { canChange: () => boolean }) {
 export function SongMenuSheet() {
   const song = useSongMenu((s) => s.song);
   const session = useSongMenu((s) => s.session);
-  return song ? <SongMenuContent key={session} song={song} session={session} /> : null;
+  return song ? song.podcastChannelId ? <PodcastMenuRedirect key={session} song={song} session={session} />
+    : <SongMenuContent key={session} song={song} session={session} /> : null;
+}
+
+/** An RSS episode never mounts the music-server action panel. Resolve only
+ * its two local rows, then open the same glass episode menu as its own page. */
+function PodcastMenuRedirect({ song, session }: { song: Song; session: number }) {
+  useEffect(() => {
+    let active = true;
+    const owner = profileScopeId(), auth = useAuthStore.getState().auth;
+    const options = useSongMenu.getState();
+    const current = () => active && owner === profileScopeId() && auth === useAuthStore.getState().auth
+      && useSongMenu.getState().session === session && useSongMenu.getState().song === song;
+    void Promise.all([getChannel(song.podcastChannelId!), getPodcastEpisode(song.id)]).then(([storedChannel, storedEpisode]) => {
+      if (!current()) return;
+      const channel = storedChannel ?? { id: song.podcastChannelId!, title: song.artist || song.album || song.title };
+      const episode = storedEpisode ?? { id: song.id, channelId: channel.id, title: song.title, url: song.url, duration: song.duration };
+      useSongMenu.getState().close();
+      openPodcastEpisodeMenu(channel, episode, { ...options.extras, sleep: options.sleep });
+    }).catch(() => { if (current()) useSongMenu.getState().close(); });
+    return () => { active = false; };
+  }, [song, session]);
+  return null;
 }
 
 function SongMenuContent({ song, session }: { song: Song; session: number }) {
+  const [menuOwner] = useState(() => ({ profile: profileScopeId(), auth: useAuthStore.getState().auth, offline: useAuthStore.getState().offline }));
+  const ownsMenuProfile = () => menuOwner.profile === profileScopeId() && menuOwner.auth === useAuthStore.getState().auth
+    && menuOwner.offline === useAuthStore.getState().offline;
   const mounted = useRef(true);
   const actionClosing = useRef(false);
   const exiting = useRef(false);
@@ -367,8 +393,7 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
   }
 
   function removeFromList() {
-    if ((!auth && !offline) || !context) return;
-    close();
+    if ((!auth && !offline) || !context || !ownsMenuProfile()) return;
     const { playlistId, index } = context;
     const key = ['playlist', playlistId];
     // Optimistic: the song disappears from the list immediately; the real
@@ -376,39 +401,36 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
     // restores it in its position (the server never knew about it).
     const prev = queryClient.getQueryData<{ playlist: unknown; songs: Song[] }>(key);
     const prevList = queryClient.getQueryData<{ id: string; songCount?: number }[]>(['playlists']);
-    if (prev) {
-      const nextSongs = prev.songs.filter((_, i) => i !== index);
-      queryClient.setQueryData(key, { ...prev, songs: nextSongs });
+    if (!prev || prev.songs[index]?.id !== song.id) { toast(t("Couldn't complete the action")); return; }
+    close();
+    const expectedIds = prev.songs.map((item) => item.id);
+    const nextSongs = prev.songs.filter((_, i) => i !== index);
+    const optimistic = queryClient.setQueryData(key, { ...prev, songs: nextSongs });
       // Optimistic count in the Library (`songsLabel`).
-      queryClient.setQueryData<{ id: string; songCount?: number }[]>(['playlists'], (list) =>
+    const optimisticList = queryClient.setQueryData<{ id: string; songCount?: number }[]>(['playlists'], (list) =>
         list?.map((p) => (p.id === playlistId ? { ...p, songCount: nextSongs.length } : p)),
       );
-    }
     showUndoToast(t('Removed from playlist'), t('Undo'), {
       commit: () => {
+        if (!ownsMenuProfile()) return;
         void (async () => {
           try {
-              // We rewrite the list to the final state (without the removed song)
-              // instead of removing by index: it's a "set", identical online and
-              // offline, so there's no double deletion if the deferred commit
-              // falls already in offline mode. If it was the last song (list at
-              // 0), the index method is the proven one.
-            if (prev) {
-              const finalIds = prev.songs.filter((_, i) => i !== index).map((s) => s.id);
-              if (finalIds.length > 0) await reorderPlaylist(playlistId, finalIds);
-              else await removeFromPlaylist(playlistId, index);
-            }
+            // Deletion is an expected sub-sequence replacement, not a reorder.
+            // The API rereads and validates the exact original occurrence list.
+            await replacePlaylistTracklist(playlistId, nextSongs.map((item) => item.id), expectedIds);
           } catch {
-            useToast.getState().show(t("Couldn't complete the action"));
+            if (ownsMenuProfile()) useToast.getState().show(t("Couldn't complete the action"));
           }
+          if (!ownsMenuProfile()) return;
           queryClient.invalidateQueries({ queryKey: key });
           queryClient.invalidateQueries({ queryKey: ['playlists'] });
         })();
       },
       undo: () => {
-        if (prev) queryClient.setQueryData(key, prev);
+        if (!ownsMenuProfile()) return;
+        if (queryClient.getQueryData(key) === optimistic) queryClient.setQueryData(key, prev);
         else queryClient.invalidateQueries({ queryKey: key });
-        if (prevList) queryClient.setQueryData(['playlists'], prevList);
+        if (prevList && queryClient.getQueryData(['playlists']) === optimisticList) queryClient.setQueryData(['playlists'], prevList);
       },
     });
   }

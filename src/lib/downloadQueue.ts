@@ -22,6 +22,8 @@ interface Entry {
   promise: Promise<DownloadOutcome>; resolve: (outcome: DownloadOutcome) => void;
   running?: Promise<void>; transfer?: Transfer; interrupting?: Promise<void>; snapshot?: DownloadQueueItem;
   cleanup?: () => Promise<void>;
+  permitted?: (groups: readonly string[]) => boolean;
+  policyPaused?: boolean;
   token?: object; blocked?: Promise<void>; hidden?: boolean;
 }
 interface Options {
@@ -122,6 +124,15 @@ export function createDownloadQueue(options: Options) {
       owner = next;
     }
     if (next && !options.allowed()) void pauseProfile(options.profile(next));
+    if (next) for (const entry of entries.values()) if (entry.profile === options.profile(next) && entry.permitted && !terminal(entry.item.status)) {
+      if (!entry.permitted(entry.item.groups)) {
+        entry.policyPaused = true;
+        if (entry.item.status !== 'paused') void interrupt(entry, false);
+      } else if (entry.policyPaused) {
+        entry.policyPaused = false;
+        if (entry.item.status === 'paused' && !paused.has(entry.profile)) entry.item.status = 'queued';
+      }
+    }
   };
   const kick = () => {
     if (draining) return;
@@ -160,7 +171,8 @@ export function createDownloadQueue(options: Options) {
       active++; entry.item.status = 'downloading'; entry.item.error = undefined;
       const token = {}; entry.token = token;
       const current = () => entries.get(entry.item.key) === entry && options.owner() === auth
-        && entry.token === token && options.allowed() && !paused.has(scope) && entry.item.status === 'downloading';
+        && entry.token === token && options.allowed() && (!entry.permitted || entry.permitted(entry.item.groups))
+        && !paused.has(scope) && entry.item.status === 'downloading';
       const check = () => { if (!current()) throw new DownloadInterrupted('Download interrupted'); };
       const context: DownloadContext = { auth, current, check, cancelled: () => entry.item.status === 'cancelled' || entries.get(entry.item.key) !== entry,
         progress: (written, total) => {
@@ -190,7 +202,7 @@ export function createDownloadQueue(options: Options) {
   return {
     sync: kick,
     getActivity: activity,
-    add(song: Song, group: string, run: Entry['run'], defer = false, cleanup?: Entry['cleanup']): Promise<DownloadOutcome> {
+    add(song: Song, group: string, run: Entry['run'], defer = false, cleanup?: Entry['cleanup'], permitted?: Entry['permitted']): Promise<DownloadOutcome> {
       sync(); const auth = options.owner();
       if (draining || !auth || !options.allowed()) return Promise.resolve('cancelled');
       const scope = options.profile(auth), key = `${scope}|${song.id}`;
@@ -204,12 +216,13 @@ export function createDownloadQueue(options: Options) {
       }
       const old = entries.get(key);
       if (old && old.item.status !== 'failed' && old.item.status !== 'cancelled') {
+        if (!old.permitted && permitted) old.permitted = permitted;
         if (!old.item.groups.includes(group)) old.item.groups.push(group);
-        if (!defer) publish(); return old.promise;
+        if (!defer) kick(); return old.promise;
       }
       let resolve!: Entry['resolve'];
       const promise = new Promise<DownloadOutcome>((yes) => { resolve = yes; });
-      const entry: Entry = { profile: scope, run, promise, resolve, cleanup,
+      const entry: Entry = { profile: scope, run, promise, resolve, cleanup, permitted,
         item: { key, song, status: paused.has(scope) ? 'paused' : 'queued', bytesWritten: 0, bytesTotal: 0, groups: [group] } };
       if (old?.running || old?.interrupting || old?.blocked) {
         const blocked = hold(scope, Promise.all([old.running, old.interrupting, old.blocked]).then(() => {}));
@@ -237,9 +250,11 @@ export function createDownloadQueue(options: Options) {
       const work = [...entries.values()].filter((entry) => entry.profile === scope).map((entry) => interrupt(entry, true));
       paused.delete(scope); publish(); await Promise.all(work);
     },
-    cancelGroup(group: string) {
-      preparationEpoch++;
-      const scope = profile();
+    cancelGroup(group: string, targetScope = profile()) {
+      // Cleaning an old account's RSS group must not revoke a promotion the
+      // newly selected account has already begun.
+      if (targetScope === profile()) preparationEpoch++;
+      const scope = targetScope;
       for (const entry of entries.values()) if (entry.profile === scope && entry.item.groups.includes(group)) {
         entry.item.groups = entry.item.groups.filter((value) => value !== group);
         if (!entry.item.groups.length) void interrupt(entry, true);
@@ -249,6 +264,7 @@ export function createDownloadQueue(options: Options) {
     forget(ids: string[]) {
       preparationEpoch++;
       const scope = profile();
+      const settled: Promise<unknown>[] = [];
       for (const id of ids) {
         const key = `${scope}|${id}`, entry = entries.get(key);
         if (entry) {
@@ -256,10 +272,12 @@ export function createDownloadQueue(options: Options) {
           entry.item.status = 'cancelled'; entry.hidden = true;
           // Keep a non-visible file lease until old commit/cleanup ends. A
           // new download of this ID must wait even after Delete hides its row.
-          void Promise.all([entry.running, entry.blocked, stopping]).finally(() => { if (entries.get(key) === entry) entries.delete(key); });
+          const done = Promise.all([entry.running, entry.blocked, stopping]).finally(() => { if (entries.get(key) === entry) entries.delete(key); });
+          settled.push(done);
         }
       }
       publish();
+      return Promise.all(settled).then(() => {});
     },
     async removeProfile(scope: string) {
       preparationEpoch++;

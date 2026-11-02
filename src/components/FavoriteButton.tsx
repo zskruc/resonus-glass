@@ -6,6 +6,8 @@ import { GlassPressable } from '@/components/glass';
 
 import { canGoIntoPlaylist, star, unstar, type Song, type StarType } from '@/api/data';
 import { applyStarChange, resyncFavorites, unstarWithUndo } from '@/lib/favoritesCache';
+import { invalidatePodcastFavorites, togglePodcastHeart } from '@/api/podcasts';
+import { usePodcastFavoriteIds } from '@/lib/podcastFavorites';
 import { haptic } from '@/lib/haptics';
 import { useAuthStore } from '@/store/auth';
 import { usePins } from '@/store/pins';
@@ -35,14 +37,25 @@ interface Props {
   playlistSong?: Song;
 }
 
-export function FavoriteButton({ id, type = 'song', starred, size = 22, undo, unselectedColor,
-  glyph = 'heart', selectedColor, style, hitSlop = 10, resetKey, playlistSong }: Props) {
+export function FavoriteButton(props: Props) {
+  return props.playlistSong?.podcastChannelId ? <PodcastFavoriteButton {...props} /> : <FavoriteControl {...props} />;
+}
+
+/** Music rows do not acquire an extra podcast query observer. Only an actual
+ * RSS player heart subscribes to its profile's local favorite set. */
+function PodcastFavoriteButton(props: Props) {
+  const favorites = usePodcastFavoriteIds();
+  return <FavoriteControl {...props} starred={favorites.has(props.id)} podcastChannelId={props.playlistSong!.podcastChannelId} />;
+}
+
+function FavoriteControl({ id, type = 'song', starred, size = 22, undo, unselectedColor,
+  glyph = 'heart', selectedColor, style, hitSlop = 10, resetKey, playlistSong, podcastChannelId }: Props & { podcastChannelId?: string }) {
   const auth = useAuthStore((s) => s.auth);
   const offline = useAuthStore((s) => s.offline);
   const t = useT();
   const pagePalette = useArtistPagePalette();
   const toast = useToast((s) => s.show);
-  const binding = useMemo(() => ({ id, type, resetKey }), [id, type, resetKey]);
+  const binding = useMemo(() => ({ id, type, resetKey, podcastChannelId, auth }), [id, type, resetKey, podcastChannelId, auth]);
   const favoriteBinding = useMemo(() => ({ binding, starred }), [binding, starred]);
   const playlistBinding = useMemo(() => ({ binding, song: playlistSong, auth, offline }), [binding, playlistSong, auth, offline]);
   const currentBinding = useRef<object | null>(binding);
@@ -55,7 +68,7 @@ export function FavoriteButton({ id, type = 'song', starred, size = 22, undo, un
   const [waiting, setWaiting] = useState({ binding, value: false });
   const fav = favorite.binding === favoriteBinding ? favorite.value : !!starred;
   const busy = waiting.binding === binding && waiting.value;
-  const canHold = type === 'song' && playlistSong?.id === id && canGoIntoPlaylist(playlistSong);
+  const canHold = !podcastChannelId && type === 'song' && playlistSong?.id === id && canGoIntoPlaylist(playlistSong);
   const trackPointer = resetKey !== undefined || canHold;
 
   // Binding-derived state resets in the first render of a recycled item.
@@ -105,7 +118,7 @@ export function FavoriteButton({ id, type = 'song', starred, size = 22, undo, un
     // taking a favourite off waits behind «Undo» and nothing is asked of the
     // server until the toast goes. On the player, an artist or an album it is
     // a deliberate tap on a screen about that one thing: it goes out at once.
-    if (fav && undo) {
+    if (fav && undo && !podcastChannelId) {
       setFav(false);
       unstarWithUndo(type, id, () => setFav(true));
       return;
@@ -116,6 +129,12 @@ export function FavoriteButton({ id, type = 'song', starred, size = 22, undo, un
     const request = { binding, serial };
     pending.current = request;
     try {
+      if (podcastChannelId) {
+        const actual = await togglePodcastHeart(id, 'episode', podcastChannelId);
+        setFav(actual);
+        if (currentBinding.current === binding) toast(actual ? t('Added to favorites') : t('Removed from favorites'));
+        return;
+      }
       if (nextFav) await star(id, type);
       else await unstar(id, type);
       // Only the id is known here, so removing is exact and adding leaves the
@@ -126,7 +145,8 @@ export function FavoriteButton({ id, type = 'song', starred, size = 22, undo, un
       toast(nextFav ? t('Added to favorites') : t('Removed from favorites'));
     } catch {
       setFav(!nextFav); // revert on failure
-      resyncFavorites();
+      if (podcastChannelId) invalidatePodcastFavorites();
+      else resyncFavorites();
       toast(t("Couldn't complete the action"));
     } finally {
       if (pending.current === request) pending.current = null;

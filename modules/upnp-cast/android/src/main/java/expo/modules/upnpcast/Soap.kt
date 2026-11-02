@@ -28,7 +28,8 @@ object Soap {
     controlUrl: String,
     service: String,
     action: String,
-    arguments: String = ""
+    arguments: String = "",
+    timeoutMs: Int = DEFAULT_TIMEOUT_MS
   ): Result = withContext(Dispatchers.IO) {
     val envelope = buildString {
       append("<?xml version=\"1.0\" encoding=\"utf-8\"?>")
@@ -46,8 +47,8 @@ object Soap {
         setRequestProperty("Content-Type", "text/xml; charset=\"utf-8\"")
         setRequestProperty("SOAPAction", "\"$service#$action\"")
         setRequestProperty("Connection", "close")
-        connectTimeout = TIMEOUT_MS
-        readTimeout = TIMEOUT_MS
+        connectTimeout = timeoutMs
+        readTimeout = timeoutMs
         doOutput = true
         setFixedLengthStreamingMode(envelope.size)
       }
@@ -69,12 +70,12 @@ object Soap {
     }
   }
 
-  suspend fun fetch(url: String): String? = withContext(Dispatchers.IO) {
+  suspend fun fetch(url: String, timeoutMs: Int = DEFAULT_TIMEOUT_MS): String? = withContext(Dispatchers.IO) {
     var connection: HttpURLConnection? = null
     try {
       connection = (URL(url).openConnection() as HttpURLConnection).apply {
-        connectTimeout = TIMEOUT_MS
-        readTimeout = TIMEOUT_MS
+        connectTimeout = timeoutMs
+        readTimeout = timeoutMs
       }
       if (connection.responseCode != HttpURLConnection.HTTP_OK) null
       else connection.inputStream.bufferedReader().use { it.readText() }
@@ -114,6 +115,9 @@ object Soap {
     .replace("&apos;", "'")
     .replace("&amp;", "&")
 
-  private const val TIMEOUT_MS = 5000
+  const val DEFAULT_TIMEOUT_MS = 5000
+
+  /** Shorter than a command's: a poll that cannot get through should say so soon. */
+  const val POLL_TIMEOUT_MS = 3000
   private const val FAULT_LOG_CHARS = 400
 }

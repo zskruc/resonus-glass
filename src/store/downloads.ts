@@ -159,6 +159,8 @@ let cachedSongsDir: string | null = null;
 /** The two of them handed out as one object, and always the SAME object: what
  *  reads it keys its own index on that identity (see `catalogSongs`). */
 let cachedFull: DownloadsCatalog | null = null;
+/** Catalog edits and account changes invalidate answers already in flight. */
+let catalogEpoch = 0;
 
 /** Counts hydrations, so a slower earlier one can't overwrite a later one. */
 let hydrateRun = 0;
@@ -168,6 +170,15 @@ export function activeServerDir(): string | null {
   const auth = useAuthStore.getState().auth;
   return auth ? serverDir(auth) : null;
 }
+
+function assertCatalogOwner(dir: string, epoch: number) {
+  if (epoch !== catalogEpoch || activeServerDir() !== dir) throw new Error('Download catalog changed while it was being read');
+}
+useAuthStore.subscribe((state, previous) => {
+  const before = previous.auth ? serverDir(previous.auth) : null;
+  const after = state.auth ? serverDir(state.auth) : null;
+  if (before !== after) resetCatalogCache();
+});
 
 function deriveArtists(
   albums: DlAlbum[],
@@ -206,8 +217,11 @@ function deriveArtists(
 export async function getDownloadsCatalog(): Promise<DownloadsCatalog> {
   const dir = activeServerDir();
   if (!dir) return { songs: [], albums: [], artists: [] };
+  const epoch = catalogEpoch;
   const shelf = await getDownloadShelf();
-  if (!cachedSongs || cachedSongsDir !== dir) {
+  assertCatalogOwner(dir, epoch);
+  let songs = cachedSongs;
+  if (!songs || cachedSongsDir !== dir) {
     // Every song, which is what resolving an id offline needs. The shelf above
     // does not, and neither does the screen that shows it, so this waits until
     // something actually asks: on fifteen thousand downloads it is fifteen
@@ -216,15 +230,21 @@ export async function getDownloadsCatalog(): Promise<DownloadsCatalog> {
     if (!songsReading || songsReading.dir !== dir) {
       songsReading = { dir, work: timed('offline catalog', () => Db.allSongs(dir)) };
     }
+    const reading = songsReading;
     try {
-      cachedSongs = await songsReading.work;
+      songs = await reading.work;
+      assertCatalogOwner(dir, epoch);
+      if (cachedSongs !== songs || cachedSongsDir !== dir) cachedFull = null;
+      cachedSongs = songs;
+      cachedSongsDir = dir;
     } finally {
-      if (songsReading?.dir === dir) songsReading = null;
+      if (songsReading === reading) songsReading = null;
     }
-    cachedSongsDir = dir;
-    cachedFull = null;
   }
-  if (!cachedFull) cachedFull = { ...shelf, songs: cachedSongs };
+  assertCatalogOwner(dir, epoch);
+  if (!cachedFull || cachedFull.albums !== shelf.albums || cachedFull.artists !== shelf.artists || cachedFull.songs !== songs) {
+    cachedFull = { ...shelf, songs };
+  }
   return cachedFull;
 }
 
@@ -239,7 +259,9 @@ export async function getDownloadsCatalog(): Promise<DownloadsCatalog> {
 export async function getDownloadShelf(): Promise<Omit<DownloadsCatalog, 'songs'>> {
   const dir = activeServerDir();
   if (!dir) return { albums: [], artists: [] };
-  if (!cachedShelf || cachedForDir !== dir) {
+  const epoch = catalogEpoch;
+  let shelf = cachedShelf;
+  if (!shelf || cachedForDir !== dir) {
     if (!shelfReading || shelfReading.dir !== dir) {
       shelfReading = {
         dir,
@@ -249,23 +271,28 @@ export async function getDownloadShelf(): Promise<Omit<DownloadsCatalog, 'songs'
         }),
       };
     }
+    const reading = shelfReading;
     try {
-      cachedShelf = await shelfReading.work;
+      shelf = await reading.work;
+      assertCatalogOwner(dir, epoch);
+      if (cachedShelf !== shelf) cachedFull = null;
+      cachedShelf = shelf;
+      cachedForDir = dir;
     } finally {
-      if (shelfReading?.dir === dir) shelfReading = null;
+      if (shelfReading === reading) shelfReading = null;
     }
-    cachedForDir = dir;
   }
+  assertCatalogOwner(dir, epoch);
   // Always (not just on build): clearLocalCatalog() empties the global cover
   // index and downloaded covers need to be re-registered.
-  for (const a of cachedShelf.albums) {
+  for (const a of shelf.albums) {
     registerCover(a.id, a.coverUri);
     // Under the server's id, so a song from the mirror or the queue finds its
     // own picture too, not only the catalog's rows (#214).
     for (const [id, uri] of Object.entries(a.trackCovers ?? {})) registerCover(id, uri);
   }
-  for (const a of cachedShelf.artists) registerCover(a.id, a.coverUri);
-  return cachedShelf;
+  for (const a of shelf.artists) registerCover(a.id, a.coverUri);
+  return shelf;
 }
 
 /** Does the active account have downloads? A count, not the catalog. */
@@ -429,6 +456,7 @@ export async function albumHasDownloads(albumId: string): Promise<boolean> {
 
 /** Drops the in-memory view of the catalog, without asking anyone to re-read. */
 function resetCatalogCache() {
+  catalogEpoch++;
   cachedShelf = null;
   cachedForDir = null;
   cachedSongs = null;
@@ -866,6 +894,13 @@ interface DownloadsState {
   downloadSong: (song: Song) => Promise<void>;
   /** Downloads a loose batch of songs (multiple selection). */
   downloadSongs: (songs: Song[]) => Promise<void>;
+  /** RSS audio uses the same queue, limit, controls and native work lease.
+   * Its metadata/files remain in the podcast database, outside music albums. */
+  enqueueExternal: (song: Song, group: string, run: (context: DownloadContext) => Promise<void>,
+    cleanup?: () => Promise<void>, permitted?: (groups: readonly string[]) => boolean) => Promise<'completed' | 'failed' | 'cancelled'>;
+  forgetExternal: (ids: string[]) => Promise<void>;
+  cancelExternal: (group: string, ownerScope?: string) => void;
+  syncExternal: () => void;
   /** Stops an ongoing group download (already downloaded items are kept). */
   cancelDownload: (groupKey: string) => void;
   /** Deletes files for those songs and removes them from the catalog. */
@@ -1299,6 +1334,10 @@ export const useDownloads = create<DownloadsState>((set, get) => {
       reconcileProtection(queue.getActivity());
     },
     hydrated: false,
+    enqueueExternal: (song, group, run, cleanup, permitted) => queue.add(song, group, run, false, cleanup, permitted),
+    forgetExternal: (ids) => queue.forget(ids),
+    cancelExternal: (group, ownerScope) => queue.cancelGroup(group, ownerScope),
+    syncExternal: () => queue.sync(),
 
     hydrate: async () => {
       // Which run this is. Restoring the session re-runs this while the first
@@ -1508,6 +1547,10 @@ export const useDownloads = create<DownloadsState>((set, get) => {
       for (const group of groupRuns.values()) group.cancel();
       groupRuns.clear();
       await queue.drainAndClear(async () => {
+        // RSS audio shares this queue/control surface, while subscriptions,
+        // hearts, artwork and listening positions remain in their own DBs.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        await require('@/store/podcastDownloads').usePodcastDownloads.getState().clearAll(true);
         await locked(async () => {
         // The databases are closed before their directory goes, or the handles
         // would outlive the files they are pointing at.
@@ -1525,7 +1568,8 @@ export const useDownloads = create<DownloadsState>((set, get) => {
     },
 
     usageBytes: async () => timed('storage used', async () => {
-      let total = 0;
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      let total = await require('@/store/podcastDownloads').usePodcastDownloads.getState().usageBytes();
       // From the catalog, which knows what each file took when it was written.
       // This used to ask the file system for the size of every single file, one
       // after another: eleven thousand round trips on a large library, each one

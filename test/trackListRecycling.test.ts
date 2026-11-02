@@ -426,6 +426,44 @@ function row() {
 }
 
 describe('recycled shared playlist rendering and positions', () => {
+  it('opens canonical reordering from selection without swapping the recycler or carrying selected duplicate marks', () => {
+    const h = list(); let opened = 0;
+    h.render({ selection: { onReorder: () => { opened++; } } });
+    const initial = h.recycler();
+    h.row(2).props.onLongPress(); h.render();
+    const action = h.selectionBar().props.menu.find((item: { label: string }) => item.label === 'Reorder');
+    assert.ok(action);
+    action.onPress(); h.render();
+    assert.equal(opened, 1); assert.equal(h.selectionBar(), undefined);
+    assert.equal(h.recycler().type, initial.type);
+    assert.equal(h.recycler().props.ref, initial.props.ref);
+    assert.equal(h.recycler().props.data, initial.props.data);
+    assert.equal(h.recycler().props.renderScrollComponent, initial.props.renderScrollComponent);
+    h.row(2).props.onPressIn(event(77)); h.row(2).props.onPress();
+    assert.deepEqual(h.played, [2]);
+  });
+
+  it('keeps optional resume controls under every album header and refreshes their action without replacing rows', () => {
+    const h = list(); let resumed = '';
+    h.setUiStyle('appleMusic');
+    const initial = h.recycler();
+    for (const style of ['primuse', 'artist', 'volta', 'minidisc'] as const) {
+      h.render({ primuseAlbumPresentation: style === 'primuse' ? { sourceHref: '/album/one' } : undefined,
+        albumArtistPresentation: style === 'artist' ? { sourceHref: '/album/one' } : undefined,
+        albumActionLayout: style === 'volta' ? 'volta' : undefined,
+        albumPresentation: style === 'minidisc' ? { palette: buildMinidiscAlbumPalette('#315b7f', false) } : undefined,
+        resumeAction: { label: 'Continue listening', detail: `Chapter ${style}`, onPress: () => { resumed = style; } } });
+      const button = find(h.recycler().props.ListHeaderComponent, (item) => item.props.accessibilityLabel === `Continue listening, Chapter ${style}`)!;
+      assert.ok(button); button.props.onPress(); assert.equal(resumed, style);
+      assert.equal(!!find(h.recycler().props.ListHeaderComponent, (item) => item.type === 'MinidiscAlbumHeader'), style === 'minidisc');
+      assert.equal(h.recycler().props.data, initial.props.data);
+      assert.equal(h.recycler().props.ref, initial.props.ref);
+    }
+    h.render({ resumeAction: undefined });
+    assert.equal(find(h.recycler().props.ListHeaderComponent, (item) => typeof item.props.accessibilityLabel === 'string'
+      && item.props.accessibilityLabel.startsWith('Continue listening,')), undefined);
+  });
+
   it('applies the artist page foreground after Apple row styling and restores defaults outside its context', () => {
     const h = row();
     h.setUiStyle('appleMusic');

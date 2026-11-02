@@ -8,11 +8,8 @@ import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Linking,
-  Modal,
   Pressable,
   RefreshControl,
-  ScrollView,
   Text,
   TextInput,
   View,
@@ -20,22 +17,20 @@ import {
 import Animated from 'react-native-reanimated';
 
 import {
-  listChannels,
+  listAddedChannels,
   refreshAll,
-  refreshChannel,
-  unsubscribe,
   type PodcastChannel,
 } from '@/api/podcasts';
 import { COVER, coverArtUrl } from '@/api/data';
 import { BackChevron } from '@/components/BackChevron';
 import { BrowseFrame, useSearchBox, type BrowserProps } from '@/components/BrowseFrame';
 import { Cover } from '@/components/Cover';
-import { Dialog } from '@/components/Dialog';
 import { EmptyState } from '@/components/EmptyState';
 import Icon from '@/components/Icon';
 import { Message } from '@/components/Message';
-import { MenuGlassCardFrame, MenuGlassCardHeader } from '@/components/MenuGlassCard';
 import { PodcastAddSheet } from '@/components/PodcastAddSheet';
+import { openPodcastMenu } from '@/components/PodcastMenuSheet';
+import { podcastCover } from '@/api/podcasts';
 import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
 import { useListPadding } from '@/hooks/useScreenSize';
@@ -46,6 +41,7 @@ import type { Language } from '@/i18n/languages';
 import { listPerf } from '@/lib/listPerf';
 import { queryClient } from '@/lib/query';
 import { useSettings } from '@/store/settings';
+import { profileScopeId } from '@/store/auth';
 import { useToast } from '@/store/toast';
 import {
   colors,
@@ -88,14 +84,12 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
   const toast = useToast((s) => s.show);
 
   const [adding, setAdding] = useState(false);
-  const [menu, setMenu] = useState<PodcastChannel | null>(null);
-  const [removing, setRemoving] = useState<PodcastChannel | null>(null);
   const [query, setQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['podcastChannels'],
-    queryFn: listChannels,
+    queryFn: listAddedChannels,
   });
 
   // Home's shelf is built from the same rows.
@@ -105,14 +99,17 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
     );
 
   async function refresh() {
+    const owner = profileScopeId();
     setRefreshing(true);
-    const { failed, total } = await refreshAll().finally(() => setRefreshing(false));
-    await reload();
-    if (total > 0 && failed === total) {
-      toast(t("Couldn't reach any of your podcast feeds."));
-    } else if (failed > 0) {
-      toast(t('{n} podcast feeds could not be read.', { n: failed }));
-    }
+    try {
+      const { failed, total } = await refreshAll();
+      if (owner !== profileScopeId()) return;
+      await reload();
+      if (total > 0 && failed === total) toast(t("Couldn't reach any of your podcast feeds."));
+      else if (failed > 0) toast(t('{n} podcast feeds could not be read.', { n: failed }));
+    } catch {
+      if (owner === profileScopeId()) toast(t("Couldn't load your podcasts."));
+    } finally { setRefreshing(false); }
   }
 
   const channels = useMemo(() => {
@@ -140,18 +137,6 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
     </GlassPressable>
   );
 
-  async function confirmRemove() {
-    const channel = removing;
-    setRemoving(null);
-    if (!channel) return;
-    try {
-      await unsubscribe(channel.id);
-      await reload();
-      toast(t('Unsubscribed from “{name}”', { name: channel.title }));
-    } catch {
-      toast(t("Couldn't complete the action"));
-    }
-  }
 
   return (
     <BrowseFrame embedded={embedded}>
@@ -187,7 +172,7 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
 
       {isLoading ? (
         <ActivityIndicator style={{ marginTop: spacing.xl }} color={colors.accent} />
-      ) : isError ? (
+      ) : isError && !data ? (
         <Message text={t("Couldn't load your podcasts.")} onRetry={() => refetch()} />
       ) : (
         <Animated.FlatList
@@ -212,10 +197,10 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
             <Pressable
               style={styles.row}
               onPress={() => router.push(`/podcast/${item.id}`)}
-              onLongPress={() => setMenu(item)}
+              onLongPress={() => openPodcastMenu(item)}
             >
               <Cover
-                uri={coverArtUrl(item.imageUrl, COVER.thumb)}
+                uri={coverArtUrl(podcastCover(item), COVER.thumb)}
                 size={56}
                 rounded
                 placeholderIcon="headset-outline"
@@ -236,7 +221,7 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
               </View>
               <Pressable
                 hitSlop={8}
-                onPress={() => setMenu(item)}
+                onPress={() => openPodcastMenu(item)}
                 accessibilityLabel={t('More')}
               >
                 <Icon name="ellipsis-horizontal" size={22} color={colors.textSecondary} />
@@ -260,74 +245,7 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
         onSubscribed={() => void reload()}
       />
 
-      <Modal
-        transparent
-        statusBarTranslucent
-        visible={!!menu || !!removing}
-        animationType="fade"
-        onRequestClose={() => removing ? setRemoving(null) : setMenu(null)}
-      >
-        {!removing ? (
-          <MenuGlassCardFrame onClose={() => setMenu(null)}>
-            <MenuGlassCardHeader title={menu?.title ?? ''} onClose={() => setMenu(null)} />
-            <ScrollView style={{ flexShrink: 1, minHeight: 0 }} keyboardShouldPersistTaps="handled">
-              <Pressable
-                style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
-                onPress={() => {
-                  const channel = menu;
-                  setMenu(null);
-                  if (!channel?.feedUrl) return;
-                  void refreshChannel(channel.feedUrl)
-                    .then(() => reload())
-                    .catch(() => toast(t("Couldn't read this feed")));
-                }}
-              >
-                <Icon name="refresh" size={24} color={colors.text} />
-                <Text style={styles.actionText}>{t('Refresh')}</Text>
-              </Pressable>
-              {menu?.siteUrl ? (
-                <Pressable
-                  style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
-                  onPress={() => {
-                    const url = menu?.siteUrl;
-                    setMenu(null);
-                    if (url) void Linking.openURL(url).catch(() => {});
-                  }}
-                >
-                  <Icon name="link-outline" size={24} color={colors.text} />
-                  <Text style={styles.actionText}>{t('Open website')}</Text>
-                </Pressable>
-              ) : null}
-              <Pressable
-                style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
-                onPress={() => {
-                  const channel = menu;
-                  setMenu(null);
-                  setRemoving(channel);
-                }}
-              >
-                <Icon name="trash-outline" size={24} color={colors.danger} />
-                <Text style={[styles.actionText, { color: colors.danger }]}>
-                  {t('Unsubscribe')}
-                </Text>
-              </Pressable>
-            </ScrollView>
-          </MenuGlassCardFrame>
-        ) : null}
 
-        <Dialog
-          inline
-          visible={!!removing}
-          title={t('Unsubscribe')}
-          message={t('Remove “{name}” and its episodes from this device?', {
-            name: removing?.title ?? '',
-          })}
-          confirmLabel={t('Unsubscribe')}
-          destructive
-          onCancel={() => setRemoving(null)}
-          onConfirm={() => void confirmRemove()}
-        />
-      </Modal>
     </BrowseFrame>
   );
 }

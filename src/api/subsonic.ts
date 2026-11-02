@@ -116,6 +116,8 @@ export interface Song {
   url?: string;
   /** `url` is a file (a podcast episode), not a live station: speed applies. */
   vod?: boolean;
+  /** Device-owned RSS episode, not a song in the music server's catalog. */
+  podcastChannelId?: string;
   /** Song genre (sent by Subsonic and Jellyfin). Used by radio so it doesn't
    *  die when similar artist tracks run out. */
   genre?: string;
@@ -294,6 +296,8 @@ export interface GuestAlbum extends Album {
 export interface Artist {
   id: string;
   name: string;
+  /** Optional server-provided filing name, independent from its display name. */
+  sortName?: string;
   coverArt?: string;
   albumCount?: number;
   starred?: string;
@@ -324,6 +328,8 @@ export interface Playlist {
   created?: string;
   /** Last modification (ISO). */
   changed?: string;
+  /** Offline mirror annotation: at least one song has a playable local file. */
+  availableOffline?: boolean;
 }
 
 /** Generates a random salt in hexadecimal. */
@@ -1971,6 +1977,11 @@ export interface PodcastChannel {
   lastPublishedAt?: number;
   /** When the feed was last read. */
   refreshedAt?: number;
+  newSinceAt?: number;
+  etag?: string;
+  lastModified?: string;
+  /** Persisted show artwork, retained independently from audio downloads. */
+  artFile?: string;
   /** Why the last read failed, if it did. */
   error?: string;
 }
@@ -1984,6 +1995,9 @@ export interface PodcastEpisode {
   description?: string;
   /** Publication date, in ms since the epoch. */
   publishedAt?: number;
+  episode?: number;
+  /** First seen by this device, not the publisher's editable release date. */
+  firstSeenAt?: number;
   /** Seconds. */
   duration?: number;
   /** The enclosure, played as `Song.url`. */

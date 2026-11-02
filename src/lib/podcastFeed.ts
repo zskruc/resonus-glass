@@ -23,6 +23,7 @@ export interface ParsedItem {
   description?: string;
   /** Publication date in ms since the epoch. */
   publishedAt?: number;
+  episode?: number;
   /** Seconds. */
   duration?: number;
   /** Where the audio is. An episode with none of this cannot be played. */
@@ -307,6 +308,8 @@ export function parseFeed(xml: string, channelId: string): ParsedFeed {
       size: enc.length,
     };
     const description = plain(block, 'description', 'summary', 'content', 'encoded');
+    const episodeNumber = Number(text(block, 'episode'));
+    if (Number.isFinite(episodeNumber) && Math.floor(episodeNumber) > 0) item.episode = Math.floor(episodeNumber);
     if (description) item.description = description;
     const image = attr(openTag(block, 'image'), 'href');
     if (image) item.imageUrl = image;

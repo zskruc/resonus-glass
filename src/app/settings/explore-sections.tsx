@@ -49,6 +49,7 @@ const LABEL: Record<ExploreSectionKey, string> = {
   radio: 'Radio',
   podcasts: 'Podcasts',
   folders: 'Folders',
+  downloads: 'Downloads',
 };
 
 function SectionRow({

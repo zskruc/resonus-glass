@@ -8,7 +8,9 @@ data class Track(
   val albumArtist: String?,
   val album: String?,
   val artworkUrl: String?,
-  val durationSeconds: Int
+  val durationSeconds: Int,
+  /** The song's id in the app, handed back so it can tell which one is playing. */
+  val id: String? = null
 )
 
 object Didl {

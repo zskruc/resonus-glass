@@ -16,6 +16,8 @@ import { useSettings } from '@/store/settings';
 import { fontSize, spacing, themed } from '@/theme';
 import { bump } from '@/lib/perfLog';
 import { Cover } from './Cover';
+import { openArtistMenu } from './ArtistMenuSheet';
+import { haptic } from '@/lib/haptics';
 
 export function ArtistRow({ artist }: { artist: Artist }) {
   bump('render · ArtistRow');
@@ -32,6 +34,7 @@ export function ArtistRow({ artist }: { artist: Artist }) {
           style={StyleSheet.flatten([styles.row, appleMusic && appleMusicStyles.mediaRow])}
           onPressIn={press.onPressIn}
           onPressOut={press.onPressOut}
+          onLongPress={() => { haptic('light'); openArtistMenu(artist); }}
         >
           <Cover uri={coverArtUrl(artist.coverArt ?? artist.id, COVER.thumb)} size={56} rounded />
           <View style={[styles.info, appleMusic && appleMusicStyles.rowInfo]}>

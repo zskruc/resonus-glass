@@ -31,6 +31,8 @@ import { BottomScrollEdge } from '@/components/BottomScrollEdge';
 import { GlobalTabBar } from '@/components/GlobalTabBar';
 import { LiquidDockProvider } from '@/hooks/useLiquidDock';
 import { MediaMenuSheet } from '@/components/MediaMenuSheet';
+import { ArtistMenuSheet } from '@/components/ArtistMenuSheet';
+import { PodcastMenuSheet } from '@/components/PodcastMenuSheet';
 import { GlobalPlaylistPicker } from '@/components/PlaylistPickerSheet';
 import { GlobalShareSheet } from '@/components/ShareSheet';
 import { SongInfoSheet } from '@/components/SongInfoSheet';
@@ -60,7 +62,8 @@ import { initNetworkType } from '@/store/networkType';
 import { useOfflineQueue } from '@/store/offlineQueue';
 import { usePins } from '@/store/pins';
 import { usePlayCounts } from '@/store/playCounts';
-import { initRemoteIntegration, usePlayerStore } from '@/store/player';
+import { initAudiobookProgressTracking, initRemoteIntegration, usePlayerStore } from '@/store/player';
+import { usePodcastDownloads } from '@/store/podcastDownloads';
 import { usePlayHistory } from '@/store/playHistory';
 import { useRecentSearches } from '@/store/recentSearches';
 import { APP_FONT_FAMILY, useSettings } from '@/store/settings';
@@ -236,6 +239,7 @@ export default function RootLayout() {
     // Server URL switching on network change (profiles with multiple URLs).
     initAutoUrl();
     initRemoteIntegration();
+    initAudiobookProgressTracking();
     // The widget, the Quick Settings tile and the launcher shortcuts.
     initHomeWidget();
     // The language in Android's per-app language setting, both ways.
@@ -270,6 +274,7 @@ export default function RootLayout() {
     const downloadsReady = authReady.then(async () => {
       await useSongCache.getState().hydrate();
       await useDownloads.getState().hydrate();
+      await usePodcastDownloads.getState().hydrate();
     });
     // Mirror + outbox for offline. Offline it is the library, so it is opened
     // right away: a query could otherwise resolve before it is readable and
@@ -478,6 +483,8 @@ export default function RootLayout() {
             {auth || offline ? <SongInfoSheet /> : null}
             {auth || offline ? <ArtistPickerSheet /> : null}
             {auth || offline ? <MediaMenuSheet /> : null}
+            {auth || offline ? <ArtistMenuSheet key={activeProfile} /> : null}
+            {auth || offline ? <PodcastMenuSheet key={activeProfile} /> : null}
             {auth || offline ? <GlobalPlaylistPicker /> : null}
             {auth || offline ? <GlobalShareSheet /> : null}
             </Freeze>
