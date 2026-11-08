@@ -1,7 +1,7 @@
 /** Browse the directory first; keeping a show is an explicit action on its page. */
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, Text, TextInput, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 
@@ -40,8 +40,15 @@ export default function PodcastDiscoverScreen() {
   const bottom = useScreenBottomPadding(), padding = useListPadding(spacing.lg);
   const [country, setCountry] = useState('us'), [genreId, setGenreId] = useState<number | undefined>();
   const [regionsOpen, setRegionsOpen] = useState(false), [query, setQuery] = useState(''), [term, setTerm] = useState('');
-  const [openingRequest, setOpeningRequest] = useState<{ context: object; id: number } | null>(null);
+  const [openingRequest, setOpeningRequest] = useState<{ context: object; id: number; controller: AbortController } | null>(null);
   const operation = useRef(0), previewRequest = useRef<AbortController | null>(null), mounted = useRef(true);
+  const finishPreview = useCallback((controller: AbortController | null) => {
+    if (!controller || previewRequest.current !== controller) return;
+    previewRequest.current = null;
+    // Cancellation rejects ownership, but still owns cleanup of this spinner.
+    // A late completion must never clear a replacement request's busy state.
+    if (mounted.current) setOpeningRequest((before) => before?.controller === controller ? null : before);
+  }, []);
   const context = useMemo(() => ({ auth, profile, country, genreId, query, offline, automaticOffline }),
     [auth, profile, country, genreId, query, offline, automaticOffline]);
   const opening = openingRequest?.context === context ? openingRequest.id : null;
@@ -60,11 +67,12 @@ export default function PodcastDiscoverScreen() {
     // Invalidate even an A → B → A switch between two React renders.
     const unsubscribe = useAuthStore.subscribe((next, previous) => {
       if (next.auth !== previous.auth || next.offline !== previous.offline || next.autoOffline !== previous.autoOffline) {
-        operation.current++; previewRequest.current?.abort();
+        operation.current++;
+        const canceled = previewRequest.current; canceled?.abort(); finishPreview(canceled);
       }
     });
-    return () => { mounted.current = false; previewRequest.current?.abort(); unsubscribe(); };
-  }, []);
+    return () => { mounted.current = false; const canceled = previewRequest.current; canceled?.abort(); finishPreview(canceled); unsubscribe(); };
+  }, [finishPreview]);
   const directory = useQuery({
     queryKey: ['podcastDirectory', profile, country, genreId ?? 'all', term],
     queryFn: async ({ signal }) => {
@@ -83,7 +91,7 @@ export default function PodcastDiscoverScreen() {
     previewRequest.current?.abort(); previewRequest.current = controller;
     const current = () => mounted.current && operation.current === token && liveContext.current === context
       && profileScopeId() === profile && useAuthStore.getState().auth === auth && !controller.signal.aborted;
-    setOpeningRequest({ context, id: show.id });
+    setOpeningRequest({ context, id: show.id, controller });
     try {
       let feed = show.feedUrl;
       if (!feed) {
@@ -104,7 +112,7 @@ export default function PodcastDiscoverScreen() {
     } catch {
       if (current()) toast(t("Couldn't preview this podcast. Try again."));
     } finally {
-      if (current()) { setOpeningRequest(null); previewRequest.current = null; }
+      finishPreview(controller);
     }
   }
 

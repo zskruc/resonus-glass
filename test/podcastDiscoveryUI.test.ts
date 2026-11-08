@@ -201,3 +201,56 @@ test('subscription UI refuses offline and old-account callbacks and never projec
   assert.equal((h.client.getQueryData(['podcastChannels', 'added', 'B']) as Set<string>).has(channel.id), false);
   await h.close();
 });
+
+test('batched account and offline round trips release canceled preview and subscription busy states', async () => {
+  for (const detail of [false, true]) for (const roundTrip of ['account', 'offline'] as const) {
+    const h = harness(), pending = deferred<any>();
+    if (roundTrip === 'offline') h.auth.setState({ offline: true, autoOffline: true });
+    if (detail) h.subscribe(() => pending.promise); else h.lookup(() => pending.promise);
+    try {
+      await h.mount(detail);
+      const label = detail ? 'Subscribe' : 'Preview Example show';
+      await act(async () => { h.button(label)!.props.onPress(); await turn(); });
+      assert.equal(h.button(label)!.props.disabled, true);
+      await act(async () => {
+        if (roundTrip === 'account') {
+          const before = h.auth.getState().auth;
+          h.auth.setState({ auth: { username: 'B' } }); h.auth.setState({ auth: before });
+        } else {
+          h.auth.setState({ autoOffline: false }); h.auth.setState({ autoOffline: true });
+        }
+      });
+      assert.equal(h.button(label)!.props.disabled, false, 'cancellation immediately releases busy state even if a native promise ignores abort');
+      assert.equal(h.button(label)!.findAllByType('Spinner' as any).length, 0);
+      await act(async () => { pending.resolve(detail ? channel : { ...show, feedUrl: channel.feedUrl }); await turn(); });
+      assert.equal(h.button(label)!.props.disabled, false, `${detail ? 'subscription' : 'preview'} must leave busy state after ${roundTrip} cancellation`);
+      assert.equal(h.button(label)!.findAllByType('Spinner' as any).length, 0);
+      assert.equal(h.pushes.length, 0); assert.equal(h.toasts.length, 0);
+    } finally { await h.close(); }
+  }
+});
+
+test('a canceled preview or subscribe completion cannot clear the replacement request spinner', async () => {
+  for (const detail of [false, true]) {
+    const h = harness(), first = deferred<any>(), second = deferred<any>(); let calls = 0;
+    const response = () => ++calls === 1 ? first.promise : second.promise;
+    if (detail) h.subscribe(response); else h.lookup(response);
+    try {
+      await h.mount(detail);
+      const label = detail ? 'Subscribe' : 'Preview Example show';
+      await act(async () => { h.button(label)!.props.onPress(); await turn(); });
+      await act(async () => {
+        const before = h.auth.getState().auth;
+        h.auth.setState({ auth: { username: 'B' } }); h.auth.setState({ auth: before });
+      });
+      await act(async () => { h.button(label)!.props.onPress(); await turn(); });
+      assert.equal(calls, 2); assert.equal(h.button(label)!.props.disabled, true);
+      await act(async () => { first.resolve(detail ? channel : { ...show, feedUrl: channel.feedUrl }); await turn(); });
+      assert.equal(h.button(label)!.props.disabled, true, 'the old finally must not release a newer request');
+      assert.equal(h.button(label)!.findAllByType('Spinner' as any).length, 1);
+      assert.equal(h.pushes.length, 0); assert.equal(h.toasts.length, 0);
+      await act(async () => { second.resolve(detail ? channel : { ...show, feedUrl: channel.feedUrl }); await turn(); });
+      if (detail) assert.ok(h.button('Subscribed')); else assert.deepEqual(h.pushes, ['/podcast/show']);
+    } finally { await h.close(); }
+  }
+});

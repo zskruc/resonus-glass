@@ -61,20 +61,27 @@ export default function PodcastScreen() {
   const playQueue = usePlayerStore((s) => s.playQueue);
   const playingId = usePlayerStore((s) => currentSong(s)?.id);
   const [refreshing, setRefreshing] = useState(false);
-  const [subscribingContext, setSubscribingContext] = useState<object | null>(null);
+  const [subscribingRequest, setSubscribingRequest] = useState<{ context: object; controller: AbortController } | null>(null);
   const auth = useAuthStore((state) => state.auth), profile = profileScopeId();
   const offline = useAuthStore((state) => state.offline), automaticOffline = useAuthStore((state) => state.autoOffline);
   const subscriptionContext = useMemo(() => ({ auth, profile, id, offline, automaticOffline }), [auth, profile, id, offline, automaticOffline]);
-  const subscribing = subscribingContext === subscriptionContext;
+  const subscribing = subscribingRequest?.context === subscriptionContext;
   const mounted = useRef(true);
   const subscribeRequest = useRef<AbortController | null>(null);
+  const finishSubscription = useCallback((controller: AbortController | null) => {
+    if (!controller || subscribeRequest.current !== controller) return;
+    subscribeRequest.current = null;
+    if (mounted.current) setSubscribingRequest((before) => before?.controller === controller ? null : before);
+  }, []);
   useEffect(() => {
     mounted.current = true;
     const unsubscribe = useAuthStore.subscribe((next, previous) => {
-      if (next.auth !== previous.auth || next.offline !== previous.offline || next.autoOffline !== previous.autoOffline) subscribeRequest.current?.abort();
+      if (next.auth !== previous.auth || next.offline !== previous.offline || next.autoOffline !== previous.autoOffline) {
+        const canceled = subscribeRequest.current; canceled?.abort(); finishSubscription(canceled);
+      }
     });
-    return () => { mounted.current = false; subscribeRequest.current?.abort(); unsubscribe(); };
-  }, []);
+    return () => { mounted.current = false; const canceled = subscribeRequest.current; canceled?.abort(); finishSubscription(canceled); unsubscribe(); };
+  }, [finishSubscription]);
   useEffect(() => { subscribeRequest.current?.abort(); }, [subscriptionContext]);
   const current = useCallback(() => mounted.current && profileScopeId() === profile && useAuthStore.getState().auth === auth, [auth, profile]);
   const files = usePodcastDownloads((state) => state.files);
@@ -132,7 +139,7 @@ export default function PodcastScreen() {
     const controller = new AbortController();
     subscribeRequest.current?.abort(); subscribeRequest.current = controller;
     const valid = () => current() && !controller.signal.aborted && subscribeRequest.current === controller;
-    setSubscribingContext(subscriptionContext);
+    setSubscribingRequest({ context: subscriptionContext, controller });
     try {
       const kept = await subscribe(feed, { expectedProfile: profile, signal: controller.signal, current: valid });
       if (!valid()) return;
@@ -140,7 +147,7 @@ export default function PodcastScreen() {
       toast(t('Subscribed'));
     } catch {
       if (valid()) toast(t("Couldn't subscribe to this podcast."));
-    } finally { if (valid()) { setSubscribingContext(null); subscribeRequest.current = null; } }
+    } finally { finishSubscription(controller); }
   };
 
   /** The whole playable list, starting at the one tapped. */
