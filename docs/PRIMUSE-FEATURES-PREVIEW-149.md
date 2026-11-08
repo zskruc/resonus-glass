@@ -37,23 +37,35 @@ Feature and interaction research used [Primuse `1916718e`](https://github.com/ch
 
 ## Build and validation / 构建与验证
 
-- JavaScript／TypeScript 回归 **1421 项通过，0 失败**，并通过 Navidrome canonical-ID 检查。
+- JavaScript／TypeScript 回归 **1424 项通过，0 失败**，并通过 Navidrome canonical-ID 检查。
 - 类型、翻译／生成字典与差异格式检查通过。全项目 ESLint 为 **0 错误、146 条既有警告**。
 - 包含真实 SQLite FTS5／事务回滚与迁移检查、设置定位和长音频页面的真实组件测试、歌曲来源边界、队列随机排序和书签持久化回归。
-- 三星正在由用户使用，本轮构建阶段未操作手机。APK 构建／验包及后续实机结果单独登记，不以自动测试代替设备验收。
+- 构建阶段未操作用户正在使用的手机；后续经授权在三星 SM-S9380 完成下述功能检查，不以自动测试代替设备验收。
 
 No GitHub publication or release is requested for this local preview task.
 
 ## APK / 安装包
 
 - File: `Resonus-Glass-v0.8.7.1-preview.3-code149-arm64-v8a.apk`
-- Built source: `bd90cdc7825386b2ec41d5ef270dc71362b15c0a`
-- Size: `46,277,292` bytes
-- SHA-256: `f562197821dbfefd8530ed605dd411f6099dc3b616e8c49e9f6671893ae99b51`
+- Built source: `5bb31567631f7e00cf77cf4ab4fbe7c87699ae13`
+- Size: `46,277,240` bytes
+- SHA-256: `fe5e007a6384e0c57143fb1301ab58c27e2532af21846b4bde998242c6dccbc5`
 - Package: `com.zskruc.resonus.glasspreview` · ARM64 · Android `149`
 
-完整发布构建成功；ZIP、ABI、包名、版本、现有 Glass 签名及 APK 内新增中英文字典已核对。可以覆盖当前 Glass 安装，保留登录与离线文件。构建阶段没有安装或操作正在使用中的三星，实机验收须待用户方便后另行记录。
+完整发布构建成功；ZIP、ABI、包名、版本、现有 Glass 签名及 APK 内新增中英文字典已核对。可以覆盖当前 Glass 安装，保留登录与离线文件。后续已在用户方便时覆盖安装到三星，并核对安装文件 SHA-256 一致。
 
 ## First device pass / 首轮实测发现
 
-设置搜索的拼音检索可以使用；动态页面标题有一处裸英文，已修正索引生成器。随后打开歌词来源时发生原生 SIGABRT：Expo SQLite 默认在关闭连接前遍历并释放所有语句，误释放 FTS5 内部缓存的语句，SQLite 关闭虚拟表时再释放同一资源。崩溃库 BuildID、反汇编地址与 SDK 内置 SQLite 3.50.3 的隔离 C 正负对照一致。FTS 所在数据库现在显式关闭这项强制清理，独占事务连接继承同一选项；JS 查询仍正常释放自己的语句。不删除或重建用户库，不替换原生库／玻璃／动画。修正版 APK 的实机复测结果另行登记。
+设置搜索的拼音检索可以使用；动态页面标题有一处裸英文，已修正索引生成器。随后打开歌词来源时发生原生 SIGABRT：Expo SQLite 默认在关闭连接前遍历并释放所有语句，误释放 FTS5 内部缓存的语句，SQLite 关闭虚拟表时再释放同一资源。崩溃库 BuildID、反汇编地址与 SDK 内置 SQLite 3.50.3 的隔离 C 正负对照一致。FTS 所在数据库现在显式关闭这项强制清理，独占事务连接继承同一选项；JS 查询仍正常释放自己的语句。不删除或重建用户库，不替换原生库／玻璃／动画。修正版 APK 已完成同一路径复测，未再次崩溃。另修复浅色模式下歌词预览保存按钮的白底白字。
+
+## Samsung functional pass / 三星功能检查
+
+- 设置拼音搜索、中文结果路径及目标页跳转正常；歌词候选加载、预览、保存及恢复自动选择正常。
+- 伴随歌词显示模式、随机偏好均能修改并在重新进入后保留，已恢复测试前设置。
+- 长音频记录能读取当前 45 秒位置，继续播放提供回退到 35 秒；备注书签能跨页面保留及删除，测试记录已清理。
+- 年代分页完成后可进入 2020 年代、筛选 2025 年及打开专辑；每日推荐三类卡片和列表可读取。
+- 用 `love` 搜索已有缓存歌词能得到片段，歌词筛选、滚动及切后台返回正常。修复后的两个新进程日志未出现原生崩溃。
+- 实机确认浅色保存按钮可读；深浅两套按钮呈现另有组件回归。未将本轮功能检查表述为长期帧率／内存压力测试，未在本轮逐个核实外部歌词源及实际多语言文本。
+- 手机已恢复原来的 30 秒息屏与充电不常亮。本预览未推送 GitHub，也未发布 Release。
+
+The corrected APK passed the scoped Samsung functional checks above, including the original native-crash path. This does not claim a long-duration performance or memory stress pass.
