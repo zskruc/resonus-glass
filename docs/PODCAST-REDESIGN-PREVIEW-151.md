@@ -38,4 +38,21 @@ Platform-specific Apple integrations, generated transcripts, remote audio chapte
 
 ## 验证 / Validation
 
-1,513 项自动测试全部通过，包含真实 SQLite 分页搜索／事务回滚、挂起写入与账号切换、实际组件的单集时间点操作、OPML 导入和旧播放／订阅回归。TypeScript、翻译完整性及差异检查通过；ESLint 0 错误，148 条既有警告。APK 构建与后续设备检查单独登记，自动测试不能代替三星的最终外观与手势检查。
+1,514 项自动测试全部通过，包含真实 SQLite 分页搜索／事务回滚、挂起写入与账号切换、实际组件的单集时间点操作、OPML 导入和旧播放／订阅回归。TypeScript、翻译完整性及差异检查通过；ESLint 0 错误，148 条既有警告。APK 构建与后续设备检查单独登记，自动测试不能代替三星的最终外观与手势检查。
+
+
+## APK
+
+- File: `Resonus-Glass-v0.8.7.1-preview.5-code151-arm64-v8a.apk`
+- Built source: `fcbd1a42fe4ad269f2113c30b8ad0a2ff2a9ab4e`
+- Size: `46,416,240` bytes
+- SHA-256: `2f15f42d7fd8501945ef5424ce88a5718421f224d133d2bec09527af7b266a56`
+- Package: `com.zskruc.resonus.glasspreview` · ARM64 · Android `151`
+
+首轮三星实测补充修复：浅色单集播放操作增加明确的主题色填充；单集列表改用 Animated.FlatList，修复将 Reanimated 事件对象传给原生列表导致的滚动闪退。调用栈精确落在 VirtualizedList 的 onScroll；新增回归使用真实形态的不可直接调用处理对象，并实际派发滚动。全仓同类调用已检查，未发现第二处相同接法。
+
+最终 APK 已覆盖安装至三星 SM-S9380（Android 17）。针对性实测确认节目页、浅色单集播放按钮、单集笔记滚动到底部及返回、跨节目「继续聆听」的真实进度正常。最终进程在这轮检查中持续运行，日志未出现此前的 onScroll 异常或播放错误。
+
+《科技乱炖》在用户原有网络配置中加入精确的音频域名例外后，最终 APK 的同一单集连续播放进度从 70.386 秒推进到 638.187 秒，缓冲同时增长，原生播放器无错误。测试结束已暂停，并恢复原来的 30 秒息屏和关闭充电常亮设置。未对手机外放听感、所有订阅的全部音频、全局帧率或长期内存稳定性作验收结论。
+
+The final APK was installed on a Samsung SM-S9380 running Android 17. Targeted checks covered the show header, readable light-mode episode playback, scrolling show notes to the bottom and returning, and real resume progress. One episode advanced continuously for more than nine minutes after a precise exception in the existing network profile. Playback was paused and the original power settings restored afterwards. This is not an all-pages frame-rate or long-term memory certification.
