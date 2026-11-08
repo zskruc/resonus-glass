@@ -644,16 +644,26 @@ export default function ArtistScreen() {
             {/* Same horizontal margin as the lists (album/playlist) so the
                 rows —and the three-dot button— don't stick to the edge. */}
             <View style={styles.popularRows}>
-              {top.slice(0, songsExpanded ? 10 : 5).map((song, i) => (
-                <TrackRow
-                  key={song.id}
-                  song={song}
-                  position={i + 1}
-                  isCurrent={playing?.id === song.id}
-                  showArtwork={showListArtwork}
-                  onPress={() => playQueue(top, i, data.artist.name, `/artist/${id}`)}
-                />
-              ))}
+              <View style={[styles.popularPanel, {
+                backgroundColor: appleMusic ? 'rgba(255,255,255,0.09)' : colors.surface,
+                borderColor: appleMusic ? 'rgba(255,255,255,0.12)' : colors.surfaceHighlight,
+              }]}>
+                {top.slice(0, songsExpanded ? 10 : 5).map((song, i) => (
+                  <View key={song.id}>
+                    {i ? <View style={[styles.popularSeparator, {
+                      backgroundColor: appleMusic ? '#FFFFFF1F' : colors.surfaceHighlight,
+                      marginLeft: showListArtwork ? 58 : 0,
+                    }]} /> : null}
+                    <TrackRow
+                      song={song}
+                      position={i + 1}
+                      isCurrent={playing?.id === song.id}
+                      showArtwork={showListArtwork}
+                      onPress={() => playQueue(top, i, data.artist.name, `/artist/${id}`)}
+                    />
+                  </View>
+                ))}
+              </View>
             </View>
             {top.length > 5 ? (
               <GlassPressable variant="subtle"
@@ -1019,6 +1029,8 @@ const styles = themed((colors) => ({
   },
   section: { marginBottom: spacing.xl },
   popularRows: { paddingHorizontal: spacing.lg },
+  popularPanel: { borderRadius: 20, borderWidth: 0.5, paddingHorizontal: 10, paddingVertical: 5 },
+  popularSeparator: { height: StyleSheet.hairlineWidth },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
