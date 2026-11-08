@@ -13,6 +13,23 @@ preserved upstream history.
 Releases before 0.2.1 are only listed on the
 [GitHub releases page](https://github.com/juananzzz/resonus/releases).
 
+## [0.8.7.1-preview.4] - 2026-11-09
+
+### Added
+
+- 播客新增 Primuse 风格的「发现」页：热门榜、19 类分类、地区切换、名称搜索及 Apple 播客分享链接查找。先预览节目，再明确订阅；沿用已有单集播放和下载。
+
+### Fixed
+
+- 歌词全文索引数据库关闭时保留 SQLite 自有语句的生命周期，修复首次打开歌词来源可能出现的原生崩溃。
+- 歌词预览保存按钮在浅色模式下显示主题色背景；专辑年份筛选显示明确的选中状态，推荐卡片沿用专辑封面圆角。
+
+### English
+
+- Add Primuse-inspired podcast discovery: ranked charts, 19 categories, region selection, search and Apple Podcasts show links, with preview before explicit subscription. Existing episode playback and downloads are reused.
+- Respect SQLite FTS5 statement ownership on close and keep the lyric-selection action readable in light mode; clarify year-filter selection and album-shaped recommendation artwork.
+- Includes all eight tools from preview.3. Existing player layouts and saved glass parameters remain. This local preview has not been published to GitHub or Releases.
+
 ## [0.8.7.1-preview.3] - 2026-11-09
 
 ### Added

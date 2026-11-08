@@ -269,14 +269,16 @@ export async function listChannels(scope: string): Promise<PodcastChannel[]> {
   return rows.map((r) => JSON.parse(r.data) as PodcastChannel);
 }
 
-export async function addChannel(scope: string, id: string): Promise<void> {
+export async function addChannel(scope: string, id: string, current: () => boolean = () => true): Promise<void> {
+  if (!current()) throw new Error('Podcast scope changed');
   const db = await podcastDb(scope);
-  await serialized(() =>
-    db.runAsync('INSERT OR IGNORE INTO podcast_added (channel_id, added_at) VALUES (?, ?)', [
-      id,
-      Date.now(),
-    ]),
-  );
+  await serialized(() => db.withTransactionAsync(async () => {
+    if (!current()) throw new Error('Podcast scope changed');
+    await db.runAsync('INSERT OR IGNORE INTO podcast_added (channel_id, added_at) VALUES (?, ?)', [id, Date.now()]);
+    // The callback can be invalidated while the native INSERT is in flight.
+    // Roll it back before COMMIT rather than reporting a cancelled add as kept.
+    if (!current()) throw new Error('Podcast scope changed');
+  }));
 }
 
 export async function addedIds(scope: string): Promise<Set<string>> {
@@ -371,6 +373,7 @@ export async function listRecentEpisodes(scope: string, limit = 20): Promise<Rec
     `SELECT e.data AS episode, c.data AS channel
      FROM podcast_episodes e
      JOIN podcast_channels c ON c.id = e.channel_id
+     JOIN podcast_added a ON a.channel_id = c.id
      WHERE e.url IS NOT NULL AND e.url <> ''
      ORDER BY COALESCE(e.published_at, 0) DESC, e.id ASC
      LIMIT ?`,
@@ -390,7 +393,8 @@ export async function listRecentEpisodes(scope: string, limit = 20): Promise<Rec
 export async function listFeeds(scope: string): Promise<string[]> {
   const db = await podcastDb(scope);
   const rows = await db.getAllAsync<{ feed_url: string }>(
-    'SELECT feed_url FROM podcast_channels WHERE feed_url IS NOT NULL ORDER BY COALESCE(refreshed_at, 0) ASC',
+    `SELECT c.feed_url FROM podcast_channels c JOIN podcast_added a ON a.channel_id=c.id
+     WHERE c.feed_url IS NOT NULL AND c.feed_url<>'' ORDER BY COALESCE(c.refreshed_at, 0) ASC`,
   );
   return rows.map((r) => r.feed_url);
 }

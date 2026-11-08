@@ -9,6 +9,7 @@ import { create as createStore } from 'zustand';
 import { episodePlayed, episodeResumeAt } from '../src/lib/episodeResume';
 import { parseFeed, sortEpisodes } from '../src/lib/podcastFeed';
 import { podcastUrlExtension } from '../src/lib/podcastMedia';
+import * as podcastDirectory from '../src/lib/podcastDirectory';
 
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');
 function compile(path: string, imports: Record<string, unknown>, globals: Record<string, unknown> = {}) {
@@ -139,6 +140,7 @@ function apiHarness() {
     '@/lib/query': { queryClient: { invalidateQueries: ({ queryKey }: any) => { invalidations.push(queryKey[0]); return Promise.resolve(); } } },
     '@/lib/podcastDb': h.Db,
     '@/lib/podcastFeed': { parseFeed, sortEpisodes },
+    '@/lib/podcastDirectory': podcastDirectory,
   };
   const Api = compile('../src/api/podcasts.ts', imports);
   const feed = (ids: string[]) => `<rss><channel><title>Example show</title>${ids.map((id, i) => `<item><guid>${id}</guid><title>${id}</title><pubDate>${new Date(2026, 0, 20 - i).toUTCString()}</pubDate><enclosure url="https://audio.test/${id}.mp3" type="audio/mpeg"/></item>`).join('')}</channel></rss>`;

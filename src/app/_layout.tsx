@@ -401,6 +401,7 @@ export default function RootLayout() {
                 <Stack.Screen name="album-eras" />
                 <Stack.Screen name="album-years/[year]" />
                 <Stack.Screen name="recommendations" />
+                <Stack.Screen name="podcast-discover" />
                 <Stack.Screen name="browse/folder/[id]" />
                 <Stack.Screen name="genres" />
                 <Stack.Screen name="genre/[name]" />

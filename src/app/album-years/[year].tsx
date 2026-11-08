@@ -40,8 +40,8 @@ export default function AlbumYearScreen() {
       <GlassPressable variant="subtle" accessibilityLabel={t('View')} onPress={openGridMenu}><Icon name={grid ? 'grid-outline' : 'list'} size={22} color={colors.textSecondary} /></GlassPressable>
     </View>
     {years.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: padding, gap: 8, paddingBottom: 14 }}>
-      <GlassPressable variant={pickedYear === undefined ? 'prominent' : 'regular'} style={styles.chip} onPress={() => setPickedYear(undefined)}><Text style={{ color: colors.text }}>{t('All')}</Text></GlassPressable>
-      {years.map((year) => <GlassPressable key={year} variant={pickedYear === year ? 'prominent' : 'regular'} style={styles.chip} onPress={() => setPickedYear(year)}>
+      <GlassPressable accessibilityRole="button" accessibilityState={{ selected: pickedYear === undefined }} style={[styles.chip, pickedYear === undefined && { backgroundColor: colors.surface }]} onPress={() => setPickedYear(undefined)}><Text style={{ color: colors.text }}>{t('All')}</Text></GlassPressable>
+      {years.map((year) => <GlassPressable key={year} accessibilityRole="button" accessibilityState={{ selected: pickedYear === year }} style={[styles.chip, pickedYear === year && { backgroundColor: colors.surface }]} onPress={() => setPickedYear(year)}>
         <Text style={{ color: colors.text }}>{year} · {data.index.byYear.get(year)?.length ?? 0}</Text>
       </GlassPressable>)}
     </ScrollView> : null}

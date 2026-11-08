@@ -65,7 +65,7 @@ export function DailyRecommendationsSection({ appleMusic }: { appleMusic: boolea
         return <Pressable style={[styles.card, { width: cardWidth }]} accessibilityRole="button"
           accessibilityLabel={`${t(RECOMMENDATION_TITLES[kind])} · ${songsLabel(songs.length, language)}`}
           disabled={!songs.length} onPress={() => router.push(`/recommendations?kind=${kind}`)}>
-          <Cover uri={cover} size={cardWidth} rounded placeholderIcon="musical-notes-outline" />
+          <Cover uri={cover} size={cardWidth} placeholderIcon="musical-notes-outline" />
           <Text style={styles.cardTitle} numberOfLines={1}>{t(RECOMMENDATION_TITLES[kind])}</Text>
           <Text style={styles.cardDescription} numberOfLines={2}>{t(songs.length ? RECOMMENDATION_DESCRIPTIONS[kind] : 'Not enough music yet')}</Text>
           <Text style={styles.subtitle}>{songsLabel(songs.length, language)}</Text>

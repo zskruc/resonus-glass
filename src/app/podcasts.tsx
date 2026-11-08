@@ -148,6 +148,13 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
         </View>
       )}
 
+      <GlassPressable style={[styles.discover, { marginHorizontal: listPad }]} accessibilityRole="button"
+        onPress={() => router.push('/podcast-discover')}>
+        <Icon name="compass-outline" size={23} color={colors.accent} />
+        <Text style={styles.discoverText}>{t('Discover podcasts')}</Text>
+        <Icon name="chevron-forward" size={18} color={colors.textMuted} />
+      </GlassPressable>
+
       {(embedded ? boxOpen : showSearch) ? (
         <View collapsable={false} style={styles.searchBar}>
           <GlassBackdrop radius={radius.pill} tint={colors.surfaceHighlight} variant="regular" />
@@ -202,7 +209,6 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
               <Cover
                 uri={coverArtUrl(podcastCover(item), COVER.thumb)}
                 size={56}
-                rounded
                 placeholderIcon="headset-outline"
               />
               <View style={{ flex: 1 }}>
@@ -251,6 +257,9 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
 }
 
 const styles = themed((colors) => ({
+  discover: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, marginBottom: spacing.sm,
+    borderRadius: radius.lg, backgroundColor: colors.surfaceHighlight },
+  discoverText: { flex: 1, color: colors.text, fontSize: fontSize.md, fontWeight: '600' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

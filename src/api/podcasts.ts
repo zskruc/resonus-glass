@@ -20,10 +20,14 @@ import { queryClient } from '@/lib/query';
 import * as Db from '@/lib/podcastDb';
 import type { RecentEpisode } from '@/lib/podcastDb';
 import { parseFeed, sortEpisodes, type ParsedItem } from '@/lib/podcastFeed';
+import { decodePodcastDirectoryChart, decodePodcastDirectorySearch, podcastAppleDirectoryId,
+  podcastDirectoryChartUrl, podcastDirectoryLookupUrl, podcastDirectorySearchUrl,
+  PodcastDirectoryError, type PodcastDirectoryShow } from '@/lib/podcastDirectory';
 import type { PodcastChannel, PodcastEpisode, Song } from './subsonic';
 
 export type { PodcastChannel, PodcastEpisode } from './subsonic';
 export type { RecentEpisode } from '@/lib/podcastDb';
+export type { PodcastDirectoryShow } from '@/lib/podcastDirectory';
 
 /**
  * Why a feed read failed, as a stable code rather than a message. It is what
@@ -41,18 +45,9 @@ class FeedError extends Error {
   }
 }
 
-/** The iTunes directory: search returns each show's feed URL. */
-const ITUNES_SEARCH = 'https://itunes.apple.com/search';
-
-/** Same store, looked up by id: the charts give ids, this turns them into feeds. */
-const ITUNES_LOOKUP = 'https://itunes.apple.com/lookup';
-
-/** The iTunes Store's own top-podcasts chart; a starting point for discovery. */
-// What iTunes is asked for: one screen's worth of search answers, and the
-// charts at a full Explore page — nobody scrolls past these either way.
+/** Legacy add-sheet limits, retained for callers that need ready-to-subscribe feeds. */
 const SEARCH_LIMIT = 25;
 const CHART_LIMIT = 100;
-const ITUNES_CHARTS = `https://itunes.apple.com/us/rss/toppodcasts/limit=${CHART_LIMIT}/json`;
 
 /** Wide on purpose: a pasted address is often the show's HTML page. */
 const FEED_ACCEPT = 'application/rss+xml, application/atom+xml, text/xml, */*';
@@ -73,19 +68,33 @@ function scope(): string {
 }
 
 type RequestOwner = ReturnType<typeof requestOwner>;
+export interface PodcastOperationOptions {
+  signal?: AbortSignal;
+  current?: () => boolean;
+  expectedProfile?: string;
+}
 const pendingReads = new Set<{ auth: unknown; profile: string; controller: AbortController }>();
-function requestOwner() {
+let accountEpoch = 0;
+function requestOwner(options: PodcastOperationOptions = {}) {
   const auth = useAuthStore.getState().auth, profile = profileScopeId();
+  const epoch = accountEpoch;
   const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (options.signal?.aborted) controller.abort();
+  else options.signal?.addEventListener('abort', abort, { once: true });
   const ticket = { auth, profile, controller }; pendingReads.add(ticket);
-  const current = () => !controller.signal.aborted && auth === useAuthStore.getState().auth && profile === profileScopeId();
-  return { scope: hashKey(profile), signal: controller.signal, current,
+  const current = () => !controller.signal.aborted && epoch === accountEpoch
+    && auth === useAuthStore.getState().auth && profile === profileScopeId()
+    && (options.expectedProfile === undefined || profile === options.expectedProfile)
+    && (!options.current || options.current());
+  return { scope: hashKey(profile), epoch, signal: controller.signal, current,
     check() { if (!current()) throw new FeedError('stopped'); },
-    dispose() { pendingReads.delete(ticket); },
+    dispose() { pendingReads.delete(ticket); options.signal?.removeEventListener('abort', abort); },
   };
 }
 useAuthStore.subscribe((state, previous) => {
-  if (state.auth === previous.auth && state.offline === previous.offline) return;
+  if (state.auth !== previous.auth || !state.auth && state.offline !== previous.offline) accountEpoch++;
+  if (state.auth === previous.auth && state.offline === previous.offline && state.autoOffline === previous.autoOffline) return;
   for (const read of pendingReads) if (read.auth !== state.auth || read.profile !== profileScopeId() || isManualOffline()) read.controller.abort();
 });
 
@@ -226,7 +235,14 @@ function toEpisode(channelId: string, item: ParsedItem): PodcastEpisode {
  * 5 MB for a show like Radiolab, and it is re-read on opening past three days.
  */
 const feedReads = new Map<string, { owner: RequestOwner; work: Promise<PodcastChannel> }>();
-export async function refreshChannel(input: string): Promise<PodcastChannel> {
+export async function refreshChannel(input: string, options: PodcastOperationOptions = {}): Promise<PodcastChannel> {
+  // A route's abort belongs to that consumer, not another screen sharing a
+  // legacy refresh. Caller-owned reads carry their cancellation to disk.
+  if (options.signal || options.current || options.expectedProfile !== undefined) {
+    const owner = requestOwner(options);
+    try { owner.check(); return await refreshChannelOwned(input, owner); }
+    finally { owner.dispose(); }
+  }
   const url = normalized(input), key = `${scope()}|${url}`;
   const existing = feedReads.get(key);
   if (existing?.owner.current()) return existing.work;
@@ -365,8 +381,13 @@ export function podcastCover(channel: PodcastChannel): string | undefined {
 }
 
 /** The stored channel by its feed address, before it is opened. */
-export async function getStoredChannel(feedUrl: string): Promise<PodcastChannel | undefined> {
-  return Db.getChannel(scope(), feedId(feedUrl));
+export async function getStoredChannel(feedUrl: string, options: PodcastOperationOptions = {}): Promise<PodcastChannel | undefined> {
+  const owner = requestOwner(options);
+  try {
+    owner.check();
+    const channel = await Db.getChannel(owner.scope, feedId(normalized(feedUrl)));
+    owner.check(); return channel;
+  } finally { owner.dispose(); }
 }
 
 export async function getChannel(id: string): Promise<PodcastChannel | undefined> {
@@ -399,10 +420,12 @@ export async function listAddedChannels(): Promise<PodcastChannel[]> {
 }
 
 /** Keeps a show in Explore's list. */
-export async function addChannel(id: string): Promise<void> {
-  const s = scope();
-  await Db.addChannel(s, id);
-  invalidatePodcastLists();
+export async function addChannel(id: string, options: PodcastOperationOptions = {}): Promise<void> {
+  const owner = requestOwner(options);
+  try {
+    owner.check(); await Db.addChannel(owner.scope, id, owner.current); owner.check();
+    invalidatePodcastLists();
+  } finally { owner.dispose(); }
 }
 
 export async function addedChannelIds(): Promise<Set<string>> {
@@ -493,18 +516,22 @@ export async function listFavoriteEpisodes(limit = 100): Promise<(RecentEpisode 
 export async function refreshAll(
   shouldCancel?: () => boolean,
 ): Promise<{ failed: number; total: number; stopped: boolean }> {
-  const s = scope(), owner = profileScopeId();
-  const feeds = await Db.listFeeds(s);
-  let failed = 0;
-  for (const feed of feeds) {
-    if (shouldCancel?.() || owner !== profileScopeId()) return { failed, total: feeds.length, stopped: true };
-    try {
-      await refreshChannel(feed);
-    } catch {
-      failed++;
+  const owner = requestOwner({ current: () => !shouldCancel?.() });
+  try {
+    owner.check();
+    const feeds = await Db.listFeeds(owner.scope);
+    let failed = 0;
+    for (const feed of feeds) {
+      if (!owner.current()) return { failed, total: feeds.length, stopped: true };
+      try {
+        await refreshChannel(feed, { signal: owner.signal, current: owner.current });
+      } catch {
+        if (!owner.current()) return { failed, total: feeds.length, stopped: true };
+        failed++;
+      }
     }
-  }
-  return { failed, total: feeds.length, stopped: false };
+    return { failed, total: feeds.length, stopped: !owner.current() };
+  } finally { owner.dispose(); }
 }
 
 /** Re-reads auto-download shows gone stale, which is how they see new episodes:
@@ -622,101 +649,152 @@ export function heartedSong(
     : favIds ? favIds.has(song.id) : !!song.starred;
 }
 
-/** Searches the iTunes directory, which returns each show's feed URL. */
-export async function search(term: string): Promise<PodcastSearchResult[]> {
-  const q = term.trim();
-  if (!q) return [];
-  const url = `${ITUNES_SEARCH}?media=podcast&entity=podcast&limit=${SEARCH_LIMIT}&term=${encodeURIComponent(q)}`;
-  const { body } = await get(url, 'application/json');
-  let parsed: { results?: iTunesRow[] };
-  try {
-    parsed = JSON.parse(body);
-  } catch {
-    throw new Error('iTunes search returned no JSON');
-  }
-  const out = iTunesResults(parsed.results ?? []);
-  return out;
+export interface PodcastDirectoryRequestOptions {
+  country?: string;
+  signal?: AbortSignal;
 }
+export interface PodcastDirectoryChartOptions extends PodcastDirectoryRequestOptions { genreId?: number }
 
-/**
- * iTunes search/lookup rows as search results. Both endpoints answer with the
- * same fields; a show with no `feedUrl` cannot be added, so it is left
- * out, and the same feed twice (search lists a show more than once) is kept once.
- */
-interface iTunesRow {
-  feedUrl?: string;
-  collectionName?: string;
-  artistName?: string;
-  artworkUrl100?: string;
-}
+const DIRECTORY_MAX_BYTES = 2 * 1024 * 1024;
 
-function iTunesResults(results: iTunesRow[]): PodcastSearchResult[] {
-  const out: PodcastSearchResult[] = [];
-  const seen = new Set<string>();
-  for (const r of results) {
-    if (!r.feedUrl || seen.has(r.feedUrl)) continue;
-    seen.add(r.feedUrl);
-    const result: PodcastSearchResult = {
-      feedUrl: r.feedUrl,
-      title: r.collectionName?.trim() || r.feedUrl,
-    };
-    if (r.artistName) result.author = r.artistName;
-    if (r.artworkUrl100) result.imageUrl = r.artworkUrl100;
-    out.push(result);
-  }
-  return out;
-}
-
-/**
- * Discovery: the iTunes Store's top-podcasts chart, as addable shows.
- *
- * The chart lists each show's store id, not its feed, so the ids go to the
- * lookup endpoint to get the feed back.
- */
-export async function charts(): Promise<PodcastSearchResult[]> {
-  const { body } = await get(ITUNES_CHARTS, 'application/json');
-  let parsed: {
-    feed?: {
-      entry?: {
-        id?: { attributes?: { 'im:id'?: string } };
-      }[];
-    };
+/** Public Apple requests are separate from the media-server transport and never carry its credentials. */
+async function directoryRead(url: string, options: PodcastDirectoryRequestOptions): Promise<unknown> {
+  const owner = requestOwner(), controller = new AbortController();
+  let rejectStop!: (error: PodcastDirectoryError) => void;
+  let failure: PodcastDirectoryError | undefined;
+  const stopped = new Promise<never>((_resolve, reject) => { rejectStop = reject; });
+  const stop = (code: 'stopped' | 'timeout') => {
+    if (failure) return;
+    failure = new PodcastDirectoryError(code);
+    controller.abort(); rejectStop(failure);
   };
+  const abort = () => stop('stopped');
+  owner.signal.addEventListener('abort', abort, { once: true });
+  options.signal?.addEventListener('abort', abort, { once: true });
+  const timer = setTimeout(() => stop('timeout'), TIMEOUT_MS);
+  const check = () => { if (failure) throw failure; owner.check(); };
+  const work = async () => {
+    if (options.signal?.aborted || owner.signal.aborted) throw new PodcastDirectoryError('stopped');
+    check(); assertCanRequest(!isManualOffline());
+    const response = await fetch(url, {
+      credentials: 'omit', signal: controller.signal,
+      headers: { accept: 'application/json' },
+    });
+    check();
+    if (!response.ok) throw new PodcastDirectoryError('http');
+    const announced = Number(response.headers.get('content-length'));
+    if (Number.isFinite(announced) && announced > DIRECTORY_MAX_BYTES) throw new PodcastDirectoryError('tooLarge');
+    let body = '';
+    if (response.body) {
+      const reader = response.body.getReader(), decoder = new TextDecoder();
+      let bytes = 0;
+      try {
+        while (true) {
+          const next = await reader.read(); check();
+          if (next.done) break;
+          bytes += next.value.byteLength;
+          if (bytes > DIRECTORY_MAX_BYTES) throw new PodcastDirectoryError('tooLarge');
+          body += decoder.decode(next.value, { stream: true });
+        }
+        body += decoder.decode();
+      } finally { reader.releaseLock(); }
+    } else {
+      body = await response.text(); check();
+      if (body.length > DIRECTORY_MAX_BYTES || new TextEncoder().encode(body).byteLength > DIRECTORY_MAX_BYTES) {
+        throw new PodcastDirectoryError('tooLarge');
+      }
+    }
+    check();
+    try { return JSON.parse(body) as unknown; } catch { throw new PodcastDirectoryError('response'); }
+  };
+  try { return await Promise.race([work(), stopped]); }
+  catch (error) {
+    controller.abort();
+    if (error instanceof PodcastDirectoryError) throw error;
+    if (!owner.current()) throw new PodcastDirectoryError('stopped');
+    if (error instanceof OfflineError || isManualOffline()) throw new PodcastDirectoryError('offline');
+    throw new PodcastDirectoryError('http');
+  } finally {
+    clearTimeout(timer); owner.dispose();
+    owner.signal.removeEventListener('abort', abort);
+    options.signal?.removeEventListener('abort', abort);
+  }
+}
+
+/** One chart request; IDs are resolved to publisher feeds only when a row is opened. */
+export async function directoryCharts(options: PodcastDirectoryChartOptions = {}): Promise<PodcastDirectoryShow[]> {
+  return decodePodcastDirectoryChart(await directoryRead(podcastDirectoryChartUrl(options.country, options.genreId), options));
+}
+
+async function directorySearchLimit(term: string, options: PodcastDirectoryRequestOptions, limit: number): Promise<PodcastDirectoryShow[]> {
+  const query = term.trim(); if (!query) return [];
+  const id = podcastAppleDirectoryId(query);
+  if (id) { const show = await directoryLookup(id, options); return show ? [show] : []; }
+  return decodePodcastDirectorySearch(await directoryRead(podcastDirectorySearchUrl(query, options.country, limit), options));
+}
+
+export async function directorySearch(term: string, options: PodcastDirectoryRequestOptions = {}): Promise<PodcastDirectoryShow[]> {
+  return directorySearchLimit(term, options, 40);
+}
+
+export async function directoryLookup(id: number, options: PodcastDirectoryRequestOptions = {}): Promise<PodcastDirectoryShow | undefined> {
+  return decodePodcastDirectorySearch(await directoryRead(podcastDirectoryLookupUrl([id], options.country), options))
+    .find((show) => show.id === id);
+}
+
+/** Preserve the existing add-sheet contract: only rows with a publisher feed can be subscribed to. */
+function directoryFeeds(shows: PodcastDirectoryShow[]): PodcastSearchResult[] {
+  const seen = new Set<string>(), results: PodcastSearchResult[] = [];
+  for (const show of shows) {
+    if (!show.feedUrl || seen.has(show.feedUrl)) continue;
+    seen.add(show.feedUrl);
+    results.push({ feedUrl: show.feedUrl, title: show.title,
+      ...(show.author ? { author: show.author } : {}), ...(show.imageUrl ? { imageUrl: show.imageUrl } : {}) });
+  }
+  return results;
+}
+
+export async function search(term: string, options: PodcastDirectoryRequestOptions = {}): Promise<PodcastSearchResult[]> {
+  return directoryFeeds(await directorySearchLimit(term, options, SEARCH_LIMIT));
+}
+
+/** Legacy eager feed lookup, with chart order retained even when Apple returns lookup rows in another order. */
+export async function charts(options: PodcastDirectoryChartOptions = {}): Promise<PodcastSearchResult[]> {
+  const owner = requestOwner();
+  const abort = () => owner.check();
   try {
-    parsed = JSON.parse(body);
-  } catch {
-    throw new Error('iTunes charts returned no JSON');
-  }
-  const ids: string[] = [];
-  const seen = new Set<string>();
-  for (const e of parsed.feed?.entry ?? []) {
-    const id = e.id?.attributes?.['im:id'];
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    ids.push(id);
-    if (ids.length >= CHART_LIMIT) break;
-  }
-  if (ids.length === 0) return [];
-  const { body: lookupBody } = await get(
-    `${ITUNES_LOOKUP}?id=${ids.join(',')}&entity=podcast`,
-    'application/json',
-  );
-  let lk: { results?: iTunesRow[] };
-  try {
-    lk = JSON.parse(lookupBody);
-  } catch {
-    throw new Error('iTunes lookup returned no JSON');
-  }
-  return iTunesResults(lk.results ?? []);
+    const chart = decodePodcastDirectoryChart(await directoryRead(podcastDirectoryChartUrl(options.country, options.genreId, CHART_LIMIT), options));
+    abort(); if (!chart.length) return [];
+    const shows = decodePodcastDirectorySearch(await directoryRead(podcastDirectoryLookupUrl(chart.map((show) => show.id), options.country), options));
+    abort();
+    const byId = new Map(shows.map((show) => [show.id, show]));
+    return directoryFeeds(chart.flatMap((show) => { const resolved = byId.get(show.id); return resolved ? [resolved] : []; }));
+  } finally { owner.dispose(); }
 }
 
 /** Existing Glass explicit subscription API: previewing/refreshing is not adding. */
-export async function subscribe(input: string): Promise<PodcastChannel> {
-  const owner = profileScopeId();
-  const channel = await refreshChannel(input);
-  if (profileScopeId() !== owner) throw new FeedError('stopped');
-  await addChannel(channel.id);
-  return channel;
+const subscriptions = new Map<string, Promise<unknown>>();
+export async function subscribe(input: string, options: PodcastOperationOptions = {}): Promise<PodcastChannel> {
+  const owner = requestOwner(options);
+  let url: string;
+  try { owner.check(); url = normalized(input); } catch (error) { owner.dispose(); throw error; }
+  const key = `${owner.scope}|${owner.epoch}|${url}`;
+  const previous = subscriptions.get(key) ?? Promise.resolve();
+  const work = previous.catch(() => {}).then(async () => {
+    owner.check();
+    const stored = await Db.getChannel(owner.scope, feedId(url)); owner.check();
+    const added = stored ? await Db.addedIds(owner.scope) : undefined; owner.check();
+    // Repeated/concurrent taps are idempotent. Offline, only a fully stored
+    // preview can be kept; a directory row alone never invents a subscription.
+    const channel = stored && (added?.has(stored.id) || isManualOffline()) ? stored
+      : await refreshChannelOwned(url, owner);
+    owner.check();
+    await Db.addChannel(owner.scope, channel.id, owner.current);
+    owner.check(); invalidatePodcastLists(); return channel;
+  });
+  subscriptions.set(key, work);
+  try { return await work; }
+  finally { owner.dispose(); if (subscriptions.get(key) === work) subscriptions.delete(key); }
 }
 export const unsubscribe = removeChannel;
 export const listEpisodes = listAllEpisodes;

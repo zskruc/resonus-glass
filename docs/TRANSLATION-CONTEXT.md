@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 1265 of them.
+Every string the app can show, under the screen it shows up on. 1304 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -586,6 +586,7 @@ you are actually typing into, which is easier than reading it here.
 | String | What it is |
 | --- | --- |
 | `Couldn't read this feed` |  |
+| `Couldn't subscribe to this podcast.` |  |
 | `Episodes` |  |
 | `New` |  |
 | `Newest first` |  |
@@ -593,9 +594,52 @@ you are actually typing into, which is easier than reading it here.
 | `Oldest first` |  |
 | `Played` |  |
 | `Pull down to read the feed again.` |  |
+| `Subscribed` |  |
 | `This podcast's feed could not be read, so these episodes may be out of date.` |  |
 | `Untitled episode` |  |
 | `Website` |  |
+
+## Podcast discover
+
+| String | What it is |
+| --- | --- |
+| `Arts` |  |
+| `Australia` |  |
+| `Business` |  |
+| `Canada` |  |
+| `China` |  |
+| `Comedy` |  |
+| `Couldn't load podcast discovery.` |  |
+| `Couldn't preview this podcast. Try again.` |  |
+| `Discover podcasts` |  |
+| `Education` |  |
+| `Fiction` |  |
+| `Germany` |  |
+| `Go online to discover podcasts. Your subscribed shows are still available.` |  |
+| `Government` |  |
+| `Health & Fitness` |  |
+| `Japan` |  |
+| `Kids & Family` |  |
+| `Leisure` |  |
+| `News` |  |
+| `No podcasts found` |  |
+| `Podcast region` |  |
+| `Preview {name}` |  |
+| `Religion & Spirituality` |  |
+| `Science` |  |
+| `Search podcasts or paste an Apple Podcasts link` |  |
+| `Search results` |  |
+| `Society & Culture` |  |
+| `Sports` |  |
+| `Technology` |  |
+| `This podcast has no available RSS feed.` |  |
+| `Top podcasts` |  |
+| `True Crime` |  |
+| `Try another search or region.` |  |
+| `TV & Film` |  |
+| `United Kingdom` |  |
+| `United States` |  |
+| `You're offline` |  |
 
 ## Podcast favorites
 
@@ -617,6 +661,7 @@ you are actually typing into, which is easier than reading it here.
 | `Couldn't read that feed.` |  |
 | `Couldn't read this feed` |  |
 | `Couldn't search for podcasts.` |  |
+| `Discover podcasts` |  |
 | `Find a podcast` |  |
 | `No episodes yet` |  |
 | `No podcast found for “{term}”. Try pasting the feed address below.` |  |

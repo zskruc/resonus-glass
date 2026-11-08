@@ -4,7 +4,7 @@ import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { GlassPressable } from '@/components/glass';
 import { useQuery } from '@tanstack/react-query';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -14,7 +14,7 @@ import {
   View,
 } from 'react-native';
 
-import { getChannel, listEpisodes, episodeToSong, refreshChannel, podcastCover, playedEpisodeIds, type PodcastEpisode } from '@/api/podcasts';
+import { addedChannelIds, getChannel, listEpisodes, episodeToSong, refreshChannel, podcastCover, playedEpisodeIds, subscribe, type PodcastEpisode } from '@/api/podcasts';
 import { isManualOffline } from '@/api/netGate';
 import { openPodcastMenu, openPodcastEpisodeMenu } from '@/components/PodcastMenuSheet';
 import { usePodcastDownloads } from '@/store/podcastDownloads';
@@ -32,6 +32,7 @@ import { formatDuration } from '@/lib/format';
 import { listPerf } from '@/lib/listPerf';
 import { queryClient } from '@/lib/query';
 import { useSettings } from '@/store/settings';
+import { profileScopeId, useAuthStore } from '@/store/auth';
 import { currentSong, usePlayerStore } from '@/store/player';
 import { useToast } from '@/store/toast';
 import { colors, fontSize, radius, spacing, themed, tracking, useTheme } from '@/theme';
@@ -60,23 +61,49 @@ export default function PodcastScreen() {
   const playQueue = usePlayerStore((s) => s.playQueue);
   const playingId = usePlayerStore((s) => currentSong(s)?.id);
   const [refreshing, setRefreshing] = useState(false);
+  const [subscribingContext, setSubscribingContext] = useState<object | null>(null);
+  const auth = useAuthStore((state) => state.auth), profile = profileScopeId();
+  const offline = useAuthStore((state) => state.offline), automaticOffline = useAuthStore((state) => state.autoOffline);
+  const subscriptionContext = useMemo(() => ({ auth, profile, id, offline, automaticOffline }), [auth, profile, id, offline, automaticOffline]);
+  const subscribing = subscribingContext === subscriptionContext;
+  const mounted = useRef(true);
+  const subscribeRequest = useRef<AbortController | null>(null);
+  useEffect(() => {
+    mounted.current = true;
+    const unsubscribe = useAuthStore.subscribe((next, previous) => {
+      if (next.auth !== previous.auth || next.offline !== previous.offline || next.autoOffline !== previous.autoOffline) subscribeRequest.current?.abort();
+    });
+    return () => { mounted.current = false; subscribeRequest.current?.abort(); unsubscribe(); };
+  }, []);
+  useEffect(() => { subscribeRequest.current?.abort(); }, [subscriptionContext]);
+  const current = useCallback(() => mounted.current && profileScopeId() === profile && useAuthStore.getState().auth === auth, [auth, profile]);
   const files = usePodcastDownloads((state) => state.files);
   const favorites = usePodcastFavoriteIds();
-  const played = useQuery({ queryKey: ['podcastPlayed', id], queryFn: () => playedEpisodeIds(id), enabled: !!id });
+  const played = useQuery({ queryKey: ['podcastPlayed', id, profile], queryFn: async () => {
+    const value = await playedEpisodeIds(id); if (!current()) throw new Error('Podcast profile changed'); return value;
+  }, enabled: !!id });
   const refetchPlayed = played.refetch;
   useFocusEffect(useCallback(() => { void refetchPlayed(); }, [refetchPlayed]));
 
   const channel = useQuery({
-    queryKey: ['podcastChannel', id],
-    queryFn: () => getChannel(id),
+    queryKey: ['podcastChannel', id, profile],
+    queryFn: async () => {
+      const value = await getChannel(id); if (!current()) throw new Error('Podcast profile changed'); return value ?? null;
+    },
     enabled: !!id,
   });
 
   const episodes = useQuery({
-    queryKey: ['podcastEpisodes', id],
-    queryFn: () => listEpisodes(id),
+    queryKey: ['podcastEpisodes', id, profile],
+    queryFn: async () => {
+      const value = await listEpisodes(id); if (!current()) throw new Error('Podcast profile changed'); return value;
+    },
     enabled: !!id,
   });
+  const added = useQuery({ queryKey: ['podcastChannels', 'added', profile], queryFn: async () => {
+    const value = await addedChannelIds(); if (!current()) throw new Error('Podcast profile changed'); return value;
+  } });
+  const subscribed = !!added.data?.has(id);
   const { episodes: sorted, openSort, sortSheet } = usePodcastEpisodeSort(episodes.data ?? EMPTY_EPISODES, channel.data?.id ?? id, lang);
 
   const reload = useCallback(() => {
@@ -87,17 +114,34 @@ export default function PodcastScreen() {
 
   const refresh = useCallback(async () => {
     const feedUrl = channel.data?.feedUrl;
-    if (!feedUrl) return;
+    if (!feedUrl || !current() || isManualOffline()) return;
     setRefreshing(true);
     try {
       await refreshChannel(feedUrl);
-      reload();
+      if (current()) reload();
     } catch {
-      toast(t("Couldn't read this feed"));
+      if (current()) toast(t("Couldn't read this feed"));
     } finally {
-      setRefreshing(false);
+      if (current()) setRefreshing(false);
     }
-  }, [channel.data?.feedUrl, reload, t, toast]);
+  }, [channel.data?.feedUrl, current, reload, t, toast]);
+
+  const keepShow = async () => {
+    const feed = channel.data?.feedUrl;
+    if (!feed || !current() || subscribed || subscribing || isManualOffline()) return;
+    const controller = new AbortController();
+    subscribeRequest.current?.abort(); subscribeRequest.current = controller;
+    const valid = () => current() && !controller.signal.aborted && subscribeRequest.current === controller;
+    setSubscribingContext(subscriptionContext);
+    try {
+      const kept = await subscribe(feed, { expectedProfile: profile, signal: controller.signal, current: valid });
+      if (!valid()) return;
+      queryClient.setQueryData<Set<string>>(['podcastChannels', 'added', profile], (before) => new Set([...(before ?? []), kept.id]));
+      toast(t('Subscribed'));
+    } catch {
+      if (valid()) toast(t("Couldn't subscribe to this podcast."));
+    } finally { if (valid()) { setSubscribingContext(null); subscribeRequest.current = null; } }
+  };
 
   /** The whole playable list, starting at the one tapped. */
   const play = useCallback(
@@ -121,6 +165,7 @@ export default function PodcastScreen() {
   if (channel.isLoading || episodes.isLoading) {
     return (
       <View style={styles.center}>
+        <BackButton />
         <ActivityIndicator color={colors.accent} />
       </View>
     );
@@ -156,7 +201,6 @@ export default function PodcastScreen() {
           <Cover
             uri={coverArtUrl(podcastCover(ch), COVER.card)}
             size={160}
-            rounded
             placeholderIcon="headset-outline"
           />
           <Text style={styles.title}>{ch.title}</Text>
@@ -172,6 +216,15 @@ export default function PodcastScreen() {
             </Text>
           ) : null}
           <View style={styles.actions}>
+            {ch.feedUrl ? <GlassPressable accessibilityRole="button" accessibilityState={{ selected: subscribed, busy: subscribing }}
+              disabled={added.isPending || subscribing || (!subscribed && offline && !automaticOffline)}
+              style={[styles.secondary, subscribed && { borderWidth: 1, borderColor: colors.accent },
+                !subscribed && offline && !automaticOffline && { opacity: .45 }]}
+              onPress={() => { if (current()) { if (subscribed) openPodcastMenu(ch); else void keepShow(); } }}>
+              {subscribing || added.isPending ? <ActivityIndicator size="small" color={colors.accent} />
+                : <Icon name={subscribed ? 'checkmark' : 'add'} size={19} color={colors.accent} />}
+              <Text style={styles.secondaryText}>{t(subscribed ? 'Subscribed' : 'Subscribe')}</Text>
+            </GlassPressable> : null}
             {list.length > 0 ? (
               <GlassPressable variant="prominent" tint={colors.accent}
                 style={({ pressed }) => [styles.primary, pressed && { opacity: 0.7 }]}
