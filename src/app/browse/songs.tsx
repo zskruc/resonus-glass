@@ -382,7 +382,7 @@ export function SongsBrowser({ embedded, actionRef, searchOpen, downloaded }: Br
             setSort(key);
             setSelectedIds(null);
           }}
-          play={{ sort, source: t('Songs'), href: '/browse/songs' }}
+          play={downloaded ? undefined : { sort, source: t('Songs'), href: '/browse/songs' }}
         />
       )}
 
