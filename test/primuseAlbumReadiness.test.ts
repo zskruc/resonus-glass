@@ -169,7 +169,8 @@ test('released/reacquired leases reject old events and require new image display
   } finally { await h.unmount(); }
 });
 
-test('a disk encoding slightly after onDisplay gets bounded cache-only probes', async () => {
+test('a disk encoding slightly after onDisplay gets bounded cache-only probes', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const h = harness(); let cacheCalls = 0, nativeCalls = 0;
   h.cachePath(async () => ++cacheCalls >= 3 ? URI : null);
   h.native(async () => { nativeCalls++; return FIELD; });
@@ -177,28 +178,32 @@ test('a disk encoding slightly after onDisplay gets bounded cache-only probes', 
     await h.mount('https://cover.example/album.png');
     assert.equal(h.latest().textureUri, undefined);
     await h.cover();
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 48)); });
+    await act(async () => { t.mock.timers.tick(32); });
     assert.equal(cacheCalls, 3);
     assert.equal(nativeCalls, 1);
     assert.equal(h.latest().textureUri, FIELD.textureUri);
     await h.field(); assert.equal(h.visible(), 1);
     await h.update();
+    await act(async () => { t.mock.timers.tick(1000); });
     assert.equal(cacheCalls, 3, 'ordinary rerenders do not start more cache probes');
   } finally { await h.unmount(); }
 });
 
-test('a permanently missing displayed cover cache stops after three local probes', async () => {
+test('a permanently missing displayed cover cache stops after three local probes', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const h = harness(); let cacheCalls = 0, nativeCalls = 0;
   h.cachePath(async () => { cacheCalls++; return null; });
   h.native(async () => { nativeCalls++; return FIELD; });
   try {
     await h.mount('https://cover.example/missing.png');
     await h.cover();
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 150)); });
+    await act(async () => { t.mock.timers.tick(32); });
+    await act(async () => { t.mock.timers.tick(96); });
     assert.equal(cacheCalls, 4, 'one initial probe plus three post-display probes');
     assert.equal(nativeCalls, 0);
     assert.equal(h.latest().ready, true); assert.equal(h.visible(), 1);
     await h.update(); await h.cover();
+    await act(async () => { t.mock.timers.tick(1000); });
     assert.equal(cacheCalls, 4, 'repeat image display and parent renders cannot retry indefinitely');
   } finally { await h.unmount(); }
 });
