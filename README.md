@@ -16,7 +16,7 @@ Resonus Glass 基于 [juananzzz/resonus](https://github.com/juananzzz/resonus)�
 
 从 [本仓库最新 Release](https://github.com/zskruc/resonus-glass/releases/latest) 下载 **Resonus Glass APK**。当前正式版为 `0.8.5.1`，APK 为 `Resonus-Glass-v0.8.5.1-arm64-v8a.apk`，适用于 ARM64 Android 设备。原项目 Releases 中的 APK 是原版 Resonus，不包含本分支的改动。
 
-新功能测试请下载 **[0.8.7.1-preview.2 预发布](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.7.1-preview.2)**，Android 更新编号 `148`。新增跨分类下载筛选、音乐库分类排序／隐藏、播客排序与下载确认，补充有声书及播放／下载修复；保留现有布局和玻璃参数。需手动下载安装，App 的正式更新检查不会选取预发布。[本版改动与验证范围](./docs/RELEASE-0.8.7.1-preview.2.md)。
+新功能测试请下载 **[0.8.7.1-preview.6 预发布](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.7.1-preview.6)**，Android 更新编号 `152`。新增艺人页圆角歌曲面板、七首预览与完整排序、Primuse 风格播客与发现、歌词和曲库工具。三星已完成针对性功能检查；保留现有布局和玻璃参数。需手动下载安装，App 的正式更新检查不会选取预发布。[本版改动与验证范围](./docs/RELEASE-0.8.7.1-preview.6.md)。
 
 Android 13 及以上支持原生折射和定向高光；Android 12 使用 GPU 模糊；更早版本使用界面回退效果。实际效果与流畅度取决于设备和系统状态。
 
@@ -63,12 +63,13 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 
 | 渠道 | 版本 | Android 更新编号 | 获取方式 |
 | --- | --- | --- | --- |
-| 当前源码／预发布 | `0.8.7.1-preview.2` | `148` | [预发布 APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.7.1-preview.2) · [改动与验证](./docs/RELEASE-0.8.7.1-preview.2.md) |
+| 当前源码／预发布 | `0.8.7.1-preview.6` | `152` | [预发布 APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.7.1-preview.6) · [改动与验证](./docs/RELEASE-0.8.7.1-preview.6.md) |
+| 先前预发布 | `0.8.7.1-preview.2` | `148` | [预发布 APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.7.1-preview.2) · [改动与验证](./docs/RELEASE-0.8.7.1-preview.2.md) |
 | 先前预发布 | `0.8.5.2-preview.14` | `146` | [预发布 APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.2-preview.14) · [改动与验证](./docs/RELEASE-0.8.5.2-preview.14.md) |
 | 正式版 | `0.8.5.1` | `132` | [Release 与 APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1) · [改动与验证](./docs/RELEASE-0.8.5.1.md) |
 | 测试预发布 | `0.8.5.1-preview.6` | `128` | [Release 与 APK](https://github.com/zskruc/resonus-glass/releases/tag/v0.8.5.1-preview.6) · [改动与验证](./docs/ALBUM-ARTIST-PREVIEW-6.md) |
 
-当前预发布汇总 `147–148` 的选择性适配：扩展已下载浏览、分类排序／隐藏、歌单自动保存、播客收藏／续播／下载及排序、有声书章节进度、倍速记忆、歌词断词、播放器取消和弹窗关闭修复。三星基本检查及自动测试范围见[发布说明](./docs/RELEASE-0.8.7.1-preview.2.md)。
+先前 `0.8.7.1-preview.2` 汇总 `147–148` 的选择性适配：扩展已下载浏览、分类排序／隐藏、歌单自动保存、播客收藏／续播／下载及排序、有声书章节进度、倍速记忆、歌词断词、播放器取消和弹窗关闭修复。三星基本检查及自动测试范围见[发布说明](./docs/RELEASE-0.8.7.1-preview.2.md)。
 
 此前 `0.8.5.2-preview.14` 汇总 `136–146` 的修改：可选 Primuse 专辑／歌单页、个人常听歌曲、详情页统一显隐、搜索背景渐变与高清换图衔接，以及碟片分组多余横线的代码修复。保留已在三星验收的[歌单高清封面与旧缓存升级](./docs/PLAYLIST-HD-PREVIEW-136.md)、[批量任务启动修复](./docs/BULK-CACHE-START-PREVIEW-137.md)、[歌词缓存提速](./docs/LYRICS-CACHE-SPEED-PREVIEW-138.md)与[失败项补跑修复](./docs/LYRICS-RECOVERY-PREVIEW-140.md)。这是 Glass 的增量适配，不是上游全部更新的整体合并。
 
@@ -76,7 +77,7 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 
 `0.8.5.1` 将艺人照片移动调整为参考画面中约 0.4 倍的内容位移，让完整照片、静态模糊延伸与共同遮罩在同一持久层移动，并按实际姓名／名字图的底边平滑交接顶栏。使用艺人页布局的专辑与歌单同步采用；Android 页面脱离窗口时释放原生遮罩位图，返回时重新生成。发布范围和性能验收边界见[本版说明](./docs/RELEASE-0.8.5.1.md)。
 
-`.preview.6` 让专辑也可使用与艺人、歌单一致的满幅页头、封面取色与滚动衔接。**设置 → 外观 → 专辑页风格 → 艺人页布局**进入预览，Volta／Minidisc 可立即回切；已有账户保留原选择。此前[歌单页预览](./docs/PLAYLIST-ARTIST-PREVIEW-5.md)继续保留，播放器和玻璃参数不变。详见[预览说明](./docs/ALBUM-ARTIST-PREVIEW-6.md)及[动效方案调研](./docs/MOTION-OPTIONS-20261101.md)。
+`0.8.5.1-preview.6` 让专辑也可使用与艺人、歌单一致的满幅页头、封面取色与滚动衔接。**设置 → 外观 → 专辑页风格 → 艺人页布局**进入预览，Volta／Minidisc 可立即回切；已有账户保留原选择。此前[歌单页预览](./docs/PLAYLIST-ARTIST-PREVIEW-5.md)继续保留，播放器和玻璃参数不变。详见[预览说明](./docs/ALBUM-ARTIST-PREVIEW-6.md)及[动效方案调研](./docs/MOTION-OPTIONS-20261101.md)。
 
 `.preview.4` 补充三星实机发现的 ALAC/M4A 首尾分析兼容：独立使用 Media3 识别和定位本地音频，继续复用当前 ALAC 解码器；普通播放、布局与玻璃参数保持原设置。[修复与实机记录](./docs/M4A-SILENCE-PREVIEW-4.md)。
 
@@ -102,7 +103,7 @@ App 内 **设置 → 关于** 的 GitHub、更新内容和检查更新均指向�
 
 `.27` 新增参考 [Volta](https://github.com/countervolts/Volta) 的 **Apple Music风格**，可在 **设置 → 外观 → 界面风格** 与 **Spotify风格** 之间切换。首页、资料库、艺人和专辑／歌单详情采用可切换的页面布局，保留现有播放器、玻璃参数及用户资料。范围和验证限制见 [双风格预览说明](./docs/VOLTA-UI-PREVIEW.md)。下方早期版本说明保留为开发历史。
 
-当前正式版为 `v0.8.5.1`；各版本 tag 固定对应各自的发布源码，`glass` 分支包含上方列出的 `0.8.7.1-preview.2` 及先前预发布改动，之前的 `.preview.6` 测试包继续保留。播放页结合 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 派生的原生控件与 SVG，以及独立实现的封面／歌词界面和网格流动背景。「设置 → 播放器 → 播放器布局」可切回 Resonus 原有布局；下方「播放器背景」仅影响原有布局。控件与 SVG 的 **AGPL-3.0-only** 来源、保留的原有许可证和实现范围见 [第三方声明](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) 与 [预览说明](./docs/AMLL-PLAYER-PREVIEW.md)。
+当前正式版为 `v0.8.5.1`；各版本 tag 固定对应各自的发布源码，`glass` 分支包含上方列出的 `0.8.7.1-preview.6` 及先前预发布改动，之前的 `.preview.6` 测试包继续保留。播放页结合 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) 派生的原生控件与 SVG，以及独立实现的封面／歌词界面和网格流动背景。「设置 → 播放器 → 播放器布局」可切回 Resonus 原有布局；下方「播放器背景」仅影响原有布局。控件与 SVG 的 **AGPL-3.0-only** 来源、保留的原有许可证和实现范围见 [第三方声明](./THIRD_PARTY_NOTICES.md#amll-player-controls-and-artwork-background-reference) 与 [预览说明](./docs/AMLL-PLAYER-PREVIEW.md)。
 
 `.15` 保留 `.14` 的五项修改：移除播放／歌词页顶部白条，保留原高度、顶部下拉和封面无障碍关闭；移除随机／循环按钮，仅保留原位置的上一首、播放／暂停、下一首，播放模式仍可在菜单设置；返回时冻结底栏已绘制进度，等来源页面状态恢复就绪后再交接，并保留来源页选中透镜透明度；逐字歌词只预备当前与下一行遮罩，下一行延后 720ms 准备，不改模糊、光学或歌词计时；有完整歌单镜像时先显示保存内容并在后台请求服务器，离线复用元数据避免重复 SQL，本地只查询当前歌单的歌曲 ID。没有缓存的首次打开仍可能等待，不能保证所有歌单立即出现。
 
