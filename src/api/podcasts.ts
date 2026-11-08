@@ -127,9 +127,14 @@ async function get(url: string, accept: string, since?: FeedValidators, existing
   const ctl = new AbortController();
   const owner = existingOwner ?? requestOwner();
   const abort = () => ctl.abort(); owner.signal.addEventListener('abort', abort, { once: true });
+  const check = () => { owner.check(); if (ctl.signal.aborted) throw new FeedError('http'); };
+  let rejectStop!: (error: FeedError) => void;
+  const stopped = new Promise<never>((_resolve, reject) => { rejectStop = reject; });
+  const stop = () => rejectStop(new FeedError(owner.current() ? 'http' : 'stopped'));
+  ctl.signal.addEventListener('abort', stop, { once: true });
   const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
-  try {
-    owner.check();
+  const work = async (): Promise<FeedRead> => {
+    check();
     assertCanRequest(!isManualOffline());
     const res = await fetch(url, {
       headers: {
@@ -142,20 +147,25 @@ async function get(url: string, accept: string, since?: FeedValidators, existing
       },
       signal: ctl.signal,
     });
-    owner.check();
+    check();
     // Before `ok`: 304 is not a success code, and it is exactly the cheap
     // answer a conditional read exists to get — no body, nothing to parse.
     if (res.status === 304) return { url, body: '', notModified: true };
     if (!res.ok) throw new FeedError('http');
     const etag = res.headers.get('etag');
     const modified = res.headers.get('last-modified');
-    const body = await res.text(); owner.check();
+    const body = await res.text(); check();
     return {
       url,
       body,
       ...(etag ? { etag } : {}),
       ...(modified ? { lastModified: modified } : {}),
     };
+  };
+  try {
+    // Native response-body reads may ignore AbortSignal. The caller still
+    // settles on time/cancel; the late work checks its ticket before returning.
+    return await Promise.race([work(), stopped]);
   } catch (e) {
     owner.check();
     if (e instanceof OfflineError) throw new FeedError('offline');
@@ -163,6 +173,7 @@ async function get(url: string, accept: string, since?: FeedValidators, existing
     throw new FeedError('http');
   } finally {
     clearTimeout(timer);
+    ctl.signal.removeEventListener('abort', stop);
     owner.signal.removeEventListener('abort', abort);
     if (!existingOwner) owner.dispose();
   }
@@ -354,7 +365,7 @@ async function refreshChannelOwned(input: string, owner: RequestOwner): Promise<
   // keeps a kept show's art drawable when manual offline says no to fetching and
   // expo-image's cache has evicted the address. An earlier read that already
   // filed this one is not asked for its bytes again.
-  if (channel.imageUrl) channel.artFile = await Db.savePodcastArt(s, id, channel.imageUrl, existing?.artFile, owner.current);
+  if (channel.imageUrl) channel.artFile = await Db.savePodcastArt(s, id, channel.imageUrl, existing?.artFile, owner.current, owner.signal);
 
   owner.check();
   await Db.saveChannel(s, channel, owner.current);

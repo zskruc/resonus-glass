@@ -91,6 +91,8 @@ export function podcastDbDir(scope: string): string {
 function podcastArtFile(scope: string, channelId: string, imageUrl: string): string {
   return `${podcastDbDir(scope)}art/${hashKey(`${channelId}|${imageUrl}`)}.${urlExtension(imageUrl, 'jpg')}`;
 }
+const PODCAST_ART_BUDGET_MS = 2000;
+let artSequence = 0;
 
 /** Files a show's picture, once: the feed read that brought the address brings
  * the bytes too, so manual offline has a real file to draw and expo-image's
@@ -106,25 +108,43 @@ export async function savePodcastArt(
   imageUrl: string,
   known?: string,
   current: () => boolean = () => true,
+  signal?: AbortSignal,
 ): Promise<string | undefined> {
   const dir = podcastDbDir(scope);
   const file = podcastArtFile(scope, channelId, imageUrl);
-  if (!current() || isManualOffline() || !/^https?:\/\//i.test(imageUrl)) return known;
-  if (known === file && (await FileSystem.getInfoAsync(file)).exists) return file;
-  await FileSystem.makeDirectoryAsync(`${dir}art/`, { intermediates: true }).catch(() => {});
-  if (!current() || isManualOffline()) return known;
-  const part = `${file}.${Date.now().toString(36)}.part`;
-  try {
-    const res = await FileSystem.downloadAsync(imageUrl, part).catch(() => undefined);
-    if (!res || res.status !== 200 || !current() || isManualOffline()) return known;
+  if (!current() || signal?.aborted || isManualOffline() || !/^https?:\/\//i.test(imageUrl)) return known;
+  const part = `${file}.${Date.now().toString(36)}.${++artSequence}.part`;
+  let active = true, finished = false;
+  let transfer: ReturnType<typeof FileSystem.createDownloadResumable> | undefined;
+  const owns = () => active && !signal?.aborted && current() && !isManualOffline();
+  const cancel = () => { if (transfer && !finished) void transfer.cancelAsync().catch(() => {}); };
+  const cleanup = () => { void FileSystem.deleteAsync(part, { idempotent: true }).catch(() => {}); };
+  let settleStop!: (value: string | undefined) => void;
+  const stopped = new Promise<string | undefined>((resolve) => { settleStop = resolve; });
+  const stop = () => { active = false; cancel(); cleanup(); settleStop(known); };
+  signal?.addEventListener('abort', stop, { once: true });
+  const timer = setTimeout(stop, PODCAST_ART_BUDGET_MS);
+  const work = (async () => {
+    if (known === file && (await FileSystem.getInfoAsync(file)).exists && owns()) return file;
+    if (!owns()) return known;
+    await FileSystem.makeDirectoryAsync(`${dir}art/`, { intermediates: true });
+    if (!owns()) return known;
+    transfer = FileSystem.createDownloadResumable(imageUrl, part, {}, () => { if (!owns()) stop(); });
+    const res = await transfer.downloadAsync(); finished = true;
+    if (!res || res.status !== 200 || !owns()) return known;
     const mime = Object.entries(res.headers ?? {}).find(([name]) => name.toLowerCase() === 'content-type')?.[1]?.toLowerCase();
     if (mime && !mime.startsWith('image/')) return known;
     const info = await FileSystem.getInfoAsync(part);
-    if (!info.exists || (info.size ?? 0) < 100 || (info.size ?? 0) > 16 * 1024 * 1024 || !current()) return known;
+    if (!info.exists || (info.size ?? 0) < 100 || (info.size ?? 0) > 16 * 1024 * 1024 || !owns()) return known;
     await FileSystem.moveAsync({ from: part, to: file });
-    return current() ? file : known;
-  } finally {
-    await FileSystem.deleteAsync(part, { idempotent: true }).catch(() => {});
+    return owns() ? file : known;
+  })().catch(() => known).finally(cleanup);
+  try { return await Promise.race([work, stopped]); }
+  finally {
+    active = false; clearTimeout(timer); signal?.removeEventListener('abort', stop); cancel();
+    // Never await native cleanup: a stuck cancellation/FS call must not become
+    // another navigation deadline. Only this attempt's unique part is touched.
+    cleanup();
   }
 }
 
