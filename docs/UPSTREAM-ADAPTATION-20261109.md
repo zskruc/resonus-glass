@@ -45,4 +45,4 @@ PRs #329, #330 and #331 are not part of this approved batch. The existing Androi
 
 These are scoped functional smoke checks. Physical DLNA receiver behavior, sustained 120 Hz/frame-time measurements, long-list stress and every podcast feed have not been accepted by this run. Timed lyric word wrapping is covered by automated tests; the device's original ASMR selection was not a rich-lyric playback sample. Private screenshots and logs remain outside Git.
 
-No GitHub push, pull request or release is part of this task.
+The original build/test stage did not publish to GitHub. The user subsequently requested publication; the combined code 147–148 release is documented in [0.8.7.1-preview.2](./RELEASE-0.8.7.1-preview.2.md). No upstream pull request is part of this publication.
