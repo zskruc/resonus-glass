@@ -387,6 +387,7 @@ export type SwipeAction = 'off' | 'queue' | 'next' | 'favorite' | 'menu';
  *  are purely random. `newReleases` is by the year on the tags, which is a
  *  different list from `recentlyAdded`: that one is when the server got it. */
 export type HomeSectionKey =
+  | 'dailyRecommendations'
   | 'recentlyAdded'
   | 'newReleases'
   | 'recentlyPlayed'
@@ -406,6 +407,7 @@ export interface HomeSection {
 }
 
 const HOME_SECTION_KEYS: HomeSectionKey[] = [
+  'dailyRecommendations',
   'recentlyAdded',
   'newReleases',
   'recentlyPlayed',
@@ -434,6 +436,7 @@ const HOME_SECTION_KEYS: HomeSectionKey[] = [
  * where it used to be four. Which is also the only cost of it.
  */
 export const DEFAULT_HOME_SECTIONS: HomeSection[] = [
+  { key: 'dailyRecommendations', enabled: true },
   { key: 'discover', enabled: true },
   { key: 'playlists', enabled: true },
   // Draws nothing without a subscription, so it costs nobody a row.

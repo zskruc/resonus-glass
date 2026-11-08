@@ -43,7 +43,10 @@ function harness() {
     '@/lib/downloadsDb': {},
     '@/lib/downloadedPlaylists': { completeDownloadedPlaylists },
     '@/lib/downloadedBrowse': { guardDownloadedRead: async (read: () => Promise<unknown>) => read() },
-    '@/store/auth': { useAuthStore: { getState: () => state } },
+    '@/store/auth': { useAuthStore: { getState: () => state }, profileScopeId: () => state.auth?.username ?? 'local' },
+    '@/lib/lyricOwner': { captureLyricOwner: () => { const owner = state.auth; return () => state.auth === owner; } },
+    '@/lib/lyricAudioUri': { ownedLyricAudioUri: (_profile: string, downloaded?: string, cached?: string) => downloaded ?? cached },
+    '@/lib/lyricLibraryDb': { selectedLyrics: async () => null, saveLyricCandidate: async () => {}, indexSongLyrics: async () => {} },
     '@/store/downloads': { useDownloads: { getState: () => ({ files }) }, noteDownloadedArtist: () => {} },
     '@/store/libraryMirror': { useLibraryMirror: { getState: () => ({ saveArtist: () => {} }) } },
     '@/store/settings': { useSettings: { getState: () => ({}) } },
@@ -77,6 +80,7 @@ function harness() {
   };
   for (const name of ['@/store/libraries', '@/lib/localLibrary', '@/lib/perfLog', '@/lib/storage', '@/store/lastPlayed',
     '@/store/playHistory', '@/store/offlineQueue', './navidrome', './subsonic']) dependencies[name] = {};
+  dependencies['@/lib/localLibrary'] = { hashKey: (value: string) => value };
   const exported: Record<string, any> = {};
   runInNewContext(executable, { exports: exported, __DEV__: false,
     setTimeout: (callback: () => void) => { timers.push(callback); return timers.length; },

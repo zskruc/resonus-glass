@@ -7,6 +7,7 @@ import * as JSXRuntime from 'react/jsx-runtime';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import ts from 'typescript';
 
+import { SettingsAnchorContext } from '../src/components/SettingsAnchorContext';
 import { SettingsScrollPaddingContext } from '../src/components/SettingsScrollPaddingContext';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -27,6 +28,7 @@ function harness() {
     'react-native': { ScrollView: 'scroll', StyleSheet: { flatten } },
     'react-native-reanimated': { __esModule: true, default: { ScrollView: 'animated-scroll' } },
     '@/hooks/useLiquidDock': { useLiquidDockScrollHandler: () => dock },
+    './SettingsAnchorContext': { SettingsAnchorContext },
     './SettingsScrollPaddingContext': { SettingsScrollPaddingContext },
   };
   const code = ts.transpileModule(readFileSync(new URL('../src/components/DockScrollView.tsx', import.meta.url), 'utf8'), {

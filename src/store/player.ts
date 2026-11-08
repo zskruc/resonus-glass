@@ -90,6 +90,8 @@ import { audiobookProfileScope, isAudiobookTrack, useAlbumProgress } from './alb
 import { ownsPodcastProgress, podcastProgressVersion, readPodcastResume, writePodcastProgress } from '@/lib/podcastProgress';
 import { podcastFile, usePodcastDownloads } from './podcastDownloads';
 import { profileScopeId, useAuthStore } from './auth';
+import { getShuffleMode } from './shufflePreferences';
+import { weightedShuffle } from '@/lib/weightedShuffle';
 import { SilenceTrimSession } from '@/lib/silenceTrim';
 import { prefetchSilenceBounds, useSilenceTrim } from './silenceTrim';
 import { checkAutoUrlNow } from './autoUrl';
@@ -109,7 +111,7 @@ import {
 import { useLastPlayed } from './lastPlayed';
 import { offLocalNetwork, useNetworkType } from './networkType';
 import { useOfflineQueue } from './offlineQueue';
-import { usePlayCounts } from './playCounts';
+import { ownedPlayCounts, usePlayCounts } from './playCounts';
 import { usePlayHistory } from './playHistory';
 import { scrobbleThresholdSec, useSettings, type TranscodeFormat } from './settings';
 import { cachedUri, useSongCache } from './songCache';
@@ -2835,6 +2837,15 @@ let longFormOwner: { songId: string; scope: string; bookScope: string; version: 
 let resumeSeekGeneration = 0;
 let longFormInitialized = false;
 let lastPodcastSample: { song: Song; position: number; duration: number; playing: boolean; scope: string; version: number } | undefined;
+/** Only an accepted source may supply user bookmarks; a speculative queue's zero is not playback. */
+export function longAudioPlaybackSample() {
+  const state = usePlayerStore.getState(), song = currentSong(state), owner = longFormOwner;
+  if (!song || song.url || song.vod || song.podcastChannelId || !owner || owner.pendingResume
+    || owner.songId !== song.id || owner.scope !== profileScopeId() || owner.bookScope !== audiobookProfileScope()) return undefined;
+  return { song, scope: owner.bookScope, position: state.positionSec, duration: state.durationSec,
+    playing: state.isPlaying, buffering: state.isBuffering };
+}
+export function playbackUserSeekVersion() { return resumeSeekGeneration; }
 const audiobookTracker = new AudiobookProgressTracker({
   remember: (...args) => useAlbumProgress.getState().remember(...args),
   clearAlbum: (...args) => useAlbumProgress.getState().clearAlbum(...args),
@@ -3903,6 +3914,13 @@ export interface StreamInfo {
 }
 
 /** Song currently playing, or null if the queue is empty. */
+/** Deal only music. Explicit chapter ordering and casting's fixed head remain caller-owned. */
+export function dealPlayerSongs(songs: Song[]): Song[] {
+  const mode = getShuffleMode();
+  if (mode === 'uniform' || songs.some((song) => !!song.podcastChannelId || !!song.url || isAudiobookTrack(song))) return dealt(songs);
+  return weightedShuffle(songs, mode, ownedPlayCounts());
+}
+
 export function currentSong(state: PlayerState): Song | null {
   return state.queue[state.index] ?? null;
 }
@@ -4022,9 +4040,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const deal = !opts?.ordered && !dealAll && get().shuffle && songs.length > 1;
     const first = songs[startIndex];
     const queued = dealAll
-      ? dealt(songs)
+      ? dealPlayerSongs(songs)
       : deal
-        ? [first, ...dealt(songs.filter((_, i) => i !== startIndex))]
+        ? [first, ...dealPlayerSongs(songs.filter((_, i) => i !== startIndex))]
         : songs;
     const at = dealAll || deal ? 0 : startIndex;
     // What is on screen right now, kept in case the new queue never manages to
@@ -4538,7 +4556,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         shuffle: true,
         queueDealt: true,
         originalQueue: queue,
-        ...shuffleOn(queue, index, upnpActive),
+        ...shuffleOn(queue, index, upnpActive, dealPlayerSongs),
         queuedCount: 0,
       });
     } else if (originalQueue && current) {

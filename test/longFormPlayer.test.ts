@@ -67,7 +67,7 @@ function harness() {
     bump: noop, note: noop, errorTag: String, tg: String, useToast: { getState: () => ({ show: noop }) },
     attachAppState: noop, streamWarming: { beginQueue: () => ({}), release: () => false, owns: () => true },
     useLastPlayed: { getState: () => ({ touch: noop }) }, forgetHistoryOf: noop, contextKey: () => null,
-    pushHistory: noop, dealt: (songs: Song[]) => songs, autoplayFetchedFor: null, autoplayRound: null, artistFill: null,
+    pushHistory: noop, dealt: (songs: Song[]) => songs, dealPlayerSongs: (songs: Song[]) => songs, autoplayFetchedFor: null, autoplayRound: null, artistFill: null,
     queueOrigin: null, warmUpcoming: noop, playableOffline: () => true,
   };
   runInNewContext(executable, context); context.loadIndex = context.exports.load; context.exports.init();

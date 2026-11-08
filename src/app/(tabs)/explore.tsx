@@ -213,6 +213,10 @@ export default function ExploreScreen() {
         <Text style={[styles.heading, appleMusic && appleMusicStyles.pageTitle]}>{t('Explore')}</Text>
         <View style={styles.headerActions}>
           <OfflineIndicator />
+          {current === 'albums' ? <GlassPressable variant="subtle" hitSlop={12} accessibilityRole="button"
+            accessibilityLabel={t('Albums by era')} onPress={() => router.push({ pathname: '/album-eras', params: filtering ? { downloaded: '1' } : undefined })}>
+            <Icon name="calendar-outline" size={23} color={colors.text} />
+          </GlassPressable> : null}
           {/* The magnifier of "Your library", to the letter: it becomes the X
               that closes the bar, so the bar itself needs no Cancel beside it. */}
           {searchable ? (

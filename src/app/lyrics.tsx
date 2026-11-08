@@ -17,6 +17,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CACHED_COVER, COVER, songCoverUrl } from '@/api/data';
 import { useRouteImageLease } from '@/components/RouteImageResources';
 import { SyncedLyricsView, useLyricsLineStyle } from '@/components/LyricsCard';
+import { PlainLyrics } from '@/components/PlainLyrics';
+import { useLyricToolTarget } from '@/store/lyricToolTarget';
 import { SeekBar } from '@/components/SeekBar';
 import { useCoverTint } from '@/hooks/useDominantColor';
 import { useLyrics } from '@/hooks/useLyrics';
@@ -75,9 +77,7 @@ export default function LyricsScreen() {
         <SyncedLyricsView lines={data.lines} large fadeColor={fadeColor} />
       ) : data ? (
         <ScrollView contentContainerStyle={styles.plainContent} showsVerticalScrollIndicator={false}>
-          <Text style={plainLineStyle}>
-            {data.lines.map((l) => l.value).join('\n')}
-          </Text>
+          <PlainLyrics style={plainLineStyle} lyrics={data} />
         </ScrollView>
       ) : (
         <Text style={styles.empty}>{t('No lyrics available for this song.')}</Text>
@@ -121,7 +121,10 @@ export default function LyricsScreen() {
             </Text>
           ) : null}
         </View>
-        <View style={{ width: 26 }} />
+        <GlassPressable hitSlop={12} disabled={!song || !!song.url} accessibilityRole="button" accessibilityLabel={t('Lyric sources')}
+          onPress={() => { if (song && !song.url) { useLyricToolTarget.getState().open(song); router.push('/settings/lyric-sources'); } }}>
+          <Icon name="options-outline" size={24} color={colors.text} />
+        </GlassPressable>
       </View>
 
       {/* Lyrics are a column of text: across a tablet a line runs the whole

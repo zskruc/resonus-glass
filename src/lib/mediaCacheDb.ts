@@ -38,7 +38,7 @@ export async function mediaCacheBytes(profile: string): Promise<number> {
   }));
   return sizes.reduce((sum, size) => sum + size, 0);
 }
-async function db(profile: string): Promise<SQLite.SQLiteDatabase> {
+export async function mediaCacheDatabase(profile: string): Promise<SQLite.SQLiteDatabase> {
   if (!/^[\da-z_-]+$/i.test(profile)) throw new Error('Invalid cache profile');
   const old = handles.get(profile); if (old) return old;
   const pending = (async () => {
@@ -48,6 +48,7 @@ async function db(profile: string): Promise<SQLite.SQLiteDatabase> {
   })().catch((error) => { if (handles.get(profile) === pending) handles.delete(profile); throw error; });
   handles.set(profile, pending); return pending;
 }
+const db = mediaCacheDatabase;
 export async function readMediaCacheJob(profile: string): Promise<MediaCacheJob> {
   const value = await db(profile);
   const row = await value.getFirstAsync<{ data: string }>('SELECT data FROM cache_job WHERE id=1');

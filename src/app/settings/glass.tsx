@@ -1,3 +1,4 @@
+import { SettingAnchor } from '@/components/SettingAnchor';
 import { DockScrollView } from '@/components/DockScrollView';
 import { ColorPickerDialog } from '@/components/ColorPickerDialog';
 import { GlassTuningPreview } from '@/components/GlassTuningPreview';
@@ -58,6 +59,7 @@ function ParameterSlider({ parameter, value, onChange, disabled, t }: {
   const colors = useTheme();
   const display = parameter.percent ? `${Math.round(value * 100)}%` : `${Number(value.toFixed(2))} dp`;
   return (
+    <SettingAnchor label={t(parameter.label)}>
     <View style={styles.parameter}>
       <View style={styles.parameterHeader}>
         <Text style={styles.parameterLabel}>{t(parameter.label)}</Text>
@@ -82,6 +84,7 @@ function ParameterSlider({ parameter, value, onChange, disabled, t }: {
         <Text style={styles.rangeLabel}>{parameter.percent ? '100%' : parameter.max}</Text>
       </View>
     </View>
+    </SettingAnchor>
   );
 }
 

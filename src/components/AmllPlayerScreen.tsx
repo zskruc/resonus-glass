@@ -32,6 +32,7 @@ import { SpeedSheet } from '@/components/SpeedSheet';
 import { useAmllPlayerTransition } from '@/hooks/useAmllPlayerTransition';
 import { useCoverTint } from '@/hooks/useDominantColor';
 import { useLyrics } from '@/hooks/useLyrics';
+import { PlainLyrics } from '@/components/PlainLyrics';
 import { useT } from '@/i18n';
 import { AMLL_TOP_PADDING, amllPlayerHeaderArea, amllPlayerLayout } from '@/lib/amllPlayerLayout';
 import { seekAndPlayAmllLyricLine } from '@/lib/amllLyricPlayback';
@@ -283,7 +284,7 @@ export function AmllPlayerScreen() {
     ) : (
       <ScrollView key={song?.id} nestedScrollEnabled showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.plainLyricsContent}>
-        <Text style={styles.plainLyrics}>{lyrics.data.lines.map((line) => line.value).join('\n')}</Text>
+        <PlainLyrics style={styles.plainLyrics} lyrics={lyrics.data} />
       </ScrollView>
     )) : (
       <View style={styles.lyricsEmpty}>

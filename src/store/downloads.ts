@@ -45,6 +45,7 @@ import {
   UNKNOWN_ARTIST,
 } from '@/lib/localLibrary';
 import { serializeLrc } from '@/lib/lrc';
+import { saveLyricCandidate, indexSongLyrics } from '@/lib/lyricLibraryDb';
 import { siblingLrcUri } from '@/lib/localLyrics';
 import * as Db from '@/lib/downloadsDb';
 import type { DlAlbum } from '@/lib/downloadsDb';
@@ -735,6 +736,11 @@ async function cacheLyricsForDownload(auth: SubsonicAuth, song: Song, audioFile:
     if (!lyrics) return;
     const lrcFile = siblingLrcUri(audioFile);
     if (lrcFile) await FileSystem.writeAsStringAsync(lrcFile, serializeLrc(lyrics));
+    if (!current()) return;
+    const profile = hashKey(`${primaryUrl(auth)}|${auth.username}`);
+    await saveLyricCandidate(profile, song, { id: 'server', kind: 'server', lyrics }, current);
+    if (!current()) return;
+    await indexSongLyrics(profile, song, lyrics, current);
   } catch {
     // The download is still valid without lyrics.
   }

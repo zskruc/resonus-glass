@@ -26,7 +26,10 @@ function lyricsQueryOptions(song: Song, source: LyricsSource, profile = profileS
     queryKey: ['lyrics', song.id, source, profile] as const,
     // A song's lyrics don't change: don't re-fetch for the entire session.
     staleTime: Infinity,
-    queryFn: () => getSongLyrics(song, source),
+    queryFn: (context?: { signal: AbortSignal }) => {
+      if (profileScopeId() !== profile || context?.signal.aborted) throw new Error('Lyrics profile changed');
+      return getSongLyrics(song, source, { stillCurrent: () => profileScopeId() === profile && !context?.signal.aborted });
+    },
   };
 }
 

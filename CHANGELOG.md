@@ -13,6 +13,23 @@ preserved upstream history.
 Releases before 0.2.1 are only listed on the
 [GitHub releases page](https://github.com/juananzzz/resonus/releases).
 
+## [0.8.7.1-preview.3] - 2026-11-09
+
+### Added
+
+- 设置搜索支持中英与常用拼音、最近访问、实际选项定位；专辑新增年代／年份浏览。
+- 首页新增每日精选、旧曲重温、近期发行卡片，按日缓存并支持换一批；随机播放支持常听／少听歌曲及艺人偏好。
+- 逐曲歌词候选预览与来源选择，保留文件／服务器自带译文和罗马音；全文检索本机已缓存歌词。
+- 长音频逐曲位置记忆、回退继续播放与备注书签，按账号／本地来源保存。
+
+### English
+
+- Search actual settings in Chinese, English or common pinyin and navigate to matching controls; browse albums by decade/year.
+- Add daily cached recommendation cards and weighted music shuffle preferences.
+- Preview/select lyric sources, show supplied translations/romanization and search cached lyric text.
+- Opt in to per-track long-audio progress, rewound Continue and note bookmarks.
+- Existing page/player layouts and saved glass parameters are retained. See the [preview guide](./docs/PRIMUSE-FEATURES-PREVIEW-149.md).
+
 ## [0.8.7.1-preview.2] - 2026-11-09
 
 ### Added

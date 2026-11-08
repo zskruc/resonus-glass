@@ -5,7 +5,7 @@
  * one more category and was a tap away from the button that goes offline.
  */
 import { DockScrollView } from '@/components/DockScrollView';
-import { GlassSurface, GlassSwitch } from '@/components/glass';
+import { GlassSurface, GlassSwitch, GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useRouter } from 'expo-router';
 import { Pressable, Text, View } from 'react-native';
@@ -116,6 +116,11 @@ export default function SettingsScreen({ asTab = false }: { asTab?: boolean }) {
           `SettingsPage`; this one draws its own header, so it says it here. */}
       <View style={settingsStyles.pane}>
       <DockScrollView contentContainerStyle={settingsStyles.content}>
+        <GlassPressable variant="regular" radius={radius.lg} style={styles.searchRow}
+          accessibilityRole="button" accessibilityLabel={t('Search settings')} onPress={() => router.push('/settings/search')}>
+          <Icon name="search" size={20} color={colors.textSecondary} />
+          <Text style={{ color: colors.textSecondary, fontSize: fontSize.md }}>{t('Search settings')}</Text>
+        </GlassPressable>
         <GlassSurface radius={radius.lg} style={[settingsStyles.cardBox, styles.accountCard]}>
           <View style={[settingsStyles.row, styles.profileRow]}>
             <View style={styles.avatar}>
@@ -197,6 +202,7 @@ export default function SettingsScreen({ asTab = false }: { asTab?: boolean }) {
 }
 
 const styles = themed((colors) => ({
+  searchRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, marginBottom: spacing.md },
   accountCard: { marginBottom: spacing.md },
   profileRow: { paddingVertical: spacing.lg },
   // No ring: the card is what sets the account apart now.

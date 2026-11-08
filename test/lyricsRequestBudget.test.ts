@@ -6,17 +6,18 @@ import ts from 'typescript';
 
 import { untilAborted } from '../src/api/deadline';
 import { createSlots } from '../src/lib/slots';
+import * as lyricWords from '../src/lib/lyricWords';
 
 const source = ts.transpileModule(readFileSync(new URL('../src/api/subsonic.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 const tick = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
-function harness() {
+function harness(structuredLyrics: unknown[] = []) {
   const sent: string[] = [], headers: (() => void)[] = [];
   let timers = 0, offline = false;
   const deadlines: number[] = [];
   const response = () => ({ ok: true, status: 200, headers: { get: () => null },
-    json: async () => ({ 'subsonic-response': { status: 'ok', lyricsList: { structuredLyrics: [] },
+    json: async () => ({ 'subsonic-response': { status: 'ok', lyricsList: { structuredLyrics },
       album: { id: 'album', name: 'Album', song: [] } } }) });
   const deps: Record<string, unknown> = {
     'expo-crypto': {},
@@ -27,7 +28,7 @@ function harness() {
     } },
     '@/i18n': { tg: (value: string) => value },
     '@/lib/absentCovers': { omitsAbsentCovers: () => false },
-    '@/lib/lyricWords': {}, '@/lib/navidromeIds': {},
+    '@/lib/lyricWords': lyricWords, '@/lib/navidromeIds': {},
     '@/lib/perfLog': { timed: (_label: string, work: () => unknown) => work(), netTally: () => {} },
     '@/lib/slots': { createSlots }, './deadline': { untilAborted },
     './netGate': { assertCanRequest: () => { if (offline) throw new Error('offline'); } },
@@ -59,4 +60,25 @@ test('lyrics that waited for a server slot recheck offline policy before opening
   await Promise.all(active); const results = await queued;
   assert.ok(results.every((result) => result.status === 'rejected'));
   assert.equal(h.sent.length, 2); assert.equal(h.timers(), 2);
+});
+
+test('the production enhanced lyric reader aligns supplied companions by independent clocks, not missing row positions', async () => {
+  const h = harness([
+    { kind: 'main', synced: true, offset: 100, line: [{ start: 1100, value: 'One' }, { start: 2100, value: 'Two' }, { start: 3100, value: 'Three' }] },
+    { kind: 'translation', synced: true, offset: 200, line: [{ start: 1200, value: '一' }, { start: 3200, value: '三' }] },
+    { kind: 'pronunciation', synced: true, line: [{ start: 1010, value: 'yi' }, { start: 3000, value: 'san' }] },
+  ]);
+  const work = h.lyric('song'); await tick(); h.headers[0](); const result = await work;
+  assert.deepEqual(Array.from(result.lines, (line: any) => [line.start, line.value, line.translation, line.romanization]), [
+    [1000, 'One', '一', 'yi'], [2000, 'Two', undefined, undefined], [3000, 'Three', '三', 'san'],
+  ]);
+});
+
+test('a long enhanced transcript associates all companions without per-line companion-array scans', async () => {
+  const translation = Array.from({ length: 5000 }, (_, index) => ({ start: index * 1000, value: `Translation ${index}` }));
+  Object.defineProperty(translation, 'find', { value: () => { throw new Error('quadratic companion scan'); } });
+  const h = harness([{ kind: 'main', synced: true, line: translation.map((line) => ({ ...line, value: 'Original' })) },
+    { kind: 'translation', synced: true, line: translation }]);
+  const work = h.lyric('long'); await tick(); h.headers[0](); const result = await work;
+  assert.equal(result.lines.length, 5000); assert.equal(result.lines[4999].translation, 'Translation 4999');
 });

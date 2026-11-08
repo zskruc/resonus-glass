@@ -90,6 +90,7 @@ function harness() {
     } },
     '@/hooks/useDominantColor': { useCoverTint: () => ({ known: false }) },
     '@/hooks/useLyrics': { useLyrics: () => ({}) },
+    '@/components/PlainLyrics': { PlainLyrics: 'PlainLyrics' },
     '@/i18n': { useT: () => (text: string) => text },
     '@/lib/amllPlayerLayout': layoutRules,
     '@/lib/amllLyricPlayback': { seekAndPlayAmllLyricLine() {} },

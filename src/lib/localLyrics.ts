@@ -22,6 +22,7 @@ import { isManualOffline } from '@/api/netGate';
 import { PROJECT_NAME, REPOSITORY_URL } from './project';
 import { delay } from '../../modules/background-downloads';
 import { createLyricsProviderRequest } from './lyricsProviderRequest';
+import type { LyricCandidate } from './lyricDocuments';
 
 const LRCLIB_CACHE_DIR = FileSystem.documentDirectory + 'lyrics-cache/';
 /** Who is asking, for LRCLIB. Sent as both headers: see `fetchLrclib`. */
@@ -43,10 +44,14 @@ export function siblingLrcUri(audioUri: string): string | null {
 }
 
 /** Reads a text file; null if it doesn't exist or can't be read. */
-async function readTextIfExists(uri: string): Promise<string | null> {
+async function readTextIfExists(uri: string, bounded = false): Promise<string | null> {
   try {
+    if (bounded) {
+      const info = await FileSystem.getInfoAsync(uri);
+      if (!info.exists || info.isDirectory || typeof info.size !== 'number' || info.size > 1_000_000) return null;
+    }
     const text = await FileSystem.readAsStringAsync(uri);
-    return text.trim() ? text : null;
+    return text.trim() && (!bounded || text.length <= 1_000_000) ? text : null;
   } catch {
     return null;
   }
@@ -72,6 +77,53 @@ async function getFileLyrics(song: Song): Promise<SongLyrics | null> {
   // 3) Embedded USLT (may contain LRC-style timestamps inside).
   const tags = await readTags(uri);
   return tags?.lyrics ? parseLrc(tags.lyrics) : null;
+}
+
+/** The source picker reads the three real file sources separately, not just
+ * the first match. The normal playback path above keeps its early return. */
+export async function getOnDeviceLyricCandidates(song: Song, current = () => true): Promise<LyricCandidate[]> {
+  if (!song.localUri) return [];
+  const candidates: LyricCandidate[] = [];
+  for (const [ext, kind, parse] of [['.ttml', 'sidecar-ttml', parseTtml], ['.lrc', 'sidecar-lrc', parseLrc]] as const) {
+    const uri = siblingUri(song.localUri, ext);
+    const text = uri ? await readTextIfExists(uri, true) : null;
+    if (!current()) throw new Error('Lyrics request stopped');
+    const lyrics = text ? parse(text) : null;
+    if (lyrics) candidates.push({ id: kind, kind, lyrics });
+  }
+  const tags = await readTags(song.localUri);
+  if (!current()) throw new Error('Lyrics request stopped');
+  const embedded = tags?.lyrics ? parseLrc(tags.lyrics) : null;
+  if (embedded) candidates.push({ id: 'embedded', kind: 'embedded', lyrics: embedded });
+  return candidates;
+}
+
+/** Explicit source-picker search. Uses the same paced provider request queue
+ * as background caching, honours manual offline and has a strict result cap. */
+export async function findLrclibCandidates(song: Song, options: { stillCurrent: () => boolean; signal?: AbortSignal }): Promise<LyricCandidate[]> {
+  const check = () => { if (!options.stillCurrent() || options.signal?.aborted) throw new Error('Lyrics request stopped'); };
+  check();
+  if (isManualOffline()) throw new Error('Offline mode');
+  if (!song.title || !song.artist) return [];
+  const params = new URLSearchParams({ artist_name: song.artist, track_name: song.title });
+  const response = await requestLrclib(`https://lrclib.net/api/search?${params}`, {
+    headers: { 'Lrclib-Client': CLIENT_UA, 'User-Agent': CLIENT_UA }, ...options,
+  });
+  check();
+  if (!response.ok || !Array.isArray(response.data)) throw new Error('Lyrics provider failed');
+  const results = (response.data as (LrclibResult & { id?: number; trackName?: string; artistName?: string; albumName?: string; duration?: number })[])
+    .slice(0, 40).sort((left, right) => Math.abs((left.duration ?? 0) - (song.duration ?? 0)) - Math.abs((right.duration ?? 0) - (song.duration ?? 0)));
+  const candidates: LyricCandidate[] = [];
+  for (const record of results) {
+    const text = pickLrclibText(record), lyrics = text ? parseLrc(text) : null;
+    if (!lyrics || !Number.isSafeInteger(record.id) || record.id! < 0) continue;
+    const label = [record.trackName, record.artistName, record.albumName,
+      typeof record.duration === 'number' && Number.isFinite(record.duration) ? `${Math.round(record.duration)} s` : undefined]
+      .filter(Boolean).join(' · ').slice(0, 300);
+    candidates.push({ id: `lrclib:${record.id}`, kind: 'lrclib', label, lyrics });
+    if (candidates.length === 10) break;
+  }
+  return candidates;
 }
 
 /**

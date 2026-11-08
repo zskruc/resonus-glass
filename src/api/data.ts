@@ -39,6 +39,9 @@ import * as Subsonic from './backend';
 import * as Local from '@/lib/localQueries';
 import type { Song } from './subsonic';
 import * as MediaCache from '@/lib/mediaCacheDb';
+import * as LyricLibrary from '@/lib/lyricLibraryDb';
+import { captureLyricOwner } from '@/lib/lyricOwner';
+import { ownedLyricAudioUri } from '@/lib/lyricAudioUri';
 import * as FileSystem from 'expo-file-system/legacy';
 import { withSpeculativeSlot } from '@/lib/netBudget';
 
@@ -1743,12 +1746,45 @@ export async function getSongLyrics(
   options: { strict?: boolean; stillCurrent?: () => boolean; /** The batch caller owns the durable cache read/write. */ cache?: 'caller' } = {},
 ): Promise<Subsonic.SongLyrics | null> {
   const owner = useAuthStore.getState().auth;
+  const scope = profileScopeId();
+  const owns = captureLyricOwner(scope);
+  const profile = hashKey(scope);
+  const current = () => owns() && useAuthStore.getState().auth === owner && profileScopeId() === scope
+    && (!options.stillCurrent || options.stillCurrent());
+  // A chosen candidate is a complete local document. It remains available in
+  // manual offline mode and never initiates a provider request on playback.
+  const selected = await LyricLibrary.selectedLyrics(profile, song, current).catch((error) => {
+    if (!current()) throw error;
+    return null;
+  });
+  if (!current()) throw new Error('Lyrics profile changed');
+  if (selected) return selected;
+  const lyrics = await getAutomaticSongLyrics(song, source, { ...options, stillCurrent: current });
+  if (!current()) throw new Error('Lyrics profile changed');
+  if (lyrics?.lines.length) {
+    // This is also the bulk cache path, so each completed item enters the
+    // index incrementally. Search never opens all files on a keystroke.
+    await LyricLibrary.saveLyricCandidate(profile, song, { id: `automatic:${source}`, kind: 'automatic', lyrics }, current).catch(() => {});
+    if (!current()) throw new Error('Lyrics profile changed');
+    await LyricLibrary.indexSongLyrics(profile, song, lyrics, current).catch(() => {});
+  }
+  if (!current()) throw new Error('Lyrics profile changed');
+  return lyrics;
+}
+
+async function getAutomaticSongLyrics(
+  song: Song,
+  source: LyricsSource,
+  options: { strict?: boolean; stillCurrent?: () => boolean; cache?: 'caller' },
+): Promise<Subsonic.SongLyrics | null> {
+  const owner = useAuthStore.getState().auth;
   const current = () => useAuthStore.getState().auth === owner && (!options.stillCurrent || options.stillCurrent());
   const check = () => { if (!current()) throw new Error('Lyrics profile changed'); };
   const profile = owner ? MediaCache.mediaCacheProfile(owner) : undefined;
+  const localUri = song.localUri ?? (profile ? ownedLyricAudioUri(profile, useDownloads.getState().files[song.id], cachedUri(song.id)) : undefined);
   if (profile && !song.localUri) {
     // An explicitly downloaded sidecar/embedded lyric still wins offline.
-    const downloaded = useDownloads.getState().files[song.id] ?? cachedUri(song.id);
+    const downloaded = localUri;
     if (isOffline() && downloaded) {
       const own = await getLocalLyrics({ ...song, localUri: downloaded }, false); check();
       if (own) return own;
@@ -1758,7 +1794,7 @@ export async function getSongLyrics(
       if (saved) return saved;
     }
   }
-  const result = await getSongLyricsUncached(song, source, { ...options, stillCurrent: current }, owner);
+  const result = await getSongLyricsUncached(song, source, { ...options, stillCurrent: current, localUri }, owner);
   check();
   if (options.cache !== 'caller' && profile && result?.lines.length) {
     const write = MediaCache.saveLyrics(profile, song.id, source, result, current);
@@ -1770,7 +1806,7 @@ export async function getSongLyrics(
 async function getSongLyricsUncached(
   song: Song,
   source: LyricsSource,
-  options: { strict?: boolean; stillCurrent?: () => boolean },
+  options: { strict?: boolean; stillCurrent?: () => boolean; localUri?: string },
   owner: Subsonic.SubsonicAuth | null,
 ): Promise<Subsonic.SongLyrics | null> {
   const check = () => { if (options.stillCurrent && !options.stillCurrent()) throw new Error('Lyrics profile changed'); };
@@ -1793,8 +1829,7 @@ async function getSongLyricsUncached(
       throw error;
     }
   };
-  const downloaded = () =>
-    song.localUri ?? useDownloads.getState().files[song.id] ?? cachedUri(song.id);
+  const downloaded = () => song.localUri ?? options.localUri;
   // Offline: the phone first, and the question is whether anything else is
   // allowed at all. LRCLIB is not this server: an offline the app fell into
   // means one server stopped answering, and the phone's connection is very

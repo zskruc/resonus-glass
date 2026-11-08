@@ -143,6 +143,8 @@ export default function PlayerSettings() {
         <Text style={settingsStyles.sectionTitle}>{t('Music tools')}</Text>
         <SettingsGroup>
           <SettingRow label={t('Lyrics tools')} chevron onPress={() => router.push('/settings/lyrics-tools')} />
+          <SettingRow label={t('Long audio and bookmarks')} chevron onPress={() => router.push('/settings/long-audio')} />
+          <SettingRow label={t('Shuffle preference')} chevron onPress={() => router.push('/settings/shuffle')} />
           <SettingRow label={t('Skip leading and trailing silence')} chevron onPress={() => router.push('/settings/silence-trim')} />
         </SettingsGroup>
         <Text style={settingsStyles.sectionTitle}>{t('AM++ player features')}</Text>

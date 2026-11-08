@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 1171 of them.
+Every string the app can show, under the screen it shows up on. 1265 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -22,10 +22,36 @@ you are actually typing into, which is easier than reading it here.
 | `Continue playing` |  |
 | `Couldn't load the album.` | Error on the screen, with a Retry button |
 | `Disc {n}` | Heading over the songs of one disc of a multi-disc album. `{n}` is its number |
-| `Find in playlist` | Placeholder of the search box hidden above a tracklist, for finding a song within it |
 | `Frequently played songs` |  |
 | `More from {artist}` | Heading under an album: their other records. `{artist}` is the name |
-| `View cover` | The same as `View image`, for album and playlist artwork |
+
+## Album eras
+
+| String | What it is |
+| --- | --- |
+| `{n} albums` |  |
+| `{n} albums indexed` |  |
+| `{year}s` |  |
+| `Albums by era` |  |
+| `Downloaded albums` |  |
+| `No albums yet` | Empty state heading |
+| `Reading release years. Counts update as pages arrive.` |  |
+| `The release-year index is incomplete. Retry to finish counting.` |  |
+| `Unknown year` |  |
+| `Your album library` |  |
+
+## Album years
+
+| String | What it is |
+| --- | --- |
+| `{n} albums` |  |
+| `{year}s` |  |
+| `All` |  |
+| `Invalid release year` |  |
+| `No albums in this year` |  |
+| `Reading release years. Counts update as pages arrive.` |  |
+| `The release-year index is incomplete. Retry to finish counting.` |  |
+| `Unknown year` |  |
 
 ## Anywhere in the app
 
@@ -69,6 +95,7 @@ you are actually typing into, which is easier than reading it here.
 | `Genre` | Label of a field in the song information sheet |
 | `Go to album` | Leave this sheet and open the album the song is on |
 | `Go to artist` | Leave this sheet and open the artist |
+| `Long audio and bookmarks` |  |
 | `Lyric poster` |  |
 | `Lyrics tools` |  |
 | `Mix started` | The toast that says the app is now picking the songs |
@@ -204,7 +231,6 @@ you are actually typing into, which is easier than reading it here.
 | `A-Z` | Sort option: the order of a list |
 | `Album artist` |  |
 | `Find an album` | The search box's placeholder on that screen |
-| `New releases` | Home shelf and album sort: albums by the year they came out, newest first. Not "Recently added", which is when the server got hold of them |
 | `No albums yet` | Empty state heading |
 | `Nothing played yet` | Empty state: this phone has not played anything yet |
 | `Your library looks empty.` | Empty state: the server answered, and had nothing |
@@ -251,6 +277,7 @@ you are actually typing into, which is easier than reading it here.
 | String | What it is |
 | --- | --- |
 | `Add station` | Title of the sheet for adding an internet radio station |
+| `Albums by era` |  |
 | `Couldn't load folders.` | Error on the screen, with a Retry button |
 | `Couldn't load playlists.` | Error on the screen, with a Retry button |
 | `Downloaded` | Badge on something whose files are on the phone |
@@ -269,10 +296,8 @@ you are actually typing into, which is easier than reading it here.
 | `Auto-download on` | The toast that says it was turned on |
 | `Couldn't load favorites.` | Error on the screen, with a Retry button |
 | `Find in favorites` | Placeholder of the search box that narrows the favourites already shown |
-| `Find in playlist` | Placeholder of the search box hidden above a tracklist, for finding a song within it |
 | `No favorites yet` | Empty state heading |
 | `Tap the heart on songs to see them here.` | The line under an empty state, saying how to fill it |
-| `View cover` | The same as `View image`, for album and playlist artwork |
 
 ## Favorites add
 
@@ -323,10 +348,14 @@ you are actually typing into, which is easier than reading it here.
 
 | String | What it is |
 | --- | --- |
+| `A mix of favorites and discoveries` |  |
 | `another device` |  |
 | `Back online` | The toast shown when the server answers again and the app comes out of offline mode |
+| `Could not refresh recommendations. Your saved picks are kept.` |  |
 | `Couldn't reach the server. Check your connection.` | Error on Home when the server does not answer at all |
+| `Daily mix` |  |
 | `Discover` | Home section: discovery suggestions |
+| `From the archives` |  |
 | `Good afternoon` | Home's greeting. The hours it changes at are part of the language too, see TRANSLATING.md |
 | `Good evening` | Home's greeting. The hours it changes at are part of the language too, see TRANSLATING.md |
 | `Good morning` | Home's greeting. The hours it changes at are part of the language too, see TRANSLATING.md |
@@ -334,9 +363,10 @@ you are actually typing into, which is easier than reading it here.
 | `Left on {player}` | Same card, when that app is no longer playing but its queue is the last one saved: where the person left off. {player} is the app's name |
 | `Loading covers…` | Still pulling the pictures out of the phone's own files |
 | `Looking for music…` | Reading the phone's own files, before anything can be shown |
+| `Made for you` |  |
 | `Most played albums` | A section of Home: the records played most |
 | `Most played songs` | A section of Home: the songs played most, as songs |
-| `New releases` | Home shelf and album sort: albums by the year they came out, newest first. Not "Recently added", which is when the server got hold of them |
+| `Older music worth revisiting` |  |
 | `Paused on {player}` |  |
 | `Picks for you` |  |
 | `Play here` |  |
@@ -345,12 +375,17 @@ you are actually typing into, which is easier than reading it here.
 | `Random artists` | A section of Home: artists picked at random |
 | `Random songs` |  |
 | `Recent episodes` |  |
+| `Recent releases in your library` |  |
+| `Refresh recommendations` |  |
+| `Saved for today` |  |
 | `Scanning your music…` | Going through the phone's own files |
+| `Your saved recommendations` |  |
 
 ## Library
 
 | String | What it is |
 | --- | --- |
+| `Albums by era` |  |
 | `Couldn't create the playlist` | Toast: the server refused |
 | `Couldn't load artists.` | Error on the screen, with a Retry button |
 | `Couldn't load playlists.` | Error on the screen, with a Retry button |
@@ -522,7 +557,6 @@ you are actually typing into, which is easier than reading it here.
 | `Delete playlist` | Menu action, in red |
 | `Description` | The playlist's own description: what whoever made it wrote about it |
 | `Edit playlist` | Menu action, and the title of the sheet it opens |
-| `Find in playlist` | Placeholder of the search box hidden above a tracklist, for finding a song within it |
 | `Name` | The Name field when editing a playlist or a station |
 | `Password` | The password field, on the login screen and wherever the server asks again |
 | `Playlist` | A list saved on the server. Not the queue |
@@ -541,7 +575,6 @@ you are actually typing into, which is easier than reading it here.
 | `Turn on` | The confirm button of that question |
 | `Turn on auto-download?` | Asks whether new songs added to this playlist should download by themselves from now on |
 | `Updated` | Toast after a change went through |
-| `View cover` | The same as `View image`, for album and playlist artwork |
 | `Visible to other users on the server` | The line under `Public playlist` |
 | `Wrong password` | The password typed to confirm a cover change was not right |
 | `Your password is needed to upload images and will be stored securely.` | The line explaining why the password is asked for again |
@@ -652,16 +685,36 @@ you are actually typing into, which is easier than reading it here.
 | `You can pin up to {n} items.` | Toast: there is no room for another pinned thing. `{n}` is the limit |
 | `Your password is needed to upload images and will be stored securely.` | The line explaining why the password is asked for again |
 
+## Recommendations
+
+| String | What it is |
+| --- | --- |
+| `A mix of favorites and discoveries` |  |
+| `Could not refresh recommendations. Your saved picks are kept.` |  |
+| `Daily mix` |  |
+| `From the archives` |  |
+| `Loading songs…` |  |
+| `Made for you` |  |
+| `Not enough music yet` |  |
+| `Older music worth revisiting` |  |
+| `Recent releases in your library` |  |
+| `Recommendations use music already in your library.` |  |
+| `Refresh recommendations` |  |
+| `Saved for today` |  |
+| `Your saved recommendations` |  |
+
 ## Search
 
 | String | What it is |
 | --- | --- |
-| `All` |  |
 | `Artists` | A heading over a list of them, never a count |
-| `Couldn't reach the server. Check your connection.` | Error on Home when the server does not answer at all |
+| `Could not search cached lyrics. Try again.` |  |
+| `In cached lyrics` |  |
+| `Indexing saved lyrics in the background…` |  |
 | `Radio` | Internet radio stations. Most languages keep the word |
 | `Recent searches` | What was searched for before, kept on the phone |
 | `Search your music` |  |
+| `Searches lyrics already saved on this device, including supplied translation and romanization.` |  |
 | `Song` | In search results, the little word under a result saying what kind of thing it is |
 | `Songs, albums, artists and playlists. What you open from here is kept for next time.` |  |
 | `What do you want to listen to?` | The placeholder in the search box, worded as a question |
@@ -676,6 +729,7 @@ you are actually typing into, which is easier than reading it here.
 | `Music on your device` | Signing in to nothing at all and playing the phone's own files |
 | `Offline · your downloads` | Settings subtitle shown in offline mode |
 | `Offline mode` | The app working with no server: downloads only |
+| `Search settings` |  |
 | `Settings` | The app's settings, and the button that opens them |
 
 ## Settings › About
@@ -1009,7 +1063,6 @@ you are actually typing into, which is easier than reading it here.
 | --- | --- |
 | `Home sections` | Reorder which sections appear on Home |
 | `Most played albums` | A section of Home: the records played most |
-| `New releases` | Home shelf and album sort: albums by the year they came out, newest first. Not "Recently added", which is when the server got hold of them |
 | `Random albums` | A section of Home: albums picked at random, to happen upon something |
 
 ## Settings › Home title
@@ -1112,6 +1165,67 @@ you are actually typing into, which is easier than reading it here.
 | `Uses the existing server or local play counter.` |  |
 | `Year` | Label of a field in the song information sheet: the year of the release |
 | `Yearly review` |  |
+
+## Settings › Long audio
+
+| String | What it is |
+| --- | --- |
+| `Audio bookmark` |  |
+| `Audio bookmarks` |  |
+| `Bookmark current position` |  |
+| `Bookmark note` |  |
+| `Continue playing` |  |
+| `Could not save or open this audio. Please retry.` |  |
+| `Delete bookmark` |  |
+| `Load more` |  |
+| `Long audio and bookmarks` |  |
+| `Long-audio data could not be read or saved. Existing bookmarks are retained.` |  |
+| `No saved long audio yet` |  |
+| `Open a song menu to choose long audio, or select a saved recording below.` |  |
+| `Opt in per track for ASMR, concerts or other long recordings. Positions and note bookmarks are kept on this device for this account.` |  |
+| `Optional note` |  |
+| `Play this audio first to bookmark the current position.` |  |
+| `Remember this audio position` |  |
+| `Remove saved audio` |  |
+| `Remove this recording’s saved position and bookmarks? The audio file is kept.` |  |
+| `Reset saved position` |  |
+| `Save while listening, pausing and leaving the app. Continue playing rewinds 10 seconds.` | The line under “Remember this audio position”, explaining it |
+| `Saved long audio` |  |
+| `Saved position` |  |
+| `Song` | In search results, the little word under a result saying what kind of thing it is |
+| `Tap a saved bookmark to play from that point.` |  |
+
+## Settings › Lyric sources
+
+| String | What it is |
+| --- | --- |
+| `Automatic lyrics` |  |
+| `Cached automatic lyrics` |  |
+| `Choose a song first to use lyrics tools.` |  |
+| `Companion lyrics` |  |
+| `Could not load or save lyric sources. Your previous choice has been kept.` |  |
+| `Embedded lyrics` |  |
+| `Find LRCLIB candidates` |  |
+| `Follow the source preference in Lyrics settings.` | The line under “Automatic lyrics”, explaining it |
+| `Local LRC file` |  |
+| `Local TTML file` |  |
+| `LRCLIB` |  |
+| `Lyric source saved for this song` |  |
+| `No cached lyric candidates yet. Refresh sources or search LRCLIB.` |  |
+| `Offline: saved and local sources are available. Online lookup is disabled.` |  |
+| `Original and romanization` |  |
+| `Original and translation` |  |
+| `Original only` |  |
+| `Original, translation and romanization` |  |
+| `Plain lyrics` |  |
+| `Preview a source, then use it for this song. Saved choices work offline and do not change lyric files.` |  |
+| `Preview lyrics` |  |
+| `Refresh local and server sources` |  |
+| `Sends this song’s artist and title to LRCLIB only when you tap.` |  |
+| `Server lyrics` |  |
+| `Show translation and romanization already supplied by the file or server. No automatic translation is performed.` |  |
+| `Synchronized lyrics` |  |
+| `Use these lyrics` |  |
 
 ## Settings › Lyrics tools
 
@@ -1339,6 +1453,7 @@ you are actually typing into, which is easier than reading it here.
 | `Keep paused when skipping` |  |
 | `Left` | One of the values of “Lyrics alignment” |
 | `Light font weight` | One of the values of “Lyrics weight” |
+| `Long audio and bookmarks` |  |
 | `Lyrics alignment` |  |
 | `Lyrics background` | What is drawn behind the lyrics screen, the full screen one |
 | `Lyrics card background` | What is drawn behind the small lyrics card that peeks under the player. Not the same thing as `Lyrics background` |
@@ -1384,6 +1499,7 @@ you are actually typing into, which is easier than reading it here.
 | `Show quality label` |  |
 | `Show rating` |  |
 | `Show system volume` |  |
+| `Shuffle preference` |  |
 | `Skip buttons` | The seek forward / back buttons setting |
 | `Skip leading and trailing silence` |  |
 | `Slightly blur synchronized lyrics other than the current line to emphasize what is playing.` | Help text under that switch. Only the current synchronized lyric line stays sharp |
@@ -1450,6 +1566,40 @@ you are actually typing into, which is easier than reading it here.
 | `Scrobbling` | Reporting a song as played, to the user's own server and from there to Last.fm or ListenBrainz. The title of its own screen and the row that opens it. The word comes from Last.fm and most languages keep it; use whatever those services call it in yours if they do |
 | `Time played` | How long a song must have played before it counts, as a time. The other scrobble rule, and it can be `Off` too. Whichever of the two comes first is the one that counts |
 | `With both off nothing is reported, not even to your own server.` | Shown only when both scrobble rules are `Off`, since that also stops the play counts on the user's own server |
+
+## Settings › Search
+
+| String | What it is |
+| --- | --- |
+| `Background blur` |  |
+| `Clear recent settings` |  |
+| `Could not load settings search history` |  |
+| `Could not save settings search history` |  |
+| `Find a setting` |  |
+| `Highlight intensity` |  |
+| `Highlight width` |  |
+| `Lens edge depth` |  |
+| `Recent settings` |  |
+| `Refraction strength` |  |
+| `Search Chinese, English, or common pinyin such as boli, geci and yinzhi.` |  |
+| `Search settings` |  |
+| `Search settings, English or pinyin` |  |
+| `Settings` | The app's settings, and the button that opens them |
+| `Tint opacity` |  |
+
+## Settings › Shuffle
+
+| String | What it is |
+| --- | --- |
+| `Choose how shuffle orders music. Every song stays eligible; your current queue changes only when you start or reshuffle it.` |  |
+| `Could not save shuffle preferences. Retry reading saved settings.` |  |
+| `Equal chance` |  |
+| `Favor frequently played artists` |  |
+| `Favor frequently played songs` |  |
+| `Favor rarely played artists` |  |
+| `Favor rarely played songs` |  |
+| `Listening counts combine this profile’s local history with the counts provided by your music server. Artist weighting uses the songs being shuffled.` |  |
+| `Shuffle preferences` |  |
 
 ## Settings › Silence trim
 
@@ -1639,12 +1789,14 @@ you are actually typing into, which is easier than reading it here.
 | `Export` | Get the downloaded file itself out of the app, as a file. Not the same as `Share`, which makes a link on the server |
 | `Exporting…` | The file is being copied out |
 | `Favorites` | The songs, albums and artists you starred |
+| `Find in playlist` | Placeholder of the search box hidden above a tracklist, for finding a song within it |
 | `Hold to go back to {tab}` | The hint on holding the back arrow. `{tab}` is Home, Search or Library |
 | `Home` | The first tab, and a folder in the car |
 | `Library` | The settings section, and a folder in the car |
 | `List` | An option in that menu: one row per item, instead of cards |
 | `Loading…` |  |
 | `Lost the connection to {name}` |  |
+| `Lyric sources` |  |
 | `Lyrics` | The words of the song. Also a line of the storage bar, where it is their size on the phone |
 | `Manage playlists` |  |
 | `Mark as played` |  |
@@ -1655,6 +1807,7 @@ you are actually typing into, which is easier than reading it here.
 | `More options` | Read out by the screen reader for the three-dot button, which is ⋮ on a song row and in the player and ⋯ in a screen's header |
 | `Network error ({status})` |  |
 | `New playlist` | Row at the top of the playlist picker, and the button on an empty library: make one |
+| `New releases` | Home shelf and album sort: albums by the year they came out, newest first. Not "Recently added", which is when the server got hold of them |
 | `Next` | Player control: the next track (accessibility label) |
 | `No results` | Nothing matched what was typed |
 | `No results for “{q}”` | Empty state. `{q}` is what was typed |
@@ -1718,5 +1871,6 @@ you are actually typing into, which is easier than reading it here.
 | `Unknown artist` | Fallback when the file and the server have no artist |
 | `Unsubscribe` |  |
 | `View` | Title of the menu that chooses how a collection is drawn, and the label of the button that opens it. A noun: what you are looking at, not the verb |
+| `View cover` | The same as `View image`, for album and playlist artwork |
 | `When the episode ends` |  |
 | `Wrong username or password` |  |

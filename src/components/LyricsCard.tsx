@@ -29,6 +29,9 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { COVER, songCoverUrl } from '@/api/data';
 import { useCoverRadius } from '@/components/Cover';
 import { KaraokeWords } from '@/components/KaraokeWords';
+import { PlainLyrics } from '@/components/PlainLyrics';
+import { useLyricDisplayMode } from '@/hooks/useLyricDisplay';
+import { lyricCompanions, type LyricDisplayMode } from '@/lib/lyricDocuments';
 import { type LyricLine, type LyricWord } from '@/api/subsonic';
 import { useDominantColor } from '@/hooks/useDominantColor';
 import { useLyrics } from '@/hooks/useLyrics';
@@ -78,7 +81,7 @@ export function LyricsCard() {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={[styles.content, centered && styles.contentCentered]}
           >
-            <Text style={lineStyle}>{data.lines.map((l) => l.value).join('\n')}</Text>
+            <PlainLyrics style={lineStyle} lyrics={data} />
           </ScrollView>
         )}
       </View>
@@ -127,7 +130,7 @@ export function CoverLyrics({ size, onClose }: { size: number; onClose: () => vo
             showsVerticalScrollIndicator={false}
             contentContainerStyle={[styles.content, centered && styles.contentCentered]}
           >
-            <Text style={lineStyle}>{data.lines.map((l) => l.value).join('\n')}</Text>
+            <PlainLyrics style={lineStyle} lyrics={data} />
           </ScrollView>
         ) : (
           <View style={styles.coverStatus}>
@@ -181,6 +184,7 @@ export function SyncedLyricsView({
   /** Optional player action; without it, every existing lyric surface only seeks. */
   onLinePress?: (seconds: number) => void;
 }) {
+  const displayMode = useLyricDisplayMode();
   const amll = appearance === 'amll';
   // The line, not the position: the position moves twice a second and the
   // line every few, and only a new line has anything to redraw.
@@ -411,6 +415,9 @@ export function SyncedLyricsView({
             key={i}
             index={i}
             text={line.value.trim() || '♪'}
+            translation={line.translation}
+            romanization={line.romanization}
+            displayMode={displayMode}
             words={line.words}
             warmWords={active && !!line.words?.length && i === current + 1}
             highlighted={i === current}
@@ -469,6 +476,9 @@ export function SyncedLyricsView({
 const LyricRow = memo(({
   index,
   text,
+  translation,
+  romanization,
+  displayMode,
   words,
   warmWords,
   highlighted,
@@ -485,6 +495,9 @@ const LyricRow = memo(({
 }: {
   index: number;
   text: string;
+  translation?: string;
+  romanization?: string;
+  displayMode: LyricDisplayMode;
   words?: LyricWord[];
   warmWords: boolean;
   highlighted: boolean;
@@ -579,6 +592,8 @@ const LyricRow = memo(({
   const paddingVertical = typeof flattened.paddingVertical === 'number'
     ? flattened.paddingVertical
     : 0;
+  const companions = lyricCompanions({ value: text, translation, romanization }, displayMode);
+  const companionSize = Math.max(13, Math.round((flattened.fontSize ?? 24) * 0.57));
 
   return (
     <View
@@ -600,6 +615,9 @@ const LyricRow = memo(({
         ) : (
           <Text style={lineStyle}>{text}</Text>
         )}
+        {companions.map((value, at) => <Text key={at} style={{ color: amll ? '#FFFFFFD9' : colors.textSecondary,
+          fontSize: companionSize, lineHeight: Math.round(companionSize * 1.45), fontWeight: '400',
+          textAlign: centered ? 'center' : 'left', paddingBottom: at === companions.length - 1 ? paddingVertical : 2 }}>{value}</Text>)}
       </Animated.View>
     </View>
   );

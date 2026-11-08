@@ -28,11 +28,14 @@ import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { SearchResultGrid } from '@/components/SearchResultGrid';
 import { TrackRow } from '@/components/TrackRow';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useCachedLyricSearch } from '@/hooks/useCachedLyricSearch';
 import { songsLabel, useT } from '@/i18n';
 import { haptic } from '@/lib/haptics';
 import { onTabReselect, takeSearchFocus } from '@/lib/tabOrigin';
 import { bump } from '@/lib/perfLog';
 import { profileScopeId, useAuthStore } from '@/store/auth';
+import { playCachedLyricResult } from '@/lib/cachedLyricPlayback';
+import { useToast } from '@/store/toast';
 import { currentSearchData, readCurrentSearch, searchGridGeometry, searchGridItems, searchRequestKey } from '@/lib/searchGrid';
 import { useMediaMenu } from '@/store/mediaMenu';
 import { currentSong, usePlayerStore } from '@/store/player';
@@ -56,12 +59,13 @@ const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
  * always there: a Jellyfin account does not manage them and offline there is
  * nothing to stream (see the query).
  */
-type SearchFilter = 'all' | 'songs' | 'artists' | 'albums' | 'playlists' | 'radio';
+type SearchFilter = 'all' | 'songs' | 'artists' | 'albums' | 'playlists' | 'radio' | 'lyrics';
 
 /** In the order the chips read, which is the order the results come in. */
 const FILTERS: { key: SearchFilter; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'songs', label: 'Songs' },
+  { key: 'lyrics', label: 'Lyrics' },
   { key: 'artists', label: 'Artists' },
   { key: 'albums', label: 'Albums' },
   { key: 'playlists', label: 'Playlists' },
@@ -92,7 +96,10 @@ export default function SearchScreen() {
   const lang = useSettings((s) => s.language);
   const bottomPad = useScreenBottomPadding();
   const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<SearchFilter>('all');
   const debouncedQuery = useDebounce(query.trim(), 350);
+  const lyricSearch = useCachedLyricSearch(debouncedQuery);
+  const lyricMatches = query.trim() === debouncedQuery ? lyricSearch.data ?? [] : [];
   const playing = usePlayerStore(currentSong);
   const showListArtwork = useSettings((s) => s.showListArtwork);
   const playQueue = usePlayerStore((s) => s.playQueue);
@@ -174,12 +181,12 @@ export default function SearchScreen() {
     queryFn: ({ signal }) => readCurrentSearch(debouncedQuery, () => !signal.aborted
       && profileScopeId() === profile && useAuthStore.getState().auth === auth
       && useAuthStore.getState().offline === offline, search),
-    enabled: canSearch && debouncedQuery.length > 1,
+    enabled: canSearch && filter !== 'lyrics' && debouncedQuery.length > 1,
   });
   const queryMatches = query.trim() === debouncedQuery;
   const data = currentSearchData(query, debouncedQuery, response);
-  const isFetching = query.trim().length > 1 && (!queryMatches || queryFetching);
-  const isError = queryMatches && queryError;
+  const isFetching = query.trim().length > 1 && (!queryMatches || (filter === 'lyrics' ? lyricSearch.isFetching : queryFetching));
+  const isError = queryMatches && (filter === 'lyrics' ? lyricSearch.isError : queryError);
 
   const openMediaMenu = useMediaMenu((s) => s.open);
   // Playlists: Subsonic's search3 doesn't return them, so they're filtered by
@@ -187,7 +194,7 @@ export default function SearchScreen() {
   const { data: playlists } = useQuery({
     queryKey: ['playlists'],
     queryFn: () => getPlaylists(),
-    enabled: canSearch && debouncedQuery.length > 1,
+    enabled: canSearch && filter !== 'lyrics' && debouncedQuery.length > 1,
   });
   const playlistMatches =
     queryMatches && debouncedQuery.length > 1
@@ -203,7 +210,7 @@ export default function SearchScreen() {
   const { data: stations } = useQuery({
     queryKey: ['radioStations'],
     queryFn: () => getRadioStations(auth!),
-    enabled: canSearchStations && debouncedQuery.length > 1,
+    enabled: canSearchStations && filter !== 'lyrics' && debouncedQuery.length > 1,
   });
   const stationMatches =
     queryMatches && debouncedQuery.length > 1
@@ -220,7 +227,6 @@ export default function SearchScreen() {
    * filter the next search can see: what would be wrong is a narrowing nobody
    * was shown, applied to an answer they were about to read as everything.
    */
-  const [filter, setFilter] = useState<SearchFilter>('all');
   /** Whether a kind is on screen: its own chip, or `all`. */
   const shows = (kind: SearchFilter) => filter === 'all' || filter === kind;
   /**
@@ -233,7 +239,8 @@ export default function SearchScreen() {
     (shows('albums') ? (data?.albums.length ?? 0) : 0) +
     (shows('songs') ? (data?.songs.length ?? 0) : 0) +
     (shows('playlists') ? playlistMatches.length : 0) +
-    (shows('radio') ? stationMatches.length : 0);
+    (shows('radio') ? stationMatches.length : 0) +
+    (shows('lyrics') ? lyricMatches.length : 0);
 
   const isEmpty = query.trim().length === 0;
   // With the box empty the screen is what was opened from it before. Genres
@@ -245,8 +252,9 @@ export default function SearchScreen() {
   const feedback = isFetching ? (
     <ActivityIndicator style={{ marginTop: spacing.xl }} color={colors.accent} />
   ) : isError ? (
-    <Message text={t("Couldn't reach the server. Check your connection.")} onRetry={() => refetch()} />
-  ) : data && shownCount === 0 ? (
+    <Message text={t(filter === 'lyrics' ? 'Could not search cached lyrics. Try again.' : "Couldn't reach the server. Check your connection.")}
+      onRetry={() => { if (filter === 'lyrics') void lyricSearch.refetch(); else void refetch(); }} />
+  ) : (data || filter === 'lyrics') && shownCount === 0 && !lyricSearch.indexing && query.trim().length > 1 ? (
     <EmptyState icon="search-outline" title={t('No results')}
       subtitle={t('No results for “{q}”', { q: debouncedQuery })} />
   ) : null;
@@ -391,6 +399,21 @@ export default function SearchScreen() {
         ) : null}
 
         {feedback}
+
+        {shows('lyrics') && query.trim().length > 1 ? <View style={styles.section}>
+          <Text style={[styles.sectionTitle, appleMusic && appleMusicStyles.sectionTitle]}>{t('In cached lyrics')}</Text>
+          {lyricSearch.indexing ? <Text style={styles.recentSub}>{t('Indexing saved lyrics in the background…')}</Text> : null}
+          {lyricMatches.map((match) => <View key={match.song.id}>
+            <TrackRow song={match.song} isCurrent={playing?.id === match.song.id} showArtwork={showListArtwork}
+              onPress={() => { void playCachedLyricResult(lyricMatches, lyricMatches.indexOf(match), profile).then((result) => {
+                if (result === 'unavailable' && profileScopeId() === profile) useToast.getState().show(t("Couldn't play the song"));
+              }); }} />
+            <Text style={[styles.recentSub, { marginLeft: showListArtwork ? 64 : 0, marginBottom: spacing.md }]}
+              numberOfLines={3}>{match.excerpt.replace(/\n/g, ' · ')}</Text>
+          </View>)}
+          {!lyricMatches.length && !lyricSearch.isFetching && !lyricSearch.indexing ?
+            <Text style={styles.recentSub}>{t('Searches lyrics already saved on this device, including supplied translation and romanization.')}</Text> : null}
+        </View> : null}
 
         {shows('artists') && data && data.artists.length > 0 ? (
           <View style={styles.section}>

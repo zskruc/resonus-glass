@@ -522,6 +522,18 @@ export async function songsPage(
   return rows.map((r) => JSON.parse(r.data) as Song);
 }
 
+/** One-time lyric-index upgrade uses a stable row cursor, never a whole
+ * download catalog or a title-sorted OFFSET scan on each search. */
+export async function lyricSidecarPage(dir: string, after: number): Promise<{ cursor: number; song?: Song }[]> {
+  const db = await catalogDb(dir);
+  const rows = await db.getAllAsync<{ rowid: number; data: string; local_uri: string | null }>(
+    'SELECT rowid,data,local_uri FROM songs WHERE rowid>? ORDER BY rowid LIMIT 20', Math.max(0, Math.floor(after)));
+  return rows.flatMap((row) => {
+    try { const song = JSON.parse(row.data) as Song; return [{ cursor: row.rowid,
+      song: row.local_uri ? { ...song, localUri: row.local_uri } : song }]; } catch { return [{ cursor: row.rowid }]; }
+  });
+}
+
 /** Songs whose title or artist contains the text. */
 export async function searchSongs(dir: string, text: string, limit: number): Promise<Song[]> {
   const db = await catalogDb(dir);

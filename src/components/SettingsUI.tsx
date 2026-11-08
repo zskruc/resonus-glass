@@ -1,3 +1,4 @@
+import { SettingAnchor, SettingsAnchorProvider } from './SettingAnchor';
 /**
  * Shared pieces for the Settings screen and its sub-screens: rows inside
  * rounded boxes (surface on background, more readable), with the description
@@ -48,11 +49,13 @@ export function SettingsSafeArea({ children }: { children: React.ReactNode }) {
   const bottom = useScreenBottomPadding();
   const background = useTheme().background;
   return (
+    <SettingsAnchorProvider>
     <StaticGlassBackdropProvider color={background}>
       <SettingsScrollPaddingContext.Provider value={bottom}>
         <View style={[settingsStyles.safe, { paddingTop: insets.top }]}>{children}</View>
       </SettingsScrollPaddingContext.Provider>
     </StaticGlassBackdropProvider>
+    </SettingsAnchorProvider>
   );
 }
 
@@ -174,13 +177,16 @@ export function SettingRow({
   );
   if (!onPress) {
     return (
+      <SettingAnchor label={label}>
       <View style={[box, settingsStyles.row, box && !plainGroup && { backgroundColor: 'transparent' }]}>
         {box && !plainGroup ? <GlassBackdrop radius={radius.lg} tint={colors.surface} staticBackdropColor={staticBackdropColor} /> : null}
         {body}
       </View>
+      </SettingAnchor>
     );
   }
   return (
+      <SettingAnchor label={label}>
     <Pressable
       style={({ pressed }) => [
         box,
@@ -191,6 +197,7 @@ export function SettingRow({
     >
       {body}
     </Pressable>
+      </SettingAnchor>
   );
 }
 
@@ -278,12 +285,13 @@ export function SelectList<T extends string | number | boolean>({
 
   if (!collapsible) {
     return (
+      <SettingAnchor label={label}>
       <SettingsCard enabled={!!box} radius={radius.lg} style={box}>
         {options.map((opt, i) => {
           const isActive = opt.value === value;
           return (
+            <SettingAnchor key={String(opt.value)} label={opt.label}>
             <Pressable
-              key={String(opt.value)}
               style={({ pressed }) => [
                 settingsStyles.row,
                 i > 0 && settingsStyles.rowBorder,
@@ -300,16 +308,18 @@ export function SelectList<T extends string | number | boolean>({
                 color={isActive ? accent : colors.textMuted}
               />
             </Pressable>
+            </SettingAnchor>
           );
         })}
       </SettingsCard>
+      </SettingAnchor>
     );
   }
 
   const menu = anchor != null ? menuLayout(anchor, menuH) : null;
 
   return (
-    <>
+    <SettingAnchor label={label ?? active?.label}>
       <Pressable
         ref={rowRef}
         accessibilityRole="button"
@@ -408,7 +418,7 @@ export function SelectList<T extends string | number | boolean>({
         ) : null}
         </DynamicGlassBackdrop>
       </Modal>
-    </>
+    </SettingAnchor>
   );
 }
 
@@ -455,6 +465,7 @@ export function SliderRow({
   const shown = live ?? value;
 
   return (
+      <SettingAnchor label={label}>
     <SettingsCard enabled={!!box} radius={radius.lg} style={[box, disabled && { opacity: 0.5 }]}>
       <View style={[settingsStyles.row, settingsStyles.sliderHeading]}>
         <View style={settingsStyles.rowLabelBox}>
@@ -521,6 +532,7 @@ export function SliderRow({
         thumbTintColor={colors.knob}
       />
     </SettingsCard>
+      </SettingAnchor>
   );
 }
 
@@ -705,8 +717,8 @@ export function SwitchList({
         // the part being aimed at anyway. It is one control, so it also reads
         // as one to a screen reader, and the switch inside stops announcing
         // itself separately.
+        <SettingAnchor key={opt.label} label={opt.label}>
         <Pressable
-          key={opt.label}
           disabled={opt.disabled}
           onPress={() => opt.onChange(!opt.value)}
           accessibilityRole="switch"
@@ -737,6 +749,7 @@ export function SwitchList({
             importantForAccessibility="no-hide-descendants"
           />
         </Pressable>
+        </SettingAnchor>
       ))}
     </SettingsCard>
   );
@@ -769,6 +782,7 @@ export function TextRow({
   const near = value.length >= maxLength - 3;
   const box = useCardBox();
   return (
+      <SettingAnchor label={label}>
     <SettingsCard enabled={!!box} radius={radius.lg} style={[box, settingsStyles.textRow]}>
       <View style={settingsStyles.textRowTop}>
         <View style={settingsStyles.rowLabelBox}>
@@ -793,18 +807,21 @@ export function TextRow({
         returnKeyType="done"
       />
     </SettingsCard>
+      </SettingAnchor>
   );
 }
 
 export function Field({ label, value }: { label: string; value: string }) {
   const box = useCardBox();
   return (
+      <SettingAnchor label={label}>
     <SettingsCard enabled={!!box} radius={radius.lg} style={[box, settingsStyles.field]}>
       <Text style={settingsStyles.fieldLabel}>{label}</Text>
       <Text style={settingsStyles.fieldValue} numberOfLines={1}>
         {value}
       </Text>
     </SettingsCard>
+      </SettingAnchor>
   );
 }
 

@@ -1444,6 +1444,9 @@ export interface LyricLine {
   /** Milliseconds from the start of the track; only in synced lyrics. */
   start?: number;
   value: string;
+  /** Companion text supplied by the lyric file/server, never machine generated. */
+  translation?: string;
+  romanization?: string;
   /**
    * Word by word, when the lyrics were timed that finely (#165). Put back
    * together they are `value`, spaces included.
@@ -1492,11 +1495,38 @@ export async function getLyricsBySongId(
   );
   // `enhanced` brings the translations and the pronunciations too, as entries
   // of their own, and those are not the song's lyrics.
-  const all = (res.lyricsList?.structuredLyrics ?? []).filter((l) => !l.kind || l.kind === 'main');
+  const tracks = res.lyricsList?.structuredLyrics ?? [];
+  const all = tracks.filter((l) => !l.kind || l.kind === 'main');
   const pick = all.find((l) => l.synced && l.line?.length) ?? all.find((l) => l.line?.length);
   if (!pick?.line?.length) return null;
   const synced = !!pick.synced;
   const offset = pick.offset ?? 0;
+  // Companion tracks may omit instrumental lines. Match their actual clocks,
+  // not shifted row indices. Untimed companions require equal line counts.
+  const companion = (kind: string) => {
+    const track = tracks.find((entry) => entry.kind === kind && entry.line?.length);
+    // OpenSubsonic clocks are integer milliseconds. Retain the first entry at
+    // each clock once, then query a fixed 39ms window instead of N² scans.
+    const byTime = new Map<number, { value?: string; index: number }>();
+    if (track?.synced) track.line?.forEach((entry, index) => {
+      if (entry.start === undefined || !Number.isFinite(entry.start)) return;
+      const time = Math.round(Math.max(0, entry.start - (track.offset ?? 0)));
+      if (!byTime.has(time)) byTime.set(time, { value: entry.value, index });
+    });
+    return (at: number | undefined, index: number): string | undefined => {
+      if (!track?.line) return undefined;
+      if (!synced && !track.synced && track.line.length === pick.line!.length) return track.line[index]?.value?.trim() || undefined;
+      if (!synced || !track.synced || at === undefined) return undefined;
+      let first: { value?: string; index: number } | undefined;
+      const clock = Math.round(at);
+      for (let delta = -19; delta <= 19; delta++) {
+        const entry = byTime.get(clock + delta);
+        if (entry && (!first || entry.index < first.index)) first = entry;
+      }
+      return first?.value?.trim() || undefined;
+    };
+  };
+  const translationAt = companion('translation'), romanizationAt = companion('pronunciation');
   // The first cue line of each index: the spec puts the main voice ahead of
   // the backing ones that share its line.
   const cues = new Map<number, CueLine>();
@@ -1507,6 +1537,9 @@ export async function getLyricsBySongId(
     });
   }
   const lines = pick.line.map((ln, i) => {
+    const start = synced && ln.start !== undefined ? Math.max(0, ln.start - offset) : undefined;
+    const translation = translationAt(start, i);
+    const romanization = romanizationAt(start, i);
     const text = cues.get(i)?.value;
     const cue = cues.get(i)?.cue;
     const words = text && cue?.length ? wordsFromCues(text, cue, offset) : undefined;
@@ -1514,6 +1547,8 @@ export async function getLyricsBySongId(
       // The cue line's own text when it has words, since they are cut out of
       // it, and `line` may carry the backing vocals alongside.
       value: words && text ? text : (ln.value ?? ''),
+      ...(translation ? { translation } : {}),
+      ...(romanization ? { romanization } : {}),
       ...(synced && ln.start !== undefined
         ? { start: Math.max(0, ln.start - offset) }
         : {}),

@@ -23,6 +23,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { FrameMeter } from '@/components/FrameMeter';
 import { PlaybackColorWarmup } from '@/components/PlaybackColorWarmup';
 import { ListeningStatsTracker } from '@/components/ListeningStatsTracker';
+import { LongAudioTracker } from '@/components/LongAudioTracker';
 import { GlobalMiniPlayer } from '@/components/GlobalMiniPlayer';
 import { PlayerArtworkOverlay } from '@/components/PlayerArtworkOverlay';
 import { PlayerUnderlayTransform } from '@/components/PlayerUnderlayTransform';
@@ -69,6 +70,7 @@ import { useRecentSearches } from '@/store/recentSearches';
 import { APP_FONT_FAMILY, useSettings } from '@/store/settings';
 import { useSongCache } from '@/store/songCache';
 import { useSortPrefs } from '@/store/sortPrefs';
+import { initShufflePreferences } from '@/store/shufflePreferences';
 import { colors, themeMode, useTheme } from '@/theme';
 
 // Patches Text/TextInput once, before the first render.
@@ -240,6 +242,7 @@ export default function RootLayout() {
     initAutoUrl();
     initRemoteIntegration();
     initAudiobookProgressTracking();
+    initShufflePreferences();
     // The widget, the Quick Settings tile and the launcher shortcuts.
     initHomeWidget();
     // The language in Android's per-app language setting, both ways.
@@ -395,6 +398,9 @@ export default function RootLayout() {
                 <Stack.Screen name="artist/discography/[id]" />
                 <Stack.Screen name="browse/albums" />
                 <Stack.Screen name="browse/artists" />
+                <Stack.Screen name="album-eras" />
+                <Stack.Screen name="album-years/[year]" />
+                <Stack.Screen name="recommendations" />
                 <Stack.Screen name="browse/folder/[id]" />
                 <Stack.Screen name="genres" />
                 <Stack.Screen name="genre/[name]" />
@@ -404,6 +410,7 @@ export default function RootLayout() {
                 <Stack.Screen name="history" />
                 <Stack.Screen name="lyric-poster" />
                 <Stack.Screen name="settings/index" />
+                <Stack.Screen name="settings/search" />
                 <Stack.Screen name="settings/downloads" />
                 <Stack.Screen name="settings/download-manager" />
                 <Stack.Screen name="settings/media-cache" />
@@ -416,6 +423,9 @@ export default function RootLayout() {
                 <Stack.Screen name="settings/playback" />
                 <Stack.Screen name="settings/player" />
                 <Stack.Screen name="settings/lyrics-tools" />
+                <Stack.Screen name="settings/lyric-sources" />
+                <Stack.Screen name="settings/long-audio" />
+                <Stack.Screen name="settings/shuffle" />
                 <Stack.Screen name="settings/silence-trim" />
                 <Stack.Screen name="settings/language" />
                 <Stack.Screen name="settings/font" />
@@ -493,6 +503,7 @@ export default function RootLayout() {
             <FrameMeter />
             {auth || offline ? <PlaybackColorWarmup /> : null}
             {auth || offline ? <ListeningStatsTracker /> : null}
+            {auth || offline ? <LongAudioTracker /> : null}
             {auth || offline ? <CarAutoSync /> : null}
             {auth || offline ? <BatteryWarning /> : null}
             {/* Not behind the profile guard on a whim: the check reaches

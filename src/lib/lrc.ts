@@ -57,10 +57,18 @@ export function parseLrc(text: string): SongLyrics | null {
   const timed: LyricLine[] = [];
   const plain: LyricLine[] = [];
   let offset = 0;
+  let companions: (Partial<LyricLine> & { value?: string })[] = [];
 
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line) continue;
+    // Lossless companion metadata on our offline sidecars. Unknown metadata
+    // tags are ignored by ordinary LRC readers; original/word times stay LRC.
+    const extra = line.match(/^\[resonus-companions:(.*)\]$/);
+    if (extra) {
+      try { const value: unknown = JSON.parse(extra[1]); if (Array.isArray(value)) companions = value; } catch { /* Original lyrics still work. */ }
+      continue;
+    }
     if (META_RE.test(line)) continue;
     const off = line.match(/^\[offset:\s*([+-]?\d+)\s*\]$/i);
     if (off) {
@@ -93,10 +101,30 @@ export function parseLrc(text: string): SongLyrics | null {
     // Positive `offset` = lyrics should appear earlier (same convention as
     // OpenSubsonic offset).
     timed.sort((a, b) => a.start! - b.start!);
-    return { synced: true, lines: timed.map((l) => shift(l, offset)) };
+    return { synced: true, lines: attachCompanions(timed, companions).map((line) => shift(line, offset)) };
   }
-  if (plain.length > 0) return { synced: false, lines: plain };
+  if (plain.length > 0) return { synced: false, lines: attachCompanions(plain, companions) };
   return null;
+}
+
+function attachCompanions(lines: LyricLine[], companions: Partial<LyricLine>[]): LyricLine[] {
+  // Match the real text/time rather than array positions: LRC drops blank
+  // untimed stanza separators and sorts timed verses into playback order.
+  const key = (line: Partial<LyricLine>) => JSON.stringify([line.start ?? null, line.value?.trim()]);
+  const byLine = new Map<string, Partial<LyricLine>[]>();
+  for (const entry of companions) {
+    if (!entry || typeof entry !== 'object') continue;
+    const id = key(entry), values = byLine.get(id) ?? []; values.push(entry); byLine.set(id, values);
+  }
+  return lines.map((line) => withCompanions(line, byLine.get(key(line))?.shift()));
+}
+
+function withCompanions(line: LyricLine, companion: unknown): LyricLine {
+  if (!companion || typeof companion !== 'object') return line;
+  const value = companion as { translation?: unknown; romanization?: unknown };
+  return { ...line,
+    ...(typeof value.translation === 'string' && value.translation.trim() ? { translation: value.translation } : {}),
+    ...(typeof value.romanization === 'string' && value.romanization.trim() ? { romanization: value.romanization } : {}) };
 }
 
 /**
@@ -112,7 +140,7 @@ export function serializeLrc(lyrics: SongLyrics): string {
     const cs = Math.floor((ms % 1000) / 10);
     return `${pad(min)}:${pad(sec)}.${pad(cs)}`;
   };
-  return lyrics.lines
+  const body = lyrics.lines
     .map((l) => {
       if (!lyrics.synced || l.start === undefined) return l.value;
       if (!l.words?.length) return `[${stamp(l.start)}]${l.value}`;
@@ -121,4 +149,10 @@ export function serializeLrc(lyrics: SongLyrics): string {
       return `[${stamp(l.start)}]${words}${end !== undefined ? `<${stamp(end)}>` : ''}`;
     })
     .join('\n');
+  const companions = lyrics.lines.map((line) => ({
+    value: line.value.trim(), ...(line.start !== undefined && lyrics.synced
+      ? { start: Math.floor(Math.max(0, Math.round(line.start)) / 10) * 10 } : {}),
+    ...(line.translation ? { translation: line.translation } : {}), ...(line.romanization ? { romanization: line.romanization } : {}) }));
+  return companions.some((line) => line.translation || line.romanization)
+    ? `${body}\n[resonus-companions:${JSON.stringify(companions)}]` : body;
 }

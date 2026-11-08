@@ -7,8 +7,8 @@
  * tags and text, which is all a lyrics file uses. A paragraph is a line, a
  * timed span inside it a word or a syllable, and the text between spans (a
  * space, usually) goes with the word before. A span with a role (`x-bg`
- * backing vocals, `x-translation`, `x-roman`) is not the line being sung and
- * is left out.
+ * backing vocals) is left out of the lead voice. Translation/romanization
+ * spans remain separate companion text without becoming karaoke words.
  *
  * Times are taken as they are written, from the start of the track. The spec
  * makes them relative to the parent element, but Apple's files, and so every
@@ -65,15 +65,30 @@ export function parseTtml(text: string): SongLyrics | null {
   const body = text.search(/<(?:[\w.-]+:)?body[\s>/]/);
   if (body < 0) return null;
   const lines: LyricLine[] = [];
-  let line: { start?: number; raw: string; marks: WordMark[] } | null = null;
-  /** One per open span: whether what is inside it is left out. */
-  let spans: boolean[] = [];
+  const companionText = (kind: string): Map<string, string> => {
+    const found = new Map<string, string>();
+    const section = text.slice(0, body).match(new RegExp(`<(?:[\\w.-]+:)?${kind}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:[\\w.-]+:)?${kind}>`));
+    if (section) for (const match of section[1].matchAll(/<(?:[\w.-]+:)?text\b([^>]*)>([\s\S]*?)<\/(?:[\w.-]+:)?text>/g)) {
+      const key = attr(match[1], 'for');
+      const value = decode(match[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ')).trim();
+      if (key && value && !found.has(key)) found.set(key, value);
+    }
+    return found;
+  };
+  const translations = companionText('translation'), romanizations = companionText('transliteration');
+  type Channel = 'raw' | 'translation' | 'romanization' | 'skip';
+  type ParsedLine = { start?: number; raw: string; translation: string; romanization: string; marks: WordMark[] };
+  let line: ParsedLine | null = null;
+  let spans: Channel[] = [];
+  const channel = (): Channel => spans[spans.length - 1] ?? 'raw';
 
-  const finish = (l: { start?: number; raw: string; marks: WordMark[] }) => {
+  const finish = (l: ParsedLine) => {
     const { value, words } = trimmedWords(l.raw, l.marks);
     if (!value) return;
     const start = l.start ?? words?.[0].start;
-    lines.push({ ...(start !== undefined ? { start } : {}), value, ...(words ? { words } : {}) });
+    lines.push({ ...(start !== undefined ? { start } : {}), value, ...(words ? { words } : {}),
+      ...(l.translation.trim() ? { translation: l.translation.trim() } : {}),
+      ...(l.romanization.trim() ? { romanization: l.romanization.trim() } : {}) });
   };
 
   for (const m of text.slice(body).matchAll(TOKEN_RE)) {
@@ -81,7 +96,8 @@ export function parseTtml(text: string): SongLyrics | null {
     if (content !== undefined) {
       // XML folds any run of white space into one, newlines of an indented
       // file included.
-      if (line && !spans.includes(true)) line.raw += decode(content.replace(/\s+/g, ' '));
+      const target = channel();
+      if (line && target !== 'skip') line[target] += decode(content.replace(/\s+/g, ' '));
       continue;
     }
     if (!tag) continue; // a comment or a declaration
@@ -93,21 +109,28 @@ export function parseTtml(text: string): SongLyrics | null {
         line = null;
         spans = [];
       } else if (!empty) {
-        line = { start: ttmlTime(attr(attrs, 'begin')), raw: '', marks: [] };
+        const key = attr(attrs, 'key') ?? attr(attrs, 'id') ?? '';
+        line = { start: ttmlTime(attr(attrs, 'begin')), raw: '', translation: translations.get(key) ?? '',
+          romanization: romanizations.get(key) ?? '', marks: [] };
       }
     } else if (name === 'span' && line) {
       if (slash) spans.pop();
       else if (!empty) {
-        const skip = spans.includes(true) || attr(attrs, 'role') !== undefined;
-        spans.push(skip);
-        const begin = skip ? undefined : ttmlTime(attr(attrs, 'begin'));
+        const role = attr(attrs, 'role');
+        const parent = channel();
+        const target: Channel = parent !== 'raw' ? parent
+          : role === 'x-translation' || role === 'translation' ? 'translation'
+            : role === 'x-roman' || role === 'x-romanization' || role === 'pronunciation' ? 'romanization'
+              : role ? 'skip' : 'raw';
+        spans.push(target);
+        const begin = target === 'raw' ? ttmlTime(attr(attrs, 'begin')) : undefined;
         if (begin !== undefined) {
           const end = ttmlTime(attr(attrs, 'end'));
           line.marks.push({ at: line.raw.length, start: begin, ...(end !== undefined ? { end } : {}) });
         }
       }
-    } else if (name === 'br' && line && !spans.includes(true)) {
-      line.raw += ' ';
+    } else if (name === 'br' && line && channel() !== 'skip') {
+      line[channel() as Exclude<Channel, 'skip'>] += ' ';
     }
   }
 

@@ -76,6 +76,7 @@ export function VoltaLibraryOverview({
   };
   const categories: Category[] = [
     ...chipPrefs.flatMap((chip) => chip.enabled ? [optionalCategories[chip.key]] : []),
+    { label: 'Albums by era', icon: 'calendar-outline', href: '/album-eras' },
     { label: 'Songs', icon: 'musical-notes-outline', href: '/browse/songs' },
     { label: 'Favorites', icon: 'star-outline', onPress: onFavorites },
     { label: 'Audiobooks', icon: 'book-outline', href: '/audiobooks' },

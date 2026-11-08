@@ -38,6 +38,7 @@ function harness() {
   let moveGate: (() => Promise<void>) | undefined, catalogGate: (() => Promise<void>) | undefined;
   let pauseGate: Promise<void> | undefined;
   const dependencies: Record<string, unknown> = {
+    '@/lib/lyricLibraryDb': { saveLyricCandidate: async () => {}, indexSongLyrics: async () => {} },
     zustand: { create: (create: (set: any, get: any) => object) => {
       const store = observable({} as any); store.setState(create(store.setState, store.getState)); return store;
     } },

@@ -1121,6 +1121,10 @@ export default function LibraryScreen() {
         ) : <Text style={styles.heading}>{t('Your library')}</Text>}
         <View style={[styles.headerActions, appleMusic && voltaLibraryStyles.headerActions]}>
           <OfflineIndicator />
+          {!appleMusic ? <GlassPressable variant="subtle" hitSlop={12} accessibilityRole="button"
+            accessibilityLabel={t('Albums by era')} onPress={() => router.push('/album-eras')}>
+            <Icon name="calendar-outline" size={23} color={colors.text} />
+          </GlassPressable> : null}
           <GlassPressable variant="subtle"
             style={appleMusic ? voltaLibraryStyles.headerButton : undefined}
             hitSlop={12}

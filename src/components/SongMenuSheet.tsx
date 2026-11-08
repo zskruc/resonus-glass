@@ -41,6 +41,8 @@ import { useArtistPicker } from '@/store/artistPicker';
 import { profileScopeId, useAuthStore } from '@/store/auth';
 import { usePlaylistPicker } from '@/store/playlistPicker';
 import { useLyricToolTarget } from '@/store/lyricToolTarget';
+import { useLongAudioTarget } from '@/store/longAudioTarget';
+import { canRememberLongAudio } from '@/lib/longAudio';
 import { useDownloads } from '@/store/downloads';
 import { usePlayerStore } from '@/store/player';
 import { useSongInfo } from '@/store/songInfo';
@@ -715,10 +717,16 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
                     <Action icon="time-outline" label={t('Lyrics tools')} onPress={() => dismissAction(() => {
                       useLyricToolTarget.getState().open(song); router.push('/settings/lyrics-tools');
                     })} />
+                    <Action icon="albums-outline" label={t('Lyric sources')} onPress={() => dismissAction(() => {
+                      useLyricToolTarget.getState().open(song); router.push('/settings/lyric-sources');
+                    })} />
                     <Action icon="image-outline" label={t('Lyric poster')} onPress={() => dismissAction(() => {
                       useLyricToolTarget.getState().open(song); router.push('/lyric-poster');
                     })} />
                   </> : null}
+                  {canRememberLongAudio(song) ? <Action icon="bookmark-outline" label={t('Long audio and bookmarks')} onPress={() => dismissAction(() => {
+                    useLongAudioTarget.getState().open(song); router.push('/settings/long-audio');
+                  })} /> : null}
                   {/* The player's buttons that are hidden from its bottom row,
                       so hiding them does not hide what they open (#248). */}
                   {extras.queue ? (

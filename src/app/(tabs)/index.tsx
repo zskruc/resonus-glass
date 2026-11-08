@@ -35,6 +35,7 @@ import { AlbumCard } from '@/components/AlbumCard';
 import { AlbumCardsSkeleton } from '@/components/AlbumCardsSkeleton';
 import { ArtistCard } from '@/components/ArtistCard';
 import { PlayingElsewhereCard } from '@/components/PlayingElsewhereCard';
+import { DailyRecommendationsSection } from '@/components/DailyRecommendationsSection';
 import { Cover } from '@/components/Cover';
 import { FavoritesArt } from '@/components/FavoritesArt';
 import { Message } from '@/components/Message';
@@ -58,6 +59,7 @@ import { requestSearchFocus } from '@/lib/tabOrigin';
 import { useAuthStore } from '@/store/auth';
 import { checkAutoUrlNow } from '@/store/autoUrl';
 import { useLastPlayed } from '@/store/lastPlayed';
+import { useDailyRecommendations } from '@/store/dailyRecommendations';
 import { usePlayerStore } from '@/store/player';
 import { useScanProgress } from '@/store/scanProgress';
 import {
@@ -892,7 +894,7 @@ function ScanningPanel() {
 const HOME_ALBUM_CONFIG: Record<
   Exclude<
     HomeSectionKey,
-    'randomArtists' | 'discover' | 'playlists' | 'mostPlayedSongs' | 'randomSongs' | 'podcasts'
+    'randomArtists' | 'discover' | 'playlists' | 'mostPlayedSongs' | 'randomSongs' | 'podcasts' | 'dailyRecommendations'
   >,
   { title: string; type: 'newest' | 'recent' | 'frequent' | 'random' | 'byYear' }
 > = {
@@ -1044,9 +1046,14 @@ export default function HomeScreen() {
 
   async function onRefresh() {
     setRefreshing(true);
-    await queryClient.invalidateQueries();
-    setReshuffleKey((k) => k + 1);
-    setRefreshing(false);
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries(),
+        homeSections.some((section) => section.key === 'dailyRecommendations' && section.enabled)
+          ? useDailyRecommendations.getState().refresh() : Promise.resolve(),
+      ]);
+      setReshuffleKey((k) => k + 1);
+    } finally { setRefreshing(false); }
   }
 
   return (
@@ -1119,6 +1126,9 @@ export default function HomeScreen() {
               // not applicable offline. «Recently played» does: the local
               // history records just the same in that mode.
               if (!s.enabled) return null;
+              if (s.key === 'dailyRecommendations') {
+                return <DailyRecommendationsSection key={s.key} appleMusic={appleMusic} />;
+              }
               if (s.key === 'discover' && offline) return null;
               if (s.key === 'discover') {
                 return (

@@ -42,6 +42,9 @@ export default function LyricsToolsSettings() {
     <DockScrollView contentContainerStyle={settingsStyles.content}>
       {song ? <>
         <SettingsGroup>
+          <SettingRow label={t('Lyric sources')} chevron onPress={() => {
+            useLyricToolTarget.getState().open(song); router.push('/settings/lyric-sources');
+          }} />
           <Field label={t('Song')} value={song.title} />
           {song.artist ? <Field label={t('Artist')} value={song.artist} /> : null}
         </SettingsGroup>

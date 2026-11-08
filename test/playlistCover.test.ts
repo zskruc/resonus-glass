@@ -46,7 +46,7 @@ function harness() {
   for (const name of ['@/store/downloads', '@/store/libraries', '@/lib/perfLog', '@/lib/query', '@/lib/storage',
     '@/store/lastPlayed', '@/store/libraryMirror', '@/store/offlineQueue', '@/store/playHistory', './netGate',
     '@/lib/localLyrics', '@/store/settings', '@/store/songCache', './navidrome', './subsonic', '@/lib/mediaCacheDb',
-    'expo-file-system/legacy', '@/lib/netBudget', '@/lib/lyricsLookupError']) imports[name] = {};
+    'expo-file-system/legacy', '@/lib/netBudget', '@/lib/lyricsLookupError', '@/lib/lyricLibraryDb', '@/lib/lyricOwner', '@/lib/lyricAudioUri']) imports[name] = {};
   const data = compile('../src/api/data.ts', imports);
   const hook = compile('../src/hooks/usePlaylistCover.ts', {
     react: React,
