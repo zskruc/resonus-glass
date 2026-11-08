@@ -43,7 +43,13 @@ export async function mediaCacheDatabase(profile: string): Promise<SQLite.SQLite
   const old = handles.get(profile); if (old) return old;
   const pending = (async () => {
     await FileSystem.makeDirectoryAsync(DIR, { intermediates: true });
-    const value = await SQLite.openDatabaseAsync(`media-cache-${profile}.db`, {}, DIR.replace(/^file:\/\//, ''));
+    // FTS5 owns internal prepared statements which sqlite3_next_stmt exposes.
+    // Expo's default close sweep finalizes those before SQLite disconnects
+    // the virtual table, causing a second finalize in sqlite3_close. Every
+    // query here uses Expo's convenience helpers (which finalize in finally);
+    // let SQLite close its own FTS statements. Exclusive transactions inherit
+    // this option on their short-lived connections as well.
+    const value = await SQLite.openDatabaseAsync(`media-cache-${profile}.db`, { finalizeUnusedStatementsBeforeClosing: false }, DIR.replace(/^file:\/\//, ''));
     await value.execAsync(SCHEMA); return value;
   })().catch((error) => { if (handles.get(profile) === pending) handles.delete(profile); throw error; });
   handles.set(profile, pending); return pending;

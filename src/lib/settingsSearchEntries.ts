@@ -139,9 +139,9 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
   {
     "id": "/settings/cache",
     "route": "/settings/cache",
-    "title": "cache",
-    "chinese": "cache",
-    "section": "cache"
+    "title": "Cached songs",
+    "chinese": "已缓存歌曲",
+    "section": "Cached songs"
   },
   {
     "id": "/settings/diagnostics",
@@ -531,16 +531,16 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
   {
     "id": "/settings/library",
     "route": "/settings/library",
-    "title": "library",
-    "chinese": "library",
-    "section": "library"
+    "title": "Library",
+    "chinese": "资料库",
+    "section": "Library"
   },
   {
     "id": "/settings/library#Source",
     "route": "/settings/library",
     "title": "Source",
     "chinese": "音乐来源",
-    "section": "library",
+    "section": "Library",
     "anchor": "Source"
   },
   {
@@ -548,15 +548,23 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "route": "/settings/library",
     "title": "Add another folder",
     "chinese": "添加文件夹",
-    "section": "library",
+    "section": "Library",
     "anchor": "Add another folder"
+  },
+  {
+    "id": "/settings/library#Rescan",
+    "route": "/settings/library",
+    "title": "Rescan",
+    "chinese": "重新扫描",
+    "section": "Library",
+    "anchor": "Rescan"
   },
   {
     "id": "/settings/library#Change source",
     "route": "/settings/library",
     "title": "Change source",
     "chinese": "更改音乐来源",
-    "section": "library",
+    "section": "Library",
     "anchor": "Change source"
   },
   {
@@ -564,7 +572,7 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "route": "/settings/library",
     "title": "Scan status",
     "chinese": "扫描状态",
-    "section": "library",
+    "section": "Library",
     "anchor": "Scan status"
   },
   {
@@ -572,7 +580,7 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "route": "/settings/library",
     "title": "Scan now",
     "chinese": "立即扫描",
-    "section": "library",
+    "section": "Library",
     "anchor": "Scan now"
   },
   {
@@ -580,7 +588,7 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "route": "/settings/library",
     "title": "Listening statistics",
     "chinese": "听歌统计",
-    "section": "library",
+    "section": "Library",
     "anchor": "Listening statistics"
   },
   {
@@ -588,7 +596,7 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "route": "/settings/library",
     "title": "Smart playlists",
     "chinese": "智能播放列表",
-    "section": "library",
+    "section": "Library",
     "anchor": "Smart playlists"
   },
   {
@@ -596,7 +604,7 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "route": "/settings/library",
     "title": "Duplicates and versions",
     "chinese": "重复歌曲与不同版本",
-    "section": "library",
+    "section": "Library",
     "anchor": "Duplicates and versions"
   },
   {
@@ -604,7 +612,7 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "route": "/settings/library",
     "title": "Playlist import and export",
     "chinese": "歌单导入与导出",
-    "section": "library",
+    "section": "Library",
     "anchor": "Playlist import and export"
   },
   {
@@ -612,7 +620,7 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "route": "/settings/library",
     "title": "Clear cache",
     "chinese": "清除缓存",
-    "section": "library",
+    "section": "Library",
     "anchor": "Clear cache"
   },
   {
@@ -760,16 +768,16 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
   {
     "id": "/settings/lyric-sources",
     "route": "/settings/lyric-sources",
-    "title": "lyric sources",
-    "chinese": "lyric sources",
-    "section": "lyric sources"
+    "title": "Lyric sources",
+    "chinese": "歌词来源",
+    "section": "Lyric sources"
   },
   {
     "id": "/settings/lyric-sources#Automatic lyrics",
     "route": "/settings/lyric-sources",
     "title": "Automatic lyrics",
     "chinese": "自动选择歌词",
-    "section": "lyric sources",
+    "section": "Lyric sources",
     "anchor": "Automatic lyrics"
   },
   {
@@ -777,7 +785,7 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "route": "/settings/lyric-sources",
     "title": "Refresh local and server sources",
     "chinese": "刷新本地与服务器来源",
-    "section": "lyric sources",
+    "section": "Lyric sources",
     "anchor": "Refresh local and server sources"
   },
   {
@@ -785,7 +793,7 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "route": "/settings/lyric-sources",
     "title": "Find LRCLIB candidates",
     "chinese": "查找 LRCLIB 候选歌词",
-    "section": "lyric sources",
+    "section": "Lyric sources",
     "anchor": "Find LRCLIB candidates"
   },
   {
@@ -793,7 +801,7 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "route": "/settings/lyric-sources",
     "title": "Retry",
     "chinese": "重试",
-    "section": "lyric sources",
+    "section": "Lyric sources",
     "anchor": "Retry"
   },
   {
@@ -889,6 +897,14 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "title": "Bulk artwork & lyrics",
     "chinese": "批量缓存封面与歌词",
     "section": "Bulk artwork & lyrics"
+  },
+  {
+    "id": "/settings/media-cache#Loading…",
+    "route": "/settings/media-cache",
+    "title": "Loading…",
+    "chinese": "正在读取…",
+    "section": "Bulk artwork & lyrics",
+    "anchor": "Loading…"
   },
   {
     "id": "/settings/media-cache#Continue",

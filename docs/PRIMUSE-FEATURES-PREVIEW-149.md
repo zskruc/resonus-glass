@@ -53,3 +53,7 @@ No GitHub publication or release is requested for this local preview task.
 - Package: `com.zskruc.resonus.glasspreview` · ARM64 · Android `149`
 
 完整发布构建成功；ZIP、ABI、包名、版本、现有 Glass 签名及 APK 内新增中英文字典已核对。可以覆盖当前 Glass 安装，保留登录与离线文件。构建阶段没有安装或操作正在使用中的三星，实机验收须待用户方便后另行记录。
+
+## First device pass / 首轮实测发现
+
+设置搜索的拼音检索可以使用；动态页面标题有一处裸英文，已修正索引生成器。随后打开歌词来源时发生原生 SIGABRT：Expo SQLite 默认在关闭连接前遍历并释放所有语句，误释放 FTS5 内部缓存的语句，SQLite 关闭虚拟表时再释放同一资源。崩溃库 BuildID、反汇编地址与 SDK 内置 SQLite 3.50.3 的隔离 C 正负对照一致。FTS 所在数据库现在显式关闭这项强制清理，独占事务连接继承同一选项；JS 查询仍正常释放自己的语句。不删除或重建用户库，不替换原生库／玻璃／动画。修正版 APK 的实机复测结果另行登记。

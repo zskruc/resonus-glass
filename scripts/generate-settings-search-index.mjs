@@ -4,8 +4,13 @@ import ts from 'typescript';
 const root = new URL('../', import.meta.url);
 const chinese = JSON.parse(readFileSync(new URL('src/i18n/locales/zh-CN.json', root), 'utf8'));
 const titleOf = (key) => chinese[key] ?? chinese[key.split('::')[0]] ?? key.split('::')[0];
-const translated = (expression) => ts.isCallExpression(expression) && expression.expression.getText() === 't'
-  && expression.arguments[0] && ts.isStringLiteral(expression.arguments[0]) ? expression.arguments[0].text : undefined;
+function translated(expression) {
+  if (ts.isParenthesizedExpression(expression)) return translated(expression.expression);
+  // The false branch is the base screen; previews/offline headings are transient variants.
+  if (ts.isConditionalExpression(expression)) return translated(expression.whenFalse) ?? translated(expression.whenTrue);
+  return ts.isCallExpression(expression) && expression.expression.getText() === 't'
+    && expression.arguments[0] && ts.isStringLiteral(expression.arguments[0]) ? expression.arguments[0].text : undefined;
+}
 const attr = (node, key) => node.attributes.properties.find((item) => ts.isJsxAttribute(item) && item.name.text === key)?.initializer;
 const entries = [];
 for (const file of readdirSync(new URL('src/app/settings/', root)).filter((name) => name.endsWith('.tsx') && !['index.tsx', 'search.tsx'].includes(name)).sort()) {
@@ -49,7 +54,9 @@ for (const file of readdirSync(new URL('src/app/settings/', root)).filter((name)
     };
     findParameters(source);
   }
-  heading ??= ({ glass: 'Glass lab', player: 'Player', theme: 'Theme', 'long-audio': 'Long audio', shuffle: 'Shuffle preferences' })[file.slice(0, -4)] ?? file.slice(0, -4).replaceAll('-', ' ');
+  const slug = file.slice(0, -4), words = slug.replaceAll('-', ' ');
+  heading ??= ({ cache: 'Cached songs', glass: 'Glass lab', player: 'Player', theme: 'Theme', 'long-audio': 'Long audio', shuffle: 'Shuffle preferences' })[slug]
+    ?? words.charAt(0).toUpperCase() + words.slice(1);
   entries.push({ id: route, route, title: heading, chinese: titleOf(heading), section: heading });
   for (const label of labels) entries.push({ id: `${route}#${label}`, route, title: label, chinese: titleOf(label), section: heading, anchor: label });
 }

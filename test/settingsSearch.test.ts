@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { runInNewContext } from 'node:vm';
+import ts from 'typescript';
 import { SETTINGS_SEARCH_ENTRIES } from '../src/lib/settingsSearchEntries';
 import { withSettingsSearchAliases } from '../src/lib/settingsSearchExtras';
 import { createSettingsSearchHistory, normalizeSettingsQuery, searchSettings, settingsRecentIds, settingScrollOffset } from '../src/lib/settingsSearch';
@@ -53,4 +55,28 @@ test('a failed history read never overwrites an unread previous record, and a fa
 test('search row scroll offsets preserve the target margin without negative or nonfinite movement', () => {
   assert.equal(settingScrollOffset(400), 382); assert.equal(settingScrollOffset(8), 0);
   assert.equal(settingScrollOffset(-5), 0); assert.equal(settingScrollOffset(NaN), 0);
+});
+test('the real generator resolves conditional page headings to their translated base title, not a lowercase route slug', () => {
+  const generator = ts.createSourceFile('generator.js', readFileSync(new URL('../scripts/generate-settings-search-index.mjs', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true);
+  const fn = generator.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === 'translated');
+  assert.ok(fn);
+  const api: Record<string, any> = {};
+  runInNewContext(`${fn.getText(generator)}\nexports.translated=translated;`, { ts, exports: api });
+  for (const [route, expected] of [['lyric-sources', 'Lyric sources'], ['library', 'Library']]) {
+    const source = ts.createSourceFile('page.tsx', readFileSync(new URL(`../src/app/settings/${route}.tsx`, import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    let expression: ts.Expression | undefined;
+    function find(node: ts.Node) {
+      if (ts.isJsxOpeningElement(node) && node.tagName.getText(source) === 'SettingsPage') {
+        const title = node.attributes.properties.find((item): item is ts.JsxAttribute => ts.isJsxAttribute(item) && item.name.getText(source) === 'title');
+        if (title?.initializer && ts.isJsxExpression(title.initializer)) expression = title.initializer.expression;
+      }
+      node.forEachChild(find);
+    }
+    source.forEachChild(find); assert.ok(expression);
+    assert.equal(api.translated(expression), expected);
+    const indexed = entries.find((entry) => entry.id === `/settings/${route}`);
+    assert.equal(indexed?.title, expected);
+    assert.ok(indexed?.chinese && indexed.chinese !== route.replaceAll('-', ' '));
+    assert.ok(entries.filter((entry) => entry.route === `/settings/${route}`).every((entry) => entry.section === expected));
+  }
 });
