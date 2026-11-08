@@ -202,6 +202,11 @@ export interface Song {
   year?: number;
   /** File modification timestamp in ms (offline mode). */
   addedAt?: number;
+  /** Actual track library-added timestamp, when the server sends it. */
+  created?: string;
+  /** Actual track release tags, optional OpenSubsonic metadata. */
+  originalReleaseDate?: { year?: number; month?: number; day?: number };
+  releaseDate?: { year?: number; month?: number; day?: number };
   /**
    * ReplayGain tags from the file (OpenSubsonic extension; Navidrome sends
    * them if present). Gains in dB (negative = attenuates), peaks linear.

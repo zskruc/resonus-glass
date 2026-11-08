@@ -423,12 +423,13 @@ async function byYearPage(
 
 export function getAlbum(id: string): Promise<{ album: Subsonic.Album; songs: Subsonic.Song[] }> {
   if (isOffline()) {
-    if (serverOffline()) return mirrorAlbum(id);
-    return Local.getAlbum(id);
+    return guardDownloadedRead(() => serverOffline() ? mirrorAlbum(id) : Local.getAlbum(id));
   }
-  return Subsonic.getAlbum(auth(), id).then((res) => {
+  const owner = auth();
+  return guardDownloadedRead(() => Subsonic.getAlbum(owner, id)).then((res) => {
+    if (auth() !== owner || isOffline()) throw new Error('Album profile changed');
     useLibraryMirror.getState().saveAlbum(id, res.album, res.songs, useDownloads.getState());
-    void noteDownloadedAlbum(auth(), res.album, res.songs);
+    void noteDownloadedAlbum(owner, res.album, res.songs);
     return res;
   });
 }

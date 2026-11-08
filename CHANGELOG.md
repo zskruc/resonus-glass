@@ -13,6 +13,19 @@ preserved upstream history.
 Releases before 0.2.1 are only listed on the
 [GitHub releases page](https://github.com/juananzzz/resonus/releases).
 
+## [0.8.7.1-preview.6] - 2026-11-09
+
+### Added
+
+- 艺人页「热门歌曲」使用与「常听歌曲」一致的圆角背景面板与行间分隔，适配两种界面风格和深浅模式。
+- 艺人页新增「所有歌曲」七首预览和完整列表入口；预览按专辑曲序读取足够的歌曲后停止，不为展示七首而下载整个艺人曲库。
+- 完整艺人歌曲列表增加播放次数、实际添加日期、发行日期、时长、名称等双向排序，保存每位艺人的排序选择；缺失日期不以访问时间或文件修改时间代替。
+
+### English
+
+- Match the artist's popular tracks to the existing frequently played panel, and add a seven-song library preview with a full-list link.
+- Add persisted, bidirectional artist song sorting while keeping the full list virtualized and preview loading bounded.
+
 ## [0.8.7.1-preview.5] - 2026-11-09
 
 ### Added

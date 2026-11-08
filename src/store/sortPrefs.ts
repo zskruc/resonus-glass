@@ -6,6 +6,7 @@
 import { create } from 'zustand';
 
 import { getItem, setItem } from '@/lib/storage';
+import type { ArtistSongSortField } from '@/lib/artistSongSort';
 
 const KEY = 'resonus.sortPrefs';
 
@@ -14,7 +15,7 @@ export type SongSortField = 'recent' | 'added' | 'alpha' | 'artist' | 'album' | 
 /** And a list of albums (see `useAlbumSort`); 'alpha' means the same there. */
 export type AlbumSortField = 'year' | 'alpha';
 /** Anything this map can hold: one store keeps the choice made on every list. */
-export type SortField = SongSortField | AlbumSortField;
+export type SortField = SongSortField | AlbumSortField | ArtistSongSortField;
 export type SortDir = 'asc' | 'desc';
 
 export interface SortPref {
@@ -28,7 +29,7 @@ interface SortPrefsState {
   prefs: Record<string, SortPref>;
   hydrated: boolean;
   /** `def` = default sort for that list (to omit from the map if it matches). */
-  setPref: (key: string, pref: SortPref, def?: SortPref) => void;
+  setPref: (key: string, pref: SortPref, def?: SortPref, keepDefault?: boolean) => void;
   hydrate: () => Promise<void>;
 }
 
@@ -44,13 +45,13 @@ export const useSortPrefs = create<SortPrefsState>((set, get) => ({
   prefs: {},
   hydrated: false,
 
-  setPref: (key, pref, def = DEFAULT_SORT) => {
+  setPref: (key, pref, def = DEFAULT_SORT, keepDefault = false) => {
     const prefs = { ...get().prefs };
     // Only omit from the map if it matches the real default for that list (which
     // for playlists is not the global one): otherwise, selecting the sort that
     // happened to match the global was read as "go back to default" and wasn't
     // saved.
-    if (pref.field === def.field && pref.dir === def.dir) delete prefs[key];
+    if (!keepDefault && pref.field === def.field && pref.dir === def.dir) delete prefs[key];
     else prefs[key] = pref;
     set({ prefs });
     scheduleSave(prefs);

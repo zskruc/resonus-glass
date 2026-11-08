@@ -543,7 +543,7 @@
   "Keep at least one section on": "请至少保留一个版块",
   "Translations": "翻译",
   "A-Z": "A-Z",
-  "All songs": "全部歌曲",
+  "All songs": "所有歌曲",
   "Try exploring another artist.": "试试探索其他艺术家。",
   "No songs here yet": "这里还没有歌曲",
   "All releases": "全部发行",
@@ -1355,5 +1355,8 @@
   "Unplayed": "未播放",
   "In progress": "听到一半",
   "Latest unplayed": "最新未播",
-  "Shows": "节目"
+  "Shows": "节目",
+  "Play count": "播放次数",
+  "Date added": "添加日期",
+  "Release date": "发行日期"
 }

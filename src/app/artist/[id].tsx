@@ -6,7 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Link, useIsFocused, useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationBar } from 'expo-navigation-bar';
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import {
   ActivityIndicator,
@@ -68,6 +68,7 @@ import { artistHeaderFromLayout } from '@/lib/artistHeaderTransition';
 import { useDominantColor } from '@/hooks/useDominantColor';
 import { useVoltaArtistArtwork } from '@/hooks/useVoltaArtistArtwork';
 import { useArtistFrequentCandidates } from '@/hooks/useArtistFrequentCandidates';
+import { useArtistSongPreview } from '@/hooks/useArtistSongPreview';
 import { useDownloadMessage } from '@/hooks/useDownloadMessage';
 import { useFavoriteIds } from '@/hooks/useFavoriteIds';
 import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
@@ -276,7 +277,7 @@ export default function ArtistScreen() {
   const appleText = appleMusic ? { color: artistPalette.text } : undefined;
   const appleSecondary = appleMusic ? { color: artistPalette.textSecondary } : undefined;
 
-  const { data: appearsOn } = useQuery({
+  const { data: appearsOn, isPending: isAppearsOnPending } = useQuery({
     queryKey: ['appearsOn', id],
     queryFn: () => getAppearsOn(id, name!),
     enabled: canFetch && !!id && !!name,
@@ -286,6 +287,17 @@ export default function ArtistScreen() {
   // does refresh on starring (getArtist's `starred` becomes stale).
   const favArtistIds = useFavoriteIds(canFetch, 'artist');
   const frequentCandidates = useArtistFrequentCandidates(id, name, data?.albums, topSongs, focused);
+  const { own: albums, guest: guestAlbums } = useMemo(
+    () => splitArtistAlbums(data?.albums ?? [], appearsOn ?? []),
+    [data?.albums, appearsOn],
+  );
+  const allSongsPreview = useArtistSongPreview(id, albums,
+    focused && canFetch && !!data && !isAppearsOnPending);
+  const allSongsPlayback = useRef<{ artistId: string; name: string; songs: Song[] } | null>(null);
+  useLayoutEffect(() => {
+    allSongsPlayback.current = focused ? { artistId: id, name: name ?? '', songs: allSongsPreview.songs } : null;
+    return () => { allSongsPlayback.current = null; };
+  }, [focused, id, name, allSongsPreview.songs]);
 
   if (isLoading) {
     return (
@@ -314,7 +326,6 @@ export default function ArtistScreen() {
   // Shuffle icon lights up (accent) while this artist's queue is the one playing
   // and it's shuffled — same "reflects the live state" idea as the play button.
   const shuffleActive = isCurrentArtistQueue && playerShuffle;
-  const { own: albums, guest: guestAlbums } = splitArtistAlbums(data.albums, appearsOn ?? []);
   const releaseGroups = groupArtistAlbums(albums);
   const featured = albums.reduce<Album | undefined>((latest, album) =>
     !latest || (album.year ?? 0) > (latest.year ?? 0) ? album : latest, undefined);
@@ -631,16 +642,7 @@ export default function ArtistScreen() {
 
         {top.length > 0 ? (
           <View style={styles.section}>
-            {/* "All songs" and not "Show all": what is above is the twenty the
-                server thinks are worth hearing first, and what the link opens
-                is every song there is. "Show all" beside "Popular" would read
-                as all the popular ones. */}
-            <Link href={`/artist/songs/${id}`} asChild>
-              <Pressable style={styles.sectionHeader}>
-                <Text style={[styles.sectionHeaderTitle, appleMusic && voltaStyles.sectionHeaderTitle, appleText]}>{t('Popular')}</Text>
-                <Text style={[styles.showAll, appleSecondary]}>{t('All songs')}</Text>
-              </Pressable>
-            </Link>
+            <Text style={[styles.sectionTitle, appleMusic && voltaStyles.sectionHeaderTitle, appleText]}>{t('Popular')}</Text>
             {/* Same horizontal margin as the lists (album/playlist) so the
                 rows —and the three-dot button— don't stick to the edge. */}
             <View style={styles.popularRows}>
@@ -676,6 +678,51 @@ export default function ArtistScreen() {
                 </Text>
               </GlassPressable>
             ) : null}
+          </View>
+        ) : null}
+
+        {albums.length > 0 ? (
+          <View style={styles.section}>
+            <Link href={`/artist/songs/${id}`} asChild>
+              <Pressable style={styles.sectionHeader} accessibilityRole="button" accessibilityLabel={t('All songs')}>
+                <Text style={[styles.sectionHeaderTitle, appleMusic && voltaStyles.sectionHeaderTitle, appleText]}>{t('All songs')}</Text>
+                <Icon name="chevron-forward" size={22} color={appleMusic ? artistPalette.textSecondary : colors.textSecondary} />
+              </Pressable>
+            </Link>
+            <View style={styles.popularRows}>
+              <View style={[styles.popularPanel, {
+                backgroundColor: appleMusic ? 'rgba(255,255,255,0.09)' : colors.surface,
+                borderColor: appleMusic ? 'rgba(255,255,255,0.12)' : colors.surfaceHighlight,
+              }]}>
+                {allSongsPreview.songs.map((song, index) => (
+                  <View key={song.id}>
+                    {index ? <View style={[styles.popularSeparator, {
+                      backgroundColor: appleMusic ? '#FFFFFF1F' : colors.surfaceHighlight,
+                      marginLeft: showListArtwork ? 58 : 0,
+                    }]} /> : null}
+                    <TrackRow song={song} position={index + 1}
+                      rowOccurrenceKey={`artist-all-preview:${id}:${song.id}`} ownerScope={`artist-all-preview:${id}`}
+                      displayIndex={index} serverIndex={index}
+                      isCurrent={playing?.id === song.id} showArtwork={showListArtwork}
+                      onPress={() => {
+                        const latest = allSongsPlayback.current;
+                        if (latest?.artistId !== id) return;
+                        const position = latest.songs.findIndex((candidate) => candidate.id === song.id);
+                        if (position >= 0) void playQueue(latest.songs, position, latest.name, `/artist/${id}`);
+                      }} />
+                  </View>
+                ))}
+                {!allSongsPreview.songs.length ? (
+                  <View style={styles.previewStatus}>
+                    {isAppearsOnPending || allSongsPreview.isPending ? <ActivityIndicator color={appleMusic ? artistPalette.text : colors.textSecondary} /> : (
+                      <Pressable onPress={() => void allSongsPreview.refetch()}>
+                        <Text style={[styles.previewStatusText, appleSecondary]}>{allSongsPreview.isError ? t("Couldn't load songs.") : t('No songs here yet')}</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                ) : null}
+              </View>
+            </View>
           </View>
         ) : null}
 
@@ -1031,6 +1078,8 @@ const styles = themed((colors) => ({
   popularRows: { paddingHorizontal: spacing.lg },
   popularPanel: { borderRadius: 20, borderWidth: 0.5, paddingHorizontal: 10, paddingVertical: 5 },
   popularSeparator: { height: StyleSheet.hairlineWidth },
+  previewStatus: { minHeight: 72, alignItems: 'center', justifyContent: 'center', padding: spacing.md },
+  previewStatusText: { color: colors.textSecondary, fontSize: fontSize.sm },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',

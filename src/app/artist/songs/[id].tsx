@@ -30,7 +30,7 @@ import { GlassPressable, GlassScreen as SafeAreaView } from '@/components/glass'
 import Icon from '@/components/Icon';
 import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 import { useShallow } from 'zustand/react/shallow';
@@ -49,14 +49,16 @@ import { useDownloadMessage } from '@/hooks/useDownloadMessage';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
 import { useListPadding } from '@/hooks/useScreenSize';
 import { useSelectionMenu } from '@/hooks/useSelectionMenu';
-import { useSongSort } from '@/hooks/useSongSort';
+import { useArtistSongSort } from '@/hooks/useArtistSongSort';
 import { songsLabel, useT } from '@/i18n';
 import { splitArtistAlbums } from '@/lib/artistAlbums';
+import { gatherArtistSongs } from '@/lib/artistSongCatalog';
+import { captureLyricOwner } from '@/lib/lyricOwner';
 import { formatTotalDuration } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { listPerf } from '@/lib/listPerf';
 import { queryClient } from '@/lib/query';
-import { useAuthStore } from '@/store/auth';
+import { profileScopeId, useAuthStore } from '@/store/auth';
 import { groupDownloadState, useDownloads } from '@/store/downloads';
 import { usePlaylistPicker } from '@/store/playlistPicker';
 import { currentSong, usePlayerStore } from '@/store/player';
@@ -73,6 +75,8 @@ import {
   tracking,
 } from '@/theme';
 
+const NO_SONGS: Song[] = [];
+
 export default function ArtistSongsScreen() {
   const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
@@ -88,6 +92,7 @@ export default function ArtistSongsScreen() {
   // Rows stop growing at a reading measure and centre themselves (#131).
   const listPad = useListPadding(spacing.lg);
   const canFetch = useAuthStore((s) => !!s.auth || s.offline);
+  const owner = useAuthStore((s) => s.auth), profile = profileScopeId();
   const offline = useAuthStore((s) => s.offline);
   const lang = useSettings((s) => s.language);
   const showListArtwork = useSettings((s) => s.showListArtwork);
@@ -110,7 +115,7 @@ export default function ArtistSongsScreen() {
     enabled: canFetch && !!id,
   });
   const name = artist?.artist.name;
-  const { data: appearsOn } = useQuery({
+  const { data: appearsOn, isPending: appearsOnPending } = useQuery({
     queryKey: ['appearsOn', id],
     queryFn: () => getAppearsOn(id, name!),
     enabled: canFetch && !!id && !!name,
@@ -118,7 +123,8 @@ export default function ArtistSongsScreen() {
   // The artist's own records, not the ones they only play on: those belong to
   // somebody else, and pulling a whole album in because this artist sings on
   // one track of it is not what "all their songs" means.
-  const albums = artist ? splitArtistAlbums(artist.albums, appearsOn ?? []).own : [];
+  const albums = useMemo(() => artist ? splitArtistAlbums(artist.albums, appearsOn ?? []).own : [], [artist, appearsOn]);
+  const albumIds = useMemo(() => albums.map((album) => album.id).join(','), [albums]);
 
   const {
     data: songs,
@@ -128,34 +134,38 @@ export default function ArtistSongsScreen() {
   } = useQuery({
     // The albums are part of what is being gathered, so a discography that
     // grew is a different answer rather than a stale one.
-    queryKey: ['artistSongs', id, albums.map((a) => a.id).join(',')],
-    queryFn: async () => {
-      const parts = await Promise.all(
-        albums.map((al) =>
-          queryClient
-            .fetchQuery({ queryKey: ['album', al.id], queryFn: () => getAlbum(al.id) })
-            .then((d) => d.songs)
-            // One album that will not load is a gap, not a failure: the rest
-            // of the discography is still worth showing.
-            .catch(() => [] as Song[]),
-        ),
-      );
-      return parts.flat();
+    queryKey: ['artistSongs', id, albumIds],
+    queryFn: async ({ signal }) => {
+      const owns = captureLyricOwner(profile);
+      const current = () => !signal.aborted && owns() && owner === useAuthStore.getState().auth && profileScopeId() === profile;
+      return gatherArtistSongs(albums, async (album) => {
+        const value = await queryClient.fetchQuery({ queryKey: ['album', album.id], queryFn: () => getAlbum(album.id) });
+        return value.songs;
+      }, current);
     },
-    enabled: canFetch && albums.length > 0,
+    enabled: canFetch && !appearsOnPending && albums.length > 0,
+    retry: false,
   });
 
-  const all = songs ?? [];
+  const all = songs ?? NO_SONGS;
+  const sortAlbums = useMemo(() => songs ? albums.map((album) => queryClient.getQueryData<Awaited<ReturnType<typeof getAlbum>>>(['album', album.id])?.album ?? album) : albums, [albums, songs]);
   const {
     songs: shown,
     openSort,
     sortSheet,
-  } = useSongSort(all, `artistSongs:${id}`, {
-    // 'recent' is the order they were gathered in: the discography newest
-    // first, each record in its own running order. Named for what that is.
-    fields: ['recent', 'alpha', 'album', 'downloaded'],
-    labels: { recent: 'By album' },
-  });
+  } = useArtistSongSort(all, id, sortAlbums, lang);
+  const latestPlayback = useRef<{ songs: Song[]; name?: string; id: string; owner: typeof owner; profile: string; owns: () => boolean } | null>(null);
+  useLayoutEffect(() => {
+    latestPlayback.current = { songs: shown, name, id, owner, profile, owns: captureLyricOwner(profile) };
+    return () => { latestPlayback.current = null; };
+  }, [shown, name, id, owner, profile]);
+  function playLatestSong(songId: string) {
+    const latest = latestPlayback.current;
+    if (!latest || !latest.owns() || latest.owner !== useAuthStore.getState().auth || latest.profile !== profileScopeId()) return;
+    const index = latest.songs.findIndex((song) => song.id === songId);
+    if (index >= 0) void playQueue(latest.songs, index, latest.name, `/artist/${latest.id}`);
+  }
+  const totalSec = useMemo(() => all.reduce((acc, song) => acc + (song.duration ?? 0), 0), [all]);
 
   // ── Download ─────────────────────────────────────────────────────────────
   // The very group the artist screen's own button uses, so the two say the
@@ -202,7 +212,7 @@ export default function ArtistSongsScreen() {
     toast(t('{n} songs deleted', { n: ids.length }));
   }
 
-  if (isLoading || (!artist && canFetch)) return <TrackListSkeleton />;
+  if (isLoading || (canFetch && (!artist || appearsOnPending))) return <TrackListSkeleton />;
 
   if (all.length === 0) {
     return (
@@ -226,7 +236,6 @@ export default function ArtistSongsScreen() {
     );
   }
 
-  const totalSec = all.reduce((acc, s) => acc + (s.duration ?? 0), 0);
   const meta = [t('Songs'), songsLabel(all.length, lang), formatTotalDuration(totalSec)]
     .filter(Boolean)
     .join(' · ');
@@ -348,6 +357,9 @@ export default function ArtistSongsScreen() {
         renderItem={({ item, index }) => (
           <TrackRow
             song={item}
+            ownerScope={`artistSongs:${profile}:${id}`}
+            rowOccurrenceKey={item.id}
+            displayIndex={index}
             isCurrent={playing?.id === item.id}
             showArtwork={showListArtwork}
             selecting={selecting}
@@ -367,7 +379,7 @@ export default function ArtistSongsScreen() {
             onPress={() => {
               if (justLongPressed.current === item.id) return;
               if (selecting) toggleSelect(item.id);
-              else void playQueue(shown, index, name, `/artist/${id}`);
+              else playLatestSong(item.id);
             }}
           />
         )}

@@ -1352,5 +1352,8 @@
   "Unplayed": "Unplayed",
   "In progress": "In progress",
   "Latest unplayed": "Latest unplayed",
-  "Shows": "Shows"
+  "Shows": "Shows",
+  "Play count": "Play count",
+  "Date added": "Date added",
+  "Release date": "Release date"
 }
