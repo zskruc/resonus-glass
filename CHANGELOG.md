@@ -24,17 +24,19 @@ Releases before 0.2.1 are only listed on the
 ### Fixed
 
 - 修复逐字歌词在同一英文单词内部换行，以及取消 Mini Player 上拉后可能留下透明触摸遮挡的问题。
-- 播放速度按账号／来源随队列保存，恢复期间的新手动速度不被旧磁盘结果覆盖；保持现有音调校正。
+- 播放速度随当前账号／本地模式的队列保存，恢复期间的新手动速度不被旧磁盘结果覆盖；保持现有音调校正。
 - 下载诊断记录安全的失败分类和格式信息，暂停及取消不误报，避免报告包含服务器链接或凭据。
 - DLNA 补齐刚加载歌曲的重复播放保护、更多曲终判定和对应诊断。
+- 修复玻璃弹窗关闭按钮把点击事件误当作完成回调时可能出现的崩溃；补齐播客下载操作的简体中文及仅翻译更新时的构建刷新。
 
 ### English
 
 - Expand Downloaded to a local filter across songs, albums, artists and playlists; mark fully downloaded playlists.
 - Reorder/hide library categories, sort albums by album artist, and sort podcast episodes with matching playback order.
 - Confirm a whole-show podcast download with missing-episode counts and known duration.
-- Preserve playback speed per profile/source, guard cancelled player reveals, keep timed syllables of one word together, and add credential-safe download failure diagnostics.
+- Preserve playback speed with the saved queue, guarded by profile identity; guard cancelled player reveals, keep timed syllables of one word together, and add credential-safe download failure diagnostics.
 - Improve DLNA repeat-play and end detection. Existing page layouts, glass parameters and artwork palette remain.
+- Guard shared glass-card close callbacks against native press events, translate podcast download actions, and refresh bundled dictionaries for translation-only builds.
 
 ## [0.8.7.1-preview.1] - 2026-11-03
 

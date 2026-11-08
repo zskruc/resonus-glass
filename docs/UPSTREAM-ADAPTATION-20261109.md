@@ -25,13 +25,24 @@ PRs #329, #330 and #331 are not part of this approved batch. The existing Androi
 
 ## Validation / 验证
 
-- JavaScript/TypeScript suite: **1,329 passed, 0 failed**, followed by the Navidrome canonical-ID check.
+- JavaScript/TypeScript suite: **1,338 passed, 0 failed**, followed by the Navidrome canonical-ID check.
 - TypeScript and translation/generated-context checks passed. ESLint: **0 errors, 146 warnings**; this is not represented as a warning-free repository.
 - UPnP native release compilation and **23 JUnit tests** passed.
 - Regression cases include late/ABA profile reads, complete playlist membership and equal-count file replacement, profile-owned SQL file indexes, migration of the old download chip and per-profile category settings, download confirmation cancellation/admission, speed changes during restoration, late player reveal ownership, and existing lyric prewarming/layer reuse.
 - Peer review found and corrected two dependent ownership gaps: an old `getPlaylists` response could write a new profile's mirror; and a stable new-profile badge read could still consult the previous profile's not-yet-hydrated in-memory files. Playlist results now verify request ownership before side effects, and badge reads use the captured account directory's SQL file index.
 - Failure diagnostics retain recognized HTTP/network/storage/media categories, not arbitrary native error text. Tests cover quoted JSON credentials, short Subsonic parameters and authorization headers as well as full URLs.
 
-Build/APK and Samsung checks are recorded after completion. These checks do not equate a build or automated test with physical DLNA receiver acceptance, long-run frame-rate measurement, or every podcast feed's behavior.
+## Build and Samsung smoke test / 构建与三星检查
+
+- Delivery: `Resonus-Glass-v0.8.7.1-preview.2-code148-arm64-v8a.apk`, **46,075,328 bytes**, source `d569ab49f782cd76280599382c7bf4bc08707302`.
+- SHA-256: `b3e12101c41c2178b7832a3730f5cc41096cfd53653e6fd33cde210f880ad645`. APK CRC, ARM64 ABI, version, package and existing signing identity verified; installed `base.apk` has the identical hash.
+- Translation-only builds now explicitly regenerate the release JavaScript bundle; the final APK was checked for the added Simplified Chinese podcast action text.
+- Samsung SM-S9380 / Android 17: checked all four downloaded categories, complete-playlist badges, category reorder/hide, album-artist sorting, player open/pull-down and background/foreground return. Original category visibility/order and temporary album sort preferences were restored.
+- Playback speed persisted at 1.25× across an update/restart and was restored to the original 1×. A temporary 355-episode podcast subscription verified newest/oldest order, saved order and bulk download count/duration confirmation. Download was canceled without starting episode downloads, and only that temporary subscription was removed.
+- The first device pass uncovered a real common-card close crash: a native press event reached an optional completion callback. The shared card header, modal and dismissal hook now accept only callable completion callbacks. Regression tests and the final package's exact playback-speed-card close action passed. The final process remained alive; its captured log and exit history showed no new fatal exception, ANR or OOM after final installation. The initial failure remains recorded in private test evidence.
+- The last intended Home tap after the dock collapsed landed on a song row and started playback; this test playback was paused. Do not interpret this smoke test as preserving the original current song/queue throughout the session.
+- Phone settings restored and read back: **30-second screen timeout**, **USB keep-awake off**.
+
+These are scoped functional smoke checks. Physical DLNA receiver behavior, sustained 120 Hz/frame-time measurements, long-list stress and every podcast feed have not been accepted by this run. Timed lyric word wrapping is covered by automated tests; the device's original ASMR selection was not a rich-lyric playback sample. Private screenshots and logs remain outside Git.
 
 No GitHub push, pull request or release is part of this task.
