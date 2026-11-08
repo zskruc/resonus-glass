@@ -46,10 +46,18 @@ function harness() {
       queued.push({ queue, title, origin }); player.setState({ queue, index, isPlaying: true }); return true;
     }, seekTo: (seconds: number) => { seekVersion++; seeks.push(seconds); }, toggle: () => player.setState({ isPlaying: !player.getState().isPlaying }),
   }));
-  const native = { View: 'View', Text: 'Text', ActivityIndicator: 'Spinner', Linking: { openURL: async (url: string) => { links.push(url); } },
-    FlatList: ({ data, renderItem, ListHeaderComponent, ListEmptyComponent }: any) => React.createElement('List', {}, ListHeaderComponent,
+  const dockEvents: unknown[] = [];
+  // On native Reanimated the returned value is a processed event object, not
+  // a callable JS callback. Native VirtualizedList invokes onScroll directly.
+  const dockHandler = { workletEventHandler: { receive: (event: unknown) => dockEvents.push(event) } };
+  const NativeFlatList = ({ data, renderItem, ListHeaderComponent, ListEmptyComponent, onScroll }: any) => React.createElement('List', {
+    onScroll: (event: unknown) => { if (onScroll) onScroll(event); },
+  }, ListHeaderComponent,
       ...(data.length ? data.map((item: any, index: number) => React.createElement(React.Fragment, { key: index }, renderItem({ item, index }))) : [ListEmptyComponent])),
-  };
+    AnimatedFlatList = ({ onScroll, ...props }: any) => React.createElement(NativeFlatList, {
+      ...props, onScroll: typeof onScroll === 'object' ? (event: unknown) => onScroll.workletEventHandler.receive(event) : onScroll,
+    });
+  const native = { View: 'View', Text: 'Text', ActivityIndicator: 'Spinner', Linking: { openURL: async (url: string) => { links.push(url); } }, FlatList: NativeFlatList };
   const palette = { accent: '#05f', onAccent: '#fff', text: '#fff', textSecondary: '#ddd', textMuted: '#aaa', background: '#111', surfaceHighlight: '#444' };
   const theme = { colors: palette, fontSize: { sm: 12, md: 16, lg: 20 }, spacing: { sm: 4, md: 8, lg: 16, xl: 24 }, radius: { pill: 50 }, themed: (fn: any) => fn(palette), useTheme: () => {} };
   const common = { react: React, 'react/jsx-runtime': JSXRuntime, 'react-native': native, '@/theme': theme };
@@ -57,6 +65,7 @@ function harness() {
   const requests: { signal: AbortSignal; url: string }[] = [];
   let request: (url: string, init: any) => Promise<any> = async () => ({ ok: true, headers: { get: () => null }, text: async () => '{"chapters":[{"startTime":90,"title":"Remote topic"}]}' });
   const Screen = load('../src/app/podcast-episode/[id].tsx', { ...common,
+    'react-native-reanimated': { __esModule: true, default: { FlatList: AnimatedFlatList } },
     'expo/fetch': { fetch: async (url: string, init: any) => { requests.push({ url, signal: init.signal }); return request(url, init); } },
     '@tanstack/react-query': Query,
     'expo-router': { useIsFocused: () => focused, useLocalSearchParams: () => ({ id: episode.id, channelId: channel.id }), useRouter: () => ({ push() {} }) },
@@ -64,7 +73,7 @@ function harness() {
     '@/api/podcasts': adapter, '@/api/netGate': { isManualOffline: () => auth.getState().offline && !auth.getState().autoOffline },
     '@/components/BackChevron': { BackChevron: 'Back' }, '@/components/Cover': { Cover: 'Cover' },
     '@/components/glass': { GlassPressable: 'Button' }, '@/components/Icon': { __esModule: true, default: 'Icon' }, '@/components/Message': { Message: 'Message' },
-    '@/components/PodcastShowNotes': showNotes, '@/hooks/useLiquidDock': { useLiquidDockScrollHandler: () => () => {} },
+    '@/components/PodcastShowNotes': showNotes, '@/hooks/useLiquidDock': { useLiquidDockScrollHandler: () => dockHandler },
     '@/hooks/useScreenBottomPadding': { useScreenBottomPadding: () => 180 }, '@/i18n': { useT: () => (key: string, args: any = {}) => key.replace(/\{(\w+)\}/g, (_: string, name: string) => String(args[name])) },
     '@/lib/lyricOwner': owner, '@/lib/localLibrary': { hashKey: (value: string) => value }, '@/lib/podcastChapters': chapters,
     '@/lib/podcastDb': { getEpisode: async () => null, getChannel: async () => null }, '@/lib/podcastEpisodePlayback': playback,
@@ -74,7 +83,7 @@ function harness() {
     '@/store/toast': { useToast: (selector: any) => selector({ show: (error: string) => errors.push(error) }) },
   }).default;
   const tree = () => React.createElement(Query.QueryClientProvider, { client: query }, React.createElement(Screen));
-  return { query, tree, auth, episode, channel, queued, seeks, links, errors, requests,
+  return { query, tree, auth, episode, channel, queued, seeks, links, errors, requests, dockEvents,
     request: (work: typeof request) => { request = work; }, blur: () => { focused = false; } };
 }
 function button(root: ReactTestRenderer, label: string) {
@@ -98,6 +107,16 @@ test('the actual episode screen renders safe notes, keeps chapters opt-in, and t
     assert.equal(h.requests.length, 1); assert.match(JSON.stringify(root.toJSON()), /Remote topic/);
     await act(async () => { button(root, 'Remote topic').props.onPress(); }); assert.deepEqual(h.seeks, [30, 90]);
     assert.equal(h.queued.length, 1, 'same accepted episode seeks directly without reloading its audio'); assert.deepEqual(h.errors, []);
+  } finally { await act(async () => root?.unmount()); h.query.clear(); }
+});
+
+test('the actual episode route consumes the processed Reanimated dock handler before native VirtualizedList dispatches scroll events', async () => {
+  const h = harness(); let root!: ReactTestRenderer;
+  try {
+    await act(async () => { root = create(h.tree()); });
+    const event = { timeStamp: 100, nativeEvent: { contentOffset: { y: 150 }, contentSize: { height: 2000 }, layoutMeasurement: { height: 700 } } };
+    await act(async () => { root.root.findByType('List' as any).props.onScroll(event); });
+    assert.deepEqual(h.dockEvents, [event]); assert.equal(h.requests.length, 0);
   } finally { await act(async () => root?.unmount()); h.query.clear(); }
 });
 

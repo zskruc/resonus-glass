@@ -3,7 +3,8 @@ import { fetch } from 'expo/fetch';
 import { useQuery } from '@tanstack/react-query';
 import { useIsFocused, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Linking, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Text, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { episodeToSong, podcastCover } from '@/api/podcasts';
@@ -138,7 +139,7 @@ export default function PodcastEpisodeScreen() {
     </View>;
   return <View style={[styles.safe, { paddingTop: insets.top }]}>
     <View style={styles.top}><BackChevron /><Text style={styles.topTitle}>{t('Episode details')}</Text><View style={{ width: 26 }} /></View>
-    <FlatList data={rows} keyExtractor={(_, index) => `${tab}:${index}`} contentContainerStyle={[styles.content, { paddingBottom: bottom }]}
+    <Animated.FlatList data={rows} keyExtractor={(_, index) => `${tab}:${index}`} contentContainerStyle={[styles.content, { paddingBottom: bottom }]}
       initialNumToRender={12} maxToRenderPerBatch={12} windowSize={5} ListHeaderComponent={header} onScroll={scroll} scrollEventThrottle={16}
       ListEmptyComponent={!details.isPending && episode ? <Text style={styles.empty}>{t(tab === 'notes' ? 'No show notes available.' : 'No chapters supplied for this episode.')}</Text> : null}
       renderItem={({ item }) => item.kind === 'note' ? <PodcastShowNote block={item.block} onLink={openLink} onTimestamp={(at) => { void play(at); }} disabled={busy} />
