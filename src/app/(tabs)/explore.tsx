@@ -31,6 +31,7 @@
  */
 import { GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
+import { canDownloadFilter } from '@/lib/browseChips';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, ScrollView, Text, View } from 'react-native';
@@ -54,7 +55,7 @@ import { anyDownloads, useDownloads } from '@/store/downloads';
 import { useSettings, type ExploreSectionKey, type ListLayout } from '@/store/settings';
 import { colors, fontSize, radius, spacing, themed, useTheme, tracking } from '@/theme';
 
-type Section = ExploreSectionKey;
+type Section = Exclude<ExploreSectionKey, 'downloaded'>;
 
 /** The label each goes by. The order is the saved one (Settings › Explore
  *  sections), which starts as the order they are declared in. */
@@ -67,7 +68,6 @@ const LABEL: Record<Section, string> = {
   radio: 'Radio',
   podcasts: 'Podcasts',
   folders: 'Folders',
-  downloads: 'Downloads',
 };
 
 export default function ExploreScreen() {
@@ -85,6 +85,10 @@ export default function ExploreScreen() {
   const hasDownloads = useDownloads(anyDownloads);
   const order = useSettings((s) => s.exploreSections);
   const [section, setSection] = useState<Section>('albums');
+  const [downloaded, setDownloaded] = useState(false);
+  const filterEnabled = order.some((item) => item.key === 'downloaded' && item.enabled);
+  const canFilter = !!auth && !offline && hasDownloads && filterEnabled;
+  const filtering = canFilter && downloaded;
   /** Filled in by whichever section is on screen (see `BrowserProps`). */
   const sectionAction = useRef<() => void>(() => {});
   /**
@@ -122,8 +126,6 @@ export default function ExploreScreen() {
         return subsonic && !offline;
       case 'folders':
         return subsonic && !offline && showFolderBrowser;
-      case 'downloads':
-        return !!auth && !offline && hasDownloads;
       case 'playlists':
         // Jellyfin answers for them too, and offline the mirror does; it is
         // the one server-side section the local profile has nothing for.
@@ -133,7 +135,9 @@ export default function ExploreScreen() {
     }
   };
   // What the chips are: turned on, and something this profile can answer for.
-  const sections = order.filter((s) => s.enabled && available(s.key)).map((s) => s.key);
+  const chips = order.filter((item) => item.enabled && (item.key === 'downloaded'
+    ? canFilter : available(item.key) && (!filtering || canDownloadFilter(item.key))));
+  const sections = chips.flatMap((item) => item.key === 'downloaded' ? [] : [item.key]);
   /**
    * Going offline can take the section you were on with it, and so can turning
    * it off in the settings.
@@ -185,9 +189,7 @@ export default function ExploreScreen() {
       ? { icon: 'add' as const, label: t('Add station'), size: 28, color: colors.text }
       : current === 'podcasts'
         ? { icon: 'add' as const, label: t('Add podcast'), size: 28, color: colors.text }
-        : current === 'downloads'
-          ? { icon: layouts.albums === 'grid' ? ('grid-outline' as const) : ('list' as const), label: t('View'), size: 22, color: colors.textSecondary }
-          : current === 'playlists' ||
+        : current === 'playlists' ||
             current === 'albums' ||
             current === 'artists' ||
             current === 'songs'
@@ -250,7 +252,24 @@ export default function ExploreScreen() {
         style={styles.segments}
         contentContainerStyle={styles.segmentsContent}
       >
-        {sections.map((key) => {
+        {chips.map(({ key }) => {
+          if (key === 'downloaded') return (
+            <GlassPressable key={key} tint={filtering ? accent : undefined} variant={filtering ? 'prominent' : 'regular'}
+              style={[styles.segment, styles.filterPill, filtering && { backgroundColor: accent }, appleMusic && {
+                minHeight: 38, justifyContent: 'center', borderRadius: 10,
+                backgroundColor: filtering ? colors.surfaceHighlight : 'transparent',
+              }]}
+              accessibilityRole="switch" accessibilityLabel={t('Only downloaded')}
+              accessibilityState={{ checked: filtering }} onPress={() => {
+                setSearchFor(null);
+                if (!filtering && !canDownloadFilter(current)) setSection('albums');
+                setDownloaded(!filtering);
+              }}>
+              <Icon name={filtering ? 'checkmark' : 'arrow-down'} size={14} color={filtering && !appleMusic ? colors.onAccent : accent} />
+              <Text style={[styles.segmentText, filtering && styles.segmentTextActive,
+                appleMusic && { fontSize: 15, color: filtering ? accent : colors.textSecondary }]}>{t('Downloaded')}</Text>
+            </GlassPressable>
+          );
           const active = key === current;
           return (
             <GlassPressable tint={active ? accent : undefined} variant={active ? 'prominent' : 'regular'}
@@ -284,15 +303,13 @@ export default function ExploreScreen() {
           once, which on a big library is what the app spent #50 undoing. */}
       <View style={styles.body}>
         {current === 'playlists' ? (
-          <PlaylistsBrowser embedded actionRef={sectionAction} searchOpen={searchOpen} />
+          <PlaylistsBrowser key={String(filtering)} downloaded={filtering} embedded actionRef={sectionAction} searchOpen={searchOpen} />
         ) : current === 'albums' ? (
-          <AlbumsBrowser embedded actionRef={sectionAction} searchOpen={searchOpen} />
-        ) : current === 'downloads' ? (
-          <AlbumsBrowser key="downloads" downloaded embedded actionRef={sectionAction} searchOpen={searchOpen} />
+          <AlbumsBrowser key={String(filtering)} downloaded={filtering} embedded actionRef={sectionAction} searchOpen={searchOpen} />
         ) : current === 'artists' ? (
-          <ArtistsBrowser embedded actionRef={sectionAction} searchOpen={searchOpen} />
+          <ArtistsBrowser key={String(filtering)} downloaded={filtering} embedded actionRef={sectionAction} searchOpen={searchOpen} />
         ) : current === 'songs' ? (
-          <SongsBrowser embedded actionRef={sectionAction} searchOpen={searchOpen} />
+          <SongsBrowser key={String(filtering)} downloaded={filtering} embedded actionRef={sectionAction} searchOpen={searchOpen} />
         ) : current === 'genres' ? (
           <GenresBrowser embedded searchOpen={searchOpen} />
         ) : current === 'radio' ? (
@@ -329,6 +346,7 @@ const styles = themed((colors) => ({
     borderRadius: radius.pill,
     backgroundColor: colors.surfaceHighlight,
   },
+  filterPill: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderColor: colors.textMuted },
   segmentText: { color: colors.textSecondary, fontSize: fontSize.sm, fontWeight: '500' },
   segmentTextActive: { color: colors.onAccent },
   body: { flex: 1 },

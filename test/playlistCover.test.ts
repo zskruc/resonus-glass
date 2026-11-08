@@ -1,3 +1,4 @@
+import { completeDownloadedPlaylists } from '../src/lib/downloadedPlaylists';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -28,6 +29,9 @@ function harness() {
   const index = createCoverIndex();
   const requests: { owner: Owner; id: string; size: number }[] = [];
   const imports: Record<string, unknown> = {
+    '@/lib/downloadsDb': {},
+    '@/lib/downloadedPlaylists': { completeDownloadedPlaylists },
+    '@/lib/downloadedBrowse': { guardDownloadedRead: async (read: () => Promise<unknown>) => read() },
     '@/store/auth': { useAuthStore },
     '@/lib/localLibrary': { localCoverSize: index.size },
     '@/lib/localQueries': { coverUrl: index.uri },

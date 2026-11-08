@@ -40,6 +40,7 @@ import { podcastCover, queueEpisode, type PodcastChannel, type PodcastEpisode } 
 import { isManualOffline } from '@/api/netGate';
 import { usePodcastDownloads } from '@/store/podcastDownloads';
 import { openArtistMenu } from '@/components/ArtistMenuSheet';
+import { useDownloadedPlaylists } from '@/hooks/useDownloadedPlaylists';
 import { useDownloadShelf } from '@/hooks/useDownloadShelf';
 import { useLibraryPullRefresh } from '@/hooks/useLibraryPullRefresh';
 import { Cover } from '@/components/Cover';
@@ -271,6 +272,7 @@ function PlaylistsTab({
   const times = useLastPlayed((s) => s.times);
   const pins = usePins((s) => s.pins);
   const openMenu = useMediaMenu((s) => s.open);
+  const completePlaylists = useDownloadedPlaylists();
   const hideUnavailable = useSettings((s) => s.hideUnavailableOffline);
   const grid = useSettings((s) => s.libraryLayout) === 'grid';
   const bottomPad = useScreenBottomPadding();
@@ -352,6 +354,7 @@ function PlaylistsTab({
             uri={coverArtUrl(item.coverArt ?? item.id, COVER.card)}
             title={item.name}
             subtitle={songsLabel(item.songCount ?? 0, lang)}
+            badge={completePlaylists?.has(item.id)}
             pinned={!!pins[`playlist:${item.id}`]}
             dimmed={item.availableOffline === false}
             onLongPress={() => { haptic('light'); openMenu({ kind: 'playlist', playlist: item }); }}
@@ -368,6 +371,7 @@ function PlaylistsTab({
                   {item.name}
                 </Text>
                 <View style={styles.rowSubLine}>
+                  {completePlaylists?.has(item.id) ? <Icon name="arrow-down-circle" size={13} color={colors.accent} /> : null}
                   {pins[`playlist:${item.id}`] ? (
                     <Icon name="pin" size={13} color={colors.accent} />
                   ) : null}
@@ -604,6 +608,7 @@ function AllTab({ query, onNew, favoritesOnly = false }: { query: string; onNew?
   const pins = usePins((s) => s.pins);
   const hideUnavailable = useSettings((s) => s.hideUnavailableOffline);
   const { unavailable, downloaded } = useDownloadShelf();
+  const completePlaylists = useDownloadedPlaylists();
   const openMenu = useMediaMenu((s) => s.open);
   const grid = useSettings((s) => s.libraryLayout) === 'grid';
   const bottomPad = useScreenBottomPadding();
@@ -745,7 +750,7 @@ function AllTab({ query, onNew, favoritesOnly = false }: { query: string; onNew?
             subtitle={label(item)}
             pinned={!!pins[`${item.kind}:${item.id}`]}
             dimmed={item.playlist?.availableOffline === false || (!!item.album && unavailable(item.album)) || (!!item.episode && manualOffline && !episodeFiles[item.id])}
-            badge={(!!item.album && downloaded(item.album)) || (!!item.episode && !!episodeFiles[item.id])}
+            badge={(!!item.playlist && !!completePlaylists?.has(item.id)) || (!!item.album && downloaded(item.album)) || (!!item.episode && !!episodeFiles[item.id])}
             onPress={item.episode && item.channel ? () => {
               if (manualOffline && !episodeFiles[item.id]) useToast.getState().show(t('Not available offline'));
               else queueEpisode(item.episode!, item.channel!);
@@ -765,6 +770,7 @@ function AllTab({ query, onNew, favoritesOnly = false }: { query: string; onNew?
                   {item.name}
                 </Text>
                 <View style={styles.rowSubLine}>
+                  {item.playlist && completePlaylists?.has(item.id) ? <Icon name="arrow-down-circle" size={14} color={colors.accent} /> : null}
                   {item.album && downloaded(item.album) ? <Icon name="arrow-down-circle" size={14} color={colors.accent} /> : null}
                   {pins[`${item.kind}:${item.id}`] ? (
                     <Icon
@@ -916,7 +922,10 @@ export default function LibraryScreen() {
    * open on the playlists, which put your albums and your artists behind a tap
    * nobody had asked for; that is now a setting (#217).
    */
-  const [segment, setSegment] = useState<Segment | null>(null);
+  const [chosenSegment, setSegment] = useState<Segment | null>(null);
+  const chipPrefs = useSettings((state) => state.libraryChips);
+  const visibleSegments = chipPrefs.flatMap((chip) => chip.enabled ? SEGMENTS.filter((item) => item.key === chip.key) : []);
+  const segment = visibleSegments.some((item) => item.key === chosenSegment) ? chosenSegment : null;
   const [appleFavorites, setAppleFavorites] = useState(false);
   const showsPlaylists = useSettings((s) => s.libraryShowsPlaylists);
   /** And which playlists, once that chip is the one pressed. */
@@ -943,7 +952,7 @@ export default function LibraryScreen() {
     Keyboard.dismiss();
     setQuery('');
     setSearchOpen(false);
-  }, []);
+  }, [setQuery, setSearchOpen]);
 
   // Leaving the screen puts the bar away: going to another tab, or opening one
   // of the results and coming back. The X was the only way out of it, which
@@ -999,7 +1008,7 @@ export default function LibraryScreen() {
       return true;
     });
     return () => sub.remove();
-  }, [appleMusic, searchOpen, segment, appleFavorites]));
+  }, [appleMusic, searchOpen, segment, appleFavorites, setSegment, setOwner, setAppleFavorites]));
 
   /**
    * A chip is only worth drawing where it leaves something out. On a server
@@ -1050,7 +1059,7 @@ export default function LibraryScreen() {
     ? t(SEGMENTS.find((item) => item.key === segment)!.label)
     : appleFavorites ? t('Favorites') : t('Library');
 
-  const segmentChipRow = (segment ? SEGMENTS.filter((s) => s.key === segment) : SEGMENTS).map(
+  const segmentChipRow = (segment ? visibleSegments.filter((s) => s.key === segment) : visibleSegments).map(
     (s) => {
       const active = s.key === segment;
       return (

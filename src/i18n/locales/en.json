@@ -732,7 +732,6 @@
   "Couldn't read this feed": "Couldn't read this feed",
   "Couldn't load this podcast.": "Couldn't load this podcast.",
   "This podcast's feed could not be read, so these episodes may be out of date.": "This podcast's feed could not be read, so these episodes may be out of date.",
-  "Play latest": "Play latest",
   "Website": "Website",
   "Episodes": "Episodes",
   "Untitled episode": "Untitled episode",
@@ -1159,5 +1158,14 @@
   "Lost the connection to {name}": "Lost the connection to {name}",
   "When the episode ends": "When the episode ends",
   "Episode notes": "Episode notes",
-  "Output device": "Output device"
+  "Output device": "Output device",
+  "Newest first": "Newest first",
+  "Oldest first": "Oldest first",
+  "{episodes} will be saved to this device ({duration}).": "{episodes} will be saved to this device ({duration}).",
+  "{episodes} will be saved to this device.": "{episodes} will be saved to this device.",
+  "All episodes are already downloaded.": "All episodes are already downloaded.",
+  "Duration excludes episodes with unknown length.": "Duration excludes episodes with unknown length.",
+  "Your library chips": "Your library chips",
+  "Only downloaded": "Only downloaded",
+  "Album artist": "Album artist"
 }

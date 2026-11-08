@@ -1,3 +1,4 @@
+import { completeDownloadedPlaylists } from '../src/lib/downloadedPlaylists';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -39,6 +40,9 @@ function harness() {
   const writes: unknown[][] = [], published: unknown[][] = [], timers: (() => void)[] = [];
   class ApiError extends Error { network = true; code?: number; }
   const dependencies: Record<string, unknown> = {
+    '@/lib/downloadsDb': {},
+    '@/lib/downloadedPlaylists': { completeDownloadedPlaylists },
+    '@/lib/downloadedBrowse': { guardDownloadedRead: async (read: () => Promise<unknown>) => read() },
     '@/store/auth': { useAuthStore: { getState: () => state } },
     '@/store/downloads': { useDownloads: { getState: () => ({ files }) }, noteDownloadedArtist: () => {} },
     '@/store/libraryMirror': { useLibraryMirror: { getState: () => ({ saveArtist: () => {} }) } },

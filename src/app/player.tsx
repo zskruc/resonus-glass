@@ -4,8 +4,8 @@ import { GlassPressable } from '@/components/glass';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useIsFocused, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useIsFocused, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
@@ -58,6 +58,7 @@ import { useLyrics } from '@/hooks/useLyrics';
 import { useScreenSize } from '@/hooks/useScreenSize';
 import { useT } from '@/i18n';
 import { revealOffset } from '@/lib/playerReveal';
+import { playerRevealGuard } from '@/lib/playerRevealOwner';
 import { artistTargets } from '@/lib/artistNav';
 import { formatGroupedDeviceLabel } from '@/lib/format';
 import { applyStarChange, resyncFavorites } from '@/lib/favoritesCache';
@@ -234,6 +235,29 @@ function usePaneStyle(offset: SharedValue<number>, k: number, step: SharedValue<
 
 export default function PlayerScreen() {
   const presentation = useSettings((state) => state.playerPresentation);
+  const focused = useIsFocused();
+  const router = useRouter();
+  const { reveal } = useLocalSearchParams<{ reveal?: string }>();
+  const [owner] = useState(() => ({}));
+  const [cancelledEntry] = useState(() => !!reveal && !playerRevealGuard.owns(reveal));
+  // Ordinary opens cannot inherit an offscreen offset from another mini pull.
+  // A cancelled late push renders no surface, so removing it cannot flash a
+  // fully-open player between resetting the offset and committing the pop.
+  useLayoutEffect(() => {
+    if (!reveal) revealOffset.value = -1;
+  }, [reveal]);
+  useLayoutEffect(() => {
+    if (!focused) return;
+    playerRevealGuard.focus(owner, reveal ?? null);
+    return () => playerRevealGuard.blur(owner);
+  }, [focused, owner, reveal]);
+  useEffect(() => {
+    // If release beat the navigation commit, remove only that late player.
+    if (!focused || !cancelledEntry || !playerRevealGuard.isFocused(owner)) return;
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)');
+  }, [cancelledEntry, focused, owner, router]);
+  if (cancelledEntry) return null;
   return presentation === 'amll' ? <AmllPlayerScreen /> : <ResonusPlayerScreen />;
 }
 

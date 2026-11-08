@@ -129,3 +129,19 @@ export function inTimeOrder(lines: LyricLine[]): LyricLine[] {
   keyed.sort((a, b) => a.at - b.at || a.i - b.i);
   return keyed.map((k) => k.line);
 }
+
+/** Scripts normally wrapped without spaces; their timed units may wrap independently. */
+const UNSPACED_RE = /[\u0E00-\u0EFF\u1000-\u109F\u1780-\u17FF\u3000-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uFF00-\uFFEF]/;
+
+/** Keep separately timed syllables of one word together without changing their clocks. */
+export function wordGroups(words: LyricWord[]): number[][] {
+  const groups: number[][] = [];
+  words.forEach((word, index) => {
+    const previous = words[index - 1]?.value;
+    const joined = previous != null && !/\s$/.test(previous) && !/^\s/.test(word.value)
+      && !UNSPACED_RE.test(previous.slice(-1)) && !UNSPACED_RE.test(word.value.charAt(0));
+    if (joined) groups[groups.length - 1].push(index);
+    else groups.push([index]);
+  });
+  return groups;
+}

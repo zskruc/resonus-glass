@@ -1,7 +1,7 @@
 /** Playlist card for the carousels on Home (the «Playlists» row). */
 import { Link } from 'expo-router';
 import { memo } from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { COVER, coverArtUrl, type Playlist } from '@/api/data';
 import { songsLabel } from '@/i18n';
@@ -11,16 +11,18 @@ import { useSettings } from '@/store/settings';
 import { fontSize, lineHeight, spacing, themed, useTheme } from '@/theme';
 import { bump } from '@/lib/perfLog';
 import { Cover } from './Cover';
+import Icon from '@/components/Icon';
 
 interface Props {
   playlist: Playlist;
+  downloaded?: boolean;
   width?: number;
 }
 
-export const PlaylistCard = memo(function PlaylistCard({ playlist, width = 150 }: Props) {
+export const PlaylistCard = memo(function PlaylistCard({ playlist, width = 150, downloaded }: Props) {
   bump('render · PlaylistCard');
   // Memoised, so it has to ask for a repaint on a theme change itself.
-  useTheme();
+  const { accent } = useTheme();
   const lang = useSettings((s) => s.language);
   const openMenu = useMediaMenu((s) => s.open);
   const cover = coverArtUrl(playlist.coverArt ?? playlist.id, COVER.card);
@@ -41,9 +43,10 @@ export const PlaylistCard = memo(function PlaylistCard({ playlist, width = 150 }
           {playlist.name}
         </Text>
         {playlist.songCount !== undefined ? (
-          <Text style={styles.sub} numberOfLines={1}>
-            {songsLabel(playlist.songCount, lang)}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            {downloaded ? <Icon name="arrow-down-circle" size={13} color={accent} /> : null}
+            <Text style={styles.sub} numberOfLines={1}>{songsLabel(playlist.songCount, lang)}</Text>
+          </View>
         ) : null}
       </Pressable>
     </Link>

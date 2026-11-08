@@ -26,6 +26,7 @@ import { EmptyState } from '@/components/EmptyState';
 import Icon from '@/components/Icon';
 import { Message } from '@/components/Message';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
+import { usePodcastEpisodeSort } from '@/hooks/usePodcastEpisodeSort';
 import { useT } from '@/i18n';
 import { formatDuration } from '@/lib/format';
 import { listPerf } from '@/lib/listPerf';
@@ -34,6 +35,8 @@ import { useSettings } from '@/store/settings';
 import { currentSong, usePlayerStore } from '@/store/player';
 import { useToast } from '@/store/toast';
 import { colors, fontSize, radius, spacing, themed, tracking, useTheme } from '@/theme';
+
+const EMPTY_EPISODES: PodcastEpisode[] = [];
 
 /** The date an episode was published, in the app's language. */
 function dayLabel(at: number, lang: string): string {
@@ -74,6 +77,7 @@ export default function PodcastScreen() {
     queryFn: () => listEpisodes(id),
     enabled: !!id,
   });
+  const { episodes: sorted, openSort, sortSheet } = usePodcastEpisodeSort(episodes.data ?? EMPTY_EPISODES, channel.data?.id ?? id, lang);
 
   const reload = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['podcastChannel', id] });
@@ -108,6 +112,7 @@ export default function PodcastScreen() {
         start < 0 ? 0 : start,
         ch.title,
         `/podcast/${ch.id}`,
+        { ordered: true },
       );
     },
     [channel.data, playQueue, files, toast, t],
@@ -131,10 +136,11 @@ export default function PodcastScreen() {
   }
 
   const ch = channel.data;
-  const list = episodes.data ?? [];
+  const list = sorted;
   const siteUrl = /^https?:\/\//i.test(ch.siteUrl ?? '') ? ch.siteUrl : undefined;
 
   return (
+    <>
     <Animated.FlatList
       onScroll={dockScroll}
       scrollEventThrottle={16}
@@ -172,7 +178,7 @@ export default function PodcastScreen() {
                 onPress={() => play(list, 0)}
               >
                 <Icon name="play" size={18} color={colors.onAccent} />
-                <Text style={styles.primaryText}>{t('Play latest')}</Text>
+                <Text style={styles.primaryText}>{t('Play')}</Text>
               </GlassPressable>
             ) : null}
             {siteUrl ? (
@@ -182,6 +188,11 @@ export default function PodcastScreen() {
               >
                 <Icon name="link-outline" size={18} color={colors.text} />
                 <Text style={styles.secondaryText}>{t('Website')}</Text>
+              </GlassPressable>
+            ) : null}
+            {list.length > 1 ? (
+              <GlassPressable variant="regular" style={styles.secondary} onPress={openSort} accessibilityLabel={t('Sort by')}>
+                <Icon name="swap-vertical" size={20} color={colors.text} />
               </GlassPressable>
             ) : null}
             <GlassPressable variant="regular" style={styles.secondary} onPress={() => openPodcastMenu(ch)} accessibilityLabel={t('More')}>
@@ -233,6 +244,8 @@ export default function PodcastScreen() {
         />
       }
     />
+    {sortSheet}
+    </>
   );
 }
 
@@ -262,7 +275,7 @@ const styles = themed((colors) => ({
     textAlign: 'center',
     marginTop: spacing.xs,
   },
-  actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: spacing.sm, marginTop: spacing.md },
   primary: {
     flexDirection: 'row',
     alignItems: 'center',

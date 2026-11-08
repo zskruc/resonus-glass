@@ -33,6 +33,9 @@ import { FlatList as GHFlatList } from 'react-native-gesture-handler';
 import Animated from 'react-native-reanimated';
 
 import { getSongList, searchSongs, songListSorts } from '@/api/data';
+import * as Local from '@/lib/localQueries';
+import { guardDownloadedRead } from '@/lib/downloadedBrowse';
+import { useDownloadedBrowseRefresh } from '@/hooks/useDownloadedBrowseRefresh';
 import { type Song, type SongListSort } from '@/api/subsonic';
 import { AlbumCardsSkeleton } from '@/components/AlbumCardsSkeleton';
 import { AlbumRowsSkeleton } from '@/components/AlbumRowsSkeleton';
@@ -114,7 +117,8 @@ export default function BrowseSongsScreen() {
   return <SongsBrowser />;
 }
 
-export function SongsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) {
+export function SongsBrowser({ embedded, actionRef, searchOpen, downloaded }: BrowserProps) {
+  const profile = useDownloadedBrowseRefresh(downloaded);
   const appleMusic = useAppleMusicStyle();
   const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
@@ -148,7 +152,7 @@ export function SongsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
   });
   const card = cardWidth(columns);
   // What this server can actually order by; the first one is what it opens on.
-  const sorts = canFetch ? songListSorts() : [];
+  const sorts: SongListSort[] = downloaded ? ['server', 'recent', 'frequent', 'alpha', 'added', 'random'] : canFetch ? songListSorts() : [];
   /**
    * Arrived at from a Home shelf, this says which one. Only the value it opens
    * on: each visit is its own screen, so there is nothing to keep in step. An
@@ -157,7 +161,7 @@ export function SongsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
    */
   const { sort: sortParam } = useLocalSearchParams<{ sort?: string }>();
   const [sort, setSort] = useBrowseSort<SongListSort>(
-    'browseSongs',
+    downloaded ? 'downloadedSongs' : 'browseSongs',
     sorts,
     sorts[0] ?? 'server',
     sorts.find((s) => s === sortParam),
@@ -173,8 +177,8 @@ export function SongsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
 
   const { data, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useInfiniteQuery({
-      queryKey: ['browseSongs', sort, recentKey],
-      queryFn: ({ pageParam }) => getSongList(sort, PAGE, pageParam),
+      queryKey: downloaded ? ['downloadedSongs', profile, sort, recentKey] : ['browseSongs', sort, recentKey],
+      queryFn: ({ pageParam }) => downloaded ? guardDownloadedRead(() => Local.getSongList(sort, PAGE, pageParam), profile) : getSongList(sort, PAGE, pageParam),
       initialPageParam: 0,
       getNextPageParam: (last, pages) => (last.length === PAGE ? pages.length * PAGE : undefined),
       enabled: canFetch,
@@ -205,8 +209,8 @@ export function SongsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
     isError: searchError,
     refetch: refetchSearch,
   } = useQuery({
-    queryKey: ['searchSongs', debounced, SEARCH_COUNT],
-    queryFn: () => searchSongs(debounced, SEARCH_COUNT),
+    queryKey: downloaded ? ['searchDownloadedSongs', profile, debounced, SEARCH_COUNT] : ['searchSongs', debounced, SEARCH_COUNT],
+    queryFn: () => downloaded ? guardDownloadedRead(() => Local.searchSongs(debounced, SEARCH_COUNT), profile) : searchSongs(debounced, SEARCH_COUNT),
     enabled: canFetch && debounced.length > 0,
   });
 

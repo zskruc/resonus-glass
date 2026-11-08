@@ -7,6 +7,7 @@ import * as ampp from '../src/lib/amppDock';
 import * as dockRules from '../src/lib/liquidDock';
 import * as buttonRules from '../src/lib/glassButtonMotion';
 import * as swipeRules from '../src/lib/miniPlayerSwipe';
+import { createPlayerRevealGuard } from '@/lib/playerRevealOwner';
 import { nativeMeasureBoundary } from './helpers/nativeMeasureBoundary';
 
 type Element = { type: unknown; props: Record<string, any> };
@@ -79,6 +80,7 @@ function harness(options: { amPlus?: boolean; rtl?: boolean; progress?: number; 
     '@/lib/haptics': {}, '@/lib/liquidDock': dockRules, '@/lib/amppDock': ampp,
     '@/lib/glassButtonMotion': buttonRules, '@/lib/miniPlayerSwipe': swipeRules,
     '@/lib/pushOnce': { pushOnce() {} },
+    '@/lib/playerRevealOwner': { playerRevealGuard: createPlayerRevealGuard() },
     '@/store/player': { currentSong: (state: typeof player) => state.song,
       usePlayerStore: (select: (state: typeof player) => unknown) => select(player), useLiveInfo: () => null },
     '@/store/settings': { useSettings: (select: (state: typeof settings) => unknown) => select(settings) },

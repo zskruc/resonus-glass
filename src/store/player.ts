@@ -2148,6 +2148,13 @@ function speedFor(song: Song | null | undefined): number {
   return usePlayerStore.getState().speed;
 }
 
+/** Older queues have no speed. Invalid persisted values must never reach native audio. */
+function savedSpeed(saved: StoredQueue): number {
+  if (saved.speedScope !== profileScopeId()) return 1;
+  return typeof saved.speed === 'number' && Number.isFinite(saved.speed)
+    ? Math.min(2, Math.max(0.5, saved.speed)) : 1;
+}
+
 /** Applies the speed of `song` to the player holding it. */
 function applySpeed(p: AudioPlayer | null, song: Song | null | undefined) {
   if (!p) return;
@@ -3091,6 +3098,7 @@ function queueStorageKey(): string | null {
 }
 
 /** Disk/server answers belong to the queue intent that asked for them. */
+let speedIntentGeneration = 0;
 function queueRequestOwner() {
   const { auth, offline, offlineSource } = useAuthStore.getState();
   const { queue, index } = usePlayerStore.getState();
@@ -3128,6 +3136,10 @@ interface StoredQueue {
    */
   shuffle?: boolean;
   repeat?: RepeatMode;
+  /** Playback speed survives closing the app; pitch correction remains enabled. */
+  speed?: number;
+  /** Old offline queue keys are shared; never inherit another source's speed. */
+  speedScope?: string;
   /** The queue was dealt when it was started (see `queueDealt`). */
   dealt?: boolean;
   /**
@@ -3199,6 +3211,7 @@ function saveQueueLocal(force = false) {
     shuffle,
     queueDealt,
     repeat,
+    speed,
   } = usePlayerStore.getState();
   if (queue.length === 0) return;
   if (!force && !queueDirty && AppState.currentState === 'active') return;
@@ -3218,6 +3231,8 @@ function saveQueueLocal(force = false) {
     shuffle,
     dealt: queueDealt,
     repeat,
+    speed,
+    speedScope: profileScopeId(),
     savedAt: Date.now(),
   };
   localSavedAt = payload.savedAt ?? 0;
@@ -3240,7 +3255,7 @@ function clearQueueLocal() {
   // cold start read them as off. Kept on while the app is open and gone after
   // a restart is the kind of difference nobody can explain to themselves
   // (reported by @ztx-lyghters).
-  const { shuffle, repeat } = usePlayerStore.getState();
+  const { shuffle, repeat, speed } = usePlayerStore.getState();
   // Dated like any other write: emptying the queue is this device's last word
   // on it, and what decides whether another player's is newer.
   const empty: StoredQueue = {
@@ -3249,6 +3264,8 @@ function clearQueueLocal() {
     positionSec: 0,
     shuffle,
     repeat,
+    speed,
+    speedScope: profileScopeId(),
     savedAt: Date.now(),
   };
   localSavedAt = empty.savedAt ?? 0;
@@ -3737,10 +3754,8 @@ interface PlayerState {
    * to the next, which is the point of it (#151): you set it once and practise
    * over a whole album.
    *
-   * It does NOT survive closing the app, unlike shuffle and repeat. Those are
-   * how somebody listens; this one belongs to an afternoon with an instrument,
-   * and a library that quietly comes back at three quarters months later is a
-   * bug report, not a preference. While it is not 1 the player says so.
+   * Saved with the queue, like shuffle and repeat. While it is not 1 the
+   * player says so. Changing profiles resets it before the new queue restores.
    */
   speed: number;
   shuffle: boolean;
@@ -4360,11 +4375,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // The ends of what is offered. Android clamps to 0.1–2 on its own, and a
     // rate that came back clamped would leave the list showing a speed that is
     // not the one playing.
+    if (!Number.isFinite(v)) return;
     const speed = Math.min(2, Math.max(0.5, v));
+    speedIntentGeneration += 1;
     set({ speed });
     // Only the player that is sounding: the reserve gets it when a source is
     // installed on it, and a remote renderer plays at its own pace.
     if (!remoteKind()) applySpeed(activePlayer(), currentSong(get()));
+    // A speed change is rare and intentional; persist before a quick restart.
+    saveQueueLocal(true);
   },
 
   jumpTo: (index, kind = 'pick') => {
@@ -4635,6 +4654,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const key = queueStorageKey();
     if (!key || get().queue.length > 0) return true;
     const owner = queueRequestOwner();
+    const speedIntent = speedIntentGeneration;
     let saved: StoredQueue | null = null;
     try {
       const raw = await getItem(key);
@@ -4656,6 +4676,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         shuffle: saved.shuffle === true,
         queueDealt: false,
         repeat: isRepeatMode(saved.repeat) ? saved.repeat : 'off',
+        ...(speedIntentGeneration === speedIntent ? { speed: savedSpeed(saved) } : {}),
       });
       onRestored?.();
       return true;
@@ -4690,6 +4711,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       shuffle: saved.shuffle === true,
       queueDealt: saved.dealt === true,
       repeat: isRepeatMode(saved.repeat) ? saved.repeat : 'off',
+      ...(speedIntentGeneration === speedIntent ? { speed: savedSpeed(saved) } : {}),
     });
     const loading = loadIndex(index, false), installation = queueRequestOwner();
     await loading;
@@ -4805,8 +4827,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       // Changing account is the real exception, since the mode being restored
       // belongs with the other profile's queue.
       // The speed goes with them, and for the same reason: it is about
-      // listening, not about this queue. It does not outlive the run either
-      // way (see `speed`).
+      // listening, not about this queue.
       ...(forProfile ? { shuffle: false, repeat: 'off' as const, speed: 1 } : {}),
       // Not one of those two: this is about the queue that is going away, not
       // about how somebody listens.
@@ -4895,7 +4916,8 @@ usePlayerStore.subscribe((st, prev) => {
     st.radioMode !== prev.radioMode ||
     st.radioSeed !== prev.radioSeed ||
     st.shuffle !== prev.shuffle ||
-    st.repeat !== prev.repeat
+    st.repeat !== prev.repeat ||
+    st.speed !== prev.speed
   ) {
     queueDirty = true;
   }

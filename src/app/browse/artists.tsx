@@ -16,6 +16,9 @@ import { FlatList as GHFlatList } from 'react-native-gesture-handler';
 import Animated from 'react-native-reanimated';
 
 import { getAlbumList, getArtists, type Album, type Artist } from '@/api/data';
+import * as Local from '@/lib/localQueries';
+import { guardDownloadedRead } from '@/lib/downloadedBrowse';
+import { useDownloadedBrowseRefresh } from '@/hooks/useDownloadedBrowseRefresh';
 import { ArtistCard } from '@/components/ArtistCard';
 import { ArtistGridSkeleton } from '@/components/ArtistGridSkeleton';
 import { ArtistListSkeleton } from '@/components/ArtistListSkeleton';
@@ -92,7 +95,8 @@ export default function BrowseArtistsScreen() {
   return <ArtistsBrowser />;
 }
 
-export function ArtistsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) {
+export function ArtistsBrowser({ embedded, actionRef, searchOpen, downloaded }: BrowserProps) {
+  const profile = useDownloadedBrowseRefresh(downloaded);
   const appleMusic = useAppleMusicStyle();
   const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
@@ -129,8 +133,8 @@ export function ArtistsBrowser({ embedded, actionRef, searchOpen }: BrowserProps
   const { byArtist } = useHistoryTimes();
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['allArtists'],
-    queryFn: () => getArtists(),
+    queryKey: downloaded ? ['downloadedArtists', profile] : ['allArtists'],
+    queryFn: () => downloaded ? guardDownloadedRead(Local.getArtists, profile) : getArtists(),
     enabled: canFetch,
   });
 
@@ -158,8 +162,8 @@ export function ArtistsBrowser({ embedded, actionRef, searchOpen }: BrowserProps
    * choosing this order.
    */
   const { data: frequentAlbums } = useQuery({
-    queryKey: ['albumList', 'frequent', FREQUENT_POOL],
-    queryFn: () => getAlbumList('frequent', FREQUENT_POOL),
+    queryKey: downloaded ? ['downloadedArtistAlbumList', profile, 'frequent', FREQUENT_POOL] : ['albumList', 'frequent', FREQUENT_POOL],
+    queryFn: () => downloaded ? guardDownloadedRead(() => Local.getAlbumList('frequent', FREQUENT_POOL), profile) : getAlbumList('frequent', FREQUENT_POOL),
     enabled: canFetch && sort === 'frequent',
   });
 
@@ -167,8 +171,8 @@ export function ArtistsBrowser({ embedded, actionRef, searchOpen }: BrowserProps
   // creation date, so they're sorted by how recent their newest album is
   // (getAlbumList 'newest'). Approximate, but it's the only signal available.
   const { data: newestAlbums } = useQuery({
-    queryKey: ['albumList', 'newest', FREQUENT_POOL],
-    queryFn: () => getAlbumList('newest', FREQUENT_POOL),
+    queryKey: downloaded ? ['downloadedArtistAlbumList', profile, 'newest', FREQUENT_POOL] : ['albumList', 'newest', FREQUENT_POOL],
+    queryFn: () => downloaded ? guardDownloadedRead(() => Local.getAlbumList('newest', FREQUENT_POOL), profile) : getAlbumList('newest', FREQUENT_POOL),
     enabled: canFetch && sort === 'newest',
   });
 

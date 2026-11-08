@@ -9,9 +9,9 @@ import ts from 'typescript';
 // boundaries, so a delayed account A response can be delivered after B opens.
 const source = readFileSync(new URL('../src/store/player.ts', import.meta.url), 'utf8');
 const ast = ts.createSourceFile('player.ts', source, ts.ScriptTarget.Latest, true);
-const names = new Set(['queueRequestOwner', 'ownsQueueRequest', 'safeKey', 'queueStorageKey',
+const names = new Set(['queueRequestOwner', 'ownsQueueRequest', 'safeKey', 'queueStorageKey', 'savedSpeed',
   'serverQueueIsSomeoneElses', 'markWeOwnServerQueue', 'markPlayedHere', 'clearPlayedHere', 'syncQueueNow', 'adoptNewerServerQueue']);
-const variables = new Set(['loadToken', 'resumeSeekGeneration', 'lastOwnerCheck', 'OWNER_CHECK_TTL', 'playedHere', 'localSavedAt', 'lastAdoptCheck']);
+const variables = new Set(['loadToken', 'resumeSeekGeneration', 'speedIntentGeneration', 'lastOwnerCheck', 'OWNER_CHECK_TTL', 'playedHere', 'localSavedAt', 'lastAdoptCheck']);
 const declarations = ast.statements.filter((node) => ts.isFunctionDeclaration(node) && names.has(node.name?.text ?? '')
   || ts.isVariableStatement(node) && node.declarationList.declarations.some((decl) => variables.has(decl.name.getText(ast))))
   .map((node) => node.getText(ast)).join('\n');
@@ -26,6 +26,7 @@ const code = ts.transpileModule(`${declarations}\n${[...actions].map(([key, valu
 exports.sync=syncQueueNow; exports.adopt=adoptNewerServerQueue;
 exports.cancel=()=>{loadToken++;}; exports.seekIntent=()=>{resumeSeekGeneration++;};
 exports.loading=()=>{loadToken++;}; exports.listen=()=>{markPlayedHere();};
+exports.speedIntent=()=>{speedIntentGeneration++;};
 exports.owner=()=>lastOwnerCheck;`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((yes) => { resolve = yes; }); return { promise, resolve }; }
 const tick = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
@@ -121,4 +122,58 @@ test('only its completed disk restore schedules adoption and the timer cannot fo
   assert.equal(h.timers.length, 1);
   h.store.setState({ queue: [{ id: 'newer' }] }); h.timers[0](); await tick();
   assert.equal(h.serverReads.length, 0);
+});
+
+test('disk restores include speed for both a populated queue and an empty tombstone', async () => {
+  for (const queue of [saved.queue, []]) {
+    const h = harness(), work = h.api.restoreFromStorage();
+    h.disk.resolve(JSON.stringify({ ...saved, queue, speed: 1.5, speedScope: h.authA.serverUrl }));
+    await work;
+    assert.equal(h.store.getState().speed, 1.5);
+  }
+});
+
+test('a pending disk restore keeps newer manual speed including ABA without losing the saved position', async () => {
+  for (const values of [[1.75], [1.75, 1]]) {
+    const h = harness(); h.store.setState({ speed: 1 });
+    const work = h.api.restoreFromStorage();
+    for (const speed of values) { h.api.speedIntent(); h.store.setState({ speed }); }
+    h.disk.resolve(JSON.stringify({ ...saved, speed: 0.75, speedScope: h.authA.serverUrl }));
+    await work;
+    assert.equal(h.store.getState().speed, values.at(-1));
+    assert.deepEqual(h.loads, ['old-A']);
+    assert.deepEqual(h.seeks, [45]);
+  }
+});
+
+test('server restoration preserves the chosen local speed', async () => {
+  const h = harness(); h.store.setState({ speed: 1.75 });
+  const work = h.api.restoreFromServer();
+  h.serverReads[0].resolve({ entries: saved.queue, position: 45_000 }); await work;
+  assert.equal(h.store.getState().speed, 1.75);
+  assert.deepEqual(h.loads, ['old-A']);
+});
+
+test('a delayed server adoption preserves a new manual speed choice', async () => {
+  const h = harness();
+  const restore = h.api.restoreFromStorage(); h.disk.resolve(JSON.stringify(saved)); await restore;
+  const work = h.api.adopt();
+  h.api.speedIntent(); h.store.setState({ speed: 1.5 });
+  h.serverReads[0].resolve({ entries: [{ id: 'remote' }], changed: 20, changedBy: 'Other player' });
+  await tick();
+  assert.equal(h.serverReads.length, 2);
+  h.serverReads[1].resolve({ entries: [{ id: 'remote' }], position: 0 });
+  await work;
+  assert.equal(h.store.getState().queue[0].id, 'remote');
+  assert.equal(h.store.getState().speed, 1.5);
+});
+
+test('a speed change during native queue loading keeps the restored position too', async () => {
+  const h = harness(), native = deferred<boolean>(); h.waitLoad(native.promise);
+  const work = h.api.restoreFromStorage();
+  h.disk.resolve(JSON.stringify({ ...saved, speed: 0.75, speedScope: h.authA.serverUrl })); await tick();
+  h.api.speedIntent(); h.store.setState({ speed: 1.75 });
+  native.resolve(true); await work;
+  assert.equal(h.store.getState().speed, 1.75);
+  assert.deepEqual(h.seeks, [45]);
 });

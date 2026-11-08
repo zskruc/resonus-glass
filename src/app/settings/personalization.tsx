@@ -218,6 +218,11 @@ export default function AppearanceSettings() {
             chevron
             onPress={() => router.push('/settings/explore-sections')}
           />
+          <SettingRow
+            label={t('Your library chips')}
+            chevron
+            onPress={() => router.push('/settings/library-chips')}
+          />
           {/* Guarded as a whole, not with a spread inside the list: SwitchList
               always draws its card, so an empty array left a blank box. */}
           {canBrowseFolders ? (

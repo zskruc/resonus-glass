@@ -34,6 +34,7 @@ import { themed } from '@/theme';
  * opens (see `useSearchBox`).
  */
 export interface BrowserProps {
+  downloaded?: boolean;
   embedded?: boolean;
   actionRef?: MutableRefObject<() => void>;
   searchOpen?: boolean;

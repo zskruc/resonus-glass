@@ -13,6 +13,29 @@ preserved upstream history.
 Releases before 0.2.1 are only listed on the
 [GitHub releases page](https://github.com/juananzzz/resonus/releases).
 
+## [0.8.7.1-preview.2] - 2026-11-09
+
+### Added
+
+- 探索「已下载」改为歌曲、专辑、艺人和歌单的本机筛选，完整下载的歌单增加下载标记。
+- 设置 → 外观新增「音乐库分类」，可以排序和隐藏分类；专辑浏览增加「专辑艺人」排序。
+- 播客可以按新旧或标题排序，并按显示顺序播放；下载整档节目先确认实际缺失集数及已知总时长。
+
+### Fixed
+
+- 修复逐字歌词在同一英文单词内部换行，以及取消 Mini Player 上拉后可能留下透明触摸遮挡的问题。
+- 播放速度按账号／来源随队列保存，恢复期间的新手动速度不被旧磁盘结果覆盖；保持现有音调校正。
+- 下载诊断记录安全的失败分类和格式信息，暂停及取消不误报，避免报告包含服务器链接或凭据。
+- DLNA 补齐刚加载歌曲的重复播放保护、更多曲终判定和对应诊断。
+
+### English
+
+- Expand Downloaded to a local filter across songs, albums, artists and playlists; mark fully downloaded playlists.
+- Reorder/hide library categories, sort albums by album artist, and sort podcast episodes with matching playback order.
+- Confirm a whole-show podcast download with missing-episode counts and known duration.
+- Preserve playback speed per profile/source, guard cancelled player reveals, keep timed syllables of one word together, and add credential-safe download failure diagnostics.
+- Improve DLNA repeat-play and end detection. Existing page layouts, glass parameters and artwork palette remain.
+
 ## [0.8.7.1-preview.1] - 2026-11-03
 
 ### Added

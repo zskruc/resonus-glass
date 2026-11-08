@@ -1,3 +1,6 @@
+import { downloadedFiles } from '@/lib/downloadsDb';
+import { completeDownloadedPlaylists } from '@/lib/downloadedPlaylists';
+import { guardDownloadedRead } from '@/lib/downloadedBrowse';
 /**
  * Unified data layer. Screens use these functions instead of calling the
  * Subsonic API directly. The module automatically decides whether to read
@@ -5,6 +8,7 @@
  */
 import { profileScopeId, useAuthStore } from '@/store/auth';
 import {
+  activeServerDir,
   getDownloadShelf,
   getDownloadsCatalog,
   noteDownloadedAlbum,
@@ -1092,7 +1096,11 @@ export function getPlaylists(): Promise<Subsonic.Playlist[]> {
   // a profile switch while the request is in flight would otherwise measure the
   // new profile's recents against the old one's playlists and delete the lot.
   const asked = profileScopeId();
-  return Subsonic.getPlaylists(auth()).then((list) => {
+  const owner = auth();
+  return guardDownloadedRead(() => Subsonic.getPlaylists(owner), asked).then((list) => {
+    if (useAuthStore.getState().auth !== owner || profileScopeId() !== asked || isOffline()) {
+      throw new Error('Playlist profile changed');
+    }
     useLibraryMirror.getState().savePlaylists(list);
     // These are all of them, so a playlist recorded as played and not in here
     // was deleted on the server. Its record outlived it and kept drawing a tile
@@ -1314,6 +1322,25 @@ async function mirrorPlaylists(): Promise<Subsonic.Playlist[]> {
     });
   }
   return out;
+}
+
+/** Locally known complete playlists. Unknown membership is never fetched just to draw a badge. */
+export async function downloadedPlaylistIds(expectedScope = profileScopeId()): Promise<Set<string>> {
+  return guardDownloadedRead(async () => {
+    const owner = useAuthStore.getState().auth;
+    const dir = activeServerDir();
+    if (!owner || !dir) return new Set<string>();
+    await loadMirror();
+    if (useAuthStore.getState().auth !== owner) throw new Error('Downloaded playlist profile changed');
+    const mirror = useLibraryMirror.getState();
+    await mirror.flush();
+    if (useAuthStore.getState().auth !== owner) throw new Error('Downloaded playlist profile changed');
+    const [tracklists, versions, saved, files] = await Promise.all([mirror.playlistSongIds(), mirror.playlistVersions(), mirror.playlists(), downloadedFiles(dir)]);
+    if (useAuthStore.getState().auth !== owner || activeServerDir() !== dir) throw new Error('Downloaded playlist profile changed');
+    const current = queryClient.getQueryData<Subsonic.Playlist[]>(['playlists']) ?? saved ?? [];
+    return completeDownloadedPlaylists(tracklists, files, current, versions,
+      useOfflineQueue.getState().data.playlists ?? {});
+  }, expectedScope);
 }
 
 /**

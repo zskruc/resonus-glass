@@ -7,7 +7,7 @@
  */
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { StyleSheet, Text, View, type StyleProp, type TextStyle } from 'react-native';
 import Animated, {
   cancelAnimation,
@@ -22,6 +22,7 @@ import Animated, {
 
 import type { LyricWord } from '@/api/subsonic';
 import { lyricClockPlan } from '@/lib/lyricLifecycle';
+import { wordGroups } from '@/lib/lyricWords';
 import {
   lyricWordDurationMs,
   MIN_WORD_TRANSITION_MS,
@@ -80,9 +81,11 @@ export const KaraokeWords = memo(function KaraokeWords({
     return () => clearTimeout(timer);
   }, [active, warm, highlighted, preparation]);
   const label = words.map((word) => word.value).join('');
+  const groups = useMemo(() => wordGroups(words), [words]);
   const content = highlighted || (warm && prepared === preparation) ? (
     <ActiveWordFlow
       words={words}
+      groups={groups}
       active={active}
       highlighted={highlighted}
       textStyle={textStyle}
@@ -90,9 +93,9 @@ export const KaraokeWords = memo(function KaraokeWords({
       inactiveColor={inactiveColor}
     />
   ) : (
-    words.map((word, index) => (
+    inGroups(groups, (index) => (
       <Text key={index} accessible={false} style={[textStyle, { color: activeColor }]}>
-        {word.value}
+        {words[index].value}
       </Text>
     ))
   );
@@ -112,14 +115,22 @@ export const KaraokeWords = memo(function KaraokeWords({
   );
 });
 
+/** Identical boxes in cold, prepared and singing rows keep line heights stable. */
+function inGroups(groups: number[][], render: (index: number) => ReactNode) {
+  return groups.map((group) => group.length === 1 ? render(group[0]) : (
+    <View key={`g${group[0]}`} style={styles.wordGroup}>{group.map(render)}</View>
+  ));
+}
+
 function ActiveWordFlow({
   words,
+  groups,
   active = true,
   highlighted,
   textStyle,
   activeColor,
   inactiveColor,
-}: Omit<KaraokeWordsProps, 'centered' | 'paddingVertical' | 'warm'>) {
+}: Omit<KaraokeWordsProps, 'centered' | 'paddingVertical' | 'warm'> & { groups: number[][] }) {
   const positionSec = usePlayerStore((s) => active && highlighted ? s.positionSec : 0);
   const isPlaying = usePlayerStore((s) => active && highlighted && s.isPlaying);
   const speed = usePlayerStore((s) => active && highlighted ? s.speed : 1);
@@ -146,10 +157,10 @@ function ActiveWordFlow({
     return () => cancelAnimation(clockMs);
   }, [clockMs, bounceEnabled, isPlaying, positionSec, speed, active, highlighted, reduceMotion]);
 
-  return words.map((word, index) => (
+  return inGroups(groups, (index) => (
     <TimedWord
       key={index}
-      word={word}
+      word={words[index]}
       durationMs={lyricWordDurationMs(words, index)}
       clockMs={clockMs}
       animateBounce={bounceEnabled}
@@ -266,6 +277,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   flowCentered: { justifyContent: 'center' },
+  wordGroup: { flexDirection: 'row', alignItems: 'flex-end' },
   sweepCanvas: { flex: 1 },
   sweepSolid: {
     position: 'absolute',

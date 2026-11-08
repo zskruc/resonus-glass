@@ -1,3 +1,4 @@
+import { completeDownloadedPlaylists } from '../src/lib/downloadedPlaylists';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -54,6 +55,9 @@ function serverHarness() {
     },
     savePlaylistDetail: (...args: unknown[]) => { writes.push(args); } };
   const dependencies: Record<string, unknown> = {
+    '@/lib/downloadsDb': {},
+    '@/lib/downloadedPlaylists': { completeDownloadedPlaylists },
+    '@/lib/downloadedBrowse': { guardDownloadedRead: async (read: () => Promise<unknown>) => read() },
     '@/store/auth': { useAuthStore: { getState: () => state }, profileScopeId: () => scope },
     '@/store/downloads': { useDownloads: { getState: () => ({ files }) }, getDownloadShelf: async () => ({}),
       getDownloadsCatalog: async () => { catalogReads++; return { songs: [], albums: [], artists: [] }; } },

@@ -49,7 +49,7 @@ const LABEL: Record<ExploreSectionKey, string> = {
   radio: 'Radio',
   podcasts: 'Podcasts',
   folders: 'Folders',
-  downloads: 'Downloads',
+  downloaded: 'Downloaded',
 };
 
 function SectionRow({
@@ -100,11 +100,11 @@ export default function ExploreSectionsSettings() {
   const setSections = useSettings((s) => s.setExploreSections);
   const setSection = useSettings((s) => s.setExploreSection);
   const toast = useToast((s) => s.show);
-  const enabledCount = sections.filter((s) => s.enabled).length;
+  const enabledCount = sections.filter((s) => s.enabled && s.key !== 'downloaded').length;
 
   /** The last one on stays on: see the note at the top of the file. */
   function toggle(key: ExploreSectionKey, value: boolean) {
-    if (!value && enabledCount <= 1) {
+    if (key !== 'downloaded' && !value && enabledCount <= 1) {
       toast(t('Keep at least one section on'));
       return;
     }
@@ -127,6 +127,7 @@ export default function ExploreSectionsSettings() {
           <SectionRow section={item} onToggle={(v) => toggle(item.key, v)} />
         )}
         onReorder={({ from, to }: ReorderableListReorderEvent) => {
+          if (from === to || from < 0 || to < 0 || from >= sections.length || to >= sections.length) return;
           const next = sections.slice();
           const [moved] = next.splice(from, 1);
           next.splice(to, 0, moved);

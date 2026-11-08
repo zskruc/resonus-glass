@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import * as scheduler from '../src/lib/downloadQueue';
+import * as failures from '../src/lib/downloadFailure';
 import type { Song } from '../src/api/subsonic';
 import type { BackgroundWorkLease, BackgroundWorkProgress, BackgroundWorkInterruption } from '../src/lib/backgroundWorkControl';
 
@@ -28,6 +29,7 @@ function harness() {
   const settings = observable({ downloadConcurrency: 1, downloadWifiOnly: false, downloadBitRate: 0, downloadFormat: '', downloadLosslessOnly: true });
   const network = observable({ connected: true, cellular: false });
   const files = new Map<string, number>(), transfers: Transfer[] = [], records: { dir: string; song: Song }[] = [];
+  const notes: string[] = [];
   const app = { currentState: 'active' };
   const appListeners = new Set<() => void>();
   const protections: { updates: BackgroundWorkProgress[]; released: boolean; waits: number[];
@@ -95,7 +97,8 @@ function harness() {
     '@/lib/downloadsDb': { addToCatalog: async (dir: string, data: { songs?: Song[] }) => {
       if (data.songs) { await catalogGate?.(); for (const entry of data.songs) records.push({ dir, song: entry }); }
     }, albumsByIds: async () => [], saveArtists: async () => {} },
-    '@/lib/perfLog': { netTally: () => {}, timed: (_label: string, work: () => unknown) => work() },
+    '@/lib/perfLog': { netTally: () => {}, note: (message: string) => notes.push(message), timed: (_label: string, work: () => unknown) => work() },
+    '@/lib/downloadFailure': failures,
     '@/lib/query': { queryClient: {} }, '@/lib/serverUrls': { primaryUrl: (value: any) => value.serverUrl },
     './auth': { useAuthStore: auth }, './networkType': { useNetworkType: network }, './settings': { useSettings: settings },
     './libraryMirror': { useLibraryMirror: { getState: () => ({ albumDetail: async () => ({}) }) } },
@@ -107,7 +110,7 @@ function harness() {
     return setTimeout(callback, delay);
   }, clearTimeout,
     require(name: string) { assert.ok(Object.hasOwn(dependencies, name), name); return dependencies[name]; } });
-  return { store: exported.useDownloads, files, transfers, records, auth, settings, network, protections,
+  return { store: exported.useDownloads, files, transfers, records, auth, settings, network, protections, notes,
     setAppState(value: string) { app.currentState = value; for (const listener of appListeners) listener(); },
     protectionGate: (gate: Promise<void> | undefined) => { protectionGate = gate; },
     protectionFailure: (value: boolean) => { protectionFailure = value; },
@@ -151,6 +154,7 @@ test('pause, cancel and offline during a pending promotion cannot start late mus
     assert.equal(h.transfers.length, 0, operation);
     assert.equal(h.protections[0].released, true, operation);
     assert.equal(h.store.getState().backgroundError, undefined, 'intent cancellation is not a protection failure');
+    assert.equal(h.notes.length, 0, 'a cancelled service admission is not a failed song');
     promotion.resolve(); await tick(); assert.equal(h.transfers.length, 0, 'a late OS acknowledgement remains inert');
   }
 });
@@ -185,6 +189,7 @@ test('native notification pause preserves the partial and timeout exposes a prot
   h.protections[1].interrupt('timeout'); await tick();
   assert.equal(h.store.getState().queue[0].status, 'paused');
   assert.equal(h.store.getState().queue[0].error, undefined);
+  assert.equal(h.notes.length, 0, 'native pauses and timeouts do not report corrupt audio');
   assert.equal(h.store.getState().backgroundError, 'Background downloads stopped');
   await h.store.getState().cancelAll(); await work;
 });
@@ -295,6 +300,17 @@ test('JSON masquerading as successful audio fails without registering a playable
   h.transfers[0].finish(200, 'application/json'); await work; await tick();
   assert.equal(h.records.length, 0); assert.equal(h.store.getState().files.one, undefined);
   assert.equal(h.store.getState().queue[0].status, 'failed'); assert.equal(h.files.has(h.transfers[0].file), false);
+  assert.deepEqual(h.notes, ['download failed: error body, not audio (mp3)']);
+});
+
+test('the production download batch logs only its first three terminal song failures', async () => {
+  const h = harness(), work = h.store.getState().downloadSongs(['a', 'b', 'c', 'd'].map((id) => song(id)));
+  await tick();
+  for (let index = 0; index < 4; index++) { h.transfers[index].finish(403); await tick(); }
+  await work; await tick();
+  assert.equal(h.store.getState().queue.filter((item: any) => item.status === 'failed').length, 4);
+  assert.equal(h.notes.length, 3);
+  assert.ok(h.notes.every((message) => message === 'download failed: HTTP 403 (mp3)'));
 });
 
 test('pause after moving verified audio resumes only cataloguing, without downloading the song again', async () => {

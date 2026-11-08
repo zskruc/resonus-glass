@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 1161 of them.
+Every string the app can show, under the screen it shows up on. 1169 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -202,6 +202,7 @@ you are actually typing into, which is easier than reading it here.
 | String | What it is |
 | --- | --- |
 | `A-Z` | Sort option: the order of a list |
+| `Album artist` |  |
 | `Find an album` | The search box's placeholder on that screen |
 | `New releases` | Home shelf and album sort: albums by the year they came out, newest first. Not "Recently added", which is when the server got hold of them |
 | `No albums yet` | Empty state heading |
@@ -252,10 +253,12 @@ you are actually typing into, which is easier than reading it here.
 | `Add station` | Title of the sheet for adding an internet radio station |
 | `Couldn't load folders.` | Error on the screen, with a Retry button |
 | `Couldn't load playlists.` | Error on the screen, with a Retry button |
+| `Downloaded` | Badge on something whose files are on the phone |
 | `Explore` | The tab holding everything the server has: all albums, artists, songs, genres, stations and folders |
 | `Find a playlist` | The search box's placeholder on that screen |
 | `Music` | The name given to the server's folder when it does not have one of its own, browsing by folder |
 | `No playlists yet` | Empty state heading |
+| `Only downloaded` |  |
 
 ## Favorites
 
@@ -549,12 +552,12 @@ you are actually typing into, which is easier than reading it here.
 
 | String | What it is |
 | --- | --- |
-| `Couldn't load this podcast.` |  |
 | `Couldn't read this feed` |  |
 | `Episodes` |  |
 | `New` |  |
+| `Newest first` |  |
 | `No episodes` |  |
-| `Play latest` |  |
+| `Oldest first` |  |
 | `Played` |  |
 | `Pull down to read the feed again.` |  |
 | `This podcast's feed could not be read, so these episodes may be out of date.` |  |
@@ -1073,6 +1076,12 @@ you are actually typing into, which is easier than reading it here.
 | `We need permission to read your device music.` | Android has not granted access to the phone's files yet |
 | `Where should we get your music?` | Heading when choosing where the phone's own music is read from |
 
+## Settings › Library chips
+
+| String | What it is |
+| --- | --- |
+| `Your library chips` |  |
+
 ## Settings › Listening stats
 
 | String | What it is |
@@ -1256,6 +1265,7 @@ you are actually typing into, which is easier than reading it here.
 | `Volta` |  |
 | `With no chip pressed, Your library shows Favorites and your playlists instead of everything mixed together.` |  |
 | `Your library` | The tab with your albums, artists and playlists |
+| `Your library chips` |  |
 
 ## Settings › Playback
 
@@ -1561,6 +1571,8 @@ you are actually typing into, which is easier than reading it here.
 | String | What it is |
 | --- | --- |
 | `“{name}” will no longer be available offline.` | The line under that title. `{name}` is the album, artist or playlist |
+| `{episodes} will be saved to this device ({duration}).` |  |
+| `{episodes} will be saved to this device.` |  |
 | `{n} columns` | The other options in that menu: cards, this many across. `{n}` is 2, 3 or 4, so it is always plural |
 | `{n} minutes` | A value of the sleep timer, in minutes from now |
 | `{n} of {m} songs exported` | Toast when only some of them made it |
@@ -1584,6 +1596,7 @@ you are actually typing into, which is easier than reading it here.
 | `Added to queue` | The toast that says it worked |
 | `Album` | In search results, the little word under a result saying what kind of thing it is |
 | `Albums` | A heading over a list of them, never a count |
+| `All episodes are already downloaded.` |  |
 | `Alphabetical` | Sort option: the order of a list |
 | `Artist` | In search results, the little word under a result saying what kind of thing it is |
 | `Ascending` | Sort option: the order of a list |
@@ -1601,6 +1614,7 @@ you are actually typing into, which is easier than reading it here.
 | `Couldn't complete the action` | What the app says when it does not know what went wrong. Deliberately vague |
 | `Couldn't load albums.` | Error on the screen, with a Retry button |
 | `Couldn't load songs.` | Error on the screen, with a Retry button |
+| `Couldn't load this podcast.` |  |
 | `Couldn't play the song` | Toast: the app could not start it at all |
 | `Create` | The confirm button of the new-playlist dialog. A verb |
 | `Created playlist not found` |  |
@@ -1618,6 +1632,7 @@ you are actually typing into, which is easier than reading it here.
 | `Downloaded audio will be removed. Your shows, favorites and listening progress are kept.` |  |
 | `Downloading…` | Toast: the download has started. The songs arrive one by one after this |
 | `Drag to reorder, toggle to show or hide.` |  |
+| `Duration excludes episodes with unknown length.` |  |
 | `Episode notes` |  |
 | `Export` | Get the downloaded file itself out of the app, as a file. Not the same as `Share`, which makes a link on the server |
 | `Exporting…` | The file is being copied out |

@@ -7,6 +7,7 @@ import * as ampp from '../src/lib/amppDock';
 import * as dockRules from '../src/lib/liquidDock';
 import * as buttonRules from '../src/lib/glassButtonMotion';
 import * as swipeRules from '../src/lib/miniPlayerSwipe';
+import { createPlayerRevealGuard } from '@/lib/playerRevealOwner';
 
 type Element = { type: unknown; props: Record<string, any> };
 const jsx = (type: unknown, props: object): Element => ({ type, props });
@@ -54,6 +55,7 @@ function harness() {
     '@/lib/playerReveal': { miniArtworkMetrics: mutable(null), playerArtworkFlight: mutable(null),
       playerSurfaceOwner: mutable(0), revealOffset: mutable(-1) },
     '@/lib/pushOnce': {}, '@/store/toast': {},
+    '@/lib/playerRevealOwner': { playerRevealGuard: createPlayerRevealGuard() },
     '@/store/player': { currentSong: (state: typeof player) => state.song,
       usePlayerStore: (select: (state: typeof player) => unknown) => select(player), useLiveInfo: () => null },
     '@/store/settings': { useSettings: (select: (state: typeof settings) => unknown) => select(settings) },

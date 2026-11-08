@@ -48,7 +48,8 @@ import { serializeLrc } from '@/lib/lrc';
 import { siblingLrcUri } from '@/lib/localLyrics';
 import * as Db from '@/lib/downloadsDb';
 import type { DlAlbum } from '@/lib/downloadsDb';
-import { netTally, timed } from '@/lib/perfLog';
+import { netTally, note, timed } from '@/lib/perfLog';
+import { createDownloadFailureReporter } from '@/lib/downloadFailure';
 import { queryClient } from '@/lib/query';
 import { primaryUrl } from '@/lib/serverUrls';
 import { useAuthStore } from './auth';
@@ -1161,12 +1162,14 @@ export const useDownloads = create<DownloadsState>((set, get) => {
       void work.catch(() => { if (albumWork.get(album.id) === work) albumWork.delete(album.id); });
       return work;
     };
+    const reportFailure = createDownloadFailureReporter(note);
     const promises = pending.map((song) => {
       const suffix = ++sequence;
       let transfer: ReturnType<typeof FileSystem.createDownloadResumable> | undefined;
       let transferAuth: SubsonicAuth | undefined, transferUrl = '', resume = false, offset = 0;
       let response: FileSystem.FileSystemDownloadResult | undefined;
       let part = '', final = '', dlBitRate: number | undefined, moved = false, committed = false, ownsFinal = false, expectedTotal = 0;
+      let diagnosticTarget: { ext: string; bitRate?: number } | undefined;
       const cleanup = async () => {
         if (part) await FileSystem.deleteAsync(part, { idempotent: true }).catch(() => {});
         const lrc = part ? siblingLrcUri(part) : null;
@@ -1186,6 +1189,7 @@ export const useDownloads = create<DownloadsState>((set, get) => {
           for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
             try {
               const source = songFileUrl(context.auth, song);
+              diagnosticTarget = { ext: source.ext, bitRate: source.bitRate };
               const destination = `${dir}files/${hashKey(song.id)}.${source.ext}`;
               if (!part) { final = destination; part = `${dir}files/${hashKey(song.id)}.queue-${suffix}.${source.ext}`; dlBitRate = source.bitRate; }
               if (!response) {
@@ -1277,6 +1281,7 @@ export const useDownloads = create<DownloadsState>((set, get) => {
             }
           }
         } catch (error) {
+          if (context.current() && !(error instanceof DownloadInterrupted)) reportFailure(song, error, diagnosticTarget);
           // Paused partial audio remains resumable. Cancellation removes only
           // this run's temporary file, never a completed canonical download.
           if (context.current() || context.cancelled()) await cleanup();

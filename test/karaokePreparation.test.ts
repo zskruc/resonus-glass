@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import * as lyricMotion from '../src/lib/lyricMotion';
 import * as lyricLifecycle from '../src/lib/lyricLifecycle';
+import * as lyricWords from '../src/lib/lyricWords';
 
 type Element = { type: any; key?: string; props: Record<string, any> };
 type Scope = { slots: any[]; cursor: number; cleanups: Set<() => void> };
@@ -63,6 +64,7 @@ function harness() {
     '@react-native-masked-view/masked-view': { __esModule: true, default: 'MaskedView' },
     'expo-linear-gradient': { LinearGradient: 'Gradient' },
     '@/lib/lyricMotion': lyricMotion, '@/lib/lyricLifecycle': lyricLifecycle,
+    '@/lib/lyricWords': lyricWords,
     '@/theme/motion': { motion: { duration: { depth: 720 } } },
     '@/store/player': { usePlayerStore: (select: (state: typeof store) => unknown) => {
       const value = select(store); selections.push(value); return value;

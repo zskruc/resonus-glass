@@ -1,3 +1,4 @@
+import { DEFAULT_EXPLORE_SECTIONS, DEFAULT_LIBRARY_CHIPS, normalizeExploreSections, normalizeLibraryChips, type ExploreSection, type ExploreSectionKey, type LibraryChip, type LibraryChipKey } from '@/lib/browseChips';
 /** App settings (persisted): streaming quality and language. */
 import { Platform } from 'react-native';
 import { create } from 'zustand';
@@ -455,22 +456,6 @@ export const DEFAULT_HOME_SECTIONS: HomeSection[] = [
  * had switches, and it means on: somebody who ordered their chips keeps that
  * order and loses nothing by the upgrade.
  */
-function normalizeExploreSections(raw: unknown): ExploreSection[] {
-  if (!Array.isArray(raw)) return DEFAULT_EXPLORE_SECTIONS.map((s) => ({ ...s }));
-  const seen = new Set<ExploreSectionKey>();
-  const out: ExploreSection[] = [];
-  for (const item of raw) {
-    const key = (typeof item === 'string' ? item : item?.key) as ExploreSectionKey;
-    if (!EXPLORE_SECTION_KEYS.includes(key) || seen.has(key)) continue;
-    seen.add(key);
-    const enabled = typeof item === 'string' ? true : item?.enabled;
-    out.push({ key, enabled: typeof enabled === 'boolean' ? enabled : true });
-  }
-  for (const def of DEFAULT_EXPLORE_SECTIONS) {
-    if (!seen.has(def.key)) out.push({ ...def });
-  }
-  return out;
-}
 
 /**
  * Sanitizes the saved list: preserves user order and state, discards unknown
@@ -542,52 +527,8 @@ export const DEFAULT_HOME_CHIPS: HomeChip[] = [
   { key: 'audiobooks', enabled: false },
 ];
 
-/** One of the pills at the top of Explore. `genres`, `radio` and `folders`
- *  need a server; the rest the local catalogue answers for too. */
-export type ExploreSectionKey =
-  | 'playlists'
-  | 'albums'
-  | 'artists'
-  | 'songs'
-  | 'genres'
-  | 'radio'
-  | 'podcasts'
-  | 'folders'
-  | 'downloads';
-
-/** A section with its state, the shape the Home chips already have (order is
- *  its position in the list). */
-export interface ExploreSection {
-  key: ExploreSectionKey;
-  enabled: boolean;
-}
-
-const EXPLORE_SECTION_KEYS: ExploreSectionKey[] = [
-  'playlists',
-  'albums',
-  'artists',
-  'songs',
-  'genres',
-  'radio',
-  'podcasts',
-  'folders',
-  'downloads',
-];
-
-/**
- * Their order and their state, all of them on.
- *
- * This was the order and nothing else for a while, on the grounds that a
- * section turned off is a part of the catalogue with no way in. Which is true
- * and is not the whole of it: a chip for a way of browsing somebody never uses
- * is a chip in the way, and the one thing the tab is for is picking. So the
- * switches are here, and what keeps the reasoning is the floor under them,
- * since the last one cannot be turned off (see the settings screen).
- */
-export const DEFAULT_EXPLORE_SECTIONS: ExploreSection[] = EXPLORE_SECTION_KEYS.map((key) => ({
-  key,
-  enabled: true,
-}));
+export { DEFAULT_EXPLORE_SECTIONS, DEFAULT_LIBRARY_CHIPS } from '@/lib/browseChips';
+export type { ExploreSectionKey, ExploreSection, LibraryChipKey, LibraryChip } from '@/lib/browseChips';
 
 /**
  * The bar at the bottom: which tabs are on it and in what order.
@@ -811,6 +752,7 @@ type Reshaped =
   | 'homeSections'
   | 'homeChips'
   | 'exploreSections'
+  | 'libraryChips'
   | 'bottomTabs'
   | 'homeButtons'
   | 'playerButtons';
@@ -1100,6 +1042,7 @@ interface SettingsState extends Omit<AutoSetters, CustomSetter> {
   homeChips: HomeChip[];
   /** The order of the pills at the top of Explore. */
   exploreSections: ExploreSection[];
+  libraryChips: LibraryChip[];
   bottomTabs: BottomTab[];
   /** Whether those chips carry their icon, or are their name and nothing else. */
   homeChipIcons: boolean;
@@ -1202,6 +1145,7 @@ interface SettingsState extends Omit<AutoSetters, CustomSetter> {
   setHomeChip: (key: HomeChipKey, value: boolean) => void;
   /** One section on or off, by key, the way the Home chips do it. */
   setExploreSection: (key: ExploreSectionKey, value: boolean) => void;
+  setLibraryChip: (key: LibraryChipKey, value: boolean) => void;
   setBottomTab: (key: TabSegment, value: boolean) => void;
   setHomeButton: (key: HomeButtonKey, value: boolean) => void;
   setPlayerButton: (key: PlayerButtonKey, value: boolean) => void;
@@ -1356,6 +1300,7 @@ const DEFAULTS = {
   customHomeTitle: '',
   homeChips: DEFAULT_HOME_CHIPS.map((c) => ({ ...c })),
   exploreSections: DEFAULT_EXPLORE_SECTIONS.map((s) => ({ ...s })),
+  libraryChips: DEFAULT_LIBRARY_CHIPS.map((s) => ({ ...s })),
   bottomTabs: DEFAULT_BOTTOM_TABS.map((t) => ({ ...t })),
   homeChipIcons: true,
   showFolderBrowser: false,
@@ -1465,6 +1410,7 @@ function applySaved(raw: unknown, set: (partial: Partial<SettingsState>) => void
     homeSections?: unknown;
     homeChips?: unknown;
     exploreSections?: unknown;
+    libraryChips?: unknown;
     bottomTabs?: unknown;
     homeButtons?: unknown;
     playerButtons?: unknown;
@@ -1700,6 +1646,9 @@ function applySaved(raw: unknown, set: (partial: Partial<SettingsState>) => void
   if (Array.isArray(parsed.bottomTabs)) {
     set({ bottomTabs: normalizeBottomTabs(parsed.bottomTabs) });
   }
+  if (Array.isArray(parsed.libraryChips)) {
+    set({ libraryChips: normalizeLibraryChips(parsed.libraryChips) });
+  }
   if (Array.isArray(parsed.exploreSections)) {
     set({ exploreSections: normalizeExploreSections(parsed.exploreSections) });
   }
@@ -1906,6 +1855,11 @@ export const useSettings = create<SettingsState>((set, get) => ({
     set((s) => ({
       bottomTabs: s.bottomTabs.map((x) => (x.key === key ? { ...x, enabled: value } : x)),
     }));
+    persist(snapshot(get));
+  },
+
+  setLibraryChip: (key, value) => {
+    set({ libraryChips: get().libraryChips.map((chip) => chip.key === key ? { ...chip, enabled: value } : chip) });
     persist(snapshot(get));
   },
 

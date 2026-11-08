@@ -33,6 +33,7 @@ import { getGlassButtonMotion } from '@/lib/glassButtonMotion';
 import { MINI_SWIPE_TRAVEL, miniSwipeDirection, miniSwipeOffset } from '@/lib/miniPlayerSwipe';
 import { router } from 'expo-router';
 import { miniArtworkMetrics, playerArtworkFlight, playerSurfaceOwner, revealOffset } from '@/lib/playerReveal';
+import { playerRevealGuard } from '@/lib/playerRevealOwner';
 import { pushOnce } from '@/lib/pushOnce';
 import { currentSong, useLiveInfo, usePlayerStore } from '@/store/player';
 import { useScreenSize } from '@/hooks/useScreenSize';
@@ -202,6 +203,8 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
   // Pulled up, the player comes with the finger (see `playerReveal`): it is
   // opened with no animation and `revealOffset` places it.
   const revealing = useSharedValue(false);
+  const revealGesture = useSharedValue(0);
+  const revealRequest = useRef<{ gesture: number; token: string } | null>(null);
   const snappingOpen = useSharedValue(false);
   const dismissing = useSharedValue(false);
   useEffect(() => {
@@ -237,16 +240,24 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
     return () => subscription.remove();
   }, [translateX, translateY, contentOpacity, dragging, gestureAxis, revealing, snappingOpen, dismissing, reset,
     buttonPressProgress, buttonOffsetX, buttonOffsetY]);
-  const startReveal = () => pushOnce(playerPresentation === 'amll' ? '/player?reveal=1&artwork=1' : '/player?reveal=1');
+  const startReveal = (gesture: number) => {
+    const token = playerRevealGuard.begin();
+    revealRequest.current = { gesture, token };
+    pushOnce(`/player?reveal=${token}${playerPresentation === 'amll' ? '&artwork=1' : ''}`);
+  };
   const openPlayer = () => {
     if (playerPresentation === 'amll') scheduleOnUI(recordArtwork);
     pushOnce(playerPresentation === 'amll' ? '/player?artwork=1' : '/player');
   };
   // Down at the bottom, out of sight: it is let go of (`revealOffset` back to
   // -1) by the player as it unmounts, or it would flash back up for a frame.
-  const cancelReveal = () => {
-    if (router.canGoBack()) router.back();
-    else revealOffset.value = -1;
+  const cancelReveal = (gesture: number) => {
+    const request = revealRequest.current;
+    if (!request || request.gesture !== gesture) return;
+    revealRequest.current = null;
+    const action = playerRevealGuard.cancel(request.token);
+    if (action === 'close' && router.canGoBack()) router.back();
+    else if (action !== 'ignore') revealOffset.value = -1;
   };
   const pan = Gesture.Pan()
     .minDistance(10)
@@ -259,6 +270,7 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
       buttonPressProgress.set(withSpring(1, MINI_PRESS_SPRING));
     })
     .onStart(() => {
+      revealGesture.value += 1;
       // Android RNGH resets translation when Pan becomes ACTIVE. Choose the
       // dominant axis on its first real update instead of treating 0/0 as X.
       gestureAxis.value = 0;
@@ -305,7 +317,7 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
           }
           revealing.value = true;
           revealOffset.value = screenH;
-          scheduleOnRN(startReveal);
+          scheduleOnRN(startReveal, revealGesture.value);
         }
       }
     })
@@ -330,8 +342,9 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
             revealOffset.value = -1;
           });
         } else {
+          const gesture = revealGesture.value;
           revealOffset.value = withTiming(screenH, { duration: motion.duration.move }, (f) => {
-            if (f) scheduleOnRN(cancelReveal);
+            if (f) scheduleOnRN(cancelReveal, gesture);
             else revealOffset.value = -1;
           });
         }

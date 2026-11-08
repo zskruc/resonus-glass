@@ -14,10 +14,14 @@ import { profileScopeId, useAuthStore } from '@/store/auth';
 import { usePodcastDownloads } from '@/store/podcastDownloads';
 import { usePlayerStore } from '@/store/player';
 import { useToast } from '@/store/toast';
+import { useSettings } from '@/store/settings';
+import { useSortPrefs } from '@/store/sortPrefs';
+import { podcastEpisodeOrder, podcastEpisodeSortKey, sortPodcastEpisodes } from '@/lib/podcastPresentation';
 import { useT } from '@/i18n';
 import { colors, fontSize, spacing, themed } from '@/theme';
 import { Cover } from './Cover';
 import { Dialog } from './Dialog';
+import { PodcastDownloadDialog } from './PodcastDownloadDialog';
 import Icon from './Icon';
 import { SheetModal } from './SheetModal';
 
@@ -38,8 +42,10 @@ export function PodcastMenuSheet() {
   const t = useT(), toast = useToast((state) => state.show);
   const auth = useAuthStore((state) => state.auth), offline = useAuthStore((state) => state.offline);
   const owner = profileScopeId();
+  const language = useSettings((state) => state.language);
   const [target, setTarget] = useState<Target | null>(null);
   const [confirmation, setConfirmation] = useState<{ target: Target; remove: boolean } | null>(null);
+  const [downloadConfirmation, setDownloadConfirmation] = useState<Target | null>(null);
   const [mode, setMode] = useState<'actions' | 'sleep' | 'notes'>('actions');
   const openRef = useRef<() => void>(() => {});
   const favorites = usePodcastFavoriteIds(!!target);
@@ -52,6 +58,7 @@ export function PodcastMenuSheet() {
     opener = (channel, episode, extras) => {
       setMode(extras?.sleep ? 'sleep' : 'actions');
       setConfirmation(null);
+      setDownloadConfirmation(null);
       setTarget({ channel, episode, owner: profileScopeId(), auth: useAuthStore.getState().auth, extras });
       openRef.current();
     };
@@ -100,10 +107,12 @@ export function PodcastMenuSheet() {
           {row('play-outline', t('Play'), () => close(() => perform(value, async () => {
             const ready = episode ? [episode] : await listAllEpisodes(ch.id);
             if (!current(value)) return;
-            const playable = ready.filter((item) => item.url && (!isManualOffline() || files[item.id]));
+            const pref = useSortPrefs.getState().prefs[podcastEpisodeSortKey(value.owner, ch.id)];
+            const playable = sortPodcastEpisodes(ready, podcastEpisodeOrder(pref?.field), language)
+              .filter((item) => (item.url || files[item.id]) && (!isManualOffline() || files[item.id]));
             if (!playable.length) { toast(t('Not available offline')); return; }
             if (episode) queueEpisode(episode, ch);
-            else await usePlayerStore.getState().playQueue(playable.map((item) => episodeToSong(item, ch)), 0, ch.title, `/podcast/${ch.id}`);
+            else await usePlayerStore.getState().playQueue(playable.map((item) => episodeToSong(item, ch)), 0, ch.title, `/podcast/${ch.id}`, { ordered: true });
           })))}
           {row(heart ? 'heart' : 'heart-outline', t(heart ? 'Remove from favorites' : 'Add to favorites'), () => close(() =>
             perform(value, () => togglePodcastHeart(episode?.id ?? ch.id, episode ? 'episode' : 'channel', ch.id))))}
@@ -124,11 +133,11 @@ export function PodcastMenuSheet() {
               })))}
             <Text style={styles.hint}>{t('The latest 3 of each new batch, over Wi-Fi only.')}</Text>
           </>}
-          {!offline ? row('download-outline', t(episode ? 'Download episode' : 'Download episodes'), () => close(() =>
-            perform(value, async () => {
-              const ready = episode ? [episode] : await listAllEpisodes(ch.id);
-              if (current(value)) await usePodcastDownloads.getState().download(ch, ready);
-            }))) : null}
+          {!offline ? row('download-outline', t(episode ? 'Download episode' : 'Download episodes'), () => close(() => {
+            if (!current(value)) return;
+            if (episode) perform(value, () => usePodcastDownloads.getState().download(ch, [episode]));
+            else setDownloadConfirmation(value);
+          })) : null}
           {downloaded.length ? row('trash-outline', t('Delete downloaded episodes'), () => close(() => setConfirmation({ target: value, remove: false })), true) : null}
           {!episode && ch.feedUrl && !offline ? row('refresh', t('Refresh'), () => close(() => perform(value, () => refreshChannel(ch.feedUrl!)))) : null}
           {!episode && ch.siteUrl && /^https?:\/\//i.test(ch.siteUrl) ? row('link-outline', t('Open website'), () => close(() => perform(value, () => Linking.openURL(ch.siteUrl!)))) : null}
@@ -136,6 +145,8 @@ export function PodcastMenuSheet() {
         </>;
       }}
     </SheetModal>
+    <PodcastDownloadDialog channel={downloadConfirmation && current(downloadConfirmation) ? downloadConfirmation.channel : null}
+      onClose={() => setDownloadConfirmation(null)} />
     <Dialog visible={!!confirmation && current(confirmation.target)} title={t(confirmation?.remove ? 'Unsubscribe' : 'Delete downloaded episodes')}
       message={confirmation?.remove ? t('Remove “{name}” and its episodes from this device?', { name: confirmation.target.channel.title }) : t('Downloaded audio will be removed. Your shows, favorites and listening progress are kept.')}
       confirmLabel={t(confirmation?.remove ? 'Unsubscribe' : 'Delete')} destructive onCancel={() => setConfirmation(null)} onConfirm={() => {

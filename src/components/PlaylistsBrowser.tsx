@@ -17,6 +17,7 @@
  */
 import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
+import { useDownloadedPlaylistState } from '@/hooks/useDownloadedPlaylists';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
@@ -63,7 +64,9 @@ const SORTS: { key: LibrarySort; label: string }[] = (
   Object.keys(SORT_LABELS) as LibrarySort[]
 ).map((key) => ({ key, label: SORT_LABELS[key] }));
 
-export function PlaylistsBrowser({ embedded, actionRef, searchOpen }: BrowserProps) {
+export function PlaylistsBrowser({ embedded, actionRef, searchOpen, downloaded }: BrowserProps) {
+  const downloadedState = useDownloadedPlaylistState();
+  const complete = downloadedState.data;
   const dockScroll = useLiquidDockScrollHandler();
   const t = useT();
   const lang = useSettings((s) => s.language);
@@ -106,7 +109,7 @@ export function PlaylistsBrowser({ embedded, actionRef, searchOpen }: BrowserPro
   const shown = useMemo(() => {
     const q = normQ(query.trim());
     return sortItems(
-      (data ?? []).filter((p) => matches(q, p.name)),
+      (data ?? []).filter((p) => matches(q, p.name) && (!downloaded || complete?.has(p.id))),
       sort,
       (p) => p.name,
       sort === 'recent'
@@ -115,11 +118,13 @@ export function PlaylistsBrowser({ embedded, actionRef, searchOpen }: BrowserPro
       // Code point so "+"-prefixed playlists pin to the top like on the server.
       byCodepoint,
     );
-  }, [data, query, sort, times]);
+  }, [data, query, sort, times, downloaded, complete]);
 
-  const body = isLoading ? (
+  const body = isLoading || (downloaded && downloadedState.isPending) ? (
     <ActivityIndicator style={{ marginTop: spacing.xl }} color={colors.accent} />
-  ) : isError ? (
+  ) : downloaded && downloadedState.isError && !complete ? (
+    <Message text={t("Couldn't load playlists.")} onRetry={() => downloadedState.refetch()} />
+  ) : isError && !data ? (
     <Message text={t("Couldn't load playlists.")} onRetry={() => refetch()} />
   ) : shown.length === 0 ? (
     <EmptyState icon="list-outline" title={query.trim() ? t('No results') : t('No playlists yet')} />
@@ -151,7 +156,7 @@ export function PlaylistsBrowser({ embedded, actionRef, searchOpen }: BrowserPro
           })}
       renderItem={({ item }) =>
         grid ? (
-          <PlaylistCard playlist={item} width={card} />
+          <PlaylistCard playlist={item} width={card} downloaded={complete?.has(item.id)} />
         ) : (
           <Link href={`/playlist/${item.id}`} asChild>
             <Pressable
@@ -167,7 +172,10 @@ export function PlaylistsBrowser({ embedded, actionRef, searchOpen }: BrowserPro
                   {item.name}
                 </Text>
                 {item.songCount != null ? (
-                  <Text style={styles.rowSub}>{songsLabel(item.songCount, lang)}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    {complete?.has(item.id) ? <Icon name="arrow-down-circle" size={13} color={colors.accent} /> : null}
+                    <Text style={styles.rowSub}>{songsLabel(item.songCount, lang)}</Text>
+                  </View>
                 ) : null}
               </View>
             </Pressable>

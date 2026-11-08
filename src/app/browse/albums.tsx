@@ -6,7 +6,7 @@
  */
 import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
-import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -28,8 +28,9 @@ import { AlbumRowsSkeleton } from '@/components/AlbumRowsSkeleton';
 import { EmptyState } from '@/components/EmptyState';
 import { Message } from '@/components/Message';
 import { useT } from '@/i18n';
-import { profileScopeId, useAuthStore } from '@/store/auth';
-import { useDownloads } from '@/store/downloads';
+import { useAuthStore } from '@/store/auth';
+import { guardDownloadedRead } from '@/lib/downloadedBrowse';
+import { useDownloadedBrowseRefresh } from '@/hooks/useDownloadedBrowseRefresh';
 import * as Local from '@/lib/localQueries';
 import { useSettings } from '@/store/settings';
 import { useAppleMusicStyle } from '@/hooks/useAppleMusicStyle';
@@ -74,16 +75,14 @@ const SEARCH_COUNT = 50;
 /** Delay before querying the server: without this it'd be one request per keystroke. */
 const DEBOUNCE_MS = 300;
 
-// Same orders, in the same order, as Artists: they're sibling screens and
-// seeing them listed differently felt jarring. 'alphabeticalByArtist' was dropped
-// for this reason, by symmetry: it has no equivalent in Artists, where sorting
-// by artist is exactly what A-Z already does.
+// Server and local SQLite both support ordering albums by their album artist.
 const SORTS: { key: AlbumListType; label: string }[] = [
   { key: 'recent', label: 'Recently played' },
   { key: 'frequent', label: 'Most played::albums' },
   { key: 'newest', label: 'Recently added' },
   { key: 'byYear', label: 'New releases' },
   { key: 'alphabeticalByName', label: 'A-Z' },
+  { key: 'alphabeticalByArtist', label: 'Album artist' },
   { key: 'random', label: 'Shuffle' },
 ];
 
@@ -130,17 +129,12 @@ export function AlbumsBrowser({ embedded, actionRef, searchOpen, downloaded }: B
   });
   const card = cardWidth(columns);
 
-  const files = useDownloads((state) => state.files);
-  const client = useQueryClient();
-  const profile = profileScopeId();
-  useEffect(() => {
-    if (downloaded) void client.invalidateQueries({ queryKey: ['downloadedAlbums', profile] });
-  }, [downloaded, files, client, profile]);
+  const profile = useDownloadedBrowseRefresh(downloaded);
 
   const { data, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useInfiniteQuery({
       queryKey: downloaded ? ['downloadedAlbums', profile, sort] : ['browseAlbums', sort],
-      queryFn: ({ pageParam }) => (downloaded ? Local.getAlbumList : getAlbumList)(sort, PAGE, pageParam),
+      queryFn: ({ pageParam }) => downloaded ? guardDownloadedRead(() => Local.getAlbumList(sort, PAGE, pageParam), profile) : getAlbumList(sort, PAGE, pageParam),
       initialPageParam: 0,
       getNextPageParam: (last, pages) =>
         last.length === PAGE ? pages.length * PAGE : undefined,
@@ -176,7 +170,7 @@ export function AlbumsBrowser({ embedded, actionRef, searchOpen, downloaded }: B
     refetch: refetchSearch,
   } = useQuery({
     queryKey: downloaded ? ['searchDownloadedAlbums', profile, debounced] : ['searchAlbums', debounced],
-    queryFn: () => (downloaded ? Local.searchAlbums : searchAlbums)(debounced, SEARCH_COUNT),
+    queryFn: () => downloaded ? guardDownloadedRead(() => Local.searchAlbums(debounced, SEARCH_COUNT), profile) : searchAlbums(debounced, SEARCH_COUNT),
     enabled: canFetch && debounced.length > 0,
   });
 

@@ -67,13 +67,17 @@ export function VoltaLibraryOverview({
     queryFn: () => getAlbumList('newest'),
     enabled: !!auth || offline,
   });
+  const chipPrefs = useSettings((state) => state.libraryChips);
+  const optionalCategories: Record<string, Category> = {
+    playlists: { label: 'Playlists', icon: 'list-outline', onPress: onPlaylists },
+    artists: { label: 'Artists', icon: 'person-outline', href: '/browse/artists' },
+    albums: { label: 'Albums', icon: 'albums-outline', href: '/browse/albums' },
+    podcasts: { label: 'Podcasts', icon: 'headset-outline', href: '/podcast-favorites' },
+  };
   const categories: Category[] = [
-    { label: 'Playlists', icon: 'list-outline', onPress: onPlaylists },
-    { label: 'Artists', icon: 'person-outline', href: '/browse/artists' },
-    { label: 'Albums', icon: 'albums-outline', href: '/browse/albums' },
+    ...chipPrefs.flatMap((chip) => chip.enabled ? [optionalCategories[chip.key]] : []),
     { label: 'Songs', icon: 'musical-notes-outline', href: '/browse/songs' },
     { label: 'Favorites', icon: 'star-outline', onPress: onFavorites },
-    { label: 'Podcasts', icon: 'headset-outline', href: '/podcast-favorites' },
     { label: 'Audiobooks', icon: 'book-outline', href: '/audiobooks' },
     ...(auth ? [{ label: 'Downloads & offline', icon: 'download-outline' as const, href: '/settings/downloads' }] : []),
     ...(auth && !offline && auth.serverType !== 'jellyfin' && showFolders

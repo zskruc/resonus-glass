@@ -7,6 +7,7 @@ import * as ampp from '@/lib/amppDock';
 import * as dockRules from '@/lib/liquidDock';
 import * as buttonRules from '@/lib/glassButtonMotion';
 import * as swipeRules from '@/lib/miniPlayerSwipe';
+import { createPlayerRevealGuard } from '@/lib/playerRevealOwner';
 
 type Event = { translationX: number; translationY: number; velocityX: number; velocityY: number; x: number; y: number };
 type Timing = { target: number; done?: (finished: boolean) => void };
@@ -33,6 +34,7 @@ function harness(presentation: 'amll' | 'resonus' = 'amll', amPlus = false) {
   const timings: Timing[] = [];
   const pushes: string[] = [];
   const calls = { next: 0, previous: 0, reset: 0, back: 0 };
+  const revealGuard = createPlayerRevealGuard();
   const bus = { miniArtworkMetrics: mutable(null), playerArtworkFlight: mutable(null),
     playerSurfaceOwner: mutable(0), revealOffset: mutable(-1) };
   const player = { song: { id: 'one', title: 'Title', artist: 'Artist' }, index: 0,
@@ -67,6 +69,7 @@ function harness(presentation: 'amll' | 'resonus' = 'amll', amPlus = false) {
     '@/lib/haptics': {}, '@/lib/liquidDock': dockRules, '@/lib/amppDock': ampp,
     '@/lib/glassButtonMotion': buttonRules, '@/lib/miniPlayerSwipe': swipeRules,
     '@/lib/playerReveal': bus, '@/lib/pushOnce': { pushOnce: (href: string) => { pushes.push(href); } },
+    '@/lib/playerRevealOwner': { playerRevealGuard: revealGuard },
     '@/store/toast': {},
     '@/store/player': { currentSong: (state: typeof player) => state.song,
       usePlayerStore: (select: (state: typeof player) => unknown) => select(player), useLiveInfo: () => null },
@@ -86,7 +89,7 @@ function harness(presentation: 'amll' | 'resonus' = 'amll', amPlus = false) {
     assert.ok(Object.hasOwn(dependencies, id), `Unexpected mini gesture import ${id}`); return dependencies[id];
   } });
   exports.MiniPlayer();
-  return { callbacks, bus, pushes, calls, timings,
+  return { callbacks, bus, pushes, calls, timings, revealGuard,
     app(state: string) { appListeners.forEach((listener) => listener(state)); },
     queued: () => queued.length,
     drain() { while (queued.length) queued.shift()!(); },
@@ -176,7 +179,7 @@ describe('real MiniPlayer Pan activation and axis ownership', () => {
 
   it('preserves the legacy upward reveal and relinquishes its clock only on completed settling', () => {
     const h = harness('resonus'); h.begin(); h.update(event(0, -13)); h.drain();
-    assert.deepEqual(h.pushes, ['/player?reveal=1']);
+    assert.deepEqual(h.pushes, ['/player?reveal=pull-1']);
     assert.equal(h.bus.revealOffset.get(), 800);
     h.update(event(0, -200)); assert.equal(h.bus.revealOffset.get(), 612);
     h.end(event(0, -200, 0, -900));
@@ -187,5 +190,30 @@ describe('real MiniPlayer Pan activation and axis ownership', () => {
     assert.equal(h.bus.revealOffset.get(), -1);
     h.drain(); assert.equal(h.pushes.length, 1);
     assert.deepEqual(h.calls, { next: 0, previous: 0, reset: 0, back: 0 });
+  });
+
+  it('does not pop the underlying page when release beats the legacy player push', () => {
+    const h = harness('resonus'); h.begin(); h.update(event(0, -13)); h.drain();
+    h.end(event(0, -13));
+    h.timings.findLast((value) => value.target === 800 && value.done)?.done?.(true);
+    h.drain();
+    assert.equal(h.calls.back, 0);
+    assert.equal(h.bus.revealOffset.get(), -1);
+    assert.equal(h.revealGuard.owns('pull-1'), false);
+  });
+
+  it('closes its focused legacy player but ignores a delayed older pull callback', () => {
+    const h = harness('resonus'); h.begin(); h.update(event(0, -13)); h.drain();
+    h.end(event(0, -13));
+    const old = h.timings.findLast((value) => value.target === 800 && value.done)!;
+    h.begin(); h.update(event(0, -13)); h.drain();
+    h.revealGuard.focus({}, 'pull-2');
+    old.done?.(true); h.drain();
+    assert.equal(h.calls.back, 0);
+    assert.equal(h.revealGuard.owns('pull-2'), true);
+    h.end(event(0, -13));
+    h.timings.findLast((value) => value.target === 800 && value.done)?.done?.(true);
+    h.drain();
+    assert.equal(h.calls.back, 1);
   });
 });
