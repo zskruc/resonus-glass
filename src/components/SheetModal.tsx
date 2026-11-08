@@ -47,7 +47,7 @@ export function SheetModal({
     lifecycle.invalidate();
     setOpen(false);
     onClosed?.();
-    after?.();
+    if (typeof after === 'function') after();
   }, [session, onClosed, lifecycle]);
   const { dismiss, backdropStyle, sheetStyle, onSheetLayout } = useBottomSheetAnim(
     open,
@@ -58,7 +58,12 @@ export function SheetModal({
   // Unmount the Modal only after its exit animation, for either presentation.
   // A next modal opens only after this surface is offscreen, avoiding a
   // background switch underneath two independently visible native windows.
-  const close = (after?: () => void) => dismiss(() => closeNow(after));
+  const close = (after?: () => void) => {
+    // React Native passes a PressEvent to handlers supplied as onPress={close}.
+    // Only explicit callbacks are actions to run after the card has left.
+    const callback = typeof after === 'function' ? after : undefined;
+    dismiss(() => closeNow(callback));
+  };
 
   return (
     <Modal transparent animationType="none" visible={open} onRequestClose={() => close()}>

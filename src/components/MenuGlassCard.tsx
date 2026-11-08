@@ -57,7 +57,7 @@ export function MenuGlassCardFrame({ children, onClose, backdropStyle, cardStyle
     }}>
       <Animated.View nativeID="resonus-menu-scrim" collapsable={false}
         style={[StyleSheet.absoluteFill, { backgroundColor: menuGlassScrimColor(dark) }, backdropStyle]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel={t('Close')} />
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => onClose()} accessibilityRole="button" accessibilityLabel={t('Close')} />
       </Animated.View>
       <Animated.View collapsable={false} accessibilityViewIsModal onLayout={onLayout}
         style={[styles.card, { top, right: 16 + insets.right, width: cardWidth, maxHeight }, cardStyle]}>
@@ -77,7 +77,7 @@ export function MenuGlassCardHeader({ title, subtitle, onClose }: { title: strin
         <Text style={styles.title} numberOfLines={2}>{title}</Text>
         {subtitle ? <Text style={styles.subtitle} numberOfLines={3}>{subtitle}</Text> : null}
       </View>
-      <GlassPressable onPress={onClose} accessibilityRole="button" accessibilityLabel={t('Close')}
+      <GlassPressable onPress={() => onClose()} accessibilityRole="button" accessibilityLabel={t('Close')}
         hitSlop={4} style={({ pressed }) => [styles.close, pressed && { opacity: 0.55 }]}>
         <Icon name="close" size={20} color={colors.textSecondary} />
       </GlassPressable>

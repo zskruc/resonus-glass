@@ -45,10 +45,14 @@ export function useBottomSheetAnim(open: boolean, onClose?: () => void, presenta
     }
   }, [open, progress, dismissing, isCard, sessionKey]);
 
-  const dismiss = (after: () => void) => {
+  const dismiss = (after?: unknown) => {
+    if (dismissing.value) return;
+    // This imperative function is also safe as a native press/back handler:
+    // event objects are never callbacks handed across the worklet boundary.
+    const complete = typeof after === 'function' ? after as () => void : onClose;
     dismissing.value = true;
     progress.value = withTiming(0, timingOut, (f) => {
-      if (f) scheduleOnRN(after);
+      if (f && typeof complete === 'function') scheduleOnRN(complete);
     });
   };
 
