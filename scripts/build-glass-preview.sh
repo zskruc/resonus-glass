@@ -25,6 +25,10 @@ pnpm expo prebuild --platform android --no-install
 
 (
   cd android
+  # React Native's default source inputs omit runtime JSON dictionaries. Force
+  # the JS/Hermes bundle task so translation-only updates cannot ship stale text;
+  # keep the native compilation/packaging tasks incremental.
+  ./gradlew :app:createBundleReleaseJsAndAssets --rerun-tasks -PreactNativeArchitectures=arm64-v8a --console=plain
   ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a --console=plain
 )
 mkdir -p artifacts
