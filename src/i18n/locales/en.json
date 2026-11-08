@@ -1167,5 +1167,7 @@
   "Duration excludes episodes with unknown length.": "Duration excludes episodes with unknown length.",
   "Your library chips": "Your library chips",
   "Only downloaded": "Only downloaded",
-  "Album artist": "Album artist"
+  "Album artist": "Album artist",
+  "Download episode": "Download episode",
+  "Download episodes": "Download episodes"
 }

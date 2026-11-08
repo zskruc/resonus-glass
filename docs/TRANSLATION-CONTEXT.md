@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 1169 of them.
+Every string the app can show, under the screen it shows up on. 1171 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -1627,6 +1627,8 @@ you are actually typing into, which is easier than reading it here.
 | `Done` | The button that leaves drag-to-reorder, or accepts a fine-tuned number |
 | `Download` | The confirm button of the download dialog, and what the screen reader calls the download button. A verb |
 | `Download “{name}”?` | Dialog title. `{name}` is an album, artist or playlist |
+| `Download episode` |  |
+| `Download episodes` |  |
 | `Download new episodes` |  |
 | `Download stopped` | Toast: the download was stopped part way |
 | `Downloaded audio will be removed. Your shows, favorites and listening progress are kept.` |  |

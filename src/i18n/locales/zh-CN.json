@@ -1170,5 +1170,7 @@
   "Duration excludes episodes with unknown length.": "总时长不含时长未知的单集。",
   "Your library chips": "音乐库分类",
   "Only downloaded": "仅显示已下载内容",
-  "Album artist": "专辑艺人"
+  "Album artist": "专辑艺人",
+  "Download episode": "下载单集",
+  "Download episodes": "下载单集列表"
 }
