@@ -161,7 +161,7 @@ const styles = themed((palette) => ({
   loading: { padding: spacing.xl }, header: { alignItems: 'center', paddingTop: spacing.md, paddingBottom: spacing.lg, gap: spacing.md },
   show: { color: palette.accent, fontSize: fontSize.md, fontWeight: '500', textAlign: 'center' }, title: { color: palette.text, fontSize: 26, fontWeight: '700', textAlign: 'center', lineHeight: 33 },
   metadata: { color: palette.textSecondary, fontSize: fontSize.sm, lineHeight: 20, textAlign: 'center' },
-  play: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderRadius: radius.pill, minWidth: 148 },
+  play: { backgroundColor: palette.accent, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderRadius: radius.pill, minWidth: 148 },
   playText: { color: palette.onAccent, fontSize: fontSize.md, fontWeight: '600' }, tabs: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
   tab: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.pill }, tabText: { color: palette.textSecondary, fontSize: fontSize.md, fontWeight: '600' },
   remote: { gap: spacing.sm, width: '100%', alignItems: 'center' }, load: { flexDirection: 'row', gap: spacing.sm, padding: spacing.md, borderRadius: radius.pill },

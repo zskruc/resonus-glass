@@ -87,6 +87,7 @@ test('the actual episode screen renders safe notes, keeps chapters opt-in, and t
   const h = harness(); let root!: ReactTestRenderer;
   try {
     await act(async () => { root = create(h.tree()); });
+    assert.equal(button(root, 'Play').props.style.backgroundColor, '#05f', 'the action has an explicit contrasting fill even when the glass material is transparent');
     assert.match(JSON.stringify(root.toJSON()), /Introduction/); assert.equal(h.requests.length, 0);
     await act(async () => { root.root.findAllByType('Text' as any).find((node) => node.props.children === '00:30')!.props.onPress(); });
     assert.deepEqual(h.seeks, [30]); assert.equal(h.queued[0].queue[0].id, h.episode.id);
