@@ -23,7 +23,23 @@ function load(path: string, imports: Record<string, unknown>) {
 const song = { id: 'song', title: 'Song', artist: 'Singer' };
 const lyrics = { synced: true, lines: [{ start: 1000, value: 'Original line', translation: '现有译文' }] };
 const candidate = { id: 'server', kind: 'server', lyrics };
-function harness() {
+// Run the production restored button, which deliberately strips material tint
+// and variant props. A host-string mock would hide a missing explicit fill.
+function restoredGlassPressable() {
+  const source = ts.createSourceFile('glass.tsx', readFileSync(new URL('../src/components/glass/index.tsx', import.meta.url), 'utf8'),
+    ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const code = source.statements.filter((node) => ts.isVariableStatement(node) && node.declarationList.declarations.some((declaration) =>
+    ts.isIdentifier(declaration.name) && ['MATERIAL_PROPS', 'GlassPressable'].includes(declaration.name.text))).map((node) => node.getText(source)).join('\n');
+  const exports: Record<string, any> = {};
+  runInNewContext(ts.transpileModule(code, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
+    jsx: ts.JsxEmit.ReactJSX } }).outputText, { exports, forwardRef: React.forwardRef, Pressable: 'Pressable', require(name: string) {
+    assert.equal(name, 'react/jsx-runtime'); return JSXRuntime;
+  } });
+  return exports.GlassPressable;
+}
+const GlassPressable = restoredGlassPressable();
+type TestPalette = { text: string; textSecondary: string; accent: string; onAccent: string };
+function harness(palette: TestPalette = { text: '#fff', textSecondary: '#ccc', accent: '#f00', onAccent: '#fff' }) {
   const auth = createStore(() => ({ auth: { username: 'A' }, offline: false, autoOffline: false, offlineSource: null as any }));
   const profile = () => auth.getState().auth.username;
   const display = createStore(() => ({ profile: 'A', mode: 'both', ready: true, error: false,
@@ -49,10 +65,10 @@ function harness() {
     '@/api/lyricSources': { getLyricCandidates: async (...args: any[]) => { lookups.push(args); return [candidate]; } },
     '@/lib/lyricLibraryDb': { chosenLyricSource: async () => null, selectLyricCandidate: async (...args: any[]) => {
       if (fail) throw new Error('full'); selects.push(args); } },
-    '@/components/glass': { GlassPressable: 'GlassPressable' },
+    '@/components/glass': { GlassPressable },
     '@/components/SettingsUI': { SettingsPage: 'SettingsPage', SettingsGroup: 'SettingsGroup', SettingRow: 'SettingRow' },
     'expo-router': { useRouter: () => ({ back() {} }), useIsFocused: () => true },
-    '@/theme': { useTheme() {}, themed: (read: any) => read({ text: '#fff', textSecondary: '#ccc' }), colors: { text: '#fff', accent: '#f00', onAccent: '#fff' },
+    '@/theme': { useTheme() {}, themed: (read: any) => read(palette), colors: palette,
       fontSize: { sm: 13, md: 16, lg: 20 }, spacing: { sm: 8, md: 12, lg: 20 }, radius: { pill: 100 } },
   };
   const Screen = load('../src/app/settings/lyric-sources.tsx', common).default;
@@ -60,10 +76,29 @@ function harness() {
   const mount = async () => { await act(async () => { root = create(React.createElement(Query.QueryClientProvider, { client }, React.createElement(Screen))); await turn(); });
     await act(async () => { await turn(); }); };
   const row = (label: string) => root.root.findAllByType('SettingRow' as any).find((node) => node.props.label === label)!;
-  const button = (text: string) => root.root.findAllByType('GlassPressable' as any).find((node) => node.findAllByType('Text' as any).some((child) => child.props.children === text))!;
+  const button = (text: string) => root.root.findAllByType('Pressable' as any).find((node) => node.findAllByType('Text' as any).some((child) => child.props.children === text))!;
   return { auth, display, client, selects, lookups, toasts, common, mount, row, button, tree: () => root,
     fail: (value: boolean) => { fail = value; }, close: async () => { await act(async () => root.unmount()); client.clear(); } };
 }
+
+test('the lyric preview action retains its explicit accent fill and matching foreground through the restored button in both themes', async () => {
+  const palettes: TestPalette[] = [
+    { text: '#121212', textSecondary: '#5c5c5c', accent: '#b80d45', onAccent: '#ffffff' },
+    { text: '#ffffff', textSecondary: '#aaaaaa', accent: '#ff668e', onAccent: '#000000' },
+  ];
+  const flatten = (style: any): Record<string, any> => Array.isArray(style) ? Object.assign({}, ...style.map(flatten)) : style ?? {};
+  for (const palette of palettes) {
+    const h = harness(palette); await h.mount();
+    await act(async () => { h.row('Server lyrics').props.onPress(); });
+    const action = h.button('Use these lyrics');
+    assert.equal(flatten(action.props.style).backgroundColor, palette.accent, 'the native button owns its fill, independently of glass material props');
+    assert.equal(flatten(action.findByType('Text' as any).props.style).color, palette.onAccent);
+    assert.equal(action.props.tint, undefined); assert.equal(action.props.variant, undefined);
+    await act(async () => { action.props.onPress(); await turn(); });
+    assert.equal(h.selects.length, 1); assert.equal(h.selects[0][2], candidate);
+    await h.close();
+  }
+});
 
 test('the real source picker previews before saving, updates only the pinned song and keeps a failed choice visible for retry', async () => {
   const h = harness(); await h.mount();

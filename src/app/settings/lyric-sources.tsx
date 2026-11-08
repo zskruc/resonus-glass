@@ -129,7 +129,7 @@ export default function LyricSourcesSettings() {
         <View style={styles.actions}>
           <GlassPressable variant="regular" style={styles.button} disabled={working} onPress={() => setPreview(null)}>
             <Text style={styles.actionText}>{t('Back')}</Text></GlassPressable>
-          <GlassPressable variant="prominent" tint={colors.accent} style={styles.button} disabled={working} onPress={() => { void choose(shownPreview); }}>
+          <GlassPressable style={[styles.button, { backgroundColor: colors.accent }]} disabled={working} onPress={() => { void choose(shownPreview); }}>
             <Text style={[styles.actionText, { color: colors.onAccent }]}>{t('Use these lyrics')}</Text></GlassPressable>
         </View>
         {error ? <Text style={styles.note}>{t('Could not load or save lyric sources. Your previous choice has been kept.')}</Text> : null}
