@@ -43,3 +43,13 @@ Feature and interaction research used [Primuse `1916718e`](https://github.com/ch
 - 三星正在由用户使用，本轮构建阶段未操作手机。APK 构建／验包及后续实机结果单独登记，不以自动测试代替设备验收。
 
 No GitHub publication or release is requested for this local preview task.
+
+## APK / 安装包
+
+- File: `Resonus-Glass-v0.8.7.1-preview.3-code149-arm64-v8a.apk`
+- Built source: `bd90cdc7825386b2ec41d5ef270dc71362b15c0a`
+- Size: `46,277,292` bytes
+- SHA-256: `f562197821dbfefd8530ed605dd411f6099dc3b616e8c49e9f6671893ae99b51`
+- Package: `com.zskruc.resonus.glasspreview` · ARM64 · Android `149`
+
+完整发布构建成功；ZIP、ABI、包名、版本、现有 Glass 签名及 APK 内新增中英文字典已核对。可以覆盖当前 Glass 安装，保留登录与离线文件。构建阶段没有安装或操作正在使用中的三星，实机验收须待用户方便后另行记录。
