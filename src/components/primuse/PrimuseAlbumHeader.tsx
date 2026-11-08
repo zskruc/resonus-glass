@@ -19,6 +19,8 @@ interface Props {
   layout: ReturnType<typeof primuseAlbumLayout>; palette: PrimuseAlbumPalette;
   disabled: boolean; showPause: boolean; shuffleActive: boolean; onPlay: () => void; onShuffle: () => void;
   favorite?: ReactNode;
+  /** Other media keep the same identity layout with their own appropriate controls. */
+  actions?: ReactNode;
   onArtworkLoad: (uri: string) => void; onArtworkError: (uri?: string) => void;
   onTitleLayout: (layout: { y: number; height: number }) => void;
   onCoverCenterY?: (centerY: number) => void;
@@ -27,7 +29,7 @@ interface Props {
 }
 
 export function PrimuseAlbumHeader({ title, subtitle, onSubtitlePress, meta, explicit, coverUri, onCoverPress,
-  description, genres, layout, palette, disabled, showPause, shuffleActive, onPlay, onShuffle, favorite,
+  description, genres, layout, palette, disabled, showPause, shuffleActive, onPlay, onShuffle, favorite, actions,
   onArtworkLoad, onArtworkError, onTitleLayout, onCoverCenterY, onLayout, nameStyle }: Props) {
   const t = useT();
   const scene = usePrimuseAlbumScene();
@@ -81,6 +83,7 @@ export function PrimuseAlbumHeader({ title, subtitle, onSubtitlePress, meta, exp
       </View>
     </View>
     <View style={styles.actions}>
+      {actions ?? <>
       <Pressable accessibilityRole="button" accessibilityLabel={showPause ? t('Pause') : t('Play')}
         disabled={disabled} onPress={onPlay} style={({ pressed }) => [styles.action, styles.play,
           (disabled || pressed) && styles.pressed]}>
@@ -94,6 +97,7 @@ export function PrimuseAlbumHeader({ title, subtitle, onSubtitlePress, meta, exp
         <Text style={[styles.actionLabel, { color: palette.text }]}>{t('Shuffle')}</Text>
       </Pressable>
       {favorite}
+      </>}
     </View>
     {description?.trim() ? <Pressable accessibilityRole="button" accessibilityLabel={t(expanded ? 'Show less' : 'Show more')}
       onPress={() => setExpanded((value) => !value)} style={pressedStyle}>

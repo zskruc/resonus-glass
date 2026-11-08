@@ -88,6 +88,8 @@ import { playbackLoadGate } from '@/lib/playbackLoadGate';
 import { AudiobookProgressTracker, type AudiobookSample } from '@/lib/audiobookTracking';
 import { audiobookProfileScope, isAudiobookTrack, useAlbumProgress } from './albumProgress';
 import { ownsPodcastProgress, podcastProgressVersion, readPodcastResume, writePodcastProgress } from '@/lib/podcastProgress';
+import { getPodcastPreferences, usePodcastPreferences } from './podcastPreferences';
+import { podcastStartPosition, podcastOutroReached } from '@/lib/podcastPlaybackPolicy';
 import { podcastFile, usePodcastDownloads } from './podcastDownloads';
 import { profileScopeId, useAuthStore } from './auth';
 import { getShuffleMode } from './shufflePreferences';
@@ -1093,11 +1095,12 @@ async function loadIndexSource(index: number, autoplay: boolean, recoveryTicket?
     if (song.podcastChannelId && !recoveryTicket) {
       // Resume only the source this load actually installed. A newer tap,
       // profile switch or manual played mark invalidates the awaited read.
-      void readPodcastResume(song, progressScope, progressVersion).then((position) => {
+      void Promise.all([readPodcastResume(song, progressScope, progressVersion), usePodcastPreferences.getState().load().catch(() => {})]).then(([saved]) => {
         if (token !== loadToken || seekGeneration !== resumeSeekGeneration || profileScopeId() !== progressScope
           || activePlayer() !== p || currentSong(usePlayerStore.getState())?.id !== song.id
           || !ownsPodcastProgress(song, progressScope, progressVersion)) return;
         if (longFormOwner?.songId === song.id) longFormOwner.pendingResume = false;
+        const position = podcastStartPosition(saved, song.duration || 0, getPodcastPreferences(song.podcastChannelId!));
         if (position > 0) {
           seekActive(position, () => token === loadToken && ownsPodcastProgress(song, progressScope, progressVersion));
           usePlayerStore.setState({ positionSec: position });
@@ -3039,6 +3042,7 @@ function onStatus(status: AudioStatus & { playWhenReady?: boolean }, live = fals
     if (prev.isPlaying) scheduleSync(); // just paused
   }
   if (!pendingSeek) maybeStartCrossfade(status);
+  if (!pendingSeek && status.playing && !status.didJustFinish && maybeFinishPodcastOutro(positionSec, nextDurationSec)) return;
   if (status.didJustFinish) {
     if (handleSleepAtSongEnd()) return;
     // Repeating one song is normally the native `loop` and never gets here. A
@@ -3051,6 +3055,10 @@ function onStatus(status: AudioStatus & { playWhenReady?: boolean }, live = fals
       void loadIndex(st.index, true);
       return;
     }
+    if (currentSong(st)?.podcastChannelId && !getPodcastPreferences(currentSong(st)!.podcastChannelId!).continuous) {
+      usePlayerStore.setState({ isPlaying: false });
+      return;
+    }
     const ni = nextIndex(false);
     if (ni == null) {
       clearFinishedAudiobookProgress();
@@ -3060,6 +3068,25 @@ function onStatus(status: AudioStatus & { playWhenReady?: boolean }, live = fals
       void loadIndex(ni, true);
     }
   }
+}
+
+let podcastOutroLoad = -1;
+function maybeFinishPodcastOutro(position: number, duration: number): boolean {
+  const state = usePlayerStore.getState(), song = currentSong(state), owner = longFormOwner;
+  if (!song?.podcastChannelId || !owner || owner.pendingResume || owner.songId !== song.id
+    || owner.scope !== profileScopeId() || podcastOutroLoad === loadToken || remoteKind()
+    || !podcastOutroReached(position, duration, getPodcastPreferences(song.podcastChannelId))) return false;
+  // One accepted load can finish once, even if several native status events were queued.
+  podcastOutroLoad = loadToken;
+  void writePodcastProgress(song, duration, duration, owner.scope, owner.version, true).catch(() => {});
+  cutCrossfade(); activePlayer()?.pause();
+  usePlayerStore.setState({ positionSec: duration, isPlaying: false });
+  if (handleSleepAtSongEnd()) return true;
+  if (state.repeat === 'one') { void loadIndex(state.index, true); return true; }
+  if (!getPodcastPreferences(song.podcastChannelId).continuous) return true;
+  const next = nextIndex(false);
+  if (next != null) { pushHistory(); void loadIndex(next, true); }
+  return true;
 }
 
 /**
@@ -4363,6 +4390,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // A radio has no length to stay inside of, and a stream still loading has
     // not said its own yet.
     const target = Math.max(0, duration > 0 ? Math.min(sec, duration) : sec);
+    const song = currentSong(get());
+    if (song?.podcastChannelId && podcastOutroReached(target, duration, getPodcastPreferences(song.podcastChannelId))) {
+      // An explicit timestamp/slider seek into an outro asks to hear that part.
+      podcastOutroLoad = loadToken;
+    }
     cutCrossfade();
     if (remoteKind()) {
       remoteSeek(target);

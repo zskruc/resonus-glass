@@ -25,8 +25,10 @@ test('the real episode-screen play callback submits the visible order and correc
   const screen = source.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === 'PodcastScreen') as ts.FunctionDeclaration;
   const play = screen.body!.statements.find((node) => ts.isVariableStatement(node) && node.declarationList.declarations.some((item) => item.name.getText(source) === 'play'))!;
   const calls: any[] = [];
+  let active = true;
   const mod = execute(`${play.getText(source)}; exports.play = play;`, {}, {
     useCallback: (callback: unknown) => callback,
+    current: () => active,
     channel: { data: { id: 'show', title: 'Show' } }, files: { b: 'file:///b', a: 'file:///a' },
     isManualOffline: () => true, toast() { throw Error('Unexpected offline toast'); }, t: (key: string) => key,
     playQueue: async (...args: unknown[]) => calls.push(args), episodeToSong: (episode: any) => episode,
@@ -36,6 +38,8 @@ test('the real episode-screen play callback submits the visible order and correc
   assert.deepEqual(JSON.parse(JSON.stringify(calls)), [[
     [list[0], list[2]], 1, 'Show', '/podcast/show', { ordered: true },
   ]]);
+  active = false; mod.play(list, 0); await turn();
+  assert.equal(calls.length, 1, 'a stale page playback callback cannot admit another profile\'s queue');
 });
 
 test('the real sort hook restores each show choice and rejects a previous profile modal callback', () => {
@@ -56,6 +60,9 @@ test('the real sort hook restores each show choice and rejects a previous profil
   first.sortSheet.props.onPick('added');
   assert.deepEqual(mod.usePodcastEpisodeSort(episodes, 'a', 'en').episodes.map((item: any) => item.id), ['old', 'new']);
   assert.deepEqual(mod.usePodcastEpisodeSort(episodes, 'b', 'en').episodes.map((item: any) => item.id), ['new', 'old']);
+  assert.deepEqual(mod.usePodcastEpisodeSort(episodes, 'serial', 'en', true).episodes.map((item: any) => item.id), ['old', 'new'], 'serial shows start chronologically unless the user chooses otherwise');
+  mod.usePodcastEpisodeSort(episodes, 'serial', 'en', true).sortSheet.props.onPick('recent');
+  assert.deepEqual(mod.usePodcastEpisodeSort(episodes, 'serial', 'en', true).episodes.map((item: any) => item.id), ['new', 'old']);
   profile = 'two';
   first.sortSheet.props.onPick('alpha');
   assert.equal(prefs[podcastEpisodeSortKey('one', 'a')].field, 'added');

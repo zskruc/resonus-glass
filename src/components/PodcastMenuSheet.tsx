@@ -22,6 +22,8 @@ import { colors, fontSize, spacing, themed } from '@/theme';
 import { Cover } from './Cover';
 import { Dialog } from './Dialog';
 import { PodcastDownloadDialog } from './PodcastDownloadDialog';
+import { PodcastShowSettingsDialog } from './podcast/PodcastShowSettingsDialog';
+import { markPodcastManyPlayed } from '@/lib/podcastProgress';
 import Icon from './Icon';
 import { SheetModal } from './SheetModal';
 
@@ -46,6 +48,8 @@ export function PodcastMenuSheet() {
   const [target, setTarget] = useState<Target | null>(null);
   const [confirmation, setConfirmation] = useState<{ target: Target; remove: boolean } | null>(null);
   const [downloadConfirmation, setDownloadConfirmation] = useState<Target | null>(null);
+  const [settingsTarget, setSettingsTarget] = useState<Target | null>(null);
+  const [markConfirmation, setMarkConfirmation] = useState<Target | null>(null);
   const [mode, setMode] = useState<'actions' | 'sleep' | 'notes'>('actions');
   const openRef = useRef<() => void>(() => {});
   const favorites = usePodcastFavoriteIds(!!target);
@@ -100,7 +104,7 @@ export function PodcastMenuSheet() {
         </>;
         return <>
           <View style={styles.header}>
-            <Cover uri={podcastCover(ch)} size={48} rounded placeholderIcon="headset-outline" />
+            <Cover uri={podcastCover(ch)} size={48} placeholderIcon="headset-outline" />
             <View style={{ flex: 1 }}><Text style={styles.title} numberOfLines={2}>{episode?.title || ch.title}</Text>
               {episode ? <Text style={styles.sub} numberOfLines={1}>{ch.title}</Text> : null}</View>
           </View>
@@ -108,7 +112,7 @@ export function PodcastMenuSheet() {
             const ready = episode ? [episode] : await listAllEpisodes(ch.id);
             if (!current(value)) return;
             const pref = useSortPrefs.getState().prefs[podcastEpisodeSortKey(value.owner, ch.id)];
-            const playable = sortPodcastEpisodes(ready, podcastEpisodeOrder(pref?.field), language)
+            const playable = sortPodcastEpisodes(ready, podcastEpisodeOrder(pref?.field ?? (ch.showType === 'serial' ? 'added' : 'recent')), language)
               .filter((item) => (item.url || files[item.id]) && (!isManualOffline() || files[item.id]));
             if (!playable.length) { toast(t('Not available offline')); return; }
             if (episode) queueEpisode(episode, ch);
@@ -117,7 +121,13 @@ export function PodcastMenuSheet() {
           {row(heart ? 'heart' : 'heart-outline', t(heart ? 'Remove from favorites' : 'Add to favorites'), () => close(() =>
             perform(value, () => togglePodcastHeart(episode?.id ?? ch.id, episode ? 'episode' : 'channel', ch.id))))}
           {episode ? <>
-            {episode.description ? row('document-text-outline', t('Episode notes'), () => setMode('notes')) : null}
+            {row('document-text-outline', t('Episode details'), () => close(() => { if (current(value)) router.push({ pathname: '/podcast-episode/[id]', params: { id: episode.id, channelId: ch.id } }); }))}
+            {row('play-skip-forward-outline', t('Play next'), () => close(() => {
+              if (current(value) && (episode.url || files[episode.id]) && (!isManualOffline() || files[episode.id])) usePlayerStore.getState().playNext(episodeToSong(episode, ch));
+            }))}
+            {row('list-outline', t('Add to queue'), () => close(() => {
+              if (current(value) && (episode.url || files[episode.id]) && (!isManualOffline() || files[episode.id])) usePlayerStore.getState().addToQueue(episodeToSong(episode, ch));
+            }))}
             {row('checkmark-circle-outline', t('Mark as played'), () => close(() => perform(value, () => setEpisodePlayed(episodeToSong(episode, ch), true))))}
             {row('refresh-outline', t('Mark as unplayed'), () => close(() => perform(value, () => setEpisodePlayed(episodeToSong(episode, ch), false))))}
             {value.extras?.queue ? row('list-outline', t('Queue'), () => close(() => { if (current(value)) router.push('/queue'); })) : null}
@@ -125,6 +135,8 @@ export function PodcastMenuSheet() {
             {value.extras?.devices ? row('volume-high-outline', t('Output device'), () => close(() => { if (current(value)) value.extras?.devices?.(); })) : null}
             {row('moon-outline', t('Sleep timer'), () => setMode('sleep'))}
           </> : <>
+            {row('settings-outline', t('Podcast settings'), () => close(() => { if (current(value)) setSettingsTarget(value); }))}
+            {row('checkmark-done-outline', t('Mark all as played'), () => close(() => { if (current(value)) setMarkConfirmation(value); }))}
             {!added.has(ch.id) ? row('add', t('Add podcast'), () => close(() => perform(value, () => addChannel(ch.id)))) : null}
             {row(automatic.has(ch.id) ? 'cloud-done' : 'cloud-download-outline', t('Download new episodes'), () => close(() =>
               perform(value, async () => {
@@ -147,6 +159,18 @@ export function PodcastMenuSheet() {
     </SheetModal>
     <PodcastDownloadDialog channel={downloadConfirmation && current(downloadConfirmation) ? downloadConfirmation.channel : null}
       onClose={() => setDownloadConfirmation(null)} />
+    <PodcastShowSettingsDialog channel={settingsTarget && current(settingsTarget) ? settingsTarget.channel : null} onClose={() => setSettingsTarget(null)} />
+    <Dialog visible={!!markConfirmation && current(markConfirmation)} title={t('Mark all as played')}
+      message={t('Mark every episode in this show as played? Downloaded audio is kept.')} confirmLabel={t('Mark as played')}
+      onCancel={() => setMarkConfirmation(null)} onConfirm={() => {
+        const value = markConfirmation; setMarkConfirmation(null); if (!value || !current(value)) return;
+        perform(value, async () => {
+          const ready = await listAllEpisodes(value.channel.id);
+          if (!current(value)) return;
+          await markPodcastManyPlayed(ready.map((episode) => episodeToSong(episode, value.channel)));
+          if (current(value)) toast(t('All episodes marked as played.'));
+        });
+      }} />
     <Dialog visible={!!confirmation && current(confirmation.target)} title={t(confirmation?.remove ? 'Unsubscribe' : 'Delete downloaded episodes')}
       message={confirmation?.remove ? t('Remove “{name}” and its episodes from this device?', { name: confirmation.target.channel.title }) : t('Downloaded audio will be removed. Your shows, favorites and listening progress are kept.')}
       confirmLabel={t(confirmation?.remove ? 'Unsubscribe' : 'Delete')} destructive onCancel={() => setConfirmation(null)} onConfirm={() => {

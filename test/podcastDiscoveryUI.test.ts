@@ -9,6 +9,7 @@ import * as Query from '@tanstack/react-query';
 import { create as createStore } from 'zustand';
 import ts from 'typescript';
 import { PODCAST_DIRECTORY_GENRES } from '../src/lib/podcastDirectory';
+import * as resume from '../src/lib/episodeResume';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -60,6 +61,12 @@ function harness(offline = false) {
     '@/components/BackChevron': { BackChevron: 'Back' }, '@/components/BackButton': { BackButton: 'Back' },
     '@/components/BrowseFrame': { BrowseFrame: 'BrowseFrame', useSearchBox: () => false }, '@/components/Cover': { Cover: 'Cover' },
     '@/components/PodcastAddSheet': { PodcastAddSheet: 'AddSheet' },
+    '@/components/podcast/PodcastOPMLManager': { PodcastOPMLManager: 'OPMLManager' },
+    '@/components/podcast/PodcastEpisodeRow': { PodcastEpisodeRow: 'EpisodeRow' },
+    '@/components/podcast/PodcastDetailView': { PodcastDetailView: (props: any) => React.createElement('DetailView', props,
+      props.actions({ ...palette, playLabel: '#222', controlFill: '#eee' }), props.toolbar(palette), props.filters({ ...palette, playLabel: '#222', controlFill: '#eee' }),
+      ...props.episodes.map((episode: any, index: number) => React.createElement(React.Fragment, { key: episode.id }, props.renderEpisode(episode, index, palette)))) },
+    '@/components/PodcastDownloadDialog': { PodcastDownloadDialog: 'DownloadDialog' },
     '@/components/EmptyState': { EmptyState: 'EmptyState' }, '@/components/glass': { GlassPressable: 'Button' },
     '@/components/Icon': { __esModule: true, default: 'Icon' }, '@/components/Message': { Message: 'Message' },
     '@/components/PodcastMenuSheet': { openPodcastMenu: (value: any) => menus.push(value), openPodcastEpisodeMenu() {} },
@@ -71,15 +78,22 @@ function harness(offline = false) {
       episodesLabel: (n: number) => `${n} episodes` },
     '@/lib/podcastDirectory': { PODCAST_DIRECTORY_GENRES }, '@/lib/podcastFavorites': { usePodcastFavoriteIds: () => new Set() },
     '@/lib/listPerf': { listPerf: {} }, '@/lib/query': { queryClient: client }, '@/lib/format': { formatDuration: () => '' },
+    '@/lib/localLibrary': { hashKey: (value: string) => value },
     '@/store/auth': { profileScopeId: profile, useAuthStore: auth },
     '@/store/toast': { useToast: (read: (value: any) => unknown) => read({ show: (text: string) => toasts.push(text) }) },
     '@/store/settings': { useSettings: (read: (value: any) => unknown) => read({ language: 'en' }) },
-    '@/store/podcastDownloads': { usePodcastDownloads: (read: (value: any) => unknown) => read({ files: {} }) },
+    '@/store/podcastDownloads': { usePodcastDownloads: (read: (value: any) => unknown) => read({ files: {}, scope: profile() }) },
     '@/store/player': { currentSong: () => undefined, usePlayerStore: (read: (value: any) => unknown) => read({ playQueue() {} }) },
     '@/api/data': { COVER: { card: 500 }, coverArtUrl: (value: string) => value },
     '@/theme': { useTheme: () => palette, colors: palette, themed: (make: (value: any) => unknown) => make(palette),
       fontSize: { sm: 13, md: 16, lg: 20, xs: 11 }, spacing: { xs: 4, sm: 8, md: 12, lg: 20 }, radius: { pill: 100, lg: 20 }, tracking: { heading: 0 } },
   };
+  common['@/lib/lyricOwner'] = load('../src/lib/lyricOwner.ts', { '@/store/auth': common['@/store/auth'] });
+  common['@/lib/podcastLibrary'] = load('../src/lib/podcastLibrary.ts', {
+    './episodeResume': resume, './localLibrary': common['@/lib/localLibrary'], '@/store/auth': common['@/store/auth'],
+    './lyricOwner': common['@/lib/lyricOwner'],
+    './podcastDb': { listEpisodeProgress: async () => [], listLibraryEpisodes: async () => [] },
+  });
   let root!: ReactTestRenderer;
   const mount = async (detail: boolean | 'list' = false) => {
     const Screen = load(detail === 'list' ? '../src/app/podcasts.tsx' : detail ? '../src/app/podcast/[id].tsx' : '../src/app/podcast-discover.tsx', common).default;

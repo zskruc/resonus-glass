@@ -44,6 +44,7 @@ const savedScopes = async () => {
 const invalidate = () => {
   void queryClient.invalidateQueries({ queryKey: ['podcastDownloads'] });
   void queryClient.invalidateQueries({ queryKey: ['podcastChannels'] });
+  void queryClient.invalidateQueries({ queryKey: ['podcastLibrary'] });
 };
 const validAudio = (headers: Record<string, string> | undefined) => {
   const type = Object.entries(headers ?? {}).find(([name]) => name.toLowerCase() === 'content-type')?.[1]?.toLowerCase();

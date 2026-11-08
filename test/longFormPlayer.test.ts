@@ -7,6 +7,7 @@ import ts from 'typescript';
 import { AudiobookProgressTracker } from '../src/lib/audiobookTracking';
 import { isAudiobookSong } from '../src/lib/audiobook';
 import type { Song } from '../src/api/subsonic';
+import { DEFAULT_PODCAST_PLAYBACK, podcastStartPosition, podcastOutroReached } from '../src/lib/podcastPlaybackPolicy';
 
 // Run production source installation and long-form adapters. Native audio,
 // database IO and app-state delivery are explicit controlled boundaries.
@@ -39,7 +40,7 @@ function harness() {
   const seeks: number[] = [], writes: { song: string; position: number; force: boolean }[] = [], sources: string[] = [], books: unknown[][] = [], cleared: unknown[][] = [];
   const auth = {}, noop = () => {};
   const native = { play: noop, volume: 1, audioSessionId: 1 };
-  const settings = { saveAudiobookProgress: true };
+  const settings = { saveAudiobookProgress: true }, podcastPreferences = { ...DEFAULT_PODCAST_PLAYBACK };
   const context: Record<string, any> = { exports: {}, AudiobookProgressTracker,
     profileScopeId: () => scope, audiobookProfileScope: () => `book:${scope}`,
     usePlayerStore: store, useSettings: { getState: () => settings, subscribe: noop },
@@ -49,6 +50,8 @@ function harness() {
     isAudiobookTrack: isAudiobookSong, podcastProgressVersion: () => version,
     ownsPodcastProgress: (_song: Song, owner: string, epoch: number) => scope === owner && version === epoch,
     readPodcastResume: () => resumes,
+    usePodcastPreferences: { getState: () => ({ load: async () => {} }) },
+    getPodcastPreferences: () => podcastPreferences, podcastStartPosition, podcastOutroReached, podcastOutroLoad: -1,
     writePodcastProgress: async (song: Song, position: number, _duration: number, owner: string, epoch: number, force = false) => {
       if (scope === owner && version === epoch) writes.push({ song: song.id, position, force });
     },
@@ -71,7 +74,7 @@ function harness() {
     queueOrigin: null, warmUpcoming: noop, playableOffline: () => true,
   };
   runInNewContext(executable, context); context.loadIndex = context.exports.load; context.exports.init();
-  return { store, episode, seeks, writes, sources, books, cleared, complete: () => context.exports.complete(),
+  return { store, episode, seeks, writes, sources, books, cleared, podcastPreferences, complete: () => context.exports.complete(),
     play: (songs: Song[]) => context.exports.play(songs, 0, 'Book', '/album/book') as Promise<boolean>,
     load: () => context.exports.load(0, true) as Promise<boolean>, resolve: async (position: number) => {
       resolve(position); for (let i = 0; i < 8; i++) await Promise.resolve();
@@ -127,4 +130,10 @@ test('late episode resume cannot beat a manual seek, account switch, played mark
 test('failed native source installation neither reads resume nor advances saved progress', async () => {
   const h = harness(); h.failSource(); assert.equal(await h.load(), false);
   await h.resolve(45); assert.deepEqual(h.seeks, []); assert.deepEqual(h.writes, []);
+});
+test('the installed podcast source starts at its intro only when saved listening progress is earlier', async () => {
+  const intro = harness(); intro.podcastPreferences.introSec = 60; await intro.load(); await intro.resolve(0);
+  assert.deepEqual(intro.seeks, [60]);
+  const resume = harness(); resume.podcastPreferences.introSec = 60; await resume.load(); await resume.resolve(90);
+  assert.deepEqual(resume.seeks, [90]);
 });

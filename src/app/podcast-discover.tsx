@@ -21,6 +21,7 @@ import { useListPadding } from '@/hooks/useScreenSize';
 import { useT } from '@/i18n';
 import { listPerf } from '@/lib/listPerf';
 import { PODCAST_DIRECTORY_GENRES } from '@/lib/podcastDirectory';
+import { captureLyricOwner } from '@/lib/lyricOwner';
 import { profileScopeId, useAuthStore } from '@/store/auth';
 import { useToast } from '@/store/toast';
 import { fontSize, radius, spacing, themed, useTheme } from '@/theme';
@@ -76,7 +77,8 @@ export default function PodcastDiscoverScreen() {
   const directory = useQuery({
     queryKey: ['podcastDirectory', profile, country, genreId ?? 'all', term],
     queryFn: async ({ signal }) => {
-      const owns = () => !signal.aborted && profileScopeId() === profile && useAuthStore.getState().auth === auth && !isManualOffline();
+      const captured = captureLyricOwner(profile);
+      const owns = () => captured() && !signal.aborted && profileScopeId() === profile && useAuthStore.getState().auth === auth && !isManualOffline();
       if (!owns()) throw new Error('Podcast directory owner changed');
       const rows = term ? await directorySearch(term, { country, signal }) : await directoryCharts({ country, genreId, signal });
       if (!owns()) throw new Error('Podcast directory owner changed');
@@ -148,7 +150,7 @@ export default function PodcastDiscoverScreen() {
     </ScrollView>
     <Animated.FlatList {...listPerf} onScroll={dock} scrollEventThrottle={16} keyboardShouldPersistTaps="handled"
       data={debouncing ? [] : directory.data ?? []} keyExtractor={(show) => String(show.id)}
-      contentContainerStyle={{ paddingHorizontal: padding, paddingBottom: bottom, flexGrow: 1 }}
+      contentContainerStyle={{ paddingHorizontal: padding, paddingBottom: bottom, flexGrow: 1, gap: 10 }}
       ListHeaderComponent={<View style={styles.resultsHeader}>
         <Text style={styles.section}>{term ? t('Search results') : genre ? t(genre.key) : t('Top podcasts')}</Text>
         {directory.isFetching || debouncing ? <ActivityIndicator size="small" color={colors.accent} /> : null}
@@ -160,7 +162,7 @@ export default function PodcastDiscoverScreen() {
       renderItem={({ item, index }) => <GlassPressable accessibilityRole="button" accessibilityLabel={t('Preview {name}', { name: item.title })}
         disabled={opening !== null || debouncing} onPress={() => { void preview(item); }} style={({ pressed }) => [styles.row, pressed && { opacity: .6 }]}>
         <Text style={styles.rank}>{item.rank ?? index + 1}</Text>
-        <Cover uri={item.imageUrl} size={62} placeholderIcon="headset-outline" />
+        <Cover uri={item.imageUrl} size={70} placeholderIcon="headset-outline" />
         <View style={styles.details}><Text style={styles.rowTitle} numberOfLines={2}>{item.title}</Text>
           {item.author ? <Text style={styles.subtitle} numberOfLines={1}>{item.author}</Text> : null}
           {item.genre ? <Text style={styles.genre} numberOfLines={1}>{t(item.genre)}</Text> : null}
@@ -172,8 +174,8 @@ export default function PodcastDiscoverScreen() {
 
 const styles = themed((colors) => ({
   header: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md },
-  heading: { flex: 1, color: colors.text, fontSize: 22, fontWeight: '700' },
-  region: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 8 }, regionText: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  heading: { flex: 1, color: colors.text, fontSize: 25, fontWeight: '700' },
+  region: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 10, borderRadius: 20, backgroundColor: colors.surfaceHighlight }, regionText: { color: colors.text, fontSize: 13, fontWeight: '600' },
   search: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: spacing.md, backgroundColor: colors.surfaceHighlight,
     borderRadius: radius.pill, minHeight: 46, marginBottom: spacing.sm }, searchInput: { flex: 1, color: colors.text, fontSize: 15, paddingVertical: 11 },
   chipScroll: { flexGrow: 0, flexShrink: 0 }, chips: { gap: spacing.sm, paddingVertical: spacing.sm },
@@ -181,8 +183,8 @@ const styles = themed((colors) => ({
   chipText: { fontSize: 13, fontWeight: '600' }, resultsHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10, paddingVertical: spacing.md },
   section: { flex: 1, color: colors.text, fontSize: fontSize.lg, fontWeight: '700' },
   offline: { width: '100%', color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, borderBottomWidth: .5, borderBottomColor: colors.border },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 18, backgroundColor: colors.surfaceHighlight },
   rank: { width: 24, textAlign: 'center', color: colors.textSecondary, fontSize: 16, fontWeight: '500' }, details: { flex: 1, gap: 3 },
-  rowTitle: { color: colors.text, fontSize: 16, fontWeight: '600' }, subtitle: { color: colors.textSecondary, fontSize: 13 },
+  rowTitle: { color: colors.text, fontSize: 17, fontWeight: '600' }, subtitle: { color: colors.textSecondary, fontSize: 13 },
   genre: { color: colors.textMuted, fontSize: 12 },
 }));

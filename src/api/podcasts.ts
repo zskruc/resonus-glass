@@ -224,11 +224,19 @@ function looksLikeFeed(body: string): boolean {
 function toEpisode(channelId: string, item: ParsedItem): PodcastEpisode {
   const episode: PodcastEpisode = { id: item.id, channelId, title: item.title };
   if (item.description) episode.description = item.description;
+  if (item.descriptionHtml) episode.descriptionHtml = item.descriptionHtml;
   if (item.publishedAt !== undefined) episode.publishedAt = item.publishedAt;
   if (item.episode !== undefined) episode.episode = item.episode;
+  if (item.season !== undefined) episode.season = item.season;
+  if (item.episodeType) episode.episodeType = item.episodeType;
+  if (item.chapters?.length) episode.chapters = item.chapters;
+  if (item.chaptersUrl) episode.chaptersUrl = item.chaptersUrl;
+  if (item.transcripts?.length) episode.transcripts = item.transcripts;
   if (item.duration !== undefined) episode.duration = item.duration;
   if (item.url && /^https?:\/\//i.test(item.url)) episode.url = item.url;
   if (item.mimeType) episode.mimeType = item.mimeType;
+  if (item.size !== undefined) episode.size = item.size;
+  if (item.imageUrl && /^https?:\/\//i.test(item.imageUrl)) episode.imageUrl = item.imageUrl;
   return episode;
 }
 
@@ -313,7 +321,7 @@ async function refreshChannelOwned(input: string, owner: RequestOwner): Promise<
   const id = feedId(read.url);
   const existing = read.url === url ? stored : await Db.getChannel(s, id);
   owner.check();
-  const feed = parseFeed(read.body, id);
+  const feed = parseFeed(read.body, id, read.url);
   // Which of these the device already had: an episode that was there keeps the
   // moment it first came over, one that was not gets this read's. A feed's `pubDate`
   // cannot carry that: a publisher re-dates an old item, back-catalogs a season
@@ -354,6 +362,8 @@ async function refreshChannelOwned(input: string, owner: RequestOwner): Promise<
   if (landed > 0 && had.size > 0) channel.newSinceAt = landedAt;
   else if (existing?.newSinceAt) channel.newSinceAt = existing.newSinceAt;
   if (feed.description) channel.description = feed.description;
+  if (feed.descriptionHtml) channel.descriptionHtml = feed.descriptionHtml;
+  if (feed.showType) channel.showType = feed.showType;
   if (feed.author) channel.author = feed.author;
   if (feed.imageUrl) channel.imageUrl = feed.imageUrl;
   if (feed.siteUrl) channel.siteUrl = feed.siteUrl;
@@ -811,7 +821,7 @@ export const unsubscribe = removeChannel;
 export const listEpisodes = listAllEpisodes;
 
 export function invalidatePodcastLists(): void {
-  for (const name of ['podcastChannels', 'podcastRecentEpisodes', 'podcastFavoriteChannels', 'podcastFavoriteEpisodes']) {
+  for (const name of ['podcastChannels', 'podcastRecentEpisodes', 'podcastFavoriteChannels', 'podcastFavoriteEpisodes', 'podcastLibrary']) {
     void queryClient.invalidateQueries({ queryKey: [name] });
   }
 }

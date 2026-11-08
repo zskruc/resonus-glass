@@ -41,6 +41,7 @@ const SCOPED_KEYS = [
   'resonus.shufflePolicy',
   'resonus.dailyRecommendations',
   'resonus.settingsSearchRecent',
+  'resonus.podcastPreferences',
 ];
 
 const DOWNLOADS_DIR = `${FileSystem.documentDirectory}downloads/`;
@@ -64,15 +65,17 @@ export async function deleteProfileData(auth: SubsonicAuth): Promise<void> {
 
   // These modules read active-account state; importing them eagerly here would
   // make auth -> profileData -> tools -> auth a startup dependency cycle.
-  const [musicTools, silenceTrim, longAudio] = await Promise.all([
+  const [musicTools, silenceTrim, longAudio, podcasts] = await Promise.all([
     import('./listeningDb'),
     import('@/store/silenceTrim'),
     import('@/store/longAudio'),
+    import('@/store/podcastPreferences'),
   ]);
   await Promise.all([
     musicTools.clearMusicToolsProfile(rawScope),
     silenceTrim.clearSilenceTrimProfile(rawScope),
     longAudio.clearLongAudioProfile(rawScope),
+    podcasts.clearPodcastPreferencesProfile(rawScope),
   ]);
 
   // The databases are closed before their files go, or the handles would

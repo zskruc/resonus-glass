@@ -52,7 +52,7 @@ function harness() {
   });
   const requests: { url: string; signal: AbortSignal }[] = [], invalidated: string[] = [];
   let bodyGate: Promise<void> | undefined;
-  const xml = '<rss><channel><title>Preview Show</title><item><guid>first</guid><title>Episode</title>'
+  let xml = '<rss><channel><title>Preview Show</title><item><guid>first</guid><title>Episode</title>'
     + '<enclosure url="https://audio.test/one.mp3" type="audio/mpeg"/></item></channel></rss>';
   const Api = compile('../src/api/podcasts.ts', {
     'expo/fetch': { fetch: async (url: string, options: any) => {
@@ -67,10 +67,30 @@ function harness() {
     '@/lib/podcastDb': Db, '@/lib/podcastFeed': { parseFeed, sortEpisodes }, '@/lib/podcastDirectory': directory,
   });
   return { Api, Db, first, auth, requests, invalidated, profile: hash('A'),
+    setXml: (value: string) => { xml = value; },
     switchTo: (username: string) => auth.setState({ auth: username === 'A' ? first : { username, serverUrl: `https://${username}.test` } }),
     body: (value?: Promise<void>) => { bodyGate = value; },
     gate: (matches: (sql: string) => boolean, work: () => Promise<void>) => { gate = { matches, work }; } };
 }
+
+test('publisher notes and chapter metadata survive the real RSS/API/SQLite roundtrip without automatically fetching companion files', async () => {
+  const h = harness();
+  h.setXml('<rss><channel><title>Show</title><itunes:type>serial</itunes:type><description><![CDATA[<p>Show notes</p>]]></description>'
+    + '<item><guid>rich</guid><title>Episode</title><itunes:season>2</itunes:season><itunes:episode>3</itunes:episode><itunes:episodeType>bonus</itunes:episodeType>'
+    + '<content:encoded><![CDATA[<h2>Topics</h2><p>00:30 Introduction</p>]]></content:encoded>'
+    + '<psc:chapters><psc:chapter start="00:30" title="Topic"/></psc:chapters>'
+    + '<podcast:chapters url="/chapters.json" type="application/json+chapters"/>'
+    + '<podcast:transcript url="/notes.vtt" type="text/vtt" language="zh"/>'
+    + '<enclosure url="https://audio.test/rich.mp3" type="audio/mpeg" length="1234"/></item></channel></rss>');
+  const channel = await h.Api.refreshChannel('https://feed.test/rss');
+  const stored = await h.Db.getChannel(h.profile, channel.id), episode = await h.Db.getEpisode(h.profile, `${channel.id}/rich`);
+  assert.equal(stored.showType, 'serial'); assert.match(stored.descriptionHtml, /<p>Show notes<\/p>/);
+  assert.equal(episode.season, 2); assert.equal(episode.episode, 3); assert.equal(episode.episodeType, 'bonus');
+  assert.match(episode.descriptionHtml, /<h2>Topics<\/h2>/); assert.equal(episode.chapters[0].startSec, 30);
+  assert.equal(episode.chaptersUrl, 'https://feed.test/chapters.json');
+  assert.equal(episode.transcripts[0].url, 'https://feed.test/notes.vtt'); assert.equal(episode.size, 1234);
+  assert.deepEqual(h.requests.map(({ url }) => url), ['https://feed.test/rss']);
+});
 
 test('an opened preview is stored but never appears in Home recent episodes or refresh-all subscription feeds', async () => {
   const h = harness(), preview = await h.Api.refreshChannel('https://feed.test/rss');

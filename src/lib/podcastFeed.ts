@@ -4,12 +4,17 @@
  * in tag names rather than shape. Entities are decoded once, where a value is
  * read.
  */
+import type { PodcastChapter, PodcastTranscript } from '@/api/subsonic';
+import { normalizePodcastChapters } from './podcastChapters';
+import { MAX_PODCAST_NOTES_CHARS, safePodcastUrl } from './podcastShowNotes';
 
 /** A channel as the feed describes itself, before anything is stored. */
 export interface ParsedFeed {
   title?: string;
   author?: string;
   description?: string;
+  descriptionHtml?: string;
+  showType?: 'episodic' | 'serial';
   imageUrl?: string;
   siteUrl?: string;
   items: ParsedItem[];
@@ -21,9 +26,15 @@ export interface ParsedItem {
   id: string;
   title: string;
   description?: string;
+  descriptionHtml?: string;
   /** Publication date in ms since the epoch. */
   publishedAt?: number;
   episode?: number;
+  season?: number;
+  episodeType?: 'full' | 'trailer' | 'bonus';
+  chapters?: PodcastChapter[];
+  chaptersUrl?: string;
+  transcripts?: PodcastTranscript[];
   /** Seconds. */
   duration?: number;
   /** Where the audio is. An episode with none of this cannot be played. */
@@ -146,6 +157,46 @@ function plain(block: string, ...names: string[]): string | undefined {
     if (out) return out;
   }
   return undefined;
+}
+
+/** Rich text stays separate: existing compact rows keep their plain summary. */
+function rich(block: string, ...names: string[]): string | undefined {
+  for (const name of names) {
+    const found = inner(block, name)?.trim();
+    if (!found) continue;
+    const decoded = decode(found);
+    return (HAS_TAG.test(decoded) && !HAS_TAG.test(found) ? decoded : found).slice(0, MAX_PODCAST_NOTES_CHARS);
+  }
+  return undefined;
+}
+function episodeExtras(block: string, base?: string): Pick<ParsedItem, 'season' | 'episodeType' | 'chapters' | 'chaptersUrl' | 'transcripts'> {
+  const extra: ReturnType<typeof episodeExtras> = {};
+  const season = Number(text(block, 'season')), kind = text(block, 'episodeType')?.toLowerCase();
+  if (Number.isSafeInteger(season) && season > 0 && season <= 100000) extra.season = season;
+  if (kind === 'full' || kind === 'bonus' || kind === 'trailer') extra.episodeType = kind;
+  const embedded = inner(block, 'chapters');
+  if (embedded) {
+    const rows = [];
+    for (const entry of embedded.matchAll(/<(?:[\w.-]+:)?chapter\b([^>]*)\/?>/gi)) {
+      rows.push({ start: attr(entry[1], 'start'), title: attr(entry[1], 'title'), href: attr(entry[1], 'href'), image: attr(entry[1], 'image') });
+      if (rows.length === 3000) break;
+    }
+    const chapters = normalizePodcastChapters(rows, base); if (chapters.length) extra.chapters = chapters;
+  }
+  for (const entry of block.matchAll(/<(?:[\w.-]+:)?chapters\b([^>]*)\/?>/gi)) {
+    const url = safePodcastUrl(attr(entry[1], 'url'), base), type = attr(entry[1], 'type');
+    if (url && (!type || /json/i.test(type))) { extra.chaptersUrl = url; break; }
+  }
+  const transcripts: PodcastTranscript[] = [], seen = new Set<string>();
+  for (const entry of block.matchAll(/<(?:[\w.-]+:)?transcript\b([^>]*)\/?>/gi)) {
+    const url = safePodcastUrl(attr(entry[1], 'url'), base); if (!url || seen.has(url)) continue;
+    seen.add(url);
+    const type = attr(entry[1], 'type')?.slice(0, 100), language = attr(entry[1], 'language')?.slice(0, 100), rel = attr(entry[1], 'rel')?.slice(0, 100);
+    transcripts.push({ url, ...(type ? { type } : {}), ...(language ? { language } : {}), ...(rel ? { rel } : {}) });
+    if (transcripts.length === 10) break;
+  }
+  if (transcripts.length) extra.transcripts = transcripts;
+  return extra;
 }
 
 const MONTHS: Record<string, number> = {
@@ -288,7 +339,7 @@ function siteLink(header: string): string | undefined {
 }
 
 /** Reads a feed. Episode ids are prefixed with `channelId`: guids collide across feeds. */
-export function parseFeed(xml: string, channelId: string): ParsedFeed {
+export function parseFeed(xml: string, channelId: string, baseUrl?: string): ParsedFeed {
   const body = unwrapCdata(xml);
   const items: ParsedItem[] = [];
 
@@ -308,9 +359,12 @@ export function parseFeed(xml: string, channelId: string): ParsedFeed {
       size: enc.length,
     };
     const description = plain(block, 'description', 'summary', 'content', 'encoded');
+    const descriptionHtml = rich(block, 'encoded', 'content', 'description', 'summary');
     const episodeNumber = Number(text(block, 'episode'));
     if (Number.isFinite(episodeNumber) && Math.floor(episodeNumber) > 0) item.episode = Math.floor(episodeNumber);
     if (description) item.description = description;
+    if (descriptionHtml) item.descriptionHtml = descriptionHtml;
+    Object.assign(item, episodeExtras(block, baseUrl));
     const image = attr(openTag(block, 'image'), 'href');
     if (image) item.imageUrl = image;
     items.push(item);
@@ -327,6 +381,9 @@ export function parseFeed(xml: string, channelId: string): ParsedFeed {
   if (author) feed.author = author;
   const description = plain(header, 'description', 'subtitle');
   if (description) feed.description = description;
+  const descriptionHtml = rich(header, 'description', 'subtitle'); if (descriptionHtml) feed.descriptionHtml = descriptionHtml;
+  const showType = text(header, 'itunes:type')?.toLowerCase();
+  if (showType === 'episodic' || showType === 'serial') feed.showType = showType;
   const imageUrl = feedImage(header);
   if (imageUrl) feed.imageUrl = imageUrl;
   const siteUrl = siteLink(header);

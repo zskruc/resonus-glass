@@ -13,6 +13,27 @@ preserved upstream history.
 Releases before 0.2.1 are only listed on the
 [GitHub releases page](https://github.com/juananzzz/resonus/releases).
 
+## [0.8.7.1-preview.5] - 2026-11-09
+
+### Added
+
+- 播客节目页采用现有 Primuse 专辑页的封面布局、取色、柔和背景、整页显隐和圆角单集面板，主操作改为播放／继续收听与订阅。
+- 增加未播、听到一半、已下载及分季筛选；播客库增加跨节目的继续收听、最新未播和下载列表，分页读取。
+- 增加单集详情、富文本笔记与可点击时间点；支持订阅源提供的内嵌章节、按需 JSON 章节及文字稿链接。
+- 增加 OPML 文件预览、去重导入、逐项进度、停止／失败重试及订阅导出。
+- 增加单集下一集播放／加入队列、确认后批量标已播、每节目片头／片尾跳过和连续播放设置。已保存的音乐播放器布局、玻璃参数及离线下载保留。
+
+### Fixed
+
+- 播客已播批量更新在一个事务中完成，取消或切换账号时回滚；返回同一账号不会恢复过期播放回调。
+- 节目偏好保存、账号切换和删除按持久化顺序处理，避免未完成写入覆盖新选择或恢复已删除的偏好。
+
+### English
+
+- Restyle podcast shows using the existing Primuse album cover, palette, backdrop and unified scene, with podcast-specific subscription, resume and episode panels.
+- Add progress and season filters, paged cross-show listening lists, episode notes with seekable timestamps, publisher-provided chapters and transcript links, OPML exchange and per-show playback options.
+- Keep the existing audio/download engines, music layouts and saved glass tuning. This is a local preview; no GitHub push or Release was requested.
+
 ## [0.8.7.1-preview.4] - 2026-11-09
 
 ### Added

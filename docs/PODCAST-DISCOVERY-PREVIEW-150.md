@@ -33,14 +33,16 @@ The preview keeps all eight tools from 149, existing player layouts and saved gl
 
 ## 验证记录 / Validation
 
-真实目录协议检查：美区 50 项榜单与单条节目查询均为 HTTP 200，排名 1–50、唯一节目 ID 及 600px 封面字段已核对；只请求目录元数据，没有下载 RSS 或音频。该项使用 Node 请求，不能代替 Android 的设备检查。自动测试 1,449 项通过、0 失败，包含真实 SQLite 事务取消与订阅归属、真实组件的分类／搜索／预览／订阅操作；Navidrome ID 检查、TypeScript、翻译检查均通过。源码及测试 ESLint 为 0 错误，148 条既有警告（146 条源码、2 条旧测试导入顺序）。APK 身份和后续实机结果在构建后登记。
+真实目录协议检查：美区 50 项榜单与单条节目查询均为 HTTP 200，排名 1–50、唯一节目 ID 及 600px 封面字段已核对；只请求目录元数据，没有下载 RSS 或音频。该项使用 Node 请求，不能代替 Android 的设备检查。自动测试 1,458 项通过、0 失败，包含真实 SQLite 事务取消与订阅归属、真实组件的分类／搜索／预览／订阅操作；Navidrome ID 检查、TypeScript、翻译检查均通过。源码及测试 ESLint 为 0 错误，148 条既有警告（146 条源码、2 条旧测试导入顺序）。APK 身份和后续实机结果在构建后登记。
 
 ## APK
 
 - File: `Resonus-Glass-v0.8.7.1-preview.4-code150-arm64-v8a.apk`
-- Built source: `2f4e00e3948bddd4b59d3ca56075bd25c6439241`
-- Size: `46,303,992` bytes
-- SHA-256: `d143a6eaf1e18260900341e25fb4d9dc462893231e552e0fdb3455811bcceee2`
+- Built source: `59448267a4ca8c08144d9a071596b523201f33b3`
+- Size: `46,305,996` bytes
+- SHA-256: `ae4a87a94be94def6f87bd92b131caea9e0434d7148ade64d937c0db7cf1d54a`
 - Package: `com.zskruc.resonus.glasspreview` · Android `150` · ARM64
 
-签名与当前 Glass 安装一致，ZIP、版本、包名、ABI 与包内新增中英文字典已核对。149 的功能复测已完成；150 的新播客发现待用户方便时另行安装、实机验证，不能将 Node／组件测试当作这版 APK 的三星验收。
+签名与当前 Glass 安装一致，ZIP、版本、包名、ABI 与包内新增中英文字典已核对。已在三星 SM-S9380 安装并核对 APK 哈希，检查地区／分类、榜单、搜索、Apple 链接、RSS 预览与明确订阅；9 档用户指定节目已添加，重启后保留。检查期间未发现新的 JavaScript／SQLite 异常；未将此项作为长时播放、快滑压力或全部来源稳定性证明。测试后已恢复原来的 30 秒息屏和关闭充电常亮。
+
+实机期间修复了 RSS 正文与图片落盘等待缺少完整截止、取消请求后界面忙碌状态未复位的问题。RSS 每次网络读取有 20 秒截止，图片落盘单次预算 2 秒；这不是承诺所有节目 20 秒内加载完，来源跳转和数据库保存仍需各自完成。

@@ -405,6 +405,52 @@ export async function listRecentEpisodes(scope: string, limit = 20): Promise<Rec
   }));
 }
 
+export type PodcastLibraryFilter = 'continue' | 'unplayed' | 'downloaded';
+export interface PodcastLibraryEpisode extends RecentEpisode {
+  positionSec: number;
+  durationSec: number;
+  downloaded: boolean;
+  updatedAt: number;
+}
+
+/** A bounded cross-show shelf, read on the existing connection after queued writes. */
+export async function listLibraryEpisodes(scope: string, filter: PodcastLibraryFilter, limit = 80, offset = 0, search = ''): Promise<PodcastLibraryEpisode[]> {
+  const db = await podcastDb(scope);
+  const pageSize = Math.max(1, Math.min(200, Math.floor(Number.isFinite(limit) ? limit : 80)));
+  const start = Math.max(0, Math.floor(Number.isFinite(offset) ? offset : 0));
+  const term = search.trim().slice(0, 200);
+  const condition = filter === 'downloaded' ? 'downloaded = 1'
+    : filter === 'continue' ? 'position_sec >= 5 AND NOT played' : 'NOT played';
+  const order = filter === 'continue' ? 'updated_at DESC, id ASC'
+    : filter === 'downloaded' ? 'downloaded_at DESC, id ASC' : 'published_at DESC, id ASC';
+  return serialized(async () => {
+    const rows = await db.getAllAsync<{ episode: string; channel: string; position_sec: number; duration_sec: number; downloaded: number; updated_at: number }>(
+      `WITH library AS (
+        SELECT e.id,
+          json_set(json_remove(e.data, '$.descriptionHtml', '$.chapters', '$.transcripts', '$.description'),
+            '$.description', substr(COALESCE(json_extract(e.data, '$.description'), ''), 1, 512)) AS episode,
+          c.data AS channel, COALESCE(e.published_at, 0) AS published_at,
+          COALESCE(p.position_sec, 0) AS position_sec,
+          CASE WHEN COALESCE(p.duration_sec, 0) > 0 THEN p.duration_sec ELSE COALESCE(json_extract(e.data, '$.duration'), 0) END AS duration_sec,
+          COALESCE(p.updated_at, 0) AS updated_at, COALESCE(d.downloaded_at, 0) AS downloaded_at,
+          CASE WHEN d.file IS NOT NULL AND d.file <> '' THEN 1 ELSE 0 END AS downloaded
+        FROM podcast_episodes e JOIN podcast_channels c ON c.id = e.channel_id
+        JOIN podcast_added a ON a.channel_id = c.id
+        LEFT JOIN podcast_progress p ON p.episode_id = e.id
+        LEFT JOIN podcast_downloads d ON d.episode_id = e.id
+        WHERE (e.url IS NOT NULL AND e.url <> '') OR (d.file IS NOT NULL AND d.file <> '')
+      ), listening AS (
+        SELECT *, (duration_sec > 0 AND position_sec >= MAX(duration_sec * .9, duration_sec - 30)) AS played FROM library
+      ) SELECT episode, channel, position_sec, duration_sec, downloaded, updated_at FROM listening
+      WHERE ${condition} AND (? = '' OR instr(lower(json_extract(episode, '$.title')), lower(?)) > 0
+        OR instr(lower(json_extract(channel, '$.title')), lower(?)) > 0)
+      ORDER BY ${order} LIMIT ? OFFSET ?`, [term, term, term, pageSize, start],
+    );
+    return rows.map((row) => ({ episode: JSON.parse(row.episode) as PodcastEpisode, channel: JSON.parse(row.channel) as PodcastChannel,
+      positionSec: row.position_sec, durationSec: row.duration_sec, downloaded: !!row.downloaded, updatedAt: row.updated_at }));
+  });
+}
+
 /** Every feed kept on the device, the one least recently read first. The
  * channels are the feeds — a show is only filed once its feed has been read, and
  * a read that failed keeps the address it tried — so a refresh-all has nothing
@@ -533,6 +579,21 @@ export async function saveEpisodeProgress(
 export async function clearEpisodeProgress(scope: string, id: string, current: () => boolean = () => true): Promise<void> {
   const db = await podcastDb(scope);
   await serialized(async () => { if (current()) await db.runAsync('DELETE FROM podcast_progress WHERE episode_id = ?', [id]); });
+}
+
+/** One atomic bulk mark, without re-reading/re-rendering the library per episode. */
+export async function markManyPlayed(scope: string, episodes: { id: string; channelId: string; durationSec: number }[], current: () => boolean): Promise<void> {
+  const db = await podcastDb(scope);
+  await serialized(() => db.withTransactionAsync(async () => {
+    const now = Date.now();
+    for (const episode of episodes) {
+      if (!current()) throw new Error('Podcast marks superseded');
+      const duration = episode.durationSec > 0 && Number.isFinite(episode.durationSec) ? episode.durationSec : 1;
+      await db.runAsync('INSERT OR REPLACE INTO podcast_progress (episode_id,channel_id,position_sec,duration_sec,updated_at) VALUES(?,?,?,?,?)',
+        [episode.id, episode.channelId, duration, duration, now]);
+    }
+    if (!current()) throw new Error('Podcast marks superseded');
+  }));
 }
 
 export async function listEpisodeProgress(

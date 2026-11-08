@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 1304 of them.
+Every string the app can show, under the screen it shows up on. 1354 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -568,7 +568,6 @@ you are actually typing into, which is easier than reading it here.
 | `Remove cover` | Screen reader label for the small x on a chosen picture |
 | `Removed from playlist` | Toast, with an undo button next to it |
 | `Reorder requires at least two songs` |  |
-| `Saving…` |  |
 | `Share` | Make a link on the server that others can open. Getting the file itself out is `Export` |
 | `Suggested tracks` | Section heading at the bottom of a playlist: songs the server recommends based on what is already in the playlist |
 | `This playlist is empty` | Empty state heading |
@@ -585,19 +584,33 @@ you are actually typing into, which is easier than reading it here.
 
 | String | What it is |
 | --- | --- |
+| `{episodes} will be saved to this device ({duration}).` |  |
+| `{episodes} will be saved to this device.` |  |
+| `{time} left` |  |
+| `All episodes` |  |
+| `All episodes are already downloaded.` |  |
+| `All seasons` |  |
+| `Bonus` |  |
+| `Couldn't load this podcast.` |  |
 | `Couldn't read this feed` |  |
 | `Couldn't subscribe to this podcast.` |  |
+| `Download episodes` |  |
+| `Duration excludes episodes with unknown length.` |  |
 | `Episodes` |  |
+| `In progress` |  |
 | `New` |  |
 | `Newest first` |  |
 | `No episodes` |  |
+| `No episodes match this filter.` |  |
 | `Oldest first` |  |
+| `Other episodes` |  |
 | `Played` |  |
-| `Pull down to read the feed again.` |  |
+| `Season {n}` |  |
 | `Subscribed` |  |
 | `This podcast's feed could not be read, so these episodes may be out of date.` |  |
+| `Trailer` |  |
+| `Unplayed` |  |
 | `Untitled episode` |  |
-| `Website` |  |
 
 ## Podcast discover
 
@@ -641,6 +654,26 @@ you are actually typing into, which is easier than reading it here.
 | `United States` |  |
 | `You're offline` |  |
 
+## Podcast episode
+
+| String | What it is |
+| --- | --- |
+| `Chapters` |  |
+| `Could not load chapters. Try again.` |  |
+| `Could not load this episode.` |  |
+| `Could not open this link.` |  |
+| `Could not play this episode.` |  |
+| `Episode` |  |
+| `Episode {n}` |  |
+| `Load chapters` |  |
+| `No chapters supplied for this episode.` |  |
+| `No show notes available.` |  |
+| `Online chapters are unavailable offline.` |  |
+| `Open transcript` |  |
+| `Refresh chapters` |  |
+| `Season {n}` |  |
+| `Show notes` |  |
+
 ## Podcast favorites
 
 | String | What it is |
@@ -655,22 +688,47 @@ you are actually typing into, which is easier than reading it here.
 
 | String | What it is |
 | --- | --- |
+| `{done} of {total} processed · {added} added · {failed} failed` |  |
 | `{n} podcast feeds could not be read.` |  |
+| `{n} subscriptions exported. {skipped} private or invalid addresses were excluded.` |  |
+| `{n} unique subscriptions. {duplicates} duplicates and {invalid} invalid addresses skipped.` |  |
+| `{time} left` |  |
+| `Bonus` |  |
+| `Choose OPML file` |  |
+| `Could not export podcast subscriptions.` |  |
+| `Could not read this OPML file. Choose a valid file smaller than 2 MB.` |  |
 | `Couldn't load your podcasts.` |  |
 | `Couldn't reach any of your podcast feeds.` |  |
 | `Couldn't read that feed.` |  |
 | `Couldn't read this feed` |  |
 | `Couldn't search for podcasts.` |  |
 | `Discover podcasts` |  |
+| `Export podcast subscriptions` |  |
+| `Export subscriptions` |  |
 | `Find a podcast` |  |
+| `Go online to import subscriptions. Export is available offline.` |  |
+| `Import / export subscriptions` |  |
+| `Import or export OPML. Importing adds shows without downloading audio.` |  |
+| `Import stopped. Go online and try again.` |  |
+| `Latest unplayed` |  |
+| `New` |  |
+| `No episodes match this filter.` |  |
 | `No episodes yet` |  |
 | `No podcast found for “{term}”. Try pasting the feed address below.` |  |
 | `No podcasts` |  |
+| `No subscriptions with exportable feed addresses.` |  |
+| `Played` |  |
+| `Podcast subscriptions` |  |
 | `Podcasts` |  |
+| `Retry failed subscriptions` |  |
 | `Search for a podcast` |  |
 | `Search for a show, or paste the address of a feed below.` |  |
+| `Shows` |  |
+| `Stop import` |  |
 | `Subscribe` |  |
 | `Tap + to subscribe to a show.` |  |
+| `Trailer` |  |
+| `Untitled episode` |  |
 
 ## Queue
 
@@ -1065,7 +1123,6 @@ you are actually typing into, which is easier than reading it here.
 | `Sample album` |  |
 | `Sample panel` |  |
 | `Save parameters` |  |
-| `Saving…` |  |
 | `Soft glass` |  |
 | `Starting styles` |  |
 | `Strong lens` |  |
@@ -1185,7 +1242,6 @@ you are actually typing into, which is easier than reading it here.
 | String | What it is |
 | --- | --- |
 | `{n} hours` |  |
-| `{n} seconds` |  |
 | `A session counts after 30 seconds, or half of a shorter song.` |  |
 | `All-time most played` |  |
 | `Couldn't play` |  |
@@ -1607,7 +1663,6 @@ you are actually typing into, which is easier than reading it here.
 | --- | --- |
 | `How far into a song it counts as played. Whichever of the two comes first.` | At the top of the `Scrobbling` screen, over the two rows below it |
 | `Part of the song` | How much of a song must have played before it counts, as a percentage. One of the two scrobble rules, and it can be `Off` |
-| `Restore defaults` | Button at the end of the `Scrobbling` screen, putting both rules back to what they came as |
 | `Scrobbling` | Reporting a song as played, to the user's own server and from there to Last.fm or ListenBrainz. The title of its own screen and the row that opens it. The word comes from Last.fm and most languages keep it; use whatever those services call it in yours if they do |
 | `Time played` | How long a song must have played before it counts, as a time. The other scrobble rule, and it can be `Off` too. Whichever of the two comes first is the one that counts |
 | `With both off nothing is reported, not even to your own server.` | Shown only when both scrobble rules are `Off`, since that also stops the play counts on the user's own server |
@@ -1650,7 +1705,6 @@ you are actually typing into, which is easier than reading it here.
 
 | String | What it is |
 | --- | --- |
-| `{n} seconds` |  |
 | `Analysis status` |  |
 | `Analyze current song` |  |
 | `Analyzing audio edges…` |  |
@@ -1766,13 +1820,12 @@ you are actually typing into, which is easier than reading it here.
 | String | What it is |
 | --- | --- |
 | `“{name}” will no longer be available offline.` | The line under that title. `{name}` is the album, artist or playlist |
-| `{episodes} will be saved to this device ({duration}).` |  |
-| `{episodes} will be saved to this device.` |  |
 | `{n} columns` | The other options in that menu: cards, this many across. `{n}` is 2, 3 or 4, so it is always plural |
 | `{n} minutes` | A value of the sleep timer, in minutes from now |
 | `{n} of {m} songs exported` | Toast when only some of them made it |
 | `{n} of {songs}` |  |
 | `{n} removed from favorites` | Toast. `{n}` is a count of songs |
+| `{n} seconds` |  |
 | `{n} selected` | How many songs are ticked right now |
 | `{n} songs couldn't be downloaded` | Toast: some failed, the rest are there |
 | `{n} songs deleted` | Toast after deleting downloads. `{n}` is how many files went |
@@ -1791,7 +1844,7 @@ you are actually typing into, which is easier than reading it here.
 | `Added to queue` | The toast that says it worked |
 | `Album` | In search results, the little word under a result saying what kind of thing it is |
 | `Albums` | A heading over a list of them, never a count |
-| `All episodes are already downloaded.` |  |
+| `All episodes marked as played.` |  |
 | `Alphabetical` | Sort option: the order of a list |
 | `Artist` | In search results, the little word under a result saying what kind of thing it is |
 | `Ascending` | Sort option: the order of a list |
@@ -1804,13 +1857,15 @@ you are actually typing into, which is easier than reading it here.
 | `Columns` | The same menu's title on a screen that has no list to switch to, so all it chooses is the density |
 | `Condensed` | A narrow typeface option in Settings › Font, not a condensed list layout |
 | `Connect to Wi-Fi to download` | Toast: downloading over mobile data is turned off in the settings |
+| `Continuous playback` |  |
 | `Could not connect to the server` |  |
 | `Couldn't add to the playlist` | Toast: the server refused |
 | `Couldn't complete the action` | What the app says when it does not know what went wrong. Deliberately vague |
 | `Couldn't load albums.` | Error on the screen, with a Retry button |
+| `Couldn't load podcast settings.` |  |
 | `Couldn't load songs.` | Error on the screen, with a Retry button |
-| `Couldn't load this podcast.` |  |
 | `Couldn't play the song` | Toast: the app could not start it at all |
+| `Couldn't save podcast settings.` |  |
 | `Create` | The confirm button of the new-playlist dialog. A verb |
 | `Created playlist not found` |  |
 | `Default` | Sorting pill: what you get when nothing is sorted, which is the order the server keeps its songs in. Not alphabetical, and not Resonus deciding. On a playlist it is the order the list came in, which is the one you made by dragging the songs if it is an ordinary playlist and the one its rules produced if it is a smart one — hence a word that is true of both rather than "custom" or "pre-defined" |
@@ -1823,13 +1878,12 @@ you are actually typing into, which is easier than reading it here.
 | `Download` | The confirm button of the download dialog, and what the screen reader calls the download button. A verb |
 | `Download “{name}”?` | Dialog title. `{name}` is an album, artist or playlist |
 | `Download episode` |  |
-| `Download episodes` |  |
 | `Download new episodes` |  |
 | `Download stopped` | Toast: the download was stopped part way |
 | `Downloaded audio will be removed. Your shows, favorites and listening progress are kept.` |  |
 | `Downloading…` | Toast: the download has started. The songs arrive one by one after this |
 | `Drag to reorder, toggle to show or hide.` |  |
-| `Duration excludes episodes with unknown length.` |  |
+| `Episode details` |  |
 | `Episode notes` |  |
 | `Export` | Get the downloaded file itself out of the app, as a file. Not the same as `Share`, which makes a link on the server |
 | `Exporting…` | The file is being copied out |
@@ -1844,8 +1898,10 @@ you are actually typing into, which is easier than reading it here.
 | `Lyric sources` |  |
 | `Lyrics` | The words of the song. Also a line of the storage bar, where it is their size on the phone |
 | `Manage playlists` |  |
+| `Mark all as played` |  |
 | `Mark as played` |  |
 | `Mark as unplayed` |  |
+| `Mark every episode in this show as played? Downloaded audio is kept.` |  |
 | `Mix of “{name}”` | What the player calls the queue once it has grown past its album into songs the app picked itself. `{name}` is the song it was grown from |
 | `Monospace` | A typeface whose characters all have the same width, in Settings › Font |
 | `More` | A "see more" action, and the third button of the selection bar, the one that opens the rest of what it can do |
@@ -1867,11 +1923,13 @@ you are actually typing into, which is easier than reading it here.
 | `Pink` |  |
 | `Play` | Read out by the screen reader for the play button. A verb |
 | `Play next` | Action: put this song right after the one playing, without clearing the rest |
+| `Play the next episode when this one ends.` |  |
 | `Playback speed` |  |
 | `Playing next` | The toast that says `Play next` worked. Not the same string, and not a heading |
 | `Playlist changed. Reopen it and try again.` |  |
 | `Playlist name` | The name field when making or renaming a playlist |
 | `Playlists` | A section on Home and in the library, and a folder in the car |
+| `Podcast settings` |  |
 | `Queue` | The list of songs waiting to play. Not a playlist |
 | `Rate {n} stars` | Read out by the screen reader for each star. `{n}` is which star it is |
 | `Read-only playlist` |  |
@@ -1884,8 +1942,10 @@ you are actually typing into, which is easier than reading it here.
 | `Remove from favorites` | The same button when it is already a favourite, and the menu entry that takes a whole selection out |
 | `Removed from favorites` | Toast |
 | `Reorder` | Enter drag-to-reorder mode |
+| `Restore defaults` | Button at the end of the `Scrobbling` screen, putting both rules back to what they came as |
 | `Retry` | The button on an error message: try again. A verb |
 | `Save` | The confirm button of an edit sheet. A verb |
+| `Saving…` |  |
 | `Search` | The search tab, and the action of searching |
 | `Select all` | Tick every song in the list at once |
 | `Serif` | A typeface with small strokes at the ends of letters, in Settings › Font |
@@ -1896,6 +1956,8 @@ you are actually typing into, which is easier than reading it here.
 | `Show less` | Folds it back |
 | `Show more` | Unfolds the rest of a text that was cut short |
 | `Shuffle` | Play in random order |
+| `Skip intro` |  |
+| `Skip outro` |  |
 | `Sleep timer` | Stop playing after a while, for falling asleep to |
 | `Song downloaded` | Toast: one song finished |
 | `Songs` | Always a heading, never a count, so it wants the plain plural your language uses for a list of them ("Songs", not "of songs"). Counting songs is a different thing and goes through the plural forms |

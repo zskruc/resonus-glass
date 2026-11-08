@@ -104,6 +104,24 @@ test('queued database commits recheck the ownership predicate after waiting', as
   assert.equal(Object.keys(await h.Db.listDownloads('a')).length, 0);
 });
 
+test('bulk played marks use one transaction, retain audio, and roll back every mark on cancellation', async () => {
+  const h = databaseHarness();
+  await h.Db.saveChannel('a', { id: 'show', title: 'Show', feedUrl: 'https://feed.test/rss' });
+  await h.Db.replaceEpisodes('a', 'show', [{ id: 'one', channelId: 'show', title: 'One', url: 'https://audio.test/one.mp3' }]);
+  await h.Db.saveEpisodeProgress('a', { id: 'one', channelId: 'show', positionSec: 20, durationSec: 300 });
+  await h.Db.saveDownload('a', { id: 'one', channelId: 'show' }, 'file:///one.mp3', 42);
+  const episodes = [{ id: 'one', channelId: 'show', durationSec: 300 }, { id: 'two', channelId: 'show', durationSec: 0 }];
+  let checks = 0;
+  await assert.rejects(h.Db.markManyPlayed('a', episodes, () => ++checks < 3));
+  assert.equal((await h.Db.getEpisodeProgress('a', 'one')).positionSec, 20);
+  assert.equal(await h.Db.getEpisodeProgress('a', 'two'), undefined);
+  await h.Db.markManyPlayed('a', episodes, () => true);
+  assert.equal((await h.Db.getEpisodeProgress('a', 'one')).positionSec, 300);
+  assert.equal((await h.Db.getEpisodeProgress('a', 'two')).positionSec, 1);
+  assert.equal((await h.Db.listDownloads('a')).one, 'file:///one.mp3');
+  assert.equal(await h.Db.getEpisodeProgress('b', 'one'), undefined);
+});
+
 test('podcast resume treats short clips, unknown duration and invalid values safely', () => {
   assert.equal(episodePlayed(0, 20), false);
   assert.equal(episodePlayed(18, 20), true);
@@ -215,7 +233,8 @@ test('manual progress marking and account change prevent old player reads/ticks 
   const h = databaseHarness();
   let owner = 'one';
   const query = { queryClient: { invalidateQueries: async () => {} } };
-  const M = compile('../src/lib/podcastProgress.ts', { '@/store/auth': { profileScopeId: () => owner }, './localLibrary': { hashKey: hash }, './query': query,
+  const auth = createStore(() => ({ auth: { username: owner }, offline: false }));
+  const M = compile('../src/lib/podcastProgress.ts', { '@/store/auth': { profileScopeId: () => owner, useAuthStore: auth }, './localLibrary': { hashKey: hash }, './query': query,
     './podcastDb': h.Db, './episodeResume': { episodeResumeAt } });
   const song = { id: 'ep', podcastChannelId: 'show', duration: 300 };
   const version = M.podcastProgressVersion(song, owner);
@@ -231,6 +250,8 @@ test('manual progress marking and account change prevent old player reads/ticks 
   assert.equal(await h.Db.getEpisodeProgress(hash(owner), 'ep'), undefined);
   assert.equal((await h.Db.getEpisodeProgress(hash('one'), 'ep')).positionSec, 300);
   owner = 'one';
+  auth.setState({ auth: { username: 'two' } }); auth.setState({ auth: { username: 'one' } });
+  assert.equal(M.ownsPodcastProgress(song, owner, markedVersion), false, 'account ABA invalidates the old playback owner');
   const oldToken = M.podcastProgressVersion(song, owner);
   for (let n = 0; n < 600; n++) M.podcastProgressVersion({ id: `unrelated-${n}`, podcastChannelId: 'other' }, owner);
   assert.equal(M.ownsPodcastProgress(song, owner, oldToken), false, 'bounded eviction must never restore a previously valid token');

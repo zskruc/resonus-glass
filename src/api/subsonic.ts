@@ -2000,6 +2000,9 @@ export interface PodcastChannel {
   id: string;
   title: string;
   description?: string;
+  /** The publisher's optional rich description; rendered without a WebView. */
+  descriptionHtml?: string;
+  showType?: 'episodic' | 'serial';
   author?: string;
   imageUrl?: string;
   /** The channel's own web page, not the feed file. */
@@ -2021,6 +2024,21 @@ export interface PodcastChannel {
   error?: string;
 }
 
+export interface PodcastChapter {
+  /** Seconds from the beginning of this episode. */
+  startSec: number;
+  title: string;
+  endSec?: number;
+  url?: string;
+  imageUrl?: string;
+}
+export interface PodcastTranscript {
+  url: string;
+  type?: string;
+  language?: string;
+  rel?: string;
+}
+
 /** One episode of a podcast. */
 export interface PodcastEpisode {
   /** Prefixed with its channel id: guids collide across feeds. */
@@ -2028,9 +2046,16 @@ export interface PodcastEpisode {
   channelId: string;
   title: string;
   description?: string;
+  descriptionHtml?: string;
   /** Publication date, in ms since the epoch. */
   publishedAt?: number;
   episode?: number;
+  season?: number;
+  episodeType?: 'full' | 'trailer' | 'bonus';
+  chapters?: PodcastChapter[];
+  /** Podcasting 2.0 JSON chapters, fetched only after an explicit user action. */
+  chaptersUrl?: string;
+  transcripts?: PodcastTranscript[];
   /** First seen by this device, not the publisher's editable release date. */
   firstSeenAt?: number;
   /** Seconds. */

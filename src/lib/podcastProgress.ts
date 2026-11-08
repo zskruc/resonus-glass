@@ -1,7 +1,7 @@
 /** Profile-owned RSS progress. Native player integrations capture both owner
  * and version at load time; manual marking invalidates already queued ticks. */
 import type { Song } from '@/api/subsonic';
-import { profileScopeId } from '@/store/auth';
+import { profileScopeId, useAuthStore } from '@/store/auth';
 import { hashKey } from './localLibrary';
 import { queryClient } from './query';
 import * as Db from './podcastDb';
@@ -9,8 +9,13 @@ import { episodeResumeAt } from './episodeResume';
 
 const versions = new Map<string, number>();
 let sequence = 0;
+let ownerEpoch = 0;
 const writes = new Map<string, { position: number; duration: number; at: number }>();
 const key = (song: Song, owner: string) => `${owner}|${song.id}`;
+useAuthStore.subscribe((state, previous) => {
+  if (state.auth === previous.auth && (state.auth || state.offline === previous.offline)) return;
+  ownerEpoch++; versions.clear(); writes.clear();
+});
 
 export function podcastProgressVersion(song: Song, owner = profileScopeId()): number {
   const id = key(song, owner);
@@ -61,7 +66,24 @@ export async function markPodcastPlayed(song: Song, played: boolean): Promise<vo
   else await Db.clearEpisodeProgress(hashKey(owner), song.id, current);
   if (current()) {
     void queryClient.invalidateQueries({ queryKey: ['podcastPlayed'] });
+    void queryClient.invalidateQueries({ queryKey: ['podcastLibrary'] });
     void queryClient.invalidateQueries({ queryKey: ['podcastFavoriteChannels'] });
     void queryClient.invalidateQueries({ queryKey: ['podcastFavoriteEpisodes'] });
+  }
+}
+
+export async function markPodcastManyPlayed(songs: Song[]): Promise<void> {
+  const owner = profileScopeId(), epoch = ownerEpoch;
+  const episodes = songs.filter((song) => !!song.podcastChannelId).map((song) => {
+    const id = key(song, owner); versions.delete(id); versions.set(id, ++sequence); writes.delete(id);
+    return { id: song.id, channelId: song.podcastChannelId!, durationSec: song.duration || 1 };
+  });
+  while (versions.size > 512) versions.delete(versions.keys().next().value!);
+  const current = () => epoch === ownerEpoch && profileScopeId() === owner;
+  await Db.markManyPlayed(hashKey(owner), episodes, current);
+  if (current()) {
+    void queryClient.invalidateQueries({ queryKey: ['podcastPlayed'] });
+    void queryClient.invalidateQueries({ queryKey: ['podcastProgress'] });
+    void queryClient.invalidateQueries({ queryKey: ['podcastLibrary'] });
   }
 }
