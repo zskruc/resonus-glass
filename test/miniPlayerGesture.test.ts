@@ -85,7 +85,7 @@ function harness(presentation: 'amll' | 'resonus' = 'amll', amPlus = false) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   const exports: Record<string, any> = {};
-  runInNewContext(source, { exports, require(id: string) {
+  runInNewContext(source, { exports, require(id: string) { const customization = defaultCustomizationBoundary(id); if (customization) return customization;
     assert.ok(Object.hasOwn(dependencies, id), `Unexpected mini gesture import ${id}`); return dependencies[id];
   } });
   exports.MiniPlayer();
@@ -217,3 +217,4 @@ describe('real MiniPlayer Pan activation and axis ownership', () => {
     assert.equal(h.calls.back, 1);
   });
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

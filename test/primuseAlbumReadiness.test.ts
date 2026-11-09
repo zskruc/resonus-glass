@@ -51,7 +51,7 @@ function harness() {
     const exports: Record<string, any> = {};
     runInNewContext(ts.transpileModule(readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
-    }).outputText, { exports, setTimeout, clearTimeout, require(name: string) {
+    }).outputText, { exports, setTimeout, clearTimeout, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
       assert.ok(Object.hasOwn(imports, name), `Unexpected integration import ${name}`); return imports[name];
     } });
     return exports;
@@ -207,3 +207,4 @@ test('a permanently missing displayed cover cache stops after three local probes
     assert.equal(cacheCalls, 4, 'repeat image display and parent renders cannot retry indefinitely');
   } finally { await h.unmount(); }
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

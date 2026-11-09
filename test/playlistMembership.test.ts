@@ -22,7 +22,7 @@ function load(path: string, dependencies: Record<string, unknown>) {
   }).outputText;
   const exported: Record<string, any> = {};
   runInNewContext(output, { exports: exported, setTimeout, clearTimeout, __DEV__: false,
-    require(name: string) {
+    require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
       assert.ok(Object.hasOwn(dependencies, name), `Unexpected ${path} import ${name}`);
       return dependencies[name];
     } });
@@ -56,7 +56,8 @@ test('edit queue serializes the same playlist, releases failures, and does not b
 
 function harness(initial: string[] = ['a', 'b', 'a'], localApi: Record<string, unknown> = {}, allowReorder = false) {
   const originalAuth = { url: 'https://one.test', username: 'me' };
-  const state = { auth: originalAuth as typeof originalAuth | null, offline: false };
+  const state = { auth: originalAuth as typeof originalAuth | null, offline: false, offlineSource: undefined as unknown };
+  let libraryFilters = {};
   let profile = 'one';
   let tracklist = initial.map(song);
   let playlist: Playlist = { id: 'p', name: 'Test', owner: 'me' };
@@ -106,7 +107,7 @@ function harness(initial: string[] = ['a', 'b', 'a'], localApi: Record<string, u
     '@/lib/playlistMembership': rules,
     '@/lib/playlistReorderRules': reorderRules,
     '@/lib/localQueries': localApi,
-    '@/store/libraries': { enabledFolderIds: () => ['visible-library-only'] },
+    '@/store/libraries': { enabledFolderIds: () => ['visible-library-only'], useLibraries: { getState: () => ({ disabled: libraryFilters }) } },
   };
   for (const name of ['@/lib/localLibrary', '@/lib/perfLog', '@/lib/storage', '@/store/lastPlayed',
     '@/store/playHistory', './netGate', '@/lib/localLyrics', './navidrome', './subsonic', '@/lib/mediaCacheDb',
@@ -120,6 +121,7 @@ function harness(initial: string[] = ['a', 'b', 'a'], localApi: Record<string, u
     setAfterAdd: (value: typeof afterAdd) => { afterAdd = value; },
     setAfterRemove: (value: typeof afterRemove) => { afterRemove = value; },
     setProfile: (value: string) => { profile = value; },
+    setLibraryFilters: () => { libraryFilters = { changed: true }; },
   };
 }
 
@@ -389,4 +391,17 @@ test('failed local persistence rejects an automatic reorder and preserves the sa
   await assert.rejects(h.api.editPlaylistTracklist('lp_p', (ids: string[]) => ids.reverse(), () => true), /storage full/);
   assert.equal(h.storage.get('resonus.localPlaylists.local'), before);
   assert.deepEqual(plain((await h.api.playlistTracklists()).get('lp_p')), ['missing', 'a', 'x', 'a']);
+});
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';
+
+test('a playlist mutation cannot outlive a local-source or selected-library change', async () => {
+  for (const field of ['source', 'folders']) {
+    const h = harness(['a', 'b'], {}, true), pending = deferred<ReturnType<typeof h.snapshot>>();
+    h.setReader(() => pending.promise);
+    const task = h.api.reorderPlaylist('p', ['b', 'a'], ['a', 'b']); await tick();
+    if (field === 'source') h.state.offlineSource = { mode: 'folder', uris: ['content://new-source'] };
+    else h.setLibraryFilters();
+    pending.resolve(h.snapshot()); await assert.rejects(task, /profile changed/);
+    assert.equal(h.calls.some((call) => call.action === 'reorder'), false);
+  }
 });

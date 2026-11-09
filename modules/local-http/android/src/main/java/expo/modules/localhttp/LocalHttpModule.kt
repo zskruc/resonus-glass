@@ -1,5 +1,9 @@
 package expo.modules.localhttp
 
+import org.json.JSONArray
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -14,6 +18,9 @@ import expo.modules.kotlin.modules.ModuleDefinition
  */
 class LocalHttpModule : Module() {
   private var server: FileServer? = null
+  private val transferLock = Any()
+  private var transferForeground = true
+  private var transfer: TransferServer? = null
 
   override fun definition() = ModuleDefinition {
     Name("LocalHttp")
@@ -21,6 +28,51 @@ class LocalHttpModule : Module() {
     OnDestroy {
       server?.stop()
       server = null
+      synchronized(transferLock) { transferForeground = false; transfer?.stop(); transfer = null }
+    }
+
+    // Wi-Fi transfer is opt-in foreground work. Casting keeps its own lifetime.
+    OnActivityEntersForeground { synchronized(transferLock) { transferForeground = true } }
+    OnActivityEntersBackground { synchronized(transferLock) { transferForeground = false; transfer?.stop(); transfer = null } }
+
+    AsyncFunction("startTransfer") { promise: Promise ->
+      try {
+        val ctx = appContext.reactContext?.applicationContext ?: throw IllegalStateException("Application unavailable")
+        val address = AndroidTransferStorage.wifiAddress(ctx) ?: throw IllegalStateException("Connect to a Wi-Fi network first")
+        synchronized(transferLock) {
+          check(transferForeground) { "Keep the app in the foreground" }
+          val running = transfer ?: TransferServer(AndroidTransferStorage(ctx)).also { it.start(address) }
+          transfer = running
+          promise.resolve(running.statusJson())
+        }
+      } catch (e: Exception) { promise.reject("ERR_WIFI_TRANSFER", e.message ?: "Cannot start Wi-Fi transfer", e) }
+    }
+    AsyncFunction("transferStatus") {
+      val ctx = appContext.reactContext?.applicationContext
+      synchronized(transferLock) {
+      if (transfer != null && (ctx == null || !transfer!!.matchesAddress(AndroidTransferStorage.wifiAddress(ctx)))) { transfer?.stop(); transfer = null }
+      transfer?.statusJson() ?: "{\"running\":false,\"url\":null,\"files\":[],\"transfers\":[],\"uploads\":[],\"maxFileBytes\":536870912}" }
+    }
+    AsyncFunction("setTransferEntries") { json: String ->
+      val target = synchronized(transferLock) { transfer ?: throw IllegalStateException("Start Wi-Fi transfer first") }
+      val rows = JSONArray(json)
+      require(rows.length() <= 200) { "Select at most 200 files" }
+      val files = ArrayList<TransferFile>()
+      for (i in 0 until rows.length()) {
+        val row = rows.getJSONObject(i)
+        val uri = row.getString("uri")
+        val ctx = appContext.reactContext?.applicationContext ?: throw IllegalStateException("Application unavailable")
+        val bytes = AndroidTransferStorage(ctx).open(uri).use { it.size }
+        files.add(TransferFile(row.getString("key"), uri, row.getString("name"), row.optString("mime", "application/octet-stream"), bytes))
+      }
+      synchronized(transferLock) { check(transferForeground && transfer === target) { "Transfer session ended" }; target.setEntries(files) }
+    }
+    AsyncFunction("stopTransfer") { synchronized(transferLock) { transfer?.stop(); transfer = null } }
+    Function("copyTransferAddress") {
+      val ctx = appContext.reactContext
+      val address = synchronized(transferLock) { transfer?.origin() }
+      val clipboard = ctx?.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+      if (address != null && clipboard != null) { clipboard.setPrimaryClip(ClipData.newPlainText("Resonus Glass Wi-Fi transfer", address)); true } else false
     }
 
     /**

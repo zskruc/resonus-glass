@@ -5,6 +5,12 @@
  */
 import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
+import { router } from 'expo-router';
+import { useDiscoveryPreferences } from '@/store/discoveryPreferences';
+import { MediaCollectionFilter, matchesMediaCollection, type CollectionFilter } from '@/components/discovery/MediaCollectionFilter';
+import { isManualOffline } from '@/api/netGate';
+import { publicStreamUrl } from '@/lib/discoveryPreferences';
+import { captureLyricOwner } from '@/lib/lyricOwner';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -38,7 +44,7 @@ import { useT } from '@/i18n';
 import { useAppleMusicStyle } from '@/hooks/useAppleMusicStyle';
 import { appleMusicStyles } from '@/theme/appleMusic';
 import { queryClient } from '@/lib/query';
-import { useAuthStore } from '@/store/auth';
+import { profileScopeId, useAuthStore } from '@/store/auth';
 import { MAX_PINS, usePins } from '@/store/pins';
 import { currentSong, usePlayerStore } from '@/store/player';
 import { useToast } from '@/store/toast';
@@ -59,7 +65,11 @@ export default function RadioScreen() {
   return <RadioBrowser />;
 }
 
-export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) {
+export function RadioBrowser(props: BrowserProps) {
+  useAuthStore((state) => state.auth); useAuthStore((state) => state.offlineSource);
+  return <RadioBrowserContent key={profileScopeId()} {...props} />;
+}
+function RadioBrowserContent({ embedded, actionRef, searchOpen }: BrowserProps) {
   const appleMusic = useAppleMusicStyle();
   const dockScroll = useLiquidDockScrollHandler();
   // Repaints on a change of appearance or accent: a stack keeps this screen
@@ -69,6 +79,9 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
   // Rows stop growing at a reading measure and centre themselves (#131).
   const listPad = useListPadding(spacing.lg);
   const t = useT();
+  const local = useDiscoveryPreferences();
+  const owns = captureLyricOwner(local.profile);
+  const [collection, setCollection] = useState<CollectionFilter>({});
   const auth = useAuthStore((s) => s.auth);
   const offline = useAuthStore((s) => s.offline);
   const playQueue = usePlayerStore((s) => s.playQueue);
@@ -82,7 +95,7 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
 
   // `editForm` holds the open form (new or edit); `menu` the row with the
   // actions menu open; `deleting` the one awaiting confirmation.
-  const [editForm, setEditForm] = useState<{ station: RadioStation | null } | null>(null);
+  const [editForm, setEditForm] = useState<{ station: RadioStation | null; local?: boolean } | null>(null);
   const [menu, setMenu] = useState<RadioStation | null>(null);
   const [deleting, setDeleting] = useState<RadioStation | null>(null);
   const [query, setQuery] = useState('');
@@ -90,9 +103,9 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
   const togglePin = usePins((s) => s.toggle);
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
-    queryKey: ['radioStations'],
-    queryFn: () => getRadioStations(auth!),
-    enabled: !!auth,
+    queryKey: ['radioStations', local.profile],
+    queryFn: async () => { const owner = captureLyricOwner(local.profile); const values = await getRadioStations(auth!); if (!owner()) throw new Error('Profile changed'); return values; },
+    enabled: !!auth && !offline && auth.serverType !== 'jellyfin',
   });
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['radioStations'] });
@@ -105,18 +118,17 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
    */
   const stations = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const matches = q
-      ? (data ?? []).filter((s) => s.name.toLowerCase().includes(q))
-      : (data ?? []);
+    const all = [...local.data.stations, ...(data ?? [])].filter((station) => matchesMediaCollection(local.data, `radio:${station.id}`, collection));
+    const matches = q ? all.filter((s) => s.name.toLowerCase().includes(q)) : all;
     const pinnedFirst = matches
       .filter((s) => pins[`radio:${s.id}`])
       .sort((a, b) => pins[`radio:${a.id}`] - pins[`radio:${b.id}`]);
     return [...pinnedFirst, ...matches.filter((s) => !pins[`radio:${s.id}`])];
-  }, [data, query, pins]);
+  }, [data, query, pins, local.data, collection]);
 
   // A handful of stations is read at a glance, and a search box over three rows
   // is furniture. It appears once the list is long enough to be scanned.
-  const showSearch = (data?.length ?? 0) > SEARCH_FROM;
+  const showSearch = (data?.length ?? 0) + local.data.stations.length > SEARCH_FROM;
 
   // Embedded the tab's magnifier is what asks for the box, and then the count
   // is beside the point: it is there because it was asked for.
@@ -124,7 +136,17 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
 
   async function saveStation(changes: RadioEdit, pendingCoverUri?: string) {
     const station = editForm?.station ?? null;
+    const localOnly = editForm?.local || station?.id.startsWith('localradio:');
     setEditForm(null);
+    if (!owns()) return;
+    if (localOnly) {
+      const streamUrl = publicStreamUrl(changes.streamUrl);
+      if (!streamUrl || !changes.name.trim()) { toast(t("Couldn't complete the action")); return; }
+      const value = { id: station?.id ?? `localradio:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name: changes.name.trim(), streamUrl, homePageUrl: publicStreamUrl(changes.homePageUrl) };
+      const saved = await local.change((preferences) => ({ ...preferences, stations: [...preferences.stations.filter((item) => item.id !== value.id), value] }));
+      if (!saved && owns()) toast(t('Could not save changes. Please try again.'));
+      return;
+    }
     try {
       if (station) {
         await updateRadioStation(
@@ -159,7 +181,12 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
   async function confirmDelete() {
     const station = deleting;
     setDeleting(null);
-    if (!station) return;
+    if (!station || !owns()) return;
+    if (station.id.startsWith('localradio:')) {
+      await local.change((preferences) => ({ ...preferences, stations: preferences.stations.filter((item) => item.id !== station.id), assignments: Object.fromEntries(Object.entries(preferences.assignments).filter(([key]) => key !== `radio:${station.id}`)) }));
+      if (owns()) usePins.getState().unpin(`radio:${station.id}`);
+      return;
+    }
     try {
       await deleteRadioStation(auth!, station.id);
       usePins.getState().unpin(`radio:${station.id}`);
@@ -195,6 +222,11 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
         </View>
       )}
 
+      <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: listPad, marginBottom: 12 }}>
+        <GlassPressable onPress={() => router.push('/radio-discover')} style={{ paddingVertical: 10, paddingHorizontal: 14, borderRadius: 18, backgroundColor: colors.surfaceHighlight }}><Text style={{ color: colors.accent }}>{t('Discover radio')}</Text></GlassPressable>
+        <GlassPressable onPress={() => setEditForm({ station: null, local: true })} style={{ paddingVertical: 10, paddingHorizontal: 14 }}><Text style={{ color: colors.accent }}>{t('Add local station')}</Text></GlassPressable>
+      </View>
+      <MediaCollectionFilter kind="radio" value={collection} onChange={setCollection} />
       {(embedded ? boxOpen : showSearch) ? (
         <View collapsable={false} style={styles.searchBar}>
           <GlassBackdrop radius={radius.pill} tint={colors.surfaceHighlight} variant="regular" />
@@ -217,9 +249,9 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
         </View>
       ) : null}
 
-      {isLoading ? (
+      {isLoading && !local.data.stations.length ? (
         <ActivityIndicator style={{ marginTop: spacing.xl }} color={colors.accent} />
-      ) : isError ? (
+      ) : isError && !local.data.stations.length ? (
         <Message text={t("Couldn't load radio stations.")} onRetry={() => refetch()} />
       ) : (
         <Animated.FlatList
@@ -242,7 +274,7 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
             return (
               <Pressable
                 style={styles.row}
-                onPress={() =>
+                onPress={() => { if (!owns() || isManualOffline()) return;
                   playQueue(
                     [
                       {
@@ -250,18 +282,18 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
                         title: item.name,
                         url: item.streamUrl,
                         artist: t('Radio'),
-                        coverArt: item.coverArt,
+                        coverArt: 'imageUrl' in item ? item.imageUrl as string : item.coverArt,
                       },
                     ],
                     0,
                     item.name,
                     '/radio',
-                  )
-                }
+                  );
+                }}
                 onLongPress={() => setMenu(item)}
               >
                 <Cover
-                  uri={coverArtUrl(item.coverArt, COVER.thumb)}
+                  uri={'imageUrl' in item ? item.imageUrl as string : coverArtUrl(item.coverArt, COVER.thumb)}
                   size={52}
                   rounded
                   placeholderIcon="radio"
@@ -321,7 +353,7 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
             : EMPTY_EDIT
         }
         coverId={canEditCover ? editForm?.station?.id : undefined}
-        coverEditable={canEditCover}
+        coverEditable={canEditCover && !editForm?.local && !editForm?.station?.id.startsWith('localradio:')}
         serverCoverUri={coverArtUrl(editForm?.station?.coverArt, COVER.card)}
         onCancel={() => setEditForm(null)}
         onSave={(changes, pendingCoverUri) => void saveStation(changes, pendingCoverUri)}
@@ -358,7 +390,7 @@ export function RadioBrowser({ embedded, actionRef, searchOpen }: BrowserProps) 
                   {menu && pins[`radio:${menu.id}`] ? t('Unpin') : t('Pin to top')}
                 </Text>
               </Pressable>
-              {canManage ? (
+              {canManage || menu?.id.startsWith('localradio:') ? (
                 <>
                   <Pressable
                     style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}

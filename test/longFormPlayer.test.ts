@@ -57,6 +57,7 @@ function harness() {
     },
     podcastFile: () => 'file:///episode.mp3', AppState: { addEventListener: (_name: string, listener: (state: string) => void) => { appEvent = listener; return { remove: noop }; } },
     loadToken: 0, endBootQuiet: noop, cutCrossfade: noop, pendingSeek: null, setStreamOffset: noop,
+    rememberListeningState: noop, currentListeningSource: () => undefined, sessionSpace: () => 'music', chapterStoppedLoad: -1, listeningIntent: 0, listeningCheckpointEnabled: false,
     sourceHasLength: null, scrobbledThisTrack: false, consumeQueuedOnIndexChange: noop, remoteKind: () => null,
     ensureAudioMode: async () => {}, localSourceFor: () => 'file:///book.mp3', ensurePlayer: () => native, activePlayer: () => native, activeIdx: 0,
     useEqualizer: { getState: () => ({ attach: noop }) }, replaceSource: (_player: unknown, source: { uri: string }) => {

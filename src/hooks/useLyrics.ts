@@ -10,7 +10,8 @@
  * card appears instantly when opening the player.
  */
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
+import { editedLyrics, useLocalLyricEdit } from './useLocalLyricEdit';
 
 import { getSongLyrics } from '@/api/data';
 import type { Song, SubsonicAuth } from '@/api/backend';
@@ -43,15 +44,25 @@ export function useLyrics(song?: Song) {
   useAuthStore((s) => s.offline);
   const profile = profileScopeId();
   const source = useSettings((s) => s.lyricsSource);
+  const edit = useLocalLyricEdit(song);
   const offset = useLyricOffsets((s) => s.profile === profile ? normalizeLyricOffset(s.offsets[song?.id ?? '']) : 0);
   useEffect(() => { void useLyricOffsets.getState().hydrate(profile); }, [profile]);
-  const select = useCallback((lyrics: Awaited<ReturnType<typeof getSongLyrics>>) => shiftSongLyrics(lyrics, offset), [offset]);
+  const select = useCallback((lyrics: Awaited<ReturnType<typeof getSongLyrics>>) => ({
+    source: lyrics, unshifted: editedLyrics(lyrics, edit.data) ?? null,
+    display: shiftSongLyrics(editedLyrics(lyrics, edit.data) ?? null, offset),
+  }), [offset, edit.data]);
   const enabled = canFetch(song, auth);
-  return useQuery({
+  const query = useQuery({
     ...lyricsQueryOptions(song ?? ({ id: '' } as Song), source, profile),
     select,
-    enabled,
+    enabled: enabled && !edit.isPending && !edit.data,
   });
+  const edited = edit.data?.lyrics;
+  const editedDisplay = useMemo(() => edited ? shiftSongLyrics(edited, offset) : undefined, [edited, offset]);
+  return { ...query, data: edited ? editedDisplay : query.data?.display,
+    isPending: enabled && (edit.isPending || !edited && query.isPending), isError: !edited && query.isError,
+    sourceLyrics: query.data?.source ?? edit.data?.base, unshiftedLyrics: edited ?? query.data?.unshifted,
+    localEdit: edit.data, localEditPending: edit.isPending, localEditError: edit.isError, customizationScope: edit.scope };
 }
 
 /** Prefetches the lyrics in the background (when the song starts playing). */

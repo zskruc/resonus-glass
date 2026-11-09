@@ -87,6 +87,8 @@ export default function AppearanceSettings() {
   return (
     <SettingsPage title={t('Appearance')}>
       <DockScrollView contentContainerStyle={settingsStyles.content}>
+        <SettingRow label={t('Home and search layouts')} onPress={() => router.push('/settings/discovery-layout')} />
+        <SettingRow label={t('Lyric language fonts')} onPress={() => router.push('/settings/lyric-fonts')} />
         <Text style={settingsStyles.sectionTitle}>{t('UI style')}</Text>
         <SelectList<UiStyle>
           collapsible={false}

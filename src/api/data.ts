@@ -20,6 +20,7 @@ import {
   profileKeyOf,
   readAlbumCache,
   writeAlbumCache,
+  useLibraries,
 } from '@/store/libraries';
 import { hashKey, localCoverSize } from '@/lib/localLibrary';
 import { bump } from '@/lib/perfLog';
@@ -44,6 +45,7 @@ import { captureLyricOwner } from '@/lib/lyricOwner';
 import { ownedLyricAudioUri } from '@/lib/lyricAudioUri';
 import * as FileSystem from 'expo-file-system/legacy';
 import { withSpeculativeSlot } from '@/lib/netBudget';
+import { sourceSong } from '@/lib/sourceSongMetadata';
 
 function isOffline() { return useAuthStore.getState().offline; }
 function auth() { return useAuthStore.getState().auth!; }
@@ -1746,6 +1748,7 @@ export async function getSongLyrics(
   source: LyricsSource,
   options: { strict?: boolean; stillCurrent?: () => boolean; /** The batch caller owns the durable cache read/write. */ cache?: 'caller' } = {},
 ): Promise<Subsonic.SongLyrics | null> {
+  song = sourceSong(song);
   const owner = useAuthStore.getState().auth;
   const scope = profileScopeId();
   const owns = captureLyricOwner(scope);
@@ -2185,7 +2188,9 @@ function playlistEditContext() {
   const owner = useAuthStore.getState().auth;
   const profile = profileScopeId();
   const offline = isOffline();
-  const current = () => useAuthStore.getState().auth === owner && profileScopeId() === profile && isOffline() === offline;
+  const source = useAuthStore.getState().offlineSource, folders = useLibraries.getState().disabled;
+  const current = () => useAuthStore.getState().auth === owner && profileScopeId() === profile && isOffline() === offline
+    && useAuthStore.getState().offlineSource === source && useLibraries.getState().disabled === folders;
   const check = () => { if (!current()) throw new Error('Playlist profile changed'); };
   return { owner, profile, offline, current, check };
 }
@@ -2671,4 +2676,41 @@ async function mergedAlbumPage(
     writeAlbumCache(cacheKey, all);
   }
   return all.slice(offset, offset + size);
+}
+
+/** Explicit recovery inserts, guarded by the exact fresh playlist sequence. Never removes current music. */
+export async function insertRecoveredPlaylistTracks(id: string, insertions: { before: number; song: Song }[], expectedSongIds: string[], stillCurrent: () => boolean = () => true): Promise<Song[]> {
+  const original = playlistEditContext();
+  const context = { ...original, current: () => original.current() && stillCurrent(),
+    check: () => { original.check(); if (!stillCurrent()) throw new Error('Recovery was cancelled'); } };
+  const { PlaylistEditQueue } = await import('@/lib/playlistMembership');
+  const { samePlaylistSequence } = await import('@/lib/playlistReorderRules');
+  playlistEditQueue ??= new PlaylistEditQueue();
+  return playlistEditQueue.run(JSON.stringify([context.profile, id]), async () => {
+    context.check(); const detail = await getPlaylistForEditing(id); context.check();
+    if (!samePlaylistSequence(detail.songs.map((s) => s.id), expectedSongIds)) throw new Error('Playlist changed. Reopen it and try again.');
+    if (!insertions.length || expectedSongIds.length + insertions.length > 10000 || insertions.some((r) => !Number.isInteger(r.before)
+      || r.before < 0 || r.before > detail.songs.length || !r.song.id || !canGoIntoPlaylist(r.song))) throw new Error('Invalid recovery insertion');
+    // Resolve selected IDs once more against the active source rather than trusting a file's metadata.
+    const resolved = await resolveSongs([...new Set(insertions.map((r) => r.song.id))]); context.check();
+    if (insertions.some((r) => !resolved.has(r.song.id))) throw new Error('A selected song is no longer available');
+    const buckets = new Map<number, Song[]>();
+    for (const row of insertions) { const values = buckets.get(row.before) ?? []; values.push(resolved.get(row.song.id)!); buckets.set(row.before, values); }
+    const songs: Song[] = [];
+    for (let i = 0; i <= detail.songs.length; i++) { songs.push(...buckets.get(i) ?? []); if (i < detail.songs.length) songs.push(detail.songs[i]); }
+    const ids = songs.map((s) => s.id); context.check();
+    if (context.offline) {
+      if (!context.owner) await Local.editPlaylistTracklist(id, (actual) => { context.check(); if (!samePlaylistSequence(actual, expectedSongIds)) throw new Error('Playlist changed. Reopen it and try again.'); return ids; }, context.current);
+      else { useOfflineQueue.getState().rememberSongs(songs); useOfflineQueue.getState().setPlaylist(id, { songIds: ids }); }
+    } else {
+      // A second fresh read closes the metadata-resolution interval before writing.
+      const latest = await Subsonic.getPlaylist(context.owner!, id); context.check();
+      if (!canEditPlaylist(latest.playlist) || !samePlaylistSequence(latest.songs.map((s) => s.id), expectedSongIds)) throw new Error('Playlist changed. Reopen it and try again.');
+      await Subsonic.reorderPlaylist(context.owner!, id, ids); context.check();
+      const verified = await Subsonic.getPlaylist(context.owner!, id); context.check();
+      if (!samePlaylistSequence(verified.songs.map((s) => s.id), ids)) throw new Error('Playlist changed. Reopen it and try again.');
+    }
+    context.check(); savePickerTracklist(id, detail.playlist, songs, context.current);
+    return songs;
+  });
 }

@@ -7,6 +7,7 @@ import Animated from 'react-native-reanimated';
 import { COVER, songCoverUrl, star } from '@/api/data';
 import { type Song } from '@/api/subsonic';
 import { useFavoriteIds } from '@/hooks/useFavoriteIds';
+import { useDisplaySong } from '@/hooks/useLocalMetadata';
 import { formatDuration } from '@/lib/format';
 import { applyStarChange, resyncFavorites, unstarWithUndo } from '@/lib/favoritesCache';
 import { useAuthStore } from '@/store/auth';
@@ -125,6 +126,7 @@ function TrackRowBase({
   onPress,
   onPressIn,
 }: Props) {
+  const displayed = useDisplaySong(song);
   bump('render · TrackRow');
   const openMenu = useSongMenu((s) => s.open);
   const t = useT();
@@ -328,9 +330,9 @@ function TrackRowBase({
             pagePalette && { color: pagePalette.text }, isCurrent && { color: accent }]}
           numberOfLines={1}
         >
-          {song.title}
+          {displayed.title}
         </Text>
-        {downloaded || explicit || song.artist ? (
+        {downloaded || explicit || displayed.artist ? (
           <View style={styles.subRow}>
             {downloaded ? (
               <Icon name="arrow-down-circle" size={13} color={accent} />
@@ -339,10 +341,10 @@ function TrackRowBase({
                 is about the track, and an artist name long enough to be cut
                 would take the badge off the row with it. */}
             <ExplicitBadge status={song.explicitStatus} />
-            {song.artist ? (
+            {displayed.artist ? (
               <Text style={[styles.artist, appleMusic && appleMusicStyles.rowSubtitle,
                 pagePalette && { color: pagePalette.textSecondary }]} numberOfLines={1}>
-                {song.artist}
+                {displayed.artist}
               </Text>
             ) : null}
           </View>

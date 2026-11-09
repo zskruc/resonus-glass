@@ -62,7 +62,7 @@ function harness() {
   const source = readFileSync(new URL('../src/hooks/useVoltaArtistArtwork.ts', import.meta.url), 'utf8');
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } });
   const exports: Record<string, any> = {};
-  runInNewContext(compiled.outputText, { exports, require(name: string) {
+  runInNewContext(compiled.outputText, { exports, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
     if (name === 'react') return react;
     if (name === '@/api/data') return { CACHED_COVER: 'cached-cover:' };
     if (name === '@/store/auth') return { profileScopeId: () => profile,
@@ -360,3 +360,4 @@ describe('atomic static artist artwork preparation', () => {
     h.resolve('file:///failed.jpg', sample('late')); await flush(); assert.equal(h.writes(), writes);
   });
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

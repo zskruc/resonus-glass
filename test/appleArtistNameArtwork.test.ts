@@ -45,7 +45,7 @@ function compile(path: string, imports: Record<string, unknown>, globals: object
   const exports: Record<string, any> = {};
   runInNewContext(ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
-  }).outputText, { exports, URL, atob, ...globals, require(name: string) {
+  }).outputText, { exports, URL, atob, ...globals, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
     assert.ok(Object.hasOwn(imports, name), `Unexpected artist name dependency ${name}`); return imports[name];
   } });
   return exports;
@@ -270,3 +270,4 @@ it('a cached large logo has real React dimensions from its first layout and stay
   assert.equal(positioned.props.accessibilityRole, 'header'); assert.equal(positioned.props.accessible, true);
   assert.equal(overlay.props.style[1], opacity); assert.equal(measurements.length, 2);
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

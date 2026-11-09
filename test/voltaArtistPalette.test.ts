@@ -236,7 +236,7 @@ function hookHarness() {
   const source = readFileSync(new URL('../src/hooks/useVoltaArtistPalette.ts', import.meta.url), 'utf8');
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } });
   const exports: Record<string, any> = {};
-  runInNewContext(compiled.outputText, { exports, require(name: string) {
+  runInNewContext(compiled.outputText, { exports, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
     if (name === 'react') return react;
     if (name === '@/api/data') return { CACHED_COVER: 'cached-cover:', COVER: { thumb: 200 } };
     if (name === 'expo-image') return { Image: { async getCachePathAsync(uri: string) { cacheProbes.push(uri); return cachePaths.get(uri); } } };
@@ -312,3 +312,4 @@ describe('displayed-artist photo ownership', () => {
     assert.equal(h.writes(), writes);
   });
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

@@ -37,6 +37,9 @@ import { PodcastMenuSheet } from '@/components/PodcastMenuSheet';
 import { GlobalPlaylistPicker } from '@/components/PlaylistPickerSheet';
 import { GlobalShareSheet } from '@/components/ShareSheet';
 import { SongInfoSheet } from '@/components/SongInfoSheet';
+import { WidgetExtrasBridge } from '@/components/WidgetExtrasBridge';
+import { LyricsTypographyProvider } from '@/components/LyricsTypography';
+import { initListeningTools, useListeningTools } from '@/store/listeningTools';
 import { SongMenuSheet } from '@/components/SongMenuSheet';
 import { Toast } from '@/components/Toast';
 import { UpdatePrompt } from '@/components/UpdatePrompt';
@@ -243,6 +246,7 @@ export default function RootLayout() {
     initRemoteIntegration();
     initAudiobookProgressTracking();
     initShufflePreferences();
+    initListeningTools();
     // The widget, the Quick Settings tile and the launcher shortcuts.
     initHomeWidget();
     // The language in Android's per-app language setting, both ways.
@@ -275,6 +279,7 @@ export default function RootLayout() {
     // The song cache first: offline, what the restored queue can play is read
     // from both, and the queue waits on the downloads alone.
     const downloadsReady = authReady.then(async () => {
+      await useListeningTools.getState().load().catch(() => {});
       await useSongCache.getState().hydrate();
       await useDownloads.getState().hydrate();
       await usePodcastDownloads.getState().hydrate();
@@ -345,6 +350,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
       <QueryClientProvider client={queryClient}>
+        <LyricsTypographyProvider>
         <LiquidDockProvider>
         {/* The clock and the battery at the top, and the gesture pill or the
             buttons at the bottom, are painted by the system over our
@@ -434,6 +440,25 @@ export default function RootLayout() {
                 <Stack.Screen name="settings/glass" />
                 <Stack.Screen name="settings/home-chips" />
                 <Stack.Screen name="settings/home-sections" />
+                <Stack.Screen name="settings/music-tools" />
+                <Stack.Screen name="settings/wifi-transfer" />
+                <Stack.Screen name="settings/home-widgets" />
+                <Stack.Screen name="settings/pending-marks" />
+                <Stack.Screen name="widget-listening" />
+                <Stack.Screen name="settings/personal-backup" />
+                <Stack.Screen name="settings/playlist-recovery" />
+                <Stack.Screen name="settings/discovery-layout" />
+                <Stack.Screen name="settings/music-search" />
+                <Stack.Screen name="settings/local-customizations" />
+                <Stack.Screen name="settings/lyric-fonts" />
+                <Stack.Screen name="settings/listening-tools" />
+                <Stack.Screen name="settings/shuffle-links" />
+                <Stack.Screen name="settings/chapters" />
+                <Stack.Screen name="listening-intents" />
+                <Stack.Screen name="radio-discover" />
+                <Stack.Screen name="media-collections" />
+                <Stack.Screen name="lyric-editor" />
+                <Stack.Screen name="song-metadata" />
                 <Stack.Screen name="settings/equalizer" />
                 <Stack.Screen name="settings/scrobbling" />
                 <Stack.Screen name="settings/theme" />
@@ -505,6 +530,7 @@ export default function RootLayout() {
             {auth || offline ? <PlaybackColorWarmup /> : null}
             {auth || offline ? <ListeningStatsTracker /> : null}
             {auth || offline ? <LongAudioTracker /> : null}
+            <WidgetExtrasBridge />
             {auth || offline ? <CarAutoSync /> : null}
             {auth || offline ? <BatteryWarning /> : null}
             {/* Not behind the profile guard on a whim: the check reaches
@@ -516,6 +542,7 @@ export default function RootLayout() {
           </ErrorBoundary>
         )}
         </LiquidDockProvider>
+        </LyricsTypographyProvider>
       </QueryClientProvider>
     </GestureHandlerRootView>
   );

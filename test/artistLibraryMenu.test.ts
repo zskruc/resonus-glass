@@ -46,7 +46,7 @@ function harness() {
   const code = ts.transpileModule(readFileSync(new URL('../src/components/ArtistMenuSheet.tsx', import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
-  runInNewContext(code, { exports: exported, require(name: string) { assert.ok(name in dependencies, name); return dependencies[name]; } });
+  runInNewContext(code, { exports: exported, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization; assert.ok(name in dependencies, name); return dependencies[name]; } });
   function render() { cursor = 0; const sheet = exported.ArtistMenuSheet(); while (effects.length) effects.shift()!(); return sheet; }
   render(); exported.openArtistMenu({ id: 'artist', name: 'Artist' });
   const body = () => render().props.children((after?: () => void) => after?.());
@@ -74,3 +74,4 @@ test('late artist songs cannot replace a newly selected queue or another account
 test('a menu opened under another account cannot favorite its artist in the replacement account', async () => {
   const h = harness(); h.switchProfile(); h.action('Add to favorites'); await tick(); assert.deepEqual(h.calls, []);
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

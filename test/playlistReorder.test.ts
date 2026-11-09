@@ -152,7 +152,7 @@ function dragHarness() {
   const code = ts.transpileModule(readFileSync(new URL('../src/components/PlaylistReorder.tsx', import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
-  runInNewContext(code, { exports, require(name: string) {
+  runInNewContext(code, { exports, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
     assert.ok(Object.hasOwn(imports, name), `Unexpected reorder import ${name}`); return imports[name];
   } });
   const rows = initial();
@@ -348,3 +348,4 @@ test('a filtered offline removal cannot overwrite hidden occurrences and an acco
     } finally { owner.client.clear(); }
   }
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

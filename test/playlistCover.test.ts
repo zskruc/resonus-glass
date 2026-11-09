@@ -16,7 +16,7 @@ function compile(path: string, imports: Record<string, unknown>) {
   const exports: Record<string, any> = {};
   runInNewContext(ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText, { exports, __DEV__: false, require(name: string) {
+  }).outputText, { exports, __DEV__: false, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
     assert.ok(Object.hasOwn(imports, name), name); return imports[name];
   } });
   return exports;
@@ -167,3 +167,4 @@ test('mounted playlist artwork responds to offline changes and replacement-accou
     assert.equal(shown(), undefined, 'signed-out pages cannot keep the previous authenticated image URL');
   } finally { await act(async () => { renderer?.unmount(); }); }
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

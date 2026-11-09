@@ -23,6 +23,7 @@ import Animated, {
 import type { LyricWord } from '@/api/subsonic';
 import { lyricClockPlan } from '@/lib/lyricLifecycle';
 import { wordGroups } from '@/lib/lyricWords';
+import { LyricFontText } from '@/components/LyricsTypography';
 import {
   lyricWordDurationMs,
   MIN_WORD_TRANSITION_MS,
@@ -95,7 +96,7 @@ export const KaraokeWords = memo(function KaraokeWords({
   ) : (
     inGroups(groups, (index) => (
       <Text key={index} accessible={false} style={[textStyle, { color: activeColor }]}>
-        {words[index].value}
+        <LyricFontText text={words[index].value} context={label} />
       </Text>
     ))
   );
@@ -131,6 +132,7 @@ function ActiveWordFlow({
   activeColor,
   inactiveColor,
 }: Omit<KaraokeWordsProps, 'centered' | 'paddingVertical' | 'warm'> & { groups: number[][] }) {
+  const lineText = useMemo(() => words.map((word) => word.value).join(''), [words]);
   const positionSec = usePlayerStore((s) => active && highlighted ? s.positionSec : 0);
   const isPlaying = usePlayerStore((s) => active && highlighted && s.isPlaying);
   const speed = usePlayerStore((s) => active && highlighted ? s.speed : 1);
@@ -161,6 +163,7 @@ function ActiveWordFlow({
     <TimedWord
       key={index}
       word={words[index]}
+      context={lineText}
       durationMs={lyricWordDurationMs(words, index)}
       clockMs={clockMs}
       animateBounce={bounceEnabled}
@@ -174,6 +177,7 @@ function ActiveWordFlow({
 
 const TimedWord = memo(function TimedWord({
   word,
+  context,
   durationMs,
   clockMs,
   animateBounce,
@@ -183,6 +187,7 @@ const TimedWord = memo(function TimedWord({
   inactiveColor,
 }: {
   word: LyricWord;
+  context: string;
   durationMs: number;
   clockMs: SharedValue<number>;
   animateBounce: SharedValue<boolean>;
@@ -243,14 +248,14 @@ const TimedWord = memo(function TimedWord({
       }}
     >
       <Text accessible={false} style={[textStyle, { color: inactiveColor }]}>
-        {word.value}
+        <LyricFontText text={word.value} context={context} />
       </Text>
       <MaskedView
         pointerEvents="none"
         style={StyleSheet.absoluteFill}
         maskElement={(
           <Text accessible={false} style={textStyle}>
-            {word.value}
+            <LyricFontText text={word.value} context={context} />
           </Text>
         )}
       >

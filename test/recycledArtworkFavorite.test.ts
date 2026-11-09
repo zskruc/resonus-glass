@@ -79,7 +79,7 @@ function load(file: string, react: object, imports: Record<string, unknown>) {
   const exports: Record<string, any> = {};
   runInNewContext(compiled.outputText, {
     exports, setTimeout, clearTimeout, queueMicrotask,
-    require(id: string) {
+    require(id: string) { const customization = defaultCustomizationBoundary(id); if (customization) return customization;
       if (id === 'react') return react;
       if (id === 'react/jsx-runtime') return { jsx, jsxs: jsx };
       if (id === '@/components/Icon') return { __esModule: true, default: 'Icon' };
@@ -563,3 +563,4 @@ describe('cover state in a recycled song row', () => {
     h.unmount();
   });
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

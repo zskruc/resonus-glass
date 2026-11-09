@@ -50,7 +50,7 @@ import { CLIENT_NAME } from '@/api/subsonic';
 // filter and asks each library for its share (the rest of the mix cannot be
 // filtered, see `radioCandidates`), and `coverArtUrl` hands back the file on
 // disk when the album is downloaded instead of an address on the server.
-import { CACHED_COVER, COVER, coverArtUrl, getRandomSongs } from '@/api/data';
+import { CACHED_COVER, COVER, coverArtUrl, getRandomSongs, markUnplayableOffline } from '@/api/data';
 import { prefetchLyrics } from '@/hooks/useLyrics';
 import { tg } from '@/i18n';
 import { transcodeTarget } from '@/lib/audioQuality';
@@ -94,6 +94,11 @@ import { podcastFile, usePodcastDownloads } from './podcastDownloads';
 import { profileScopeId, useAuthStore } from './auth';
 import { getShuffleMode } from './shufflePreferences';
 import { weightedShuffle } from '@/lib/weightedShuffle';
+import { savedListeningSong, sessionSpace, shuffleLinkedGroups, expandShuffleLinks, type ListeningSession, type ListeningSpace, type LocalChapter } from '@/lib/listeningTools';
+import { chapterEnd, chapterStopReached, type ChapterStop } from '@/lib/localChapters';
+import { checkpointListeningSession, currentListeningSource, listeningSourceKey, mutateListeningSource, useListeningTools } from './listeningTools';
+import { captureLyricOwner } from '@/lib/lyricOwner';
+import { prepareListeningSession } from '@/lib/listeningSessionPlayback';
 import { SilenceTrimSession } from '@/lib/silenceTrim';
 import { prefetchSilenceBounds, useSilenceTrim } from './silenceTrim';
 import { checkAutoUrlNow } from './autoUrl';
@@ -147,6 +152,12 @@ export const SOURCE_FAVORITES = '@@favorites';
 export const SOURCE_HISTORY = '@@history';
 
 let sleepTimeout: ReturnType<typeof setTimeout> | null = null;
+let listeningQueueScope: string | null = null;
+let listeningSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let chapterStoppedLoad = -1;
+let listeningIntent = 0;
+let listeningCheckpointEnabled = false, lastListeningCheckpoint = 0;
+export function playbackIntentVersion(): number { return listeningIntent; }
 
 /**
  * Expiry of the sleep timer, or null. In the store because the screen says how
@@ -496,7 +507,7 @@ function setStreamOffset(sec: number, p: AudioPlayer | null = activePlayer()) {
 function applyLoop(p: AudioPlayer | null, offsetSec = streamOffsetSec) {
   if (!p) return;
   try {
-    p.loop = usePlayerStore.getState().repeat === 'one' && offsetSec === 0
+    p.loop = usePlayerStore.getState().repeat === 'one' && !usePlayerStore.getState().chapterStop && offsetSec === 0
       && !silenceLoopManaged();
   } catch {
     // ignore
@@ -1954,7 +1965,7 @@ function gaplessReady(): boolean {
   const st = usePlayerStore.getState();
   // 'one' repeats through the native `loop`, and "stop at end of song" needs
   // the track to end for real so its `didJustFinish` arrives.
-  if (st.repeat === 'one' || st.sleepAtSongEnd || silenceTailManaged()) return false;
+  if (st.repeat === 'one' || st.sleepAtSongEnd || st.chapterStop || chapterStoppedLoad === loadToken || silenceTailManaged()) return false;
   const current = st.queue[st.index];
   // A radio has no end to join anything to.
   return !!current && !current.url;
@@ -1978,7 +1989,7 @@ function scheduleNextSource(force = false) {
   // Not with "stop at end of song" pending: that one waits for the track to
   // end for real, and joining another source behind it means it never does.
   const restartSelf =
-    st.repeat === 'one' && streamOffsetSec > 0 && !st.sleepAtSongEnd && !remoteKind();
+    st.repeat === 'one' && streamOffsetSec > 0 && !st.sleepAtSongEnd && !st.chapterStop && !remoteKind();
   const ni = restartSelf ? st.index : gaplessReady() ? nextIndex(false) : null;
   const next = ni == null ? null : st.queue[ni];
   if (ni == null || !next || next.url) {
@@ -2379,7 +2390,7 @@ function maybeStartCrossfade(status: AudioStatus) {
   const st = usePlayerStore.getState();
   // Same cases excluded by normal advance, plus those with no predictable end
   // (radio) or where a fade makes no sense (very short tracks).
-  if (st.repeat === 'one' || st.sleepAtSongEnd) return;
+  if (st.repeat === 'one' || st.sleepAtSongEnd || st.chapterStop) return;
   // Nor during sleep fade: two ramps on the same volume, and the crossfade
   // would start the incoming at full volume on the way to silence.
   if (sleepFadeTimer) return;
@@ -2919,6 +2930,13 @@ function onStatus(status: AudioStatus & { playWhenReady?: boolean }, live = fals
   // With remote output (UPnP/DLNA) the local player is paused and its
   // states should not override those coming from the remote device.
   if (remoteKind()) return;
+  if (chapterStoppedLoad === loadToken) {
+    // A queued finish/playing sample cannot undo an explicit chapter stop.
+    // Only a user play/seek or another accepted load clears this latch.
+    if (status.playing) activePlayer()?.pause();
+    if (usePlayerStore.getState().isPlaying) usePlayerStore.setState({ isPlaying: false });
+    return;
+  }
   // Android's isPlaying was already false while buffering, so a headset or
   // system pause has no new isPlaying transition. The patched native listener
   // marks that explicit pause; a network stall and source replacement do not.
@@ -3016,6 +3034,7 @@ function onStatus(status: AudioStatus & { playWhenReady?: boolean }, live = fals
   const nextDurationSec = streamOffsetSec > 0
     ? prev.durationSec
     : plausibleDuration(status.duration, prev.durationSec, currentSong(prev)?.duration);
+  if (maybeFinishChapterStop(positionSec, !!status.didJustFinish)) return;
   // An unattended retry remains wanted while its replacement source loads.
   // A loaded, paused native player still ends that intent (headset/lock screen).
   const nextIsPlaying = nativePaused ? false
@@ -3028,6 +3047,12 @@ function onStatus(status: AudioStatus & { playWhenReady?: boolean }, live = fals
   if (material || now - lastBackgroundPositionPush >= BACKGROUND_POSITION_PUSH_MS) {
     lastBackgroundPositionPush = now;
     usePlayerStore.setState({ positionSec, durationSec: nextDurationSec, isPlaying: nextIsPlaying, isBuffering: buffering });
+  }
+  if (status.playing && listeningCheckpointEnabled && now - lastListeningCheckpoint >= 30_000) {
+    lastListeningCheckpoint = now;
+    const snapshot = snapshotListeningState({ ...usePlayerStore.getState(), positionSec });
+    const owner = queueRequestOwner();
+    if (snapshot) void checkpointListeningSession(snapshot, () => ownsQueueRequest(owner)).catch(() => {});
   }
   maybeScrobbleThreshold(positionSec);
   maybeDetectStall(intendPlay, buffering, positionSec);
@@ -3071,9 +3096,20 @@ function onStatus(status: AudioStatus & { playWhenReady?: boolean }, live = fals
 }
 
 let podcastOutroLoad = -1;
+function maybeFinishChapterStop(position: number, finished: boolean): boolean {
+  const state = usePlayerStore.getState(), stop = state.chapterStop;
+  if (!stop || remoteKind() || !chapterStopReached(stop, currentSong(state)?.id ?? '', position, finished)) return false;
+  // Do not arm a native next source on a player that has just ended: it can
+  // immediately jump to it even though this explicit boundary asked to stop.
+  chapterStoppedLoad = loadToken;
+  cutCrossfade(); cancelPlaybackRecovery(); activePlayer()?.pause();
+  usePlayerStore.setState({ chapterStop: null, isPlaying: false, positionSec: stop.end ?? position });
+  scheduleNextSource(true); return true;
+}
+
 function maybeFinishPodcastOutro(position: number, duration: number): boolean {
   const state = usePlayerStore.getState(), song = currentSong(state), owner = longFormOwner;
-  if (!song?.podcastChannelId || !owner || owner.pendingResume || owner.songId !== song.id
+  if (state.chapterStop || !song?.podcastChannelId || !owner || owner.pendingResume || owner.songId !== song.id
     || owner.scope !== profileScopeId() || podcastOutroLoad === loadToken || remoteKind()
     || !podcastOutroReached(position, duration, getPodcastPreferences(song.podcastChannelId))) return false;
   // One accepted load can finish once, even if several native status events were queued.
@@ -3236,6 +3272,7 @@ export function remapQueueIds(f: Remap) {
 }
 
 function saveQueueLocal(force = false) {
+  if (force) rememberListeningState(usePlayerStore.getState());
   const key = queueStorageKey();
   if (!key) return;
   const {
@@ -3811,6 +3848,8 @@ interface PlayerState {
   sleepEndsAt: number | null;
   /** Pause at the end of the current track ("end of song" timer). */
   sleepAtSongEnd: boolean;
+  /** Explicit chapter boundary, checked by the existing native status heartbeat. */
+  chapterStop: ChapterStop | null;
   /** Where the current queue came from (album, playlist, artist…), if known. */
   source: string | null;
   /** Origin path so we can navigate to it from the player. */
@@ -3942,12 +3981,71 @@ export interface StreamInfo {
 
 /** Song currently playing, or null if the queue is empty. */
 /** Deal only music. Explicit chapter ordering and casting's fixed head remain caller-owned. */
-export function dealPlayerSongs(songs: Song[]): Song[] {
+export function dealPlayerSongs(songs: Song[], lead?: Song, leadIndex?: number): Song[] {
   const mode = getShuffleMode();
-  if (mode === 'uniform' || songs.some((song) => !!song.podcastChannelId || !!song.url || isAudiobookTrack(song))) return dealt(songs);
-  return weightedShuffle(songs, mode, ownedPlayCounts());
+  if (songs.some((song) => !!song.podcastChannelId || !!song.url || isAudiobookTrack(song))) return dealt(songs);
+  const shuffle = (items: Song[]) => mode === 'uniform' ? dealt(items) : weightedShuffle(items, mode, ownedPlayCounts());
+  return shuffleLinkedGroups(songs, currentListeningSource()?.links ?? [], shuffle, lead, leadIndex);
 }
 
+function snapshotListeningState(state: PlayerState): ListeningSession | undefined {
+  if (!currentListeningSource()?.separateSessions || listeningQueueScope !== `${profileScopeId()}:${listeningSourceKey()}`) return;
+  const song = currentSong(state); if (!song) return;
+  const start = Math.max(0, state.index - 250), queue = state.queue.slice(start, start + 500);
+  const songs = queue.map(savedListeningSong); if (songs.some((item) => !item)) return;
+  const originalAt = state.originalQueue ? Math.max(0, state.originalQueue.findIndex((item) => item.id === song.id) - 250) : 0;
+  const originalSongs = state.originalQueue?.slice(originalAt, originalAt + 500).map(savedListeningSong).filter((item): item is NonNullable<typeof item> => !!item);
+  return { space: sessionSpace(song, isAudiobookTrack(song)), songs: songs as NonNullable<typeof songs[number]>[],
+    index: state.index - start, position: song.url && !song.vod ? 0 : Math.max(0, state.positionSec),
+    shuffle: state.shuffle, repeat: state.repeat, speed: state.speed,
+    ...(originalSongs?.length ? { originalSongs } : {}), queueDealt: state.queueDealt,
+    ...(state.source ? { source: state.source } : {}), ...(state.sourceHref ? { href: state.sourceHref } : {}), savedAt: Date.now() };
+}
+export function playerOwnsListeningSource(): boolean {
+  return listeningQueueScope === `${profileScopeId()}:${listeningSourceKey()}`;
+}
+function rememberListeningState(state: PlayerState): void {
+  const snapshot = snapshotListeningState(state); if (!snapshot) return;
+  void mutateListeningSource((value) => ({ ...value, sessions: { ...value.sessions, [snapshot.space]: snapshot } })).catch(() => {});
+}
+export async function rememberCurrentListeningSession(): Promise<boolean> {
+  await useListeningTools.getState().load();
+  listeningQueueScope = `${profileScopeId()}:${listeningSourceKey()}`;
+  const snapshot = snapshotListeningState(usePlayerStore.getState()); if (!snapshot) return false;
+  return mutateListeningSource((value) => ({ ...value, sessions: { ...value.sessions, [snapshot.space]: snapshot } }));
+}
+/** Only this explicit user action restores and starts a parked listening space. */
+export async function resumeListeningSpace(space: ListeningSpace): Promise<boolean> {
+  const profile = profileScopeId(), owns = captureLyricOwner(profile), before = queueRequestOwner(), intent = listeningIntent;
+  const current = () => owns() && ownsQueueRequest(before) && intent === listeningIntent;
+  await useListeningTools.getState().load();
+  const session = currentListeningSource()?.sessions[space];
+  if (!session || !current() || remoteKind()) return false;
+  const resolved = await prepareListeningSession(session, current);
+  if (!resolved || !current()) return false;
+  rememberListeningState(usePlayerStore.getState());
+  usePlayerStore.setState({ shuffle: session.shuffle, repeat: session.repeat, speed: session.speed });
+  const start = usePlayerStore.getState().playQueue(resolved.songs, resolved.index, session.source, session.href, { ordered: true });
+  const queue = usePlayerStore.getState().queue, seek = resumeSeekGeneration, acceptedIntent = listeningIntent;
+  const played = await start;
+  if (!played || !owns() || usePlayerStore.getState().queue !== queue || resumeSeekGeneration !== seek || acceptedIntent !== listeningIntent) return false;
+  usePlayerStore.setState({ originalQueue: resolved.originalSongs?.length ? resolved.originalSongs : null, queueDealt: session.queueDealt ?? session.shuffle });
+  if (session.position > 0 && space !== 'radio') usePlayerStore.getState().seekTo(session.position);
+  return true;
+}
+export function cancelChapterStop(): void {
+  if (!usePlayerStore.getState().chapterStop) return;
+  usePlayerStore.setState({ chapterStop: null }); applyLoop(activePlayer()); scheduleNextSource(true);
+}
+export function stopAfterChapter(songId: string, chapters: readonly LocalChapter[], index: number): boolean {
+  const state = usePlayerStore.getState(), chapter = chapters[index];
+  if (!chapter || currentSong(state)?.id !== songId || remoteKind()) return false;
+  const end = chapterEnd(chapters, index, state.durationSec);
+  if (end !== null && end <= state.positionSec) return false;
+  abortSleepFade(); if (sleepTimeout) clearTimeout(sleepTimeout); sleepTimeout = null;
+  cutCrossfade(); usePlayerStore.setState({ chapterStop: { songId, chapterStart: chapter.start, end, title: chapter.title }, sleepEndsAt: null, sleepAtSongEnd: false });
+  applyLoop(activePlayer()); scheduleNextSource(true); return true;
+}
 export function currentSong(state: PlayerState): Song | null {
   return state.queue[state.index] ?? null;
 }
@@ -4009,6 +4107,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   originalQueue: null,
   sleepEndsAt: null,
   sleepAtSongEnd: false,
+  chapterStop: null,
   source: null,
   sourceHref: null,
   radioMode: false,
@@ -4017,6 +4116,20 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   playQueue: async (songs, startIndex = 0, source, sourceHref, opts) => {
     if (songs.length === 0) return false;
+    listeningIntent++;
+    rememberListeningState(get());
+    const tools = currentListeningSource(), incoming = sessionSpace(songs[startIndex] ?? songs[0], isAudiobookTrack(songs[startIndex] ?? songs[0]));
+    if (tools?.separateSessions && incoming !== sessionSpace(currentSong(get()), isAudiobookTrack(currentSong(get())))) {
+      const mode = tools.sessions[incoming];
+      set(mode ? { shuffle: mode.shuffle, repeat: mode.repeat, speed: mode.speed }
+        : incoming === 'podcast' || incoming === 'audiobook' ? { shuffle: false, repeat: 'off' } : {});
+    }
+    set({ chapterStop: null });
+    const links = tools?.links ?? [];
+    if (!opts?.ordered && (opts?.shuffled || get().shuffle) && links.length && !songs.some((song) => !!song.url || !!song.podcastChannelId || isAudiobookTrack(song))) {
+      songs = expandShuffleLinks(songs, links);
+      if (useAuthStore.getState().offline) songs = markUnplayableOffline(songs);
+    }
     // Discard offline-unavailable tracks (not downloaded): they can't be
     // played. The initial index is remapped to the tapped song within the
     // already-filtered list. Online never marks `unavailable`, so it doesn't change.
@@ -4069,7 +4182,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const queued = dealAll
       ? dealPlayerSongs(songs)
       : deal
-        ? [first, ...dealPlayerSongs(songs.filter((_, i) => i !== startIndex))]
+        ? dealPlayerSongs(songs, first, startIndex)
         : songs;
     const at = dealAll || deal ? 0 : startIndex;
     // What is on screen right now, kept in case the new queue never manages to
@@ -4135,6 +4248,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   startRadio: async (seed, source) => {
+    listeningIntent++;
     const cur = currentSong(get());
     if (cur && cur.id === seed.id) {
       // Mix seeded by what's already playing: only the queue AROUND it changes,
@@ -4246,6 +4360,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   toggle: () => {
+    listeningIntent++;
+    if (!get().isPlaying) chapterStoppedLoad = -1;
     cancelPlaybackRecovery();
     // The one press that does not change track: what was restored is about to
     // be heard, so what the opening held back is due now.
@@ -4317,6 +4433,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   next: () => {
+    listeningIntent++;
     cancelPlaybackRecovery();
     endBootQuiet();
     const ni = nextIndex(true);
@@ -4327,6 +4444,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   previous: () => {
+    listeningIntent++;
     cancelPlaybackRecovery();
     endBootQuiet();
     const { index, positionSec } = get();
@@ -4377,6 +4495,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // module's `handleSeek`). A position the player cannot answer is not a seek
     // that goes nowhere, it is a player that stops.
     if (!Number.isFinite(sec)) return;
+    chapterStoppedLoad = -1;
     resumeSeekGeneration++;
     if (longFormOwner) longFormOwner.pendingResume = false;
     const hadTrimmedEnd = silenceLoopManaged() || silenceTailManaged();
@@ -4390,6 +4509,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // A radio has no length to stay inside of, and a stream still loading has
     // not said its own yet.
     const target = Math.max(0, duration > 0 ? Math.min(sec, duration) : sec);
+    if (get().chapterStop?.end != null && target >= get().chapterStop!.end!) set({ chapterStop: null });
     const song = currentSong(get());
     if (song?.podcastChannelId && podcastOutroReached(target, duration, getPodcastPreferences(song.podcastChannelId))) {
       // An explicit timestamp/slider seek into an outro asks to hear that part.
@@ -4407,6 +4527,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // the song no longer is.
     const st = get();
     reportState(st.isPlaying ? 'playing' : 'paused', st.queue[st.index], target);
+    if (listeningCheckpointEnabled) {
+      const snapshot = snapshotListeningState({ ...st, positionSec: target }), owner = queueRequestOwner();
+      if (snapshot) void checkpointListeningSession(snapshot, () => ownsQueueRequest(owner)).catch(() => {});
+    }
   },
 
   setVolume: (v) => {
@@ -4426,6 +4550,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // rate that came back clamped would leave the list showing a speed that is
     // not the one playing.
     if (!Number.isFinite(v)) return;
+    listeningIntent++;
     const speed = Math.min(2, Math.max(0.5, v));
     speedIntentGeneration += 1;
     set({ speed });
@@ -4437,6 +4562,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   jumpTo: (index, kind = 'pick') => {
+    listeningIntent++;
     endBootQuiet();
     const { queue } = get();
     if (index < 0 || index >= queue.length) return;
@@ -4571,6 +4697,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   toggleShuffle: () => {
+    listeningIntent++;
     const { shuffle, queue, index, originalQueue, source, sourceHref } = get();
     const current = queue[index];
     const upnpActive = remoteKind() === 'upnp';
@@ -4588,7 +4715,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         shuffle: true,
         queueDealt: true,
         originalQueue: queue,
-        ...shuffleOn(queue, index, upnpActive, dealPlayerSongs),
+        ...(currentListeningSource()?.links.length && !upnpActive && current && !current.url && !current.podcastChannelId && !isAudiobookTrack(current)
+          ? { queue: dealPlayerSongs(queue, current, index), index: 0 }
+          : shuffleOn(queue, index, upnpActive, dealPlayerSongs)),
         queuedCount: 0,
       });
     } else if (originalQueue && current) {
@@ -4607,6 +4736,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   cycleRepeat: () => {
+    listeningIntent++;
     // First tap: repeat current song ('one'); second: whole queue ('all');
     // third: off. Like Feishin.
     const order: RepeatMode[] = ['off', 'one', 'all'];
@@ -4619,6 +4749,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   setSleepTimer: (minutes) => {
+    cancelChapterStop();
     if (sleepTimeout) clearTimeout(sleepTimeout);
     sleepTimeout = setTimeout(fireSleepTimer, minutes * 60_000);
     armSleepFade(minutes * 60_000);
@@ -4627,6 +4758,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   setSleepAtSongEnd: () => {
+    cancelChapterStop();
     if (sleepTimeout) clearTimeout(sleepTimeout);
     sleepTimeout = null;
     // No fade: the song ends on its own, and fading its end would ruin exactly
@@ -4637,6 +4769,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   cancelSleepTimer: () => {
+    cancelChapterStop();
     if (sleepTimeout) clearTimeout(sleepTimeout);
     sleepTimeout = null;
     abortSleepFade();
@@ -4821,6 +4954,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   reset: async (forProfile = false) => {
+    listeningIntent++;
+    if (!forProfile) rememberListeningState(get());
+    cancelChapterStop();
     // Clearing an empty queue also cancels a disk read/native load still on
     // its way; returning to the same account cannot revive that old intent.
     loadToken++;
@@ -4900,11 +5036,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 // A task waiting for a speculative slot must not outlive its account, offline
 // mode or opt-in setting. Preserve any currently loading tap's own hold.
 useAuthStore.subscribe((state, previous) => {
-  if (state.auth !== previous.auth || state.offline !== previous.offline) {
+  if (state.auth !== previous.auth || state.offline !== previous.offline || state.offlineSource !== previous.offlineSource || state.autoOffline !== previous.autoOffline) {
+    listeningCheckpointEnabled = !!currentListeningSource()?.separateSessions;
+    if (listeningQueueScope !== `${profileScopeId()}:${listeningSourceKey()}`) listeningQueueScope = null;
+    if (listeningSaveTimer) clearTimeout(listeningSaveTimer); listeningSaveTimer = null;
+    cancelChapterStop();
     cancelSpeculativePriority();
     streamWarming.invalidate();
   }
 });
+useListeningTools.subscribe(() => { listeningCheckpointEnabled = !!currentListeningSource()?.separateSessions; });
 useSettings.subscribe((state, previous) => {
   if (state.preloadUpcoming === previous.preloadUpcoming) return;
   streamWarming.invalidate();
@@ -4916,6 +5057,16 @@ useSettings.subscribe((state, previous) => {
 // hooking every action that touches them (add to queue, reorder, remove,
 // shuffle, autoplay…), where the queued track would go stale by omission.
 usePlayerStore.subscribe((st, prev) => {
+  if (st.isPlaying && !prev.isPlaying) scheduleNextSource();
+  if (st.queue !== prev.queue || st.index !== prev.index) {
+    if (st.chapterStop && (st.queue !== prev.queue || st.index !== prev.index)) cancelChapterStop();
+    if (st.queue.length && (!prev.queue.length || st.queue !== prev.queue)) listeningQueueScope = `${profileScopeId()}:${listeningSourceKey()}`;
+  }
+  if (st.chapterStop !== prev.chapterStop) { applyLoop(activePlayer()); scheduleNextSource(true); }
+  if (st.queue !== prev.queue || st.index !== prev.index || st.shuffle !== prev.shuffle || st.repeat !== prev.repeat || st.speed !== prev.speed || (!st.isPlaying && prev.isPlaying)) {
+    if (listeningSaveTimer) clearTimeout(listeningSaveTimer);
+    if (currentListeningSource()?.separateSessions) listeningSaveTimer = setTimeout(() => { listeningSaveTimer = null; rememberListeningState(usePlayerStore.getState()); }, 350);
+  }
   if (!st.isPlaying && prev.isPlaying) cancelSpeculativePriority();
   if (st.queue.length === 0 && prev.queue.length > 0) {
     resetWarmed();

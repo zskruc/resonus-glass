@@ -17,7 +17,7 @@ function library(read: (genre: string, offset: number) => Promise<Album[]>) {
   const exports: Record<string, any> = {};
   runInNewContext(ts.transpileModule(readFileSync(new URL('../src/lib/audiobookLibrary.ts', import.meta.url), 'utf8'), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
-  }).outputText, { exports, require(name: string) { assert.ok(Object.hasOwn(imports, name), name); return imports[name]; } });
+  }).outputText, { exports, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization; assert.ok(Object.hasOwn(imports, name), name); return imports[name]; } });
   return { load: () => exports.getAudiobookAlbums() as Promise<Album[]>, profile: () => { scope = 'B'; } };
 }
 
@@ -42,3 +42,4 @@ test('a response from a departed profile cannot publish albums or request its ne
   const h = library(async () => { calls++; h.profile(); return []; });
   await assert.rejects(h.load(), /profile changed/); assert.ok(calls <= 2);
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

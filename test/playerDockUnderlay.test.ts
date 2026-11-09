@@ -131,7 +131,7 @@ function load(path: string, r: ReturnType<typeof runtime>, imports: Record<strin
   } });
   const exports: Record<string, any> = {};
   runInNewContext(compiled.outputText, { exports,
-    require(name: string) {
+    require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
       if (name === 'react') return r.react;
       if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
       if (name === 'react-native-reanimated') return r.animated;
@@ -529,3 +529,4 @@ describe('GlobalMiniPlayer dismissal underlay', () => {
   });
 
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

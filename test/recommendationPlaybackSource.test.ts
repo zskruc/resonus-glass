@@ -30,7 +30,7 @@ function harness() {
   const exports: Record<string, any> = {};
   runInNewContext(ts.transpileModule(readFileSync(new URL('../src/lib/recommendationPlaybackSource.ts', import.meta.url), 'utf8'), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
-  }).outputText, { exports, Map, Set, Promise, require(id: string) { assert.ok(Object.hasOwn(imports, id), id); return imports[id]; } });
+  }).outputText, { exports, Map, Set, Promise, require(id: string) { const customization = defaultCustomizationBoundary(id); if (customization) return customization; assert.ok(Object.hasOwn(imports, id), id); return imports[id]; } });
   return { fresh, calls, peak: () => peak, setState: (value: unknown) => { state = value; }, stop: () => { current = false; },
     resolve: (saved: Song[]) => exports.currentRecommendationSongs(saved, () => current) as Promise<Map<string, Song>> };
 }
@@ -68,3 +68,4 @@ test('Jellyfin also uses safe IDs without album lookups and an already changed o
   old.stop(); await assert.rejects(old.resolve(saved), /profile changed/);
   assert.equal(old.calls.song.length, 0);
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

@@ -71,7 +71,7 @@ function compiled(file: string) {
 function themeHarness() {
   const exports: Record<string, any> = {};
   runInNewContext(compiled('../src/theme/index.ts'), { exports, setTimeout, clearTimeout,
-    require(name: string) {
+    require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
       if (name === 'react') return { useSyncExternalStore: (_s: unknown, read: () => unknown) => read() };
       if (name === 'react-native') return { Platform: { OS: 'android', select: (values: any) => values.android ?? values.default },
         Appearance: { getColorScheme: () => 'dark', addChangeListener: () => ({ remove() {} }) },
@@ -146,7 +146,7 @@ test('real warmup adapter applies current cached colors and blocks the old queue
   };
   const exports: Record<string, any> = {};
   runInNewContext(compiled('../src/components/PlaybackColorWarmup.tsx'), { exports,
-    require(name: string) { assert.ok(name in dependencies, name); return dependencies[name]; } });
+    require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization; assert.ok(name in dependencies, name); return dependencies[name]; } });
   exports.PlaybackColorWarmup();
   assert.deepEqual(colors, ['#ff0000']);
   player.set({ index: 1 }); assert.deepEqual(colors, ['#ff0000', '#0000ff']);
@@ -166,3 +166,4 @@ test('real warmup adapter applies current cached colors and blocks the old queue
   settings.set({ accentSource: 'manual' }); assert.equal(colors.at(-1), null);
   cleanups.forEach((close) => close());
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

@@ -45,7 +45,7 @@ function harness() {
   };
   const exports: Record<string, any> = {};
   runInNewContext(executable, { exports,
-    require(name: string) { assert.ok(Object.hasOwn(dependencies, name), name); return dependencies[name]; },
+    require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization; assert.ok(Object.hasOwn(dependencies, name), name); return dependencies[name]; },
   });
   const runtime = exports.makeMediaCacheRuntime({ serverType: 'navidrome', password: 'test' }, 'profile', () => current);
   return { client, savedDetails, savedInfo, fetched,
@@ -140,7 +140,7 @@ function lyricsHarness() {
   };
   const exports: Record<string, any> = {};
   runInNewContext(executable, { exports,
-    require(name: string) { assert.ok(Object.hasOwn(dependencies, name), name); return dependencies[name]; },
+    require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization; assert.ok(Object.hasOwn(dependencies, name), name); return dependencies[name]; },
   });
   const runtime = exports.makeMediaCacheRuntime({ serverType: 'navidrome' }, 'profile', () => true);
   const task = { kind: 'lyrics', id: 'song', data: { song: { id: 'song' }, source: 'local' } };
@@ -171,3 +171,4 @@ test('a stopped concurrent lane cannot save a late lyric or a negative result', 
     assert.equal(h.writes.length, 0);
   }
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

@@ -6,6 +6,7 @@ import ts from 'typescript';
 import { dealt, shuffleOn, indexInOriginal } from '../src/lib/queue';
 import { weightedShuffle, type ShuffleMode } from '../src/lib/weightedShuffle';
 import type { Song } from '../src/api/subsonic';
+import { sessionSpace, shuffleLinkedGroups } from '../src/lib/listeningTools';
 
 const source = readFileSync(new URL('../src/store/player.ts', import.meta.url), 'utf8');
 const ast = ts.createSourceFile('player.ts', source, ts.ScriptTarget.Latest, true);
@@ -25,9 +26,10 @@ function harness(mode: ShuffleMode) {
   const noop = () => {};
   const api: Record<string, any> = {};
   const auth = {};
-  runInNewContext(code, { exports: api, get: () => state, set: (value: object) => Object.assign(state, value),
+  runInNewContext(code, { exports: api, listeningIntent: 0, get: () => state, set: (value: object) => Object.assign(state, value),
     usePlayerStore: { getState: () => state }, useAuthStore: { getState: () => ({ auth, offline: false }) },
-    getShuffleMode: () => mode, ownedPlayCounts: () => local, isAudiobookTrack: (song: Song) => song.genre === 'audiobook',
+    getShuffleMode: () => mode, ownedPlayCounts: () => local, isAudiobookTrack: (song: Song | null) => song?.genre === 'audiobook',
+    rememberListeningState: noop, currentListeningSource: () => undefined, sessionSpace, currentSong: (value: any) => value.queue[value.index] ?? null, shuffleLinkedGroups,
     dealt, shuffleOn, indexInOriginal,
     weightedShuffle: (songs: Song[], policy: ShuffleMode, counts: object) => { assert.equal(counts, local); policies.push(policy); return weightedShuffle(songs, policy, counts, () => .5); },
     remoteKind: () => null, contextKey: () => null, forgetHistoryOf: noop, pushHistory: noop, attachAppState: noop,

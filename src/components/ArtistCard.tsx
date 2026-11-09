@@ -9,6 +9,7 @@ import { Pressable, StyleSheet, Text } from 'react-native';
 
 import { COVER, coverArtUrl, type Artist } from '@/api/data';
 import { useAppleMusicStyle } from '@/hooks/useAppleMusicStyle';
+import { useDisplayArtist } from '@/hooks/useLocalMetadata';
 import { appleMusicStyles } from '@/theme/appleMusic';
 import { fontSize, lineHeight, spacing, themed, useTheme } from '@/theme';
 import { bump } from '@/lib/perfLog';
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export const ArtistCard = memo(function ArtistCard({ artist, width = 150 }: Props) {
+  const displayed = useDisplayArtist(artist);
   bump('render · ArtistCard');
   // Memoised, so it has to ask for a repaint on a theme change itself.
   useTheme();
@@ -33,7 +35,7 @@ export const ArtistCard = memo(function ArtistCard({ artist, width = 150 }: Prop
       <Pressable style={StyleSheet.flatten([styles.container, { width }])}>
         <Cover uri={cover} size={width} rounded />
         <Text style={[styles.name, appleMusic && appleMusicStyles.cardTitle]} numberOfLines={appleMusic ? 2 : 1}>
-          {artist.name}
+          {displayed.name}
         </Text>
       </Pressable>
     </DetailLink>

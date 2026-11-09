@@ -65,11 +65,11 @@ function harness() {
     },
   };
   const context: Record<string, any> = { exports: {}, Subsonic: backend, Local: { getSongList: async (_sort: string, count: number, offset: number) => ['local-one', 'local-two'].slice(offset, offset + count).map(song) },
-    profileScopeId: () => profile, useAuthStore: { getState: () => state }, useOfflineQueue: { getState: () => queue },
+    profileScopeId: () => profile, useAuthStore: { getState: () => state }, useLibraries: { getState: () => ({ disabled: folder }) }, useOfflineQueue: { getState: () => queue },
     queryClient: { invalidateQueries: (key: unknown) => { invalidations.push(plain(key)); } },
     enabledFolderIds: (auth: SubsonicAuth) => { assert.equal(auth, owner); return folder.ids; }, outboxFileFor: outboxFile,
     bump: () => {}, setTimeout, clearTimeout,
-    require(name: string) { assert.equal(name, '@/lib/navidromeRepair'); return { repairIfMigrated: async () => {} }; } };
+    require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization; assert.equal(name, '@/lib/navidromeRepair'); return { repairIfMigrated: async () => {} }; } };
   runInNewContext(dataExecutable, context);
   const realFresh = context.createFreshServerPlaylist;
   context.createFreshServerPlaylist = (...args: unknown[]) => { helperCalls++; return realFresh(...args); };
@@ -222,3 +222,4 @@ test('empty enabled libraries and invalid/out-of-range catalogue requests cannot
   assert.deepEqual(plain(await h.api.getCatalogSongPage(1, 0, 1)), { songs: [], sourceCount: 1 });
   assert.deepEqual(h.calls, []);
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

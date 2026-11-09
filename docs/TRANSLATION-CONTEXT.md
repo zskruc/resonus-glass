@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 1357 of them.
+Every string the app can show, under the screen it shows up on. 1642 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -73,15 +73,16 @@ you are actually typing into, which is easier than reading it here.
 | `BPM` | A property of the audio: beats per minute |
 | `Changes` | Heading in the update prompt over what a release changes |
 | `Channels` | A property of the audio: mono, stereo |
+| `Chapters and chapter stop` |  |
 | `Clean` | A value of `Content`: the edited version, with the explicit language taken out. Not "tidy" and not "free of noise" |
 | `Comment` | The file's comment tag, where people keep notes about a recording |
 | `Content` | Label of the parental advisory row: whether the recording is explicit. Not the song's lyrics, not what it is about |
-| `Continue listening` | Shortcut on the app's launcher icon (long press): resumes the last queue. Short: launchers cut long labels |
 | `Couldn't create the link` | The server would not make a share link |
 | `Couldn't find anything to mix with this song` | Toast: the server had nothing similar to carry on with |
 | `Couldn't save the file` | Toast: writing to the chosen folder failed |
 | `Couldn't send the file` | Toast: handing it to another app failed |
 | `Cover art` | Three places, one word: a section header in Settings › Player, a line of the storage bar in Settings › Downloads, and what the screen reader calls the picture in the song information sheet |
+| `Current lyrics` |  |
 | `Date added` |  |
 | `Devices` | The audio output devices to cast to |
 | `Disc {n}` | Heading over the songs of one disc of a multi-disc album. `{n}` is its number |
@@ -89,6 +90,7 @@ you are actually typing into, which is easier than reading it here.
 | `Download removed` | Toast: the file was deleted, the song stays in the library |
 | `Downloading {app} {version}` |  |
 | `Duration` | Label of a field in the song information sheet: how long the song is |
+| `Edit and export lyrics` |  |
 | `Explicit` | A value of `Content`: the recording carries a parental advisory (strong language). Also read out for the E badge next to a title |
 | `Export “{name}”?` | Confirms getting the files of an album or playlist out of the app |
 | `Fixes` | Heading in the update prompt over the bugs a release fixes |
@@ -96,13 +98,20 @@ you are actually typing into, which is easier than reading it here.
 | `Genre` | Label of a field in the song information sheet |
 | `Go to album` | Leave this sheet and open the album the song is on |
 | `Go to artist` | Leave this sheet and open the artist |
+| `hours` |  |
+| `Last 30 days` |  |
+| `Linked shuffle groups` |  |
+| `Listening time` |  |
+| `Local song metadata` |  |
 | `Long audio and bookmarks` |  |
 | `Lyric poster` |  |
 | `Lyrics tools` |  |
+| `min remaining` |  |
 | `Mix started` | The toast that says the app is now picking the songs |
 | `Moods` | Mood tags the server has on the song: mellow, energetic… |
 | `Navigation bar` | Settings screen: which tabs are on the bar at the bottom, and in what order |
 | `New features` | Heading in the update prompt over the new things a release brings. The lines under it stay in English |
+| `No listening history yet` |  |
 | `On` | An enabled switch, shown in the readable summary of glass parameters |
 | `Open settings` | Its confirm button: goes to Android's own settings, not the app's |
 | `Pick a date…` | Opens the calendar to choose the day the link stops working |
@@ -110,7 +119,6 @@ you are actually typing into, which is easier than reading it here.
 | `Play count` |  |
 | `Playback stopped` | The mini player when there is nothing playing any more |
 | `Plays` | How many times the song has been played |
-| `Previous` | Player control: the previous track (accessibility label) |
 | `Rate` | Verb: give it stars. Used for a song and for an artist. Not "bitrate" |
 | `Rating` | The stars given to the song. Not a bitrate, not a review |
 | `Recents` | Library section and its sort order: recently opened items |
@@ -170,6 +178,7 @@ you are actually typing into, which is easier than reading it here.
 | `DJ-mixes` | Shelf heading: recordings of several tracks blended one into the next by a DJ. Kept as-is in Spanish and Catalan, since the term travels |
 | `Downloaded` | Badge on something whose files are on the phone |
 | `EPs` | Shelf heading: records longer than a single and shorter than an album |
+| `Exact artist aliases` |  |
 | `Featured` |  |
 | `Field recordings` | Shelf heading: records made of the world itself, nature or a city, rather than of performed music |
 | `Frequently played songs` |  |
@@ -219,7 +228,6 @@ you are actually typing into, which is easier than reading it here.
 | `Export {songs}?` | The same title for a selection instead of a whole album. `{songs}` already reads as a count ("12 songs"), so it comes out like "Export 12 songs?" |
 | `No songs here yet` |  |
 | `Nothing to change` | Answer to favouriting a selection that already is one, or unfavouriting one that isn't |
-| `Play count` |  |
 | `Release date` |  |
 | `Try exploring another artist.` |  |
 
@@ -419,6 +427,37 @@ you are actually typing into, which is easier than reading it here.
 | `Your playlists and what you star show up here.` |  |
 | `Yours` |  |
 
+## Listening intents
+
+| String | What it is |
+| --- | --- |
+| `{n} matching songs` |  |
+| `A short break` |  |
+| `Acoustic and ambient genre tags, or a slower tagged tempo.` |  |
+| `Ambient, classical and instrumental genre tags, or a moderate tagged tempo.` |  |
+| `Back to the nineties` |  |
+| `Choose a moment, preview the matches, then play. Rules use library tags and durations, not AI or an analysis of vocals.` |  |
+| `Could not read the index. Try again.` |  |
+| `Dance, electronic and rock genre tags, or a faster tagged tempo.` |  |
+| `Familiar favourites` |  |
+| `Focus` |  |
+| `Hear it again` |  |
+| `Hide intention` |  |
+| `Listening intentions` |  |
+| `Long listening` |  |
+| `More energy` |  |
+| `Music search index` |  |
+| `Pin intention` |  |
+| `Previously played tracks, ordered by the fewest reported plays.` |  |
+| `Release years from 1990 to 1999.` |  |
+| `Restore hidden intentions` |  |
+| `Still unheard` |  |
+| `Tracks at least ten minutes long.` |  |
+| `Tracks marked as favourites in the indexed library.` |  |
+| `Tracks up to four minutes, based on their actual duration.` |  |
+| `Tracks without a reported play count.` |  |
+| `Unwind` |  |
+
 ## Login
 
 | String | What it is |
@@ -451,12 +490,42 @@ you are actually typing into, which is easier than reading it here.
 | `Username` | The username field |
 | `We need permission to read your device music.` | Android has not granted access to the phone's files yet |
 
+## Lyric editor
+
+| String | What it is |
+| --- | --- |
+| `Add lyric line` |  |
+| `Apply line` |  |
+| `Apply word` |  |
+| `Check the time order. Edit word-timed text one word at a time.` |  |
+| `Could not edit this word.` |  |
+| `Could not save or export local lyrics. Your source was not changed.` |  |
+| `Create plain lyrics` |  |
+| `Edit and export lyrics` |  |
+| `Export format` |  |
+| `Export lyrics` |  |
+| `Export timeline` |  |
+| `Include this song display offset` |  |
+| `Line {n}` |  |
+| `Local changes affect this app only. Apply a line, then save. Restoring returns to the original source.` |  |
+| `Local lyrics saved` |  |
+| `Original lyric source restored` |  |
+| `Original text` |  |
+| `Original timeline` | One of the values of “Export timeline” |
+| `Real word timestamps are preserved. Edit each word without replacing the whole line.` |  |
+| `Restore original source` |  |
+| `Romanization` |  |
+| `Save local lyrics` |  |
+| `Start time (mm:ss.mmm)` |  |
+| `Tap a line below to edit. Untimed lyrics export as TXT only.` |  |
+| `Translation` |  |
+| `Word text` |  |
+
 ## Lyric poster
 
 | String | What it is |
 | --- | --- |
 | `Album artwork` | One of the values of “Poster style” |
-| `Choose a song first to use lyrics tools.` |  |
 | `Choose up to {lines} lines and {chars} characters.` |  |
 | `Could not create the lyric poster. Please try again.` |  |
 | `Create PNG and share` |  |
@@ -472,10 +541,28 @@ you are actually typing into, which is easier than reading it here.
 | String | What it is |
 | --- | --- |
 | `No lyrics available for this song.` | Empty state on the lyrics screen |
-| `Previous` | Player control: the previous track (accessibility label) |
 | `Show cover` | Lyrics screen: the button that goes back to the cover art |
 | `Show remaining time` |  |
 | `Show total time` |  |
+
+## Media collections
+
+| String | What it is |
+| --- | --- |
+| `Clear selection` |  |
+| `Create folder` |  |
+| `Create tag` |  |
+| `Delete folder` |  |
+| `Delete tag` |  |
+| `Filter list` |  |
+| `Folders and tags` |  |
+| `Folders and tags are stored for this account on this phone. A show or station can have one folder and several tags. Removing a folder does not unsubscribe or delete anything.` |  |
+| `Move to` |  |
+| `New folder or tag name` |  |
+| `No items to organise` |  |
+| `Podcasts` |  |
+| `Remove from folder` |  |
+| `Rename folder` |  |
 
 ## Offline
 
@@ -518,10 +605,8 @@ you are actually typing into, which is easier than reading it here.
 | `Output` |  |
 | `Playback stopped` | The mini player when there is nothing playing any more |
 | `PLAYING FROM` | Small label above the cover, followed by the name of the album, playlist or mix it is playing from, or by `Queue` while the song is one that was added to the queue by hand. Written in capitals by the design, so it can be capitals in your language too, or not, whichever reads right |
-| `Previous` | Player control: the previous track (accessibility label) |
 | `Quality & playback` |  |
 | `Quality follows the source and playback settings; the output device may process audio separately.` |  |
-| `Radio` | Internet radio stations. Most languages keep the word |
 | `Remote volume` |  |
 | `Remove from the group` | The − beside `Add to the group`, and the same in reverse: it takes that room out of the group so it stops playing along. Read out by the screen reader, never shown, and Sonos only |
 | `Repeat` | Start again at the end |
@@ -568,7 +653,7 @@ you are actually typing into, which is easier than reading it here.
 | `Password` | The password field, on the login screen and wherever the server asks again |
 | `Playlist` | A list saved on the server. Not the queue |
 | `Playlist deleted` | Toast, with an undo button |
-| `Playlist import and export` |  |
+| `Playlist recovery` |  |
 | `Playlist updated` | Toast after saving a change |
 | `Playlists are not available in offline mode.` | Shown instead of a playlist when there is no connection |
 | `Public playlist` | Toggle that makes a playlist public on the server |
@@ -700,6 +785,7 @@ you are actually typing into, which is easier than reading it here.
 | `{n} subscriptions exported. {skipped} private or invalid addresses were excluded.` |  |
 | `{n} unique subscriptions. {duplicates} duplicates and {invalid} invalid addresses skipped.` |  |
 | `{time} left` |  |
+| `All` |  |
 | `Bonus` |  |
 | `Choose OPML file` |  |
 | `Could not export podcast subscriptions.` |  |
@@ -724,6 +810,7 @@ you are actually typing into, which is easier than reading it here.
 | `No podcast found for “{term}”. Try pasting the feed address below.` |  |
 | `No podcasts` |  |
 | `No subscriptions with exportable feed addresses.` |  |
+| `Organise folders and tags` |  |
 | `Played` |  |
 | `Podcast subscriptions` |  |
 | `Podcasts` |  |
@@ -764,13 +851,16 @@ you are actually typing into, which is easier than reading it here.
 | String | What it is |
 | --- | --- |
 | `Add internet radio stations on your server and they'll show up here.` | The line under an empty state: the stations live on the server, not in the app |
+| `Add local station` |  |
 | `Add station` | Title of the sheet for adding an internet radio station |
+| `All` |  |
 | `Change cover` | Replace the cover image of a playlist or station |
 | `Confirm your password` | Changing a cover on the server needs the password again. It is not a new password being set |
 | `Couldn't load radio stations.` | Error on the screen, with a Retry button |
 | `Couldn't update the cover` | Toast: the upload failed |
 | `Cover uploads are disabled` |  |
 | `Delete station` | Menu action, in red |
+| `Discover radio` |  |
 | `Edit station` | Title of the same sheet when changing one |
 | `Find a station` | The search box's placeholder on the radio screen |
 | `Invalid artist catalogue` |  |
@@ -778,9 +868,9 @@ you are actually typing into, which is easier than reading it here.
 | `No permission` |  |
 | `No radio stations` | Empty state heading |
 | `No saved password` |  |
+| `Organise folders and tags` |  |
 | `Password` | The password field, on the login screen and wherever the server asks again |
 | `Pin to top` | Keep this at the top of its list, above everything else. `Unpin` undoes it |
-| `Radio` | Internet radio stations. Most languages keep the word |
 | `Remove “{name}” from your server?` | Dialog title: stations live on the server, so this deletes it for everybody |
 | `Remove cover` | Screen reader label for the small x on a chosen picture |
 | `Server error ({status})` |  |
@@ -794,6 +884,28 @@ you are actually typing into, which is easier than reading it here.
 | `Website (optional)` | Field when adding a radio station |
 | `You can pin up to {n} items.` | Toast: there is no room for another pinned thing. `{n}` is the limit |
 | `Your password is needed to upload images and will be stored securely.` | The line explaining why the password is asked for again |
+
+## Radio discover
+
+| String | What it is |
+| --- | --- |
+| `Browse Radio Browser. Preview starts only when you tap Listen; Save keeps the station on this phone without requiring server administrator access.` |  |
+| `China` |  |
+| `Could not load the radio directory. Try again.` |  |
+| `Discover radio` |  |
+| `Germany` |  |
+| `Hong Kong` |  |
+| `Japan` |  |
+| `Listen` |  |
+| `No stations found` |  |
+| `Radio discovery needs a connection. Saved local stations remain in Radio.` |  |
+| `Save on this phone` |  |
+| `Saved on this phone` |  |
+| `Search radio stations` |  |
+| `Taiwan` |  |
+| `United Kingdom` |  |
+| `United States` |  |
+| `Worldwide` |  |
 
 ## Recommendations
 
@@ -817,16 +929,34 @@ you are actually typing into, which is easier than reading it here.
 
 | String | What it is |
 | --- | --- |
+| `A short break` |  |
+| `Acoustic and ambient genre tags, or a slower tagged tempo.` |  |
+| `Ambient, classical and instrumental genre tags, or a moderate tagged tempo.` |  |
 | `Artists` | A heading over a list of them, never a count |
+| `Back to the nineties` |  |
 | `Could not search cached lyrics. Try again.` |  |
+| `Dance, electronic and rock genre tags, or a faster tagged tempo.` |  |
+| `Familiar favourites` |  |
+| `Focus` |  |
+| `Hear it again` |  |
+| `Home and search layout` |  |
 | `In cached lyrics` |  |
 | `Indexing saved lyrics in the background…` |  |
-| `Radio` | Internet radio stations. Most languages keep the word |
+| `Long listening` |  |
+| `More energy` |  |
+| `Previously played tracks, ordered by the fewest reported plays.` |  |
 | `Recent searches` | What was searched for before, kept on the phone |
+| `Release years from 1990 to 1999.` |  |
 | `Search your music` |  |
 | `Searches lyrics already saved on this device, including supplied translation and romanization.` |  |
 | `Song` | In search results, the little word under a result saying what kind of thing it is |
 | `Songs, albums, artists and playlists. What you open from here is kept for next time.` |  |
+| `Still unheard` |  |
+| `Tracks at least ten minutes long.` |  |
+| `Tracks marked as favourites in the indexed library.` |  |
+| `Tracks up to four minutes, based on their actual duration.` |  |
+| `Tracks without a reported play count.` |  |
+| `Unwind` |  |
 | `What do you want to listen to?` | The placeholder in the search box, worded as a question |
 
 ## Settings
@@ -902,6 +1032,29 @@ you are actually typing into, which is easier than reading it here.
 | `Song cache cleared` |  |
 | `Songs you stream will show up here.` |  |
 
+## Settings › Chapters
+
+| String | What it is |
+| --- | --- |
+| `Apply chapter import` |  |
+| `Couldn't save listening settings.` |  |
+| `Current chapter` |  |
+| `Import TXT / JSON chapters` |  |
+| `Invalid chapter file. Use increasing timestamps and non-overlapping chapters.` |  |
+| `Local chapters` |  |
+| `No chapters available. Import a TXT or JSON file to add them.` |  |
+| `Play a track or select a song to manage chapters.` |  |
+| `Preview only. Apply to keep these chapters on this device.` |  |
+| `Restore publisher chapters` |  |
+| `Saved` |  |
+| `Stop after chapter` |  |
+| `Stop after current chapter` |  |
+| `Stop after this chapter` |  |
+| `Stop here` |  |
+| `Tap a chapter to seek. Use Stop here to stop at that chapter end. Imported chapters can be removed without changing the audio file.` |  |
+| `This chapter cannot be selected for stopping.` |  |
+| `TXT example: 00:00 Introduction. JSON uses title, start and optional end. Maximum 1 MiB.` |  |
+
 ## Settings › Diagnostics
 
 | String | What it is |
@@ -928,6 +1081,21 @@ you are actually typing into, which is easier than reading it here.
 | `Time spent` |  |
 | `What happened, rather than how long it took.` | The line under `Counted`: that section is a tally of events, next to the sections above it which are timings |
 | `While minimized` | Section header on the Diagnostics screen, over what was measured with the app in the background rather than on screen. Minimized as in put away: the screen off or another app in front, with the music still going |
+
+## Settings › Discovery layout
+
+| String | What it is |
+| --- | --- |
+| `Compact music` |  |
+| `Compact search results` |  |
+| `Default layout` |  |
+| `Home and search layout` |  |
+| `Home sections` | Reorder which sections appear on Home |
+| `Listening intentions` |  |
+| `Lyrics first` |  |
+| `Move up` |  |
+| `Music search index` |  |
+| `Search presets change section order and density. Individual changes are saved for this account.` |  |
 
 ## Settings › Download manager
 
@@ -1018,7 +1186,6 @@ you are actually typing into, which is easier than reading it here.
 | `Offline analysis checks only the music available in this profile.` |  |
 | `Possible alternate versions` |  |
 | `Read-only suggestions based on title, artist and duration. Different releases may be intentional. No files are deleted or changed.` |  |
-| `Reading library: {n} songs` |  |
 | `Scan again` |  |
 | `Similar copies` |  |
 
@@ -1170,9 +1337,23 @@ you are actually typing into, which is easier than reading it here.
 
 | String | What it is |
 | --- | --- |
+| `{n} rows` |  |
+| `Cards` |  |
+| `Compact shelves` |  |
+| `Cover focus` |  |
+| `Decrease` |  |
+| `Default layout` |  |
+| `Default size` |  |
+| `Grid` |  |
 | `Home sections` | Reorder which sections appear on Home |
+| `Increase` |  |
+| `Items per section` |  |
+| `Large covers` |  |
 | `Most played albums` | A section of Home: the records played most |
 | `Random albums` | A section of Home: albums picked at random, to happen upon something |
+| `Rows` |  |
+| `Rows per column` |  |
+| `Small covers` |  |
 
 ## Settings › Home title
 
@@ -1185,6 +1366,21 @@ you are actually typing into, which is easier than reading it here.
 | `Good night` | Home's greeting, for the small hours. Spanish uses the same words as for the evening, which is fine |
 | `Home title` |  |
 | `Title preview` |  |
+
+## Settings › Home widgets
+
+| String | What it is |
+| --- | --- |
+| `Add a widget to your launcher. These use Android widgets and keep their own readable light and dark appearance.` |  |
+| `Continue podcasts` |  |
+| `Current lyrics` |  |
+| `Home screen widgets` |  |
+| `Listening statistics` |  |
+| `Listening time, play count and most listened track over the last 30 days.` |  |
+| `Long press your home screen, choose Widgets, then Resonus Glass.` |  |
+| `Open the app once after adding a widget to refresh it. No new network or catalog work runs for widgets that are not installed.` |  |
+| `Three nearby lines, using your current lyric source, edits and timing offset. Updates when the lyric line changes.` |  |
+| `Three unfinished episodes with remaining time. Tap an episode to continue listening.` |  |
 
 ## Settings › Language
 
@@ -1221,7 +1417,6 @@ you are actually typing into, which is easier than reading it here.
 | `Music folders` | Settings > Local music: the list of phone folders the local profile reads its music from |
 | `Music tools` |  |
 | `Only the music in the folder you choose.` | The line under `Choose a folder (recommended)` |
-| `Playlist import and export` |  |
 | `Rescan` | Trigger the server's library scan again |
 | `Rescanning your music…` | The phone is going through its own files again, offline |
 | `Scan` | Trigger the server's library scan |
@@ -1274,6 +1469,49 @@ you are actually typing into, which is easier than reading it here.
 | `Year` | Label of a field in the song information sheet: the year of the release |
 | `Yearly review` |  |
 
+## Settings › Listening tools
+
+| String | What it is |
+| --- | --- |
+| `Couldn't load listening settings.` |  |
+| `Couldn't save listening settings.` |  |
+| `Home screen widgets` |  |
+| `Import chapters or stop after a selected chapter.` |  |
+| `Keep music, podcasts, radio and audiobooks ready to continue.` |  |
+| `Keep neighbouring album tracks together.` |  |
+| `Linked songs in shuffle` |  |
+| `Listening tools` |  |
+| `Local chapters` |  |
+| `No saved session` |  |
+| `Restoring starts only when you tap a session. Up to 500 queue items are retained around the selected track.` |  |
+| `Separate listening sessions` |  |
+| `This item is no longer available.` |  |
+| `Wi-Fi music transfer` |  |
+
+## Settings › Local customizations
+
+| String | What it is |
+| --- | --- |
+| `Alias preview` |  |
+| `Apply exact aliases` |  |
+| `Artist ID` |  |
+| `Canonical display name` |  |
+| `Correct current song metadata` |  |
+| `Corrected songs` |  |
+| `Could not save aliases. Check exact names and avoid aliases already assigned to another artist.` |  |
+| `Enter a display name to preview.` |  |
+| `Exact aliases, one full name per line` |  |
+| `Exact artist aliases` |  |
+| `Local corrections` |  |
+| `Local display correction` | The line under “Preview affected loaded items”, explaining it |
+| `Lyric fonts` |  |
+| `Map explicitly entered full names to one display name. This never merges artist IDs, moves music or matches similar names automatically.` |  |
+| `No matching loaded items.` |  |
+| `Preview affected loaded items` |  |
+| `Preview uses already loaded items only. No full-library scan is started.` |  |
+| `Saved alias mappings` |  |
+| `Undo this alias mapping` |  |
+
 ## Settings › Long audio
 
 | String | What it is |
@@ -1303,13 +1541,32 @@ you are actually typing into, which is easier than reading it here.
 | `Song` | In search results, the little word under a result saying what kind of thing it is |
 | `Tap a saved bookmark to play from that point.` |  |
 
+## Settings › Lyric fonts
+
+| String | What it is |
+| --- | --- |
+| `Apple system fonts are not included. Missing imported fonts fall back to the app font.` |  |
+| `Chinese lyric font` |  |
+| `Choose a font for each script. Mixed lines use the whole sentence to distinguish Japanese kanji. Size and weight follow existing lyric settings.` |  |
+| `Could not save lyric fonts. Previous choices were kept.` |  |
+| `Follow app font` |  |
+| `Import app font` |  |
+| `Imported app font` |  |
+| `Japanese lyric font` |  |
+| `Korean lyric font` |  |
+| `Latin lyric font` |  |
+| `Lyric fonts` |  |
+| `Medium sans serif` |  |
+| `Restore default lyric fonts` |  |
+| `Sans serif` |  |
+
 ## Settings › Lyric sources
 
 | String | What it is |
 | --- | --- |
+| `A local lyric edit is active. Restore the original source in the editor to use another source.` |  |
 | `Automatic lyrics` |  |
 | `Cached automatic lyrics` |  |
-| `Choose a song first to use lyrics tools.` |  |
 | `Companion lyrics` |  |
 | `Could not load or save lyric sources. Your previous choice has been kept.` |  |
 | `Embedded lyrics` |  |
@@ -1339,8 +1596,9 @@ you are actually typing into, which is easier than reading it here.
 
 | String | What it is |
 | --- | --- |
-| `Choose a song first to use lyrics tools.` |  |
 | `Could not save lyric timing` |  |
+| `Edit and export lyrics` |  |
+| `Lyric fonts` |  |
 | `Lyric poster` |  |
 | `Lyric timing` |  |
 | `Lyric timing could not be loaded. Your saved values have not been changed.` |  |
@@ -1404,6 +1662,61 @@ you are actually typing into, which is easier than reading it here.
 | `What to cache` |  |
 | `You can pause this task at any time.` |  |
 
+## Settings › Music search
+
+| String | What it is |
+| --- | --- |
+| `A short break` |  |
+| `Acoustic and ambient genre tags, or a slower tagged tempo.` |  |
+| `Ambient, classical and instrumental genre tags, or a moderate tagged tempo.` |  |
+| `Back to the nineties` |  |
+| `Build a device-only metadata index for full pinyin, initials, file paths and listening intentions. No audio or artwork is downloaded. Rebuild after changing your library.` |  |
+| `Build or refresh index` |  |
+| `Cancel indexing` |  |
+| `Dance, electronic and rock genre tags, or a faster tagged tempo.` |  |
+| `Examples: zhoujielun or zjl finds 周杰伦. Paths only match metadata exposed by your music source. Searches use the last complete index and never a partial build.` |  |
+| `Familiar favourites` |  |
+| `Focus` |  |
+| `Hear it again` |  |
+| `Indexed songs` |  |
+| `Indexing failed. Your previous complete index has been kept.` |  |
+| `Last indexed` |  |
+| `Long listening` |  |
+| `More energy` |  |
+| `Music search index` |  |
+| `Not yet indexed` |  |
+| `Previously played tracks, ordered by the fewest reported plays.` |  |
+| `Release years from 1990 to 1999.` |  |
+| `Still unheard` |  |
+| `Tracks at least ten minutes long.` |  |
+| `Tracks marked as favourites in the indexed library.` |  |
+| `Tracks up to four minutes, based on their actual duration.` |  |
+| `Tracks without a reported play count.` |  |
+| `Unwind` |  |
+
+## Settings › Music tools
+
+| String | What it is |
+| --- | --- |
+| `Backup and transfer` |  |
+| `Discover internet radio` |  |
+| `Discovery and organization` |  |
+| `Edit song metadata and export or edit lyrics from a song’s menu.` |  |
+| `Home and search layouts` |  |
+| `Home screen widgets` |  |
+| `Listening scenes` |  |
+| `Listening sessions, groups and chapters` |  |
+| `Local edits and artist aliases` |  |
+| `Lyric language fonts` |  |
+| `Media folders and tags` |  |
+| `Music tools and customization` |  |
+| `Pending favorites and ratings` |  |
+| `Personal backup and restore` |  |
+| `Pinyin library search` |  |
+| `Playback and lyrics` |  |
+| `Playlist recovery` |  |
+| `Wi-Fi music transfer` |  |
+
 ## Settings › Navigation bar
 
 | String | What it is |
@@ -1431,6 +1744,54 @@ you are actually typing into, which is easier than reading it here.
 | `Server addresses` | Section header: a profile can have several addresses for the same account, one at home and one from outside |
 | `This address is already in the list.` | Validation message: that one is already there |
 
+## Settings › Pending marks
+
+| String | What it is |
+| --- | --- |
+| `Apply selected marks` |  |
+| `Couldn't load pending marks.` |  |
+| `Find matching songs` |  |
+| `Keep pending` |  |
+| `No pending marks` |  |
+| `Pending favourites and ratings` |  |
+| `Rating` | The stars given to the song. Not a bitrate, not a review |
+| `Restoration was interrupted. Unfinished marks remain pending.` |  |
+| `Restored {n} pending marks` |  |
+| `Review the suggested matches, then apply. Existing ratings are kept.` |  |
+| `Unmatched favourites and ratings are kept here even when the song is not in a playlist. Scan a complete library, review the version and confirm before applying. Audio files are never imported.` |  |
+
+## Settings › Personal backup
+
+| String | What it is |
+| --- | --- |
+| `{matched} matched, {unmatched} need review` |  |
+| `{n} playlists` |  |
+| `{n} rating conflicts` |  |
+| `Apply restore` |  |
+| `Back up favorites, ratings, your playlists, bookmarks, lyric edits, listening history and appearance. Music files and account passwords are excluded.` |  |
+| `Backup exported` |  |
+| `Cancelled. Completed changes remain.` |  |
+| `Choose backup and preview` |  |
+| `Existing playlists stay intact. Missing tracks remain as placeholders in restored playlists; ambiguous versions wait for your choice.` |  |
+| `Export personal backup` |  |
+| `If interrupted, completed changes remain. Reopen the backup to continue.` |  |
+| `Keep as missing track` |  |
+| `Matching library` |  |
+| `Merge favorites, ratings and new playlists` |  |
+| `Personal backup and restore` |  |
+| `Reading library metadata` |  |
+| `Reading personal settings` |  |
+| `Reading playlists` |  |
+| `Replace conflicting ratings` |  |
+| `Restore appearance and glass settings` |  |
+| `Restore completed: {n} actions` |  |
+| `Restore local edits, bookmarks and history` |  |
+| `Restore preview` |  |
+| `Restoring personal data` |  |
+| `This is a different library. ID-based local edits, sessions and bookmarks will not be applied. Songs are matched by metadata.` |  |
+| `Tracks needing a match` |  |
+| `Unmatched album and artist favorites are skipped. Songs can be matched below.` |  |
+
 ## Settings › Personalization
 
 | String | What it is |
@@ -1438,7 +1799,7 @@ you are actually typing into, which is easier than reading it here.
 | `Album page style` |  |
 | `Always show the navigation bar` |  |
 | `Appearance` |  |
-| `Apple Music style` |  |
+| `Apple Music style` | One of the values of “Lyric language fonts” |
 | `Artist page layout` |  |
 | `At the top of Home, what is playing in your other apps and devices, ready to carry on here.` |  |
 | `Compact layout` |  |
@@ -1451,6 +1812,7 @@ you are actually typing into, which is easier than reading it here.
 | `Glass tuning` |  |
 | `Greeting` | Home's "Good morning" line |
 | `Haptic feedback` | The small vibration when something is tapped |
+| `Home and search layouts` |  |
 | `Home buttons` | The icons at the top right of Home (search, history, settings), which of them show and in what order |
 | `Home chips` | The row of tappable category chips |
 | `Home sections` | Reorder which sections appear on Home |
@@ -1459,6 +1821,7 @@ you are actually typing into, which is easier than reading it here.
 | `Interface` | Section header grouping toggles |
 | `Language` |  |
 | `Light` | The light appearance, in Settings › Theme |
+| `Lyric language fonts` |  |
 | `Minidisc` |  |
 | `More rounded` | One of the values of “Cover corners” |
 | `Navigation` | Section header: how you move around the app |
@@ -1475,7 +1838,7 @@ you are actually typing into, which is easier than reading it here.
 | `Scheduled` |  |
 | `Show tab names` |  |
 | `Song lists` | The setting for how song lists look |
-| `Spotify style` |  |
+| `Spotify style` | One of the values of “Lyric language fonts” |
 | `Square` | One of the values of “Cover corners” |
 | `Start on your playlists` | A switch: with it on, Your library with no chip pressed shows the Favorites entry and the playlists, the way it used to, instead of albums, artists and playlists mixed together |
 | `Swipe left` | What dragging a song to the left in a list does |
@@ -1629,28 +1992,42 @@ you are actually typing into, which is easier than reading it here.
 | String | What it is |
 | --- | --- |
 | `{matched} matched, {unmatched} need review` |  |
-| `Choose a match or skip` |  |
 | `Choose playlist file` |  |
 | `Export JSON playlist` |  |
 | `Export M3U8 playlist` |  |
 | `Import failed. A new empty or partial playlist may remain; existing playlists were not replaced.` |  |
-| `Import matched tracks into a new playlist` |  |
 | `Import matches music in this library; it never downloads links or replaces an existing playlist.` |  |
-| `Library changed. Reopen this page.` |  |
+| `Import with missing-track placeholders` |  |
 | `M3U, M3U8 or Resonus JSON; up to 10,000 tracks.` |  |
 | `Playlist contains no valid tracks` |  |
 | `Playlist file is too large` |  |
 | `Playlist has too many tracks` |  |
-| `Playlist import and export` |  |
 | `Playlist imported` |  |
 | `Portable song metadata without account credentials.` |  |
 | `Relative music paths, without authenticated stream links.` |  |
 | `Save unmatched tracks` |  |
-| `Search this library` |  |
-| `Showing up to 50 candidates. Refine the search if needed.` |  |
 | `Skip this track` |  |
 | `Unsupported playlist file` |  |
 | `Working…` |  |
+
+## Settings › Playlist recovery
+
+| String | What it is |
+| --- | --- |
+| `{n} missing tracks` | The line under “Restore selected matches in place”, explaining it |
+| `An interrupted recovery is saved. Resume checks the current playlist before inserting anything again.` |  |
+| `Choose matches, then apply. Current playlist tracks keep their order.` |  |
+| `Discard recovery intent and review again` |  |
+| `Existing music stays in place. No playlist change is undone.` |  |
+| `Keep as missing track` |  |
+| `Matching library` |  |
+| `Missing tracks restored` |  |
+| `Opened playlists keep a local metadata snapshot. After music moves or disappears, scan to find confident matches. Live songs deliberately removed from a playlist are not restored.` |  |
+| `Playlist recovery` |  |
+| `Recovery interrupted. Refresh the playlist before trying again; current tracks were not intentionally removed.` |  |
+| `Restore selected matches in place` |  |
+| `Resume interrupted recovery` |  |
+| `Scan library for missing tracks` |  |
 
 ## Settings › Quick grid
 
@@ -1708,6 +2085,19 @@ you are actually typing into, which is easier than reading it here.
 | `Listening counts combine this profile’s local history with the counts provided by your music server. Artist weighting uses the songs being shuffled.` |  |
 | `Shuffle preferences` |  |
 
+## Settings › Shuffle links
+
+| String | What it is |
+| --- | --- |
+| `Always follow with the next album track` |  |
+| `Always lead with the previous album track` |  |
+| `Couldn't save listening settings.` |  |
+| `Linked songs in shuffle` |  |
+| `No neighbouring album track is available.` |  |
+| `Play a song to configure its album links.` |  |
+| `Saved album links` |  |
+| `Shuffle moves linked tracks as a group. Ordered podcasts and audiobooks keep their existing order.` |  |
+
 ## Settings › Silence trim
 
 | String | What it is |
@@ -1760,7 +2150,6 @@ you are actually typing into, which is easier than reading it here.
 | `No recorded plays` |  |
 | `No songs match these rules` |  |
 | `Offline rules use the music available in this profile.` |  |
-| `Reading library: {n} songs` |  |
 | `Recently added` | A sort order, and a section: newest first (in Favorites, last favorited first) |
 | `Refresh library` |  |
 | `Result limit` |  |
@@ -1813,14 +2202,59 @@ you are actually typing into, which is easier than reading it here.
 | `System` | Two places: a theme setting (use whichever appearance the phone itself is set to, light or dark), and `System::section`, the heading in Settings › Quality & playback over Keep screen on and the battery warning. Add `System::section` to your file if one word cannot do both |
 | `Theme` | The screen where the appearance and the accent colour are chosen, and the name of the row that opens it |
 
+## Settings › Wifi transfer
+
+| String | What it is |
+| --- | --- |
+| `Choose audio files to share` |  |
+| `Completed` |  |
+| `Connect to a private Wi-Fi network and retry.` |  |
+| `Copied` |  |
+| `Copy address` |  |
+| `Could not share these files. Check file size and permissions.` |  |
+| `Keep this page open. Open the address on another device on the same private Wi-Fi. Transfers stop when you leave this page or put the app in the background.` |  |
+| `Long press the address to copy it. This address expires when transfer stops.` |  |
+| `Received songs are saved in Music / Resonus Glass / Transfer. Existing files are not overwritten. Scan phone music to include them in your library.` |  |
+| `Share current downloaded track` |  |
+| `Start transfer` |  |
+| `Stop transfer` |  |
+| `Transfer progress` |  |
+| `Transfer stopped. Start it again after choosing files.` |  |
+| `Transferring` |  |
+| `Wi-Fi music transfer` |  |
+| `Wi-Fi transfer stopped.` |  |
+
 ## Shortcut
 
 | String | What it is |
 | --- | --- |
-| `Continue listening` | Shortcut on the app's launcher icon (long press): resumes the last queue. Short: launchers cut long labels |
 | `No favorite songs to play` |  |
 | `Nothing to continue` |  |
 | `Shuffle favorites` | Shortcut on the app's launcher icon (long press). Short: launchers cut long labels |
+
+## Song metadata
+
+| String | What it is |
+| --- | --- |
+| `Could not save local corrections. Existing values were kept.` |  |
+| `Disc number` |  |
+| `Local metadata saved` |  |
+| `Local song corrections` |  |
+| `Original` | Quality option: the file exactly as it is on the server, nothing transcoded. It also appears in quotes inside two descriptions on those screens, so use the same wording in all three |
+| `Original metadata restored` |  |
+| `Preview` |  |
+| `Restore original metadata` |  |
+| `Save local corrections` |  |
+| `These display corrections stay on this device. Song IDs, audio files, server tags and download identities stay unchanged.` |  |
+| `Track number` |  |
+| `Use whole non-negative numbers for year, track and disc.` |  |
+
+## Widget listening
+
+| String | What it is |
+| --- | --- |
+| `Open podcasts` |  |
+| `This widget item is unavailable in the current profile.` |  |
 
 ## Used all over the app
 
@@ -1858,14 +2292,19 @@ you are actually typing into, which is easier than reading it here.
 | `Back` | Screen reader label for the back arrow. A direction, not a verb |
 | `Cancel` | The button that closes a dialog without doing anything, and the one beside a search box |
 | `Casual` | The informal handwritten-style system typeface option in Settings › Font |
+| `Choose a match or skip` |  |
+| `Choose a song first to use lyrics tools.` |  |
 | `Clear` | Read out by the screen reader for the small x that empties a search box. A verb |
 | `Clear all` | Throw away the whole list: the history, the queue, or what you searched for |
 | `Close` | Read out by the screen reader for a button that closes what is open. A verb |
 | `Columns` | The same menu's title on a screen that has no list to switch to, so all it chooses is the density |
 | `Condensed` | A narrow typeface option in Settings › Font, not a condensed list layout |
+| `Connect to the server before scanning or backing up the whole library.` |  |
 | `Connect to Wi-Fi to download` | Toast: downloading over mobile data is turned off in the settings |
+| `Continue listening` | Shortcut on the app's launcher icon (long press): resumes the last queue. Short: launchers cut long labels |
 | `Continuous playback` |  |
 | `Could not connect to the server` |  |
+| `Could not save changes. Please try again.` |  |
 | `Couldn't add to the playlist` | Toast: the server refused |
 | `Couldn't complete the action` | What the app says when it does not know what went wrong. Deliberately vague |
 | `Couldn't load albums.` | Error on the screen, with a Retry button |
@@ -1890,6 +2329,7 @@ you are actually typing into, which is easier than reading it here.
 | `Downloaded audio will be removed. Your shows, favorites and listening progress are kept.` |  |
 | `Downloading…` | Toast: the download has started. The songs arrive one by one after this |
 | `Drag to reorder, toggle to show or hide.` |  |
+| `Enable all server libraries before a complete backup or missing-track scan.` |  |
 | `Episode details` |  |
 | `Episode notes` |  |
 | `Export` | Get the downloaded file itself out of the app, as a file. Not the same as `Share`, which makes a link on the server |
@@ -1899,6 +2339,7 @@ you are actually typing into, which is easier than reading it here.
 | `Hold to go back to {tab}` | The hint on holding the back arrow. `{tab}` is Home, Search or Library |
 | `Home` | The first tab, and a folder in the car |
 | `Library` | The settings section, and a folder in the car |
+| `Library changed. Reopen this page.` |  |
 | `List` | An option in that menu: one row per item, instead of cards |
 | `Loading…` |  |
 | `Lost the connection to {name}` |  |
@@ -1909,6 +2350,7 @@ you are actually typing into, which is easier than reading it here.
 | `Mark as played` |  |
 | `Mark as unplayed` |  |
 | `Mark every episode in this show as played? Downloaded audio is kept.` |  |
+| `Missing track · tap to find` |  |
 | `Mix of “{name}”` | What the player calls the queue once it has grown past its album into songs the app picked itself. `{name}` is the song it was grown from |
 | `Monospace` | A typeface whose characters all have the same width, in Settings › Font |
 | `More` | A "see more" action, and the third button of the selection bar, the one that opens the rest of what it can do |
@@ -1934,12 +2376,16 @@ you are actually typing into, which is easier than reading it here.
 | `Playback speed` |  |
 | `Playing next` | The toast that says `Play next` worked. Not the same string, and not a heading |
 | `Playlist changed. Reopen it and try again.` |  |
+| `Playlist import and export` |  |
 | `Playlist name` | The name field when making or renaming a playlist |
 | `Playlists` | A section on Home and in the library, and a folder in the car |
 | `Podcast settings` |  |
+| `Previous` | Player control: the previous track (accessibility label) |
 | `Queue` | The list of songs waiting to play. Not a playlist |
+| `Radio` | Internet radio stations. Most languages keep the word |
 | `Rate {n} stars` | Read out by the screen reader for each star. `{n}` is which star it is |
 | `Read-only playlist` |  |
+| `Reading library: {n} songs` |  |
 | `Refresh` | Ask the server for this playlist again, in case it changed elsewhere. Also the button under suggested tracks to regenerate them |
 | `Remove` | Take something out of a list. Deleting for good is `Delete` |
 | `Remove “{name}” and its episodes from this device?` |  |
@@ -1954,6 +2400,7 @@ you are actually typing into, which is easier than reading it here.
 | `Save` | The confirm button of an edit sheet. A verb |
 | `Saving…` |  |
 | `Search` | The search tab, and the action of searching |
+| `Search this library` |  |
 | `Select all` | Tick every song in the list at once |
 | `Serif` | A typeface with small strokes at the ends of letters, in Settings › Font |
 | `Server default` | Codec option meaning "let the server decide" what to transcode to |
@@ -1962,6 +2409,7 @@ you are actually typing into, which is easier than reading it here.
 | `Show all` | Opens the full list of what the row is showing a few of |
 | `Show less` | Folds it back |
 | `Show more` | Unfolds the rest of a text that was cut short |
+| `Showing up to 50 candidates. Refine the search if needed.` |  |
 | `Shuffle` | Play in random order |
 | `Skip intro` |  |
 | `Skip outro` |  |

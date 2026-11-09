@@ -62,6 +62,7 @@ import { artistHeroGeometry } from '@/lib/artistHeroGeometry';
 import { selectArtistPortrait } from '@/lib/artistPortrait';
 import { ArtistPagePaletteProvider, useArtistPagePalette } from '@/components/volta/ArtistPagePalette';
 import { AppleArtistName } from '@/components/volta/AppleArtistName';
+import { useDisplayArtist } from '@/hooks/useLocalMetadata';
 import { VoltaArtistPhotoTarget } from '@/components/volta/VoltaArtistPhotoTarget';
 import { VoltaArtistHeaderBackdrop } from '@/components/volta/VoltaArtistHeaderBackdrop';
 import { artistHeaderFromLayout } from '@/lib/artistHeaderTransition';
@@ -225,6 +226,7 @@ export default function ArtistScreen() {
     enabled: canFetch && !!id,
   });
   const name = data?.artist.name;
+  const displayedArtist = useDisplayArtist(data?.artist);
 
   // The artist's own `coverArt`, not their id, and it is worth the wait for
   // `data`. Navidrome 0.64 stopped treating the two as interchangeable: an
@@ -501,7 +503,7 @@ export default function ArtistScreen() {
             style={StyleSheet.absoluteFill}
           /> : null}
           <AppleArtistName
-            name={data.artist.name} uri={appleMusic ? headerUri : undefined} offline={offline}
+            name={data.artist.name} displayName={displayedArtist?.name} uri={appleMusic ? headerUri : undefined} offline={offline}
             sourceFingerprint={artistArtwork.sourceFingerprint}
             width={screenW} bottomPadding={appleMusic ? spacing.lg : spacing.md}
             artworkAspect={nameArtworkAspect}
@@ -814,7 +816,7 @@ export default function ArtistScreen() {
             gone solid. */}
         <BackChevron size={28} color={colors.onArtwork} style={styles.back} label={t('Close')} />
         <Animated.Text style={[styles.barTitle, appleText, barContentStyle]} numberOfLines={1}>
-          {data.artist.name}
+          {displayedArtist?.name ?? data.artist.name}
         </Animated.Text>
         {appleMusic && albums.length > 0 ? (
           <GlassPressable style={[voltaStyles.roundAction, { backgroundColor: colors.scrim }]} accessibilityRole="button"
@@ -953,6 +955,9 @@ export default function ArtistScreen() {
                   <Text style={styles.actionText}>{t('All releases')}</Text>
                 </Pressable>
               ) : null}
+              <Pressable style={styles.action} onPress={() => close(() => router.push({ pathname: '/settings/local-customizations', params: { artistId: id, artistName: data.artist.name } }))}>
+                <Icon name="text" size={24} color={colors.text} /><Text style={styles.actionText}>{t('Exact artist aliases')}</Text>
+              </Pressable>
               <Pressable
                 style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
                 onPress={() => {

@@ -39,3 +39,19 @@ export function isAudiobookTrack(song: Song | null | undefined): boolean {
   return !!song && !song.url && !song.vod && !(song as Song & { podcastChannelId?: string }).podcastChannelId
     && (isAudiobookSong(song) || isAudiobookAlbumId(song.albumId));
 }
+
+export async function exportAlbumProgress() {
+  await repository.hydrate(); return { ...(repository.getSnapshot().byProfile[audiobookProfileScope()] ?? {}) };
+}
+export async function importAlbumProgress(value: unknown, current: () => boolean) {
+  const { parseAlbumProgress } = await import('@/lib/albumProgressPersistence');
+  const entries = parseAlbumProgress(JSON.stringify({ restored: value })).restored;
+  if (Object.keys(entries).length > 10000) throw new Error('Invalid audiobook progress');
+  const scope = audiobookProfileScope(); await repository.hydrate();
+  for (const [albumId, entry] of Object.entries(entries)) {
+    if (!current() || scope !== audiobookProfileScope()) throw new Error('Profile changed');
+    const old = repository.getSnapshot().byProfile[scope]?.[albumId];
+    if (!old || old.updatedAt < entry.updatedAt) repository.remember(scope, albumId, entry.trackId, entry.positionSec, true);
+  }
+  await repository.flush();
+}

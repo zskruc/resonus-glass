@@ -13,7 +13,7 @@ import * as sorting from '../src/lib/artistSongSort';
 function execute(source: string, imports: Record<string, unknown>, values: Record<string, unknown> = {}) {
   const exports: Record<string, any> = {};
   runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText,
-    { exports, ...values, require(name: string) { assert.ok(Object.hasOwn(imports, name), name); return imports[name]; } }); return exports;
+    { exports, ...values, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization; assert.ok(Object.hasOwn(imports, name), name); return imports[name]; } }); return exports;
 }
 const source = (file: string) => readFileSync(new URL(file, import.meta.url), 'utf8');
 
@@ -76,3 +76,4 @@ test('the real artist playback binding reads the latest sorted queue even when T
     owner = { username: 'B' }; press(); assert.equal(calls.length, 1, 'old scope cannot start another queue');
   } finally { await act(async () => root?.unmount()); }
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

@@ -70,7 +70,7 @@ function harness() {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   const exports: Record<string, any> = {};
-  runInNewContext(source, { exports, require(id: string) {
+  runInNewContext(source, { exports, require(id: string) { const customization = defaultCustomizationBoundary(id); if (customization) return customization;
     assert.ok(Object.hasOwn(dependencies, id), `Unexpected mini title import ${id}`); return dependencies[id];
   } });
   const find = (node: unknown, type: string, path = 'root'): { node: Element; path: string }[] => {
@@ -137,3 +137,4 @@ test('the real MiniPlayer only offers a playlist hold on its visible expanded fa
   h.dock.compact = true; h.dock.progress.set(1);
   assert.equal(favorite().props.playlistSong, undefined, 'the hidden folded favorite cannot retain a hold');
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

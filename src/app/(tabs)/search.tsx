@@ -2,8 +2,8 @@
 import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import Icon from '@/components/Icon';
 import { useQuery } from '@tanstack/react-query';
-import { Link, useFocusEffect, useNavigation } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, router, useFocusEffect, useNavigation } from 'expo-router';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
@@ -18,6 +18,12 @@ import { ScrollView } from 'react-native-gesture-handler';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { musicIndexIdentity, searchMusicIndex } from '@/lib/musicDiscoveryIndex';
+import { captureLyricOwner } from '@/lib/lyricOwner';
+import { isManualOffline } from '@/api/netGate';
+import { useLibraries } from '@/store/libraries';
+import { resolvedSearchFilter } from '@/lib/discoveryPreferences';
+import { useDiscoveryPreferences } from '@/store/discoveryPreferences';
 import { COVER, coverArtUrl, getPlaylists, search } from '@/api/data';
 import { getRadioStations } from '@/api/backend';
 import { AlbumCard } from '@/components/AlbumCard';
@@ -93,10 +99,13 @@ export default function SearchScreen() {
   const auth = useAuthStore((s) => s.auth);
   const profile = profileScopeId();
   const t = useT();
+  const presentation = useDiscoveryPreferences();
+  const compact = presentation.data.search.density === 'compact';
   const lang = useSettings((s) => s.language);
   const bottomPad = useScreenBottomPadding();
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<SearchFilter>('all');
+  const [requestedFilter, setFilter] = useState<SearchFilter>('all');
+  const filter = resolvedSearchFilter(presentation.data.search, requestedFilter);
   const debouncedQuery = useDebounce(query.trim(), 350);
   const lyricSearch = useCachedLyricSearch(debouncedQuery);
   const lyricMatches = query.trim() === debouncedQuery ? lyricSearch.data ?? [] : [];
@@ -178,15 +187,27 @@ export default function SearchScreen() {
 
   const { data: response, isFetching: queryFetching, isError: queryError, refetch } = useQuery({
     queryKey: searchRequestKey(profile, offline, debouncedQuery),
-    queryFn: ({ signal }) => readCurrentSearch(debouncedQuery, () => !signal.aborted
+    queryFn: ({ signal }) => { const owns = captureLyricOwner(profile); return readCurrentSearch(debouncedQuery, () => owns() && !signal.aborted
       && profileScopeId() === profile && useAuthStore.getState().auth === auth
-      && useAuthStore.getState().offline === offline, search),
+      && useAuthStore.getState().offline === offline, search); },
     enabled: canSearch && filter !== 'lyrics' && debouncedQuery.length > 1,
   });
   const queryMatches = query.trim() === debouncedQuery;
-  const data = currentSearchData(query, debouncedQuery, response);
+  useLibraries((state) => state.disabled);
+  const musicIdentity = musicIndexIdentity();
+  const indexed = useQuery({ queryKey: ['indexedMusicSearch', musicIdentity.profile, musicIdentity.source, debouncedQuery],
+    queryFn: ({ signal }) => searchMusicIndex(debouncedQuery, musicIdentity, signal),
+    enabled: canSearch && filter !== 'lyrics' && debouncedQuery.length > 1, retry: false, staleTime: 30_000 });
+  const serverData = currentSearchData(query, debouncedQuery, response);
+  const data = useMemo(() => {
+    if (!queryMatches) return undefined;
+    const cached = indexed.data;
+    if (!serverData && !cached) return undefined;
+    const merge = <T extends { id: string }>(a: T[] = [], b: T[] = []) => [...new Map([...a, ...b].map((item) => [item.id, item])).values()];
+    return { songs: merge(serverData?.songs, cached?.songs), albums: merge(serverData?.albums, cached?.albums), artists: merge(serverData?.artists, cached?.artists) };
+  }, [serverData, indexed.data, queryMatches]);
   const isFetching = query.trim().length > 1 && (!queryMatches || (filter === 'lyrics' ? lyricSearch.isFetching : queryFetching));
-  const isError = queryMatches && (filter === 'lyrics' ? lyricSearch.isError : queryError);
+  const isError = queryMatches && (filter === 'lyrics' ? lyricSearch.isError : queryError && !(indexed.data?.songs.length || indexed.data?.artists.length || indexed.data?.albums.length));
 
   const openMediaMenu = useMediaMenu((s) => s.open);
   // Playlists: Subsonic's search3 doesn't return them, so they're filtered by
@@ -206,15 +227,16 @@ export default function SearchScreen() {
   // Jellyfin doesn't manage them and offline there's nothing to stream.
   /** Whether this account has stations at all, which is also whether the chip
    *  for them is worth drawing. */
-  const canSearchStations = !!auth && !offline && auth.serverType !== 'jellyfin';
+  const canReadServerStations = !!auth && !offline && auth.serverType !== 'jellyfin';
+  const canSearchStations = canReadServerStations || presentation.data.stations.length > 0;
   const { data: stations } = useQuery({
     queryKey: ['radioStations'],
     queryFn: () => getRadioStations(auth!),
-    enabled: canSearchStations && filter !== 'lyrics' && debouncedQuery.length > 1,
+    enabled: canReadServerStations && filter !== 'lyrics' && debouncedQuery.length > 1,
   });
   const stationMatches =
     queryMatches && debouncedQuery.length > 1
-      ? (stations ?? []).filter((r) =>
+      ? [...presentation.data.stations, ...(stations ?? [])].filter((r) =>
           r.name.toLowerCase().includes(debouncedQuery.toLowerCase()),
         )
       : [];
@@ -228,7 +250,7 @@ export default function SearchScreen() {
    * was shown, applied to an answer they were about to read as everything.
    */
   /** Whether a kind is on screen: its own chip, or `all`. */
-  const shows = (kind: SearchFilter) => filter === 'all' || filter === kind;
+  const shows = (kind: SearchFilter) => filter === kind || filter === 'all' && presentation.data.search.sections.some((row) => row.key === kind && row.enabled);
   /**
    * How many results the filter leaves on screen, which is what decides the
    * empty state. Counting the lot would say "no results" with a chip pressed
@@ -246,8 +268,10 @@ export default function SearchScreen() {
   // With the box empty the screen is what was opened from it before. Genres
   // are Explore's, and were a second Explore here.
   const showRecent = isEmpty && recent.length > 0;
-  const gridKind = filter === 'artists' || filter === 'albums' ? filter : undefined;
-  const grid = searchGridGeometry(width - pagePad * 2, gridKind ?? 'albums', spacing.md);
+  const gridKind = filter === 'artists' ? 'artists' : filter === 'albums' ? 'albums' : undefined;
+  const normalGrid = searchGridGeometry(width - pagePad * 2, gridKind ?? 'albums', spacing.md);
+  const compactColumns = Math.min(8, normalGrid.columns + 1);
+  const grid = compact ? { columns: compactColumns, cardWidth: Math.max(1, Math.floor((width - pagePad * 2 - spacing.md * (compactColumns - 1)) / compactColumns)) } : normalGrid;
   const gridItems = useMemo(() => gridKind ? searchGridItems(gridKind, data) : [], [gridKind, data]);
   const feedback = isFetching ? (
     <ActivityIndicator style={{ marginTop: spacing.xl }} color={colors.accent} />
@@ -269,6 +293,197 @@ export default function SearchScreen() {
   // From JS, not a `SafeAreaView`: that one pads a frame late on a tab's first
   // mount and the page jumped down (same as Explore).
   const insets = useSafeAreaInsets();
+
+  const latestSongs = useRef({ songs: data?.songs ?? [], owns: captureLyricOwner(profile) });
+  useLayoutEffect(() => { latestSongs.current = { songs: data?.songs ?? [], owns: captureLyricOwner(profile) }; }, [data, profile]);
+  const playLatest = (songId: string) => { const latest = latestSongs.current; if (!latest.owns()) return;
+    const index = latest.songs.findIndex((song) => song.id === songId); if (index >= 0) playQueue(latest.songs, index); };
+  const resultSections = {
+    lyrics: <>{shows('lyrics') && query.trim().length > 1 ? <View style={styles.section}>
+          <Text style={[styles.sectionTitle, appleMusic && appleMusicStyles.sectionTitle]}>{t('In cached lyrics')}</Text>
+          {lyricSearch.indexing ? <Text style={styles.recentSub}>{t('Indexing saved lyrics in the background…')}</Text> : null}
+          {lyricMatches.map((match) => <View key={match.song.id}>
+            <TrackRow song={match.song} isCurrent={playing?.id === match.song.id} showArtwork={showListArtwork}
+              onPress={() => { void playCachedLyricResult(lyricMatches, lyricMatches.indexOf(match), profile).then((result) => {
+                if (result === 'unavailable' && profileScopeId() === profile) useToast.getState().show(t("Couldn't play the song"));
+              }); }} />
+            <Text style={[styles.recentSub, { marginLeft: showListArtwork ? 64 : 0, marginBottom: spacing.md }]}
+              numberOfLines={3}>{match.excerpt.replace(/\n/g, ' · ')}</Text>
+          </View>)}
+          {!lyricMatches.length && !lyricSearch.isFetching && !lyricSearch.indexing ?
+            <Text style={styles.recentSub}>{t('Searches lyrics already saved on this device, including supplied translation and romanization.')}</Text> : null}
+        </View> : null}</>,
+    artists: <>{shows('artists') && data && data.artists.length > 0 ? (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, appleMusic && appleMusicStyles.sectionTitle]}>{t('Artists')}</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.albumRow}
+              // Its own, and not the page's: a nested scroll view does not
+              // inherit it, so with the keyboard up the first tap on a card
+              // was spent closing it and the second one was the one that
+              // opened the artist.
+              keyboardShouldPersistTaps="handled"
+            >
+              {data.artists.map((artist) => (
+                <Link key={artist.id} href={`/artist/${artist.id}`} asChild>
+                  <Pressable
+                    style={styles.artist}
+                    onPress={() =>
+                      addRecent({
+                        kind: 'artist',
+                        id: artist.id,
+                        title: artist.name,
+                        coverArt: artist.coverArt ?? artist.id,
+                        href: `/artist/${artist.id}`,
+                      })
+                    }
+                  >
+                    <Cover
+                      uri={coverArtUrl(artist.coverArt ?? artist.id, COVER.thumb)}
+                      size={compact ? 84 : 110}
+                      rounded
+                    />
+                    <Text style={styles.artistName} numberOfLines={1}>
+                      {artist.name}
+                    </Text>
+                  </Pressable>
+                </Link>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}</>,
+    albums: <>{shows('albums') && data && data.albums.length > 0 ? (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, appleMusic && appleMusicStyles.sectionTitle]}>{t('Albums')}</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.albumRow}
+              // Its own, like the row of artists above it.
+              keyboardShouldPersistTaps="handled"
+            >
+              {data.albums.map((album) => (
+                <AlbumCard
+                  key={album.id}
+                  album={album}
+                  width={compact ? 120 : undefined}
+                  onPress={() =>
+                    addRecent({
+                      kind: 'album',
+                      id: album.id,
+                      title: album.name,
+                      artist: album.artist,
+                      coverArt: album.coverArt ?? album.id,
+                      href: `/album/${album.id}`,
+                    })
+                  }
+                />
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}</>,
+    songs: <>{shows('songs') && data && data.songs.length > 0 ? (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, appleMusic && appleMusicStyles.sectionTitle]}>{t('Songs')}</Text>
+            {data.songs.map((song) => (
+              <TrackRow
+                key={song.id}
+                song={song}
+                isCurrent={playing?.id === song.id}
+                showArtwork={showListArtwork}
+                onPress={() => {
+                  if (song.albumId) {
+                    addRecent({
+                      kind: 'song',
+                      id: song.id,
+                      title: song.title,
+                      artist: song.artist,
+                      coverArt: song.coverArt ?? song.albumId,
+                      href: `/album/${song.albumId}`,
+                    });
+                  }
+                  playLatest(song.id);
+                }}
+              />
+            ))}
+          </View>
+        ) : null}</>,
+    playlists: <>{shows('playlists') && playlistMatches.length > 0 ? (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, appleMusic && appleMusicStyles.sectionTitle]}>{t('Playlists')}</Text>
+            {playlistMatches.map((p) => (
+              <Link key={p.id} href={`/playlist/${p.id}`} asChild>
+                <Pressable
+                  style={styles.recentRow}
+                  onLongPress={() => { haptic('light'); openMediaMenu({ kind: 'playlist', playlist: p }); }}
+                >
+                  <Cover uri={coverArtUrl(p.coverArt ?? p.id, COVER.thumb)} size={compact ? 40 : 48} />
+                  <View style={styles.recentInfo}>
+                    <Text style={styles.recentTitle} numberOfLines={1}>
+                      {p.name}
+                    </Text>
+                    {p.songCount != null ? (
+                      <Text style={styles.recentSub}>
+                        {songsLabel(p.songCount, lang)}
+                      </Text>
+                    ) : null}
+                  </View>
+                </Pressable>
+              </Link>
+            ))}
+          </View>
+        ) : null}</>,
+    radio: <>{shows('radio') && stationMatches.length > 0 ? (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, appleMusic && appleMusicStyles.sectionTitle]}>{t('Radio')}</Text>
+            {stationMatches.map((r) => (
+              <Pressable
+                key={r.id}
+                style={styles.recentRow}
+                onPress={() => {
+                  if (!latestSongs.current.owns() || isManualOffline()) return;
+                  playQueue(
+                    [
+                      {
+                        id: r.id,
+                        title: r.name,
+                        url: r.streamUrl,
+                        artist: t('Radio'),
+                        coverArt: 'coverArt' in r ? r.coverArt : 'imageUrl' in r ? r.imageUrl : undefined,
+                      },
+                    ],
+                    0,
+                    r.name,
+                    '/radio',
+                  );
+                }}
+              >
+                <Cover
+                  uri={'coverArt' in r ? coverArtUrl(r.coverArt, COVER.thumb) : 'imageUrl' in r ? r.imageUrl : undefined}
+                  size={compact ? 40 : 48}
+                  rounded
+                  placeholderIcon="radio"
+                />
+                <View style={styles.recentInfo}>
+                  <Text
+                    style={[styles.recentTitle, playing?.id === r.id && { color: colors.accent }]}
+                    numberOfLines={1}
+                  >
+                    {r.name}
+                  </Text>
+                  {r.homePageUrl ? (
+                    <Text style={styles.recentSub} numberOfLines={1}>
+                      {r.homePageUrl}
+                    </Text>
+                  ) : null}
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}</>,
+  };
 
   return (
     <View style={[styles.safe, { paddingTop: insets.top }]}>
@@ -296,6 +511,7 @@ export default function SearchScreen() {
             <Icon name="close-circle" size={20} color={colors.textMuted} />
           </GlassPressable>
         ) : null}
+        <GlassPressable accessibilityLabel={t('Home and search layout')} hitSlop={8} onPress={() => router.push('/settings/discovery-layout')}><Icon name="options-outline" size={22} color={colors.textSecondary} /></GlassPressable>
         <OfflineIndicator />
       </View>
 
@@ -305,7 +521,7 @@ export default function SearchScreen() {
           it leaves something out. */}
       {isEmpty ? null : (
         <View style={[styles.filters, { paddingHorizontal: pagePad }]}>
-          {FILTERS.filter((f) => f.key !== 'radio' || canSearchStations).map((f) => {
+          {FILTERS.filter((f) => (f.key !== 'radio' || canSearchStations) && (f.key === 'all' || presentation.data.search.sections.some((row) => row.key === f.key && row.enabled))).map((f) => {
             const active = f.key === filter;
             return (
               <GlassPressable tint={active ? accent : undefined} variant={active ? 'prominent' : 'regular'}
@@ -365,7 +581,7 @@ export default function SearchScreen() {
                   <Pressable style={styles.recentRow}>
                     <Cover
                       uri={coverArtUrl(item.coverArt ?? item.id, COVER.thumb)}
-                      size={48}
+                      size={compact ? 40 : 48}
                       rounded={item.kind === 'artist'}
                     />
                     <View style={styles.recentInfo}>
@@ -400,193 +616,7 @@ export default function SearchScreen() {
 
         {feedback}
 
-        {shows('lyrics') && query.trim().length > 1 ? <View style={styles.section}>
-          <Text style={[styles.sectionTitle, appleMusic && appleMusicStyles.sectionTitle]}>{t('In cached lyrics')}</Text>
-          {lyricSearch.indexing ? <Text style={styles.recentSub}>{t('Indexing saved lyrics in the background…')}</Text> : null}
-          {lyricMatches.map((match) => <View key={match.song.id}>
-            <TrackRow song={match.song} isCurrent={playing?.id === match.song.id} showArtwork={showListArtwork}
-              onPress={() => { void playCachedLyricResult(lyricMatches, lyricMatches.indexOf(match), profile).then((result) => {
-                if (result === 'unavailable' && profileScopeId() === profile) useToast.getState().show(t("Couldn't play the song"));
-              }); }} />
-            <Text style={[styles.recentSub, { marginLeft: showListArtwork ? 64 : 0, marginBottom: spacing.md }]}
-              numberOfLines={3}>{match.excerpt.replace(/\n/g, ' · ')}</Text>
-          </View>)}
-          {!lyricMatches.length && !lyricSearch.isFetching && !lyricSearch.indexing ?
-            <Text style={styles.recentSub}>{t('Searches lyrics already saved on this device, including supplied translation and romanization.')}</Text> : null}
-        </View> : null}
-
-        {shows('artists') && data && data.artists.length > 0 ? (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, appleMusic && appleMusicStyles.sectionTitle]}>{t('Artists')}</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.albumRow}
-              // Its own, and not the page's: a nested scroll view does not
-              // inherit it, so with the keyboard up the first tap on a card
-              // was spent closing it and the second one was the one that
-              // opened the artist.
-              keyboardShouldPersistTaps="handled"
-            >
-              {data.artists.map((artist) => (
-                <Link key={artist.id} href={`/artist/${artist.id}`} asChild>
-                  <Pressable
-                    style={styles.artist}
-                    onPress={() =>
-                      addRecent({
-                        kind: 'artist',
-                        id: artist.id,
-                        title: artist.name,
-                        coverArt: artist.coverArt ?? artist.id,
-                        href: `/artist/${artist.id}`,
-                      })
-                    }
-                  >
-                    <Cover
-                      uri={coverArtUrl(artist.coverArt ?? artist.id, COVER.thumb)}
-                      size={110}
-                      rounded
-                    />
-                    <Text style={styles.artistName} numberOfLines={1}>
-                      {artist.name}
-                    </Text>
-                  </Pressable>
-                </Link>
-              ))}
-            </ScrollView>
-          </View>
-        ) : null}
-
-        {shows('albums') && data && data.albums.length > 0 ? (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, appleMusic && appleMusicStyles.sectionTitle]}>{t('Albums')}</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.albumRow}
-              // Its own, like the row of artists above it.
-              keyboardShouldPersistTaps="handled"
-            >
-              {data.albums.map((album) => (
-                <AlbumCard
-                  key={album.id}
-                  album={album}
-                  onPress={() =>
-                    addRecent({
-                      kind: 'album',
-                      id: album.id,
-                      title: album.name,
-                      artist: album.artist,
-                      coverArt: album.coverArt ?? album.id,
-                      href: `/album/${album.id}`,
-                    })
-                  }
-                />
-              ))}
-            </ScrollView>
-          </View>
-        ) : null}
-
-        {shows('songs') && data && data.songs.length > 0 ? (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, appleMusic && appleMusicStyles.sectionTitle]}>{t('Songs')}</Text>
-            {data.songs.map((song, i) => (
-              <TrackRow
-                key={song.id}
-                song={song}
-                isCurrent={playing?.id === song.id}
-                showArtwork={showListArtwork}
-                onPress={() => {
-                  if (song.albumId) {
-                    addRecent({
-                      kind: 'song',
-                      id: song.id,
-                      title: song.title,
-                      artist: song.artist,
-                      coverArt: song.coverArt ?? song.albumId,
-                      href: `/album/${song.albumId}`,
-                    });
-                  }
-                  playQueue(data.songs, i);
-                }}
-              />
-            ))}
-          </View>
-        ) : null}
-
-        {shows('playlists') && playlistMatches.length > 0 ? (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, appleMusic && appleMusicStyles.sectionTitle]}>{t('Playlists')}</Text>
-            {playlistMatches.map((p) => (
-              <Link key={p.id} href={`/playlist/${p.id}`} asChild>
-                <Pressable
-                  style={styles.recentRow}
-                  onLongPress={() => { haptic('light'); openMediaMenu({ kind: 'playlist', playlist: p }); }}
-                >
-                  <Cover uri={coverArtUrl(p.coverArt ?? p.id, COVER.thumb)} size={48} />
-                  <View style={styles.recentInfo}>
-                    <Text style={styles.recentTitle} numberOfLines={1}>
-                      {p.name}
-                    </Text>
-                    {p.songCount != null ? (
-                      <Text style={styles.recentSub}>
-                        {songsLabel(p.songCount, lang)}
-                      </Text>
-                    ) : null}
-                  </View>
-                </Pressable>
-              </Link>
-            ))}
-          </View>
-        ) : null}
-
-        {shows('radio') && stationMatches.length > 0 ? (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, appleMusic && appleMusicStyles.sectionTitle]}>{t('Radio')}</Text>
-            {stationMatches.map((r) => (
-              <Pressable
-                key={r.id}
-                style={styles.recentRow}
-                onPress={() =>
-                  playQueue(
-                    [
-                      {
-                        id: r.id,
-                        title: r.name,
-                        url: r.streamUrl,
-                        artist: t('Radio'),
-                        coverArt: r.coverArt,
-                      },
-                    ],
-                    0,
-                    r.name,
-                    '/radio',
-                  )
-                }
-              >
-                <Cover
-                  uri={coverArtUrl(r.coverArt, COVER.thumb)}
-                  size={48}
-                  rounded
-                  placeholderIcon="radio"
-                />
-                <View style={styles.recentInfo}>
-                  <Text
-                    style={[styles.recentTitle, playing?.id === r.id && { color: colors.accent }]}
-                    numberOfLines={1}
-                  >
-                    {r.name}
-                  </Text>
-                  {r.homePageUrl ? (
-                    <Text style={styles.recentSub} numberOfLines={1}>
-                      {r.homePageUrl}
-                    </Text>
-                  ) : null}
-                </View>
-              </Pressable>
-            ))}
-          </View>
-        ) : null}
+        {presentation.data.search.sections.map(({ key }) => <View key={key} style={compact ? { marginBottom: -8 } : undefined}>{resultSections[key]}</View>)}
       </AnimatedScrollView>}
     </View>
   );

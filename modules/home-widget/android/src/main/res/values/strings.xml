@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+  <string name="widget_podcast_name">Continue podcasts</string>
+  <string name="widget_stats_name">Listening statistics</string>
+  <string name="widget_lyrics_name">Current lyrics</string>
   <string name="widget_name">Now playing</string>
   <string name="widget_description">What Resonus is playing, with play, pause and skip.</string>
   <string name="widget_idle">Tap to open Resonus</string>

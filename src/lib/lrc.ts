@@ -121,10 +121,17 @@ function attachCompanions(lines: LyricLine[], companions: Partial<LyricLine>[]):
 
 function withCompanions(line: LyricLine, companion: unknown): LyricLine {
   if (!companion || typeof companion !== 'object') return line;
-  const value = companion as { translation?: unknown; romanization?: unknown };
+  const value = companion as { translation?: unknown; romanization?: unknown; words?: LyricLine['words'] };
+  const words = value.words;
+  const exactWords = Array.isArray(words) && words.length > 0 && words.length <= 2000
+    && words.every((word) => word && typeof word === 'object' && typeof word.value === 'string' && word.value.length <= 16000
+      && typeof word.start === 'number' && Number.isFinite(word.start) && word.start >= 0
+      && (word.end === undefined || typeof word.end === 'number' && Number.isFinite(word.end) && word.end >= word.start))
+    && words.map((word) => word.value).join('').trim() === line.value.trim() ? words : undefined;
   return { ...line,
     ...(typeof value.translation === 'string' && value.translation.trim() ? { translation: value.translation } : {}),
-    ...(typeof value.romanization === 'string' && value.romanization.trim() ? { romanization: value.romanization } : {}) };
+    ...(typeof value.romanization === 'string' && value.romanization.trim() ? { romanization: value.romanization } : {}),
+    ...(exactWords ? { words: exactWords.map((word) => ({ value: word.value, start: word.start, ...(word.end === undefined ? {} : { end: word.end }) })) } : {}) };
 }
 
 /**

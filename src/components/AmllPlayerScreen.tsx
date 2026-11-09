@@ -32,6 +32,7 @@ import { SpeedSheet } from '@/components/SpeedSheet';
 import { useAmllPlayerTransition } from '@/hooks/useAmllPlayerTransition';
 import { useCoverTint } from '@/hooks/useDominantColor';
 import { useLyrics } from '@/hooks/useLyrics';
+import { useDisplaySong } from '@/hooks/useLocalMetadata';
 import { PlainLyrics } from '@/components/PlainLyrics';
 import { useT } from '@/i18n';
 import { AMLL_TOP_PADDING, amllPlayerHeaderArea, amllPlayerLayout } from '@/lib/amllPlayerLayout';
@@ -61,6 +62,7 @@ export function AmllPlayerScreen() {
   const window = useWindowDimensions();
   const t = useT();
   const song = usePlayerStore(currentSong);
+  const displayed = useDisplaySong(song);
   const live = useLiveInfo(song);
   const playing = usePlayerStore((state) => state.isPlaying);
   const buffering = usePlayerStore((state) => state.isBuffering);
@@ -140,8 +142,8 @@ export function AmllPlayerScreen() {
     ? buildPlayerPalette(coverTint.color, true) : null, [cover, coverTint.color, coverTint.known]);
   const trackTint = controlPalette?.accent ?? INK;
   const lyrics = useLyrics(song ?? undefined);
-  const title = live?.title || song?.title || t('Now playing');
-  const artist = live?.artist || song?.artist || t('Unknown artist');
+  const title = live?.title || displayed?.title || t('Now playing');
+  const artist = live?.artist || displayed?.artist || t('Unknown artist');
   const liveStream = !!song?.url && !song.vod;
   const artists = useMemo(() => song && !liveStream ? artistTargets(song) : [], [song, liveStream]);
   const openArtistPicker = useArtistPicker((state) => state.open);

@@ -34,7 +34,7 @@ export default function LyricSourcesSettings() {
   const mode = useLyricDisplayMode();
   const ready = useLyricDisplay((state) => state.profile === profile && state.ready);
   const displayError = useLyricDisplay((state) => state.profile === profile && state.error);
-  const { data: lyrics } = useLyrics(song ?? undefined);
+  const { data: lyrics, localEdit } = useLyrics(song ?? undefined);
   const [chosen, setChosen] = useState<string | null>(null), [preview, setPreview] = useState<LyricCandidate | null>(null);
   const [working, setWorking] = useState(false), [error, setError] = useState(false);
   const live = useRef(true), operation = useRef(0);
@@ -95,6 +95,7 @@ export default function LyricSourcesSettings() {
     {song ? <>
       <Text style={styles.song}>{song.title}</Text><Text style={styles.note}>{song.artist}</Text>
       <Text style={styles.note}>{t('Preview a source, then use it for this song. Saved choices work offline and do not change lyric files.')}</Text>
+      {localEdit ? <Text style={styles.note}>{t('A local lyric edit is active. Restore the original source in the editor to use another source.')}</Text> : null}
       <SettingsGroup>
         <SettingRow label={t('Automatic lyrics')} right={chosen === null ? '✓' : ''}
           description={t('Follow the source preference in Lyrics settings.')} onPress={() => { void choose(null); }} />

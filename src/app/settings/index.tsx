@@ -106,6 +106,8 @@ export default function SettingsScreen({ asTab = false }: { asTab?: boolean }) {
     ...(auth ? [{ key: 'network', title: 'Network', icon: 'git-network-outline' as const }] : []),
     // Theme lives inside Appearance (row with chevron, like Language).
     { key: 'personalization', title: 'Appearance', icon: 'color-palette-outline' as const },
+    { key: 'music-tools', title: 'Music tools and customization', icon: 'options-outline' as const },
+    { key: 'personal-backup', title: 'Personal backup and restore', icon: 'archive-outline' as const },
     { key: 'about', title: 'About::app', icon: 'information-circle-outline' as const },
   ];
 

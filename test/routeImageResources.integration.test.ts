@@ -22,7 +22,7 @@ function compile(path: string, imports: Record<string, unknown>) {
   const exports: Record<string, any> = {};
   runInNewContext(ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
-  }).outputText, { exports, URL, atob, console, require(name: string) {
+  }).outputText, { exports, URL, atob, console, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
     if (name === 'react') return React;
     if (name === 'react/jsx-runtime') return JSXRuntime;
     assert.ok(Object.hasOwn(imports, name), `Unexpected production dependency ${name}`); return imports[name];
@@ -233,3 +233,4 @@ describe('real React route image resource commits and Suspense', () => {
     assert.equal(refs[0].releases, 1); assert.equal(h.nativeImages.size, 0);
   });
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

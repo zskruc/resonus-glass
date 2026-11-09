@@ -8,7 +8,8 @@ const h = { profile: 'A', offsetProfile: 'A', offset: 250,
   option: undefined as any, prefetched: undefined as any, hydrated: [] as string[] };
 Object.assign(globalThis, { __lyricHookHarness: h });
 const stubs = new Map([
-  ['react', 'export const useEffect = effect => { effect() }; export const useCallback = value => value'],
+  ['./useLocalLyricEdit', 'export const useLocalLyricEdit = () => ({data:null,isPending:false}); export const editedLyrics = value => value'],
+  ['react', 'export const useEffect = effect => { effect() }; export const useCallback = value => value; export const useMemo = compute => compute()'],
   ['@tanstack/react-query', `export const useQuery = options => {
     const h = globalThis.__lyricHookHarness; h.option = options;
     return { data: options.select(h.raw), isLoading: false };

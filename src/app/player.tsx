@@ -55,6 +55,7 @@ import { useForegroundEffect } from '@/hooks/useForegroundEffect';
 import { useImageAnimation } from '@/hooks/useImageAnimation';
 import { useLocalProfile } from '@/hooks/useLocalProfile';
 import { useLyrics } from '@/hooks/useLyrics';
+import { useDisplaySong } from '@/hooks/useLocalMetadata';
 import { useScreenSize } from '@/hooks/useScreenSize';
 import { useT } from '@/i18n';
 import { revealOffset } from '@/lib/playerReveal';
@@ -271,6 +272,7 @@ function ResonusPlayerScreen() {
   const router = useRouter();
   const isFocused = useIsFocused();
   const song = usePlayerStore(currentSong);
+  const displayed = useDisplaySong(song);
   const live = useLiveInfo(song);
   const source = usePlayerStore((s) => s.source);
   const sourceHref = usePlayerStore((s) => s.sourceHref);
@@ -968,15 +970,15 @@ function ResonusPlayerScreen() {
   // A radio announcing what it plays takes over both lines, same as it does
   // everywhere else. A stream that announces nothing leaves them as they were:
   // the station's name and "Radio".
-  const title = live?.title ?? song.title;
-  const artistName = live?.artist ?? song.artist ?? t('Unknown artist');
+  const title = live?.title ?? displayed?.title ?? song.title;
+  const artistName = live?.artist ?? displayed?.artist ?? t('Unknown artist');
   // With the two lines above taken by the track, this one is all that is left to
   // say which station it is, so a radio puts its name here and does it whether
   // or not album info is on: this is not album info.
   const albumInfo = live
     ? song.title
     : showAlbumInfo
-      ? [song.album, song.year].filter(Boolean).join(' · ')
+      ? [displayed?.album, displayed?.year].filter(Boolean).join(' · ')
       : '';
   // Square, capped at the width of the slot it sits in: it only shrinks when
   // the height demands it, so on a tall screen with few options it looks

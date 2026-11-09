@@ -9,6 +9,7 @@ import { artistNameVisualFrame } from '@/lib/artistHeaderTransition';
 
 interface Props {
   name: string;
+  displayName?: string;
   uri?: string;
   offline: boolean;
   sourceFingerprint?: string;
@@ -20,14 +21,14 @@ interface Props {
   onLayout: (event: LayoutChangeEvent) => void;
 }
 
-export function AppleArtistName({ name, uri, offline, sourceFingerprint, width, bottomPadding, artworkAspect,
+export function AppleArtistName({ name, displayName = name, uri, offline, sourceFingerprint, width, bottomPadding, artworkAspect,
   textStyle, animationStyle, onLayout }: Props) {
   const loaded = useAppleArtistNameArtwork(uri, name, offline, sourceFingerprint);
   const [failed, setFailed] = useState<ImageRef>();
   const [layout, setLayout] = useState({ y: 0, height: 0 });
   // ImageRef already owns validated, decoded pixels. Waiting for an onDisplay
   // bridge event while painting it necessarily exposes the plain name too.
-  const shown = !!loaded && failed !== loaded.image;
+  const shown = displayName === name && !!loaded && failed !== loaded.image;
   const aspect = shown ? loaded.width / loaded.height : 0;
   useLayoutEffect(() => { artworkAspect?.set(aspect); }, [artworkAspect, aspect]);
   // Image children must receive a real Yoga layout, not UI-runtime-only width
@@ -44,15 +45,15 @@ export function AppleArtistName({ name, uri, offline, sourceFingerprint, width, 
   return <>
     <Text pointerEvents="none" onLayout={measure} numberOfLines={2}
       style={[textStyle, styles.ruler]} accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-      {name}
+      {displayName}
     </Text>
     <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, animationStyle]} accessible={false}>
       <View style={[styles.overlay, origin]} accessible importantForAccessibility="yes"
-        accessibilityRole="header" accessibilityLabel={name}>
+        accessibilityRole="header" accessibilityLabel={displayName}>
         {shown ? <View style={[styles.artwork, frame]}>
           <Image source={loaded.image} contentFit="contain" transition={0} style={StyleSheet.absoluteFill}
             accessible={false} onError={() => setFailed(loaded.image)} />
-        </View> : <Text pointerEvents="none" numberOfLines={2} style={textStyle} accessible={false}>{name}</Text>}
+        </View> : <Text pointerEvents="none" numberOfLines={2} style={textStyle} accessible={false}>{displayName}</Text>}
       </View>
     </Animated.View>
   </>;

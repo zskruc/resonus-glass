@@ -1,6 +1,7 @@
 /** Recording identity and bounded, literal FTS tokens shared by cache/search. */
 import type { LyricLine, Song, SongLyrics } from '@/api/subsonic';
 import { recommendationSong } from './dailyRecommendations';
+import { sourceSong } from './sourceSongMetadata';
 
 export type LyricDisplayMode = 'original' | 'translation' | 'romanization' | 'both';
 export const LYRIC_DISPLAY_MODES: LyricDisplayMode[] = ['original', 'translation', 'romanization', 'both'];
@@ -10,7 +11,8 @@ export interface CachedLyricMatch { song: Song; excerpt: string; }
 
 /** IDs can be reused after a library rescan or a file can be retagged. */
 export function lyricRecordingKey(song: Song): string {
-  return JSON.stringify([song.id, song.title ?? '', song.artist ?? '', song.album ?? '', song.duration ?? 0]);
+  const raw = sourceSong(song);
+  return JSON.stringify([raw.id, raw.title ?? '', raw.artist ?? '', raw.album ?? '', raw.duration ?? 0]);
 }
 export function lyricCompanions(line: LyricLine, mode: LyricDisplayMode): string[] {
   const values = mode === 'both' ? [line.romanization, line.translation]

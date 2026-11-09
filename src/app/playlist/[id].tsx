@@ -48,6 +48,8 @@ import { useSongSort } from '@/hooks/useSongSort';
 import { songsLabel, useT } from '@/i18n';
 import { formatTotalDuration } from '@/lib/format';
 import { createPlaylistOrderWriter, playlistOrderRows } from '@/lib/playlistReorder';
+import { observeRecoveryPlaylist, personalOwner, readRecoveryPlaylist, usePlaylistRecovery } from '@/store/playlistRecovery';
+import { pendingPlaylistRows, type RecoveryPlaylist } from '@/lib/personalBackupModels';
 import { sameTracklist } from '@/lib/playlistMembership';
 import { useSharePicker } from '@/store/sharePicker';
 import { profileScopeId, useAuthStore } from '@/store/auth';
@@ -449,6 +451,20 @@ export default function PlaylistScreen() {
   });
   const orderRecoveryPending = orderRecovery?.scope === orderScope && (isFetching || dataUpdatedAt <= orderRecovery.at);
   const playlistCover = usePlaylistCover(data?.playlist.coverArt ?? data?.playlist.id);
+  useEffect(() => {
+    if (!data || data.playlist.id !== id) return;
+    const owner = personalOwner();
+    // A local snapshot runs after a successful detail read, never during scrolling.
+    void observeRecoveryPlaylist(data.playlist, data.songs, owner).catch(() => {});
+  }, [data, id]);
+  const recoveryRevision = usePlaylistRecovery((s) => s.revision);
+  const [recovery, setRecovery] = useState<RecoveryPlaylist>();
+  useEffect(() => {
+    let alive = true;
+    setRecovery(undefined);
+    void readRecoveryPlaylist(id).then((value) => { if (alive) setRecovery(value); }).catch(() => {});
+    return () => { alive = false; };
+  }, [id, recoveryRevision, auth, offline]);
 
   const songIds = (data?.songs ?? []).map((s) => s.id);
   // Exact, unlike the album menu's guess: the songs are right here, so the
@@ -805,6 +821,8 @@ export default function PlaylistScreen() {
           data.playlist.coverArt || data.songs.length > 0 ? () => setCoverOpen(true) : undefined
         }
         songs={displaySongs}
+        missingRows={recovery ? pendingPlaylistRows(recovery.entries, displaySongs) : undefined}
+        onMissingPress={() => router.push({ pathname: '/settings/playlist-recovery', params: { playlistId: id } })}
         playlistIndices={playlistIndices}
         currentId={playing?.id}
         onMenu={() => menuRef.current()}
@@ -910,6 +928,9 @@ export default function PlaylistScreen() {
       <SheetModal openRef={menuRef}>
         {(close) => (
           <>
+            <Pressable style={({ pressed }) => [styles.action, pressed && { opacity: .6 }]} onPress={() => { close(); router.push({ pathname: '/settings/playlist-recovery', params: { playlistId: id } }); }}>
+              <Icon name="refresh-outline" size={24} color={colors.text} /><Text style={styles.actionText}>{t('Playlist recovery')}</Text>
+            </Pressable>
             <Pressable
               style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
               onPress={() => {

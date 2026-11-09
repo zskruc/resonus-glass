@@ -64,7 +64,7 @@ function compile(path: string, imports: Record<string, unknown>) {
   const exports: Record<string, any> = {};
   runInNewContext(ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText, { exports, require(name: string) {
+  }).outputText, { exports, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
     if (name === 'react') return React;
     assert.ok(Object.hasOwn(imports, name), name); return imports[name];
   } });
@@ -191,3 +191,4 @@ test('animated-cover flags are capped, reload after eviction and reject a callba
     assert.equal(shown.isAnimated, true, 'a recent completed flag is an immediate hit');
   } finally { await act(async () => { renderer?.unmount(); }); }
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

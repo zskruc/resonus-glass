@@ -32,7 +32,7 @@ function harness() {
   };
   runInNewContext(ts.transpileModule(readFileSync(new URL('../src/lib/verifyAppleArtistPhoto.ts', import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText, { exports, require(name: string) { assert.ok(Object.hasOwn(imports, name), name); return imports[name]; } });
+  }).outputText, { exports, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization; assert.ok(Object.hasOwn(imports, name), name); return imports[name]; } });
   return { paths, prefetches, preparations, run: exports.verifyAppleArtistPhoto,
     different() { result = fingerprint.match(/.{6}/g)!.reverse().join(''); },
     delay(promise: Promise<void>) { wait = promise; } };
@@ -58,3 +58,4 @@ it('cancelled/offline policy, wrong assets and oversized candidates never initia
   const pending = h.run(candidate, fingerprint, () => allowed); allowed = false; release();
   assert.equal(await pending, false); assert.equal(h.prefetches.length, 0); assert.equal(h.preparations.length, 0);
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

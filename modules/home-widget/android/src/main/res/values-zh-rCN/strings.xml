@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="widget_podcast_name">播客继续收听</string>
+  <string name="widget_stats_name">收听统计</string>
+  <string name="widget_lyrics_name">当前歌词</string>
+</resources>

@@ -84,7 +84,7 @@ function harness() {
   const exported: Record<string, any> = {};
   runInNewContext(executable, { exports: exported, __DEV__: false,
     setTimeout: (callback: () => void) => { timers.push(callback); return timers.length; },
-    require(name: string) { assert.ok(Object.hasOwn(dependencies, name), name); return dependencies[name]; } });
+    require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization; assert.ok(Object.hasOwn(dependencies, name), name); return dependencies[name]; } });
   return { api: exported, state, calls, writes, published, files, covers, coverRequests,
     save: (value: any) => { saved = value; }, saveLyrics: (value: any) => { savedLyrics = value; },
     cacheReader: (work: typeof cacheRead) => { cacheRead = work; },
@@ -245,3 +245,4 @@ test('a lyric response after replacing credentials is neither cached nor deliver
   await tick(); h.state.auth = { ...h.state.auth! }; pending.resolve(lyrics);
   await assert.rejects(work, /profile changed/); assert.equal(h.writes.length, 0);
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

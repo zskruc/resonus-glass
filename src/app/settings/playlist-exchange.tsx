@@ -8,7 +8,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import { createPlaylistFromSongs, getPlaylist } from '@/api/data';
+import { createPlaylist, createPlaylistFromSongs, getPlaylist } from '@/api/data';
 import type { Song } from '@/api/subsonic';
 import { SettingsPage, SettingRow, settingsStyles } from '@/components/SettingsUI';
 import { SheetModal } from '@/components/SheetModal';
@@ -18,6 +18,8 @@ import { matchPlaylistAsync, parsePlaylistFile, playlistJson, playlistM3u, unmat
 import { profileScopeId, useAuthStore } from '@/store/auth';
 import { useLibraries } from '@/store/libraries';
 import { useToast } from '@/store/toast';
+import { personalOwner, saveRecoveryPlaylist } from '@/store/playlistRecovery';
+import { portableBackupTrack } from '@/lib/personalBackupModels';
 import { fontSize, spacing, themed, useTheme } from '@/theme';
 
 const MatchList = Animated.createAnimatedComponent(FlatList<PlaylistMatch>);
@@ -131,11 +133,16 @@ export default function PlaylistExchangeScreen() {
     finally { if (valid()) setBusy(false); }
   }
   async function importNew() {
-    if (busy || !valid() || !name.trim() || !matched) return;
+    if (busy || !valid() || !name.trim() || !matches.length) return;
     setBusy(true); setMessage('');
     try {
       const selected = matches.flatMap((match) => match.selected ? [match.selected] : []);
-      const id = await createPlaylistFromSongs(name, selected);
+      const recoveryOwner = personalOwner();
+      const id = selected.length ? await createPlaylistFromSongs(name, selected) : await createPlaylist(name);
+      if (!valid()) return;
+      await saveRecoveryPlaylist({ key: id, playlistId: id, name, updatedAt: Date.now(), entries: matches.map((match, index) => ({
+        key: `import-${index}`, track: portableBackupTrack(match.track), songId: match.selected?.id,
+      })) }, recoveryOwner);
       if (!valid()) return;
       toast(t('Playlist imported'));
       router.replace(`/playlist/${encodeURIComponent(id)}`);
@@ -159,7 +166,7 @@ export default function PlaylistExchangeScreen() {
         {matches.length ? <>
           <TextInput accessibilityLabel={t('Playlist name')} value={name} onChangeText={setName} editable={!busy} style={styles.input} placeholder={t('Playlist name')} placeholderTextColor={styles.muted.color} />
           <Text style={styles.notice}>{t('{matched} matched, {unmatched} need review', { matched, unmatched: matches.length - matched })}</Text>
-          <SettingRow label={t('Import matched tracks into a new playlist')} right={String(matched)} onPress={!busy && matched ? () => void importNew() : undefined} />
+          <SettingRow label={t('Import with missing-track placeholders')} right={String(matched)} onPress={!busy && matches.length ? () => void importNew() : undefined} />
           {matched < matches.length ? <SettingRow label={t('Save unmatched tracks')} onPress={busy ? undefined : () => void share(unmatchedReport(matches), 'json', 'application/json').catch(() => setMessage(t("Couldn't complete the action")))} /> : null}
         </> : null}
       </>}

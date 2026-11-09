@@ -19,6 +19,7 @@ interface Options {
   currentProfile: () => string;
   publish: (counts: Record<string, number>, hydrated: boolean) => void;
   delay?: number;
+  remove?: (key: string) => Promise<void>;
 }
 export function createProfilePlayCounts(options: Options) {
   let generation = 0;
@@ -27,7 +28,8 @@ export function createProfilePlayCounts(options: Options) {
   let counts: Record<string, number> = {}, deltas: Record<string, number> = {};
   let timer: ReturnType<typeof setTimeout> | undefined;
   let tail: Promise<unknown> = Promise.resolve();
-  type Save = { counts: Record<string, number>; version: number };
+  type Save = { counts: Record<string, number>; version: number; deleted: number };
+  const removed = new Map<string, number>();
   const pending = new Map<string, Save>();
   const latestVersion = new Map<string, number>();
   let revision = 0;
@@ -41,11 +43,12 @@ export function createProfilePlayCounts(options: Options) {
     const snapshots = [...pending]; pending.clear();
     return serialize(async () => {
       for (const [scope, snapshot] of snapshots) {
+        if (snapshot.deleted !== (removed.get(scope) ?? 0)) continue;
         try { await options.write(keyOf(scope), JSON.stringify(snapshot.counts)); }
         catch {
           // A newer snapshot may already have been dequeued into a second
           // flush. Map presence alone cannot decide which failure is current.
-          if (latestVersion.get(scope) === snapshot.version && !pending.has(scope)) pending.set(scope, snapshot);
+          if (latestVersion.get(scope) === snapshot.version && !pending.has(scope) && snapshot.deleted === (removed.get(scope) ?? 0)) pending.set(scope, snapshot);
         }
       }
     });
@@ -54,7 +57,7 @@ export function createProfilePlayCounts(options: Options) {
     if (!loaded || !profile || profile === 'default') return;
     const version = ++revision;
     latestVersion.set(profile, version);
-    pending.set(profile, { counts, version });
+    pending.set(profile, { counts, version, deleted: removed.get(profile) ?? 0 });
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => { void save(); }, options.delay ?? 1000);
   }
@@ -109,5 +112,25 @@ export function createProfilePlayCounts(options: Options) {
     counts = cleanPlayCounts({ ...counts, [id]: Math.min(Number.MAX_SAFE_INTEGER, (counts[id] ?? 0) + 1) });
     options.publish(counts, true); schedule();
   }
-  return { hydrate, bump, flush: save };
+  async function exportCounts(scope: string, current: () => boolean) {
+    if (profile !== scope || !loaded) await hydrate(scope);
+    if (!loaded || profile !== scope || options.currentProfile() !== scope || !current()) throw new Error('Play counts are unavailable');
+    await save(); if (!current() || options.currentProfile() !== scope || profile !== scope || pending.has(scope)) throw new Error('Play counts could not be saved');
+    return { ...counts };
+  }
+  async function importCounts(scope: string, input: unknown, current: () => boolean) {
+    const incoming = cleanPlayCounts(input);
+    if (profile !== scope || !loaded) await hydrate(scope);
+    if (!loaded || profile !== scope || options.currentProfile() !== scope || !current()) throw new Error('Play counts are unavailable');
+    const merged = { ...counts };
+    for (const [id, value] of Object.entries(incoming)) merged[id] = Math.max(merged[id] ?? 0, value);
+    counts = cleanPlayCounts(merged); schedule(); options.publish(counts, true);
+    await save(); if (!current() || options.currentProfile() !== scope || profile !== scope || pending.has(scope)) throw new Error('Play counts could not be saved');
+  }
+  async function clear(scope: string) {
+    removed.set(scope, (removed.get(scope) ?? 0) + 1); pending.delete(scope);
+    if (profile === scope) { generation++; profile = null; loaded = false; counts = {}; deltas = {}; options.publish(counts, false); }
+    return serialize(async () => { if (await options.read(MIGRATION_OWNER) === scope) await options.write(MIGRATION_OWNER, 'retired'); await options.remove?.(keyOf(scope)); });
+  }
+  return { hydrate, bump, flush: save, exportCounts, importCounts, clear };
 }

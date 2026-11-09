@@ -122,7 +122,7 @@ function harness() {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   const exports: Record<string, any> = {};
-  runInNewContext(output, { exports, require(name: string) {
+  runInNewContext(output, { exports, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
     assert.ok(Object.hasOwn(dependencies, name), `Unexpected screen dependency ${name}`); return dependencies[name];
   } });
   return { player, settings, dimensions, values, transition, menuCalls, navigations, artistPickers, closeCalls: () => closeCalls,
@@ -426,3 +426,4 @@ test('metadata callbacks reject old song, covered, closing, preparing and unmoun
   assertBlocked(currentA);
   assert.equal(h.closeCalls(), 0);
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

@@ -65,17 +65,35 @@ export async function deleteProfileData(auth: SubsonicAuth): Promise<void> {
 
   // These modules read active-account state; importing them eagerly here would
   // make auth -> profileData -> tools -> auth a startup dependency cycle.
-  const [musicTools, silenceTrim, longAudio, podcasts] = await Promise.all([
+  const [musicTools, silenceTrim, longAudio, podcasts, customizations, discovery, listeningTools, recovery, musicIndex, pendingMarks, recoveryJournals, pins, personalPlayback] = await Promise.all([
     import('./listeningDb'),
     import('@/store/silenceTrim'),
     import('@/store/longAudio'),
     import('@/store/podcastPreferences'),
+    import('./localCustomizations'),
+    import('@/store/discoveryPreferences'),
+    import('@/store/listeningTools'),
+    import('@/store/playlistRecovery'),
+    import('./musicDiscoveryIndex'),
+    import('@/store/pendingSongMarks'),
+    import('@/store/playlistRecoveryJournal'),
+    import('@/store/pins'),
+    import('./personalPlaybackBackup'),
   ]);
   await Promise.all([
     musicTools.clearMusicToolsProfile(rawScope),
     silenceTrim.clearSilenceTrimProfile(rawScope),
     longAudio.clearLongAudioProfile(rawScope),
     podcasts.clearPodcastPreferencesProfile(rawScope),
+    customizations.clearLocalCustomizationsProfile(rawScope),
+    discovery.clearDiscoveryProfile(rawScope),
+    listeningTools.clearListeningToolsProfile(rawScope),
+    recovery.clearPlaylistRecoveryProfile(rawScope),
+    musicIndex.clearMusicDiscoveryProfile(rawScope),
+    pendingMarks.clearPendingSongMarksProfile(rawScope),
+    recoveryJournals.clearRecoveryJournalsProfile(rawScope),
+    pins.clearPinsProfile(rawScope),
+    personalPlayback.clearPersonalPlaybackProfile(rawScope, auth),
   ]);
 
   // The databases are closed before their files go, or the handles would

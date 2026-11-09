@@ -4,9 +4,11 @@
  * applied and saved immediately.
  */
 import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
-import { GlassSurface, GlassSwitch } from '@/components/glass';
+import { GlassSurface, GlassSwitch, GlassPressable } from '@/components/glass';
+import { useDiscoveryPreferences } from '@/store/discoveryPreferences';
+import { homeShelfPreset, type ShelfLayout, type ShelfPreference } from '@/lib/discoveryPreferences';
 import Icon from '@/components/Icon';
-import { Pressable, Text } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import ReorderableList, {
   useReorderableDrag,
   type ReorderableListReorderEvent,
@@ -49,12 +51,16 @@ const LABEL: Record<HomeSectionKey, string> = {
 function SectionRow({ section }: { section: HomeSection }) {
   const t = useT();
   const drag = useReorderableDrag();
+  const prefs = useDiscoveryPreferences();
+  const preference: ShelfPreference = prefs.data.shelves[section.key] ?? { layout: 'default' as ShelfLayout, size: 'default' as const, limit: 20 };
+  const change = (patch: Partial<typeof preference>) => void prefs.change((data) => ({ ...data, shelves: { ...data.shelves, [section.key]: { ...preference, ...patch } } }));
   const setHomeSection = useSettings((s) => s.setHomeSection);
   // From the store, not `colors.accent`: without subscription the switch would
   // keep the previous accent while the screen stays mounted.
   const { accent } = useTheme();
   return (
-    <GlassSurface radius={radius.md} style={styles.row}>
+    <GlassSurface radius={radius.md} style={{ marginBottom: spacing.sm, overflow: 'hidden' }}>
+    <View style={styles.row}>
       <Pressable
         hitSlop={10}
         onPressIn={() => {
@@ -73,6 +79,13 @@ function SectionRow({ section }: { section: HomeSection }) {
         trackColor={{ false: colors.control, true: accent }}
         thumbColor={colors.knob}
       />
+    </View>
+    {section.key !== 'dailyRecommendations' ? <View style={{ paddingHorizontal: spacing.lg, paddingBottom: 12, gap: 10 }}>
+      {!['mostPlayedSongs', 'randomSongs'].includes(section.key) ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>{(['default', 'cards', 'rows', 'grid'] as const).map((layout) => <GlassPressable key={layout} onPress={() => change({ layout })} style={{ padding: 8, borderRadius: 10, backgroundColor: preference.layout === layout ? colors.surfaceHighlight : 'transparent' }}><Text style={{ color: preference.layout === layout ? colors.accent : colors.textSecondary }}>{t(layout === 'default' ? 'Default layout' : layout === 'cards' ? 'Cards' : layout === 'grid' ? 'Grid' : 'Rows')}</Text></GlassPressable>)}</View> : null}
+      {!['mostPlayedSongs', 'randomSongs'].includes(section.key) && !['rows', 'compact'].includes(preference.layout) ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>{(['small', 'default', 'large'] as const).map((size) => <GlassPressable key={size} onPress={() => change({ size })} style={{ padding: 8, borderRadius: 10, backgroundColor: preference.size === size ? colors.surfaceHighlight : 'transparent' }}><Text style={{ color: preference.size === size ? colors.accent : colors.textSecondary }}>{t(size === 'small' ? 'Small covers' : size === 'large' ? 'Large covers' : 'Default size')}</Text></GlassPressable>)}</View> : null}
+      {preference.layout === 'grid' || ['mostPlayedSongs', 'randomSongs'].includes(section.key) ? <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}><Text style={{ color: colors.textSecondary }}>{t('Rows per column')}</Text>{([1, 2, 3] as const).map((rows) => <GlassPressable key={rows} accessibilityLabel={t('{n} rows', { n: rows })} accessibilityState={{ selected: (preference.rows ?? (['mostPlayedSongs', 'randomSongs'].includes(section.key) ? 3 : 2)) === rows }} onPress={() => change({ rows })} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: (preference.rows ?? (['mostPlayedSongs', 'randomSongs'].includes(section.key) ? 3 : 2)) === rows ? colors.surfaceHighlight : 'transparent' }}><Text style={{ color: colors.text }}>{rows}</Text></GlassPressable>)}</View> : null}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}><Text style={{ color: colors.textSecondary }}>{t('Items per section')}: {preference.limit}</Text><GlassPressable accessibilityLabel={t('Decrease')} onPress={() => change({ limit: Math.max(3, preference.limit - 5) })}><Text style={{ color: colors.accent, fontSize: 24 }}>−</Text></GlassPressable><GlassPressable accessibilityLabel={t('Increase')} onPress={() => change({ limit: Math.min(50, preference.limit + 5) })}><Text style={{ color: colors.accent, fontSize: 24 }}>+</Text></GlassPressable></View>
+    </View> : null}
     </GlassSurface>
   );
 }
@@ -92,6 +105,7 @@ export default function HomeSectionsSettings() {
   const offline = useAuthStore((s) => s.offline);
   const homeSections = useSettings((s) => s.homeSections);
   const setHomeSections = useSettings((s) => s.setHomeSections);
+  const prefs = useDiscoveryPreferences();
   const visible = offline
     ? homeSections.filter((s) => !SERVER_ONLY.includes(s.key))
     : homeSections;
@@ -100,6 +114,7 @@ export default function HomeSectionsSettings() {
     <SettingsSafeArea>
       <ScreenHeader title={t('Home sections')} />
       <Text style={styles.hint}>{t('Drag to reorder, toggle to show or hide.')}</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: spacing.lg, gap: 8, marginBottom: spacing.sm }}>{(['default', 'compact', 'covers'] as const).map((preset) => <GlassPressable key={preset} onPress={() => void prefs.change((data) => homeShelfPreset(data, homeSections.map((row) => row.key), preset))} style={{ paddingHorizontal: 12, paddingVertical: 9, borderRadius: 14, backgroundColor: colors.surfaceHighlight }}><Text style={{ color: colors.text }}>{t(preset === 'default' ? 'Default layout' : preset === 'compact' ? 'Compact shelves' : 'Cover focus')}</Text></GlassPressable>)}</View>
       <ReorderableList
         onScroll={dockScroll}
         data={visible}

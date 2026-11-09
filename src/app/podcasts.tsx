@@ -2,6 +2,8 @@
  * The podcasts subscribed to on this phone: a screen, and `embedded`, the
  * Podcasts section of Explore. All local, so nothing is gated on a server.
  */
+import { useDiscoveryPreferences } from '@/store/discoveryPreferences';
+import { MediaCollectionFilter, matchesMediaCollection, type CollectionFilter } from '@/components/discovery/MediaCollectionFilter';
 import { GlassBackdrop, GlassPressable } from '@/components/glass';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -90,6 +92,8 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
   const bottomPad = useScreenBottomPadding();
   const listPad = useListPadding(spacing.lg);
   const t = useT();
+  const collections = useDiscoveryPreferences();
+  const [collection, setCollection] = useState<CollectionFilter>({});
   const lang = useSettings((s) => s.language);
   const toast = useToast((s) => s.show);
   const auth = useAuthStore((state) => state.auth), profile = profileScopeId();
@@ -144,14 +148,14 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
 
   const channels = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const all = data ?? [];
+    const all = (data ?? []).filter((channel) => matchesMediaCollection(collections.data, `podcast:${channel.id}`, collection));
     return q
       ? all.filter(
           (c) =>
             c.title.toLowerCase().includes(q) || (c.author ?? '').toLowerCase().includes(q),
         )
       : all;
-  }, [data, query]);
+  }, [data, query, collections.data, collection]);
 
   const showSearch = (data?.length ?? 0) > SEARCH_FROM;
   const boxOpen = useSearchBox(embedded, searchOpen, () => setQuery(''));
@@ -220,6 +224,7 @@ export function PodcastsBrowser({ embedded, actionRef, searchOpen }: BrowserProp
         </View>
       ) : null}
 
+      {mode === 'shows' ? <MediaCollectionFilter kind="podcast" value={collection} onChange={setCollection} /> : null}
       {mode !== 'shows' ? <Animated.FlatList {...listPerf} onScroll={dockScroll} scrollEventThrottle={16} data={libraryRows}
         keyExtractor={(item) => item.episode.id} contentContainerStyle={{ paddingHorizontal: listPad, paddingBottom: bottomPad, gap: 12 }}
         onEndReached={() => { if (query.trim() === settledQuery && library.hasNextPage && !library.isFetchingNextPage) void library.fetchNextPage(); }} onEndReachedThreshold={.5}

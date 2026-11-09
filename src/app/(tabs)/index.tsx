@@ -3,7 +3,7 @@ import { GlassBackdrop, GlassPressable, GlassScreen as SafeAreaView } from '@/co
 import Icon from '@/components/Icon';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, router } from 'expo-router';
-import { createContext, useContext, useEffect, useMemo, useReducer, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -30,7 +30,12 @@ import {
   type Playlist,
   type Song,
 } from '@/api/data';
-import { listRecentEpisodes, type RecentEpisode } from '@/api/podcasts';
+import { episodeToSong, podcastCover, listRecentEpisodes, type RecentEpisode } from '@/api/podcasts';
+import { HomeShelfGrid } from '@/components/discovery/HomeShelfGrid';
+import { useDiscoveryPreferences } from '@/store/discoveryPreferences';
+import type { ShelfPreference } from '@/lib/discoveryPreferences';
+import { AlbumRow } from '@/components/AlbumRow';
+import { ArtistRow } from '@/components/ArtistRow';
 import { AlbumCard } from '@/components/AlbumCard';
 import { AlbumCardsSkeleton } from '@/components/AlbumCardsSkeleton';
 import { ArtistCard } from '@/components/ArtistCard';
@@ -50,6 +55,7 @@ import { columnsFor, useScreenSize } from '@/hooks/useScreenSize';
 import { songsLabel, useT } from '@/i18n';
 import { greetingHours } from '@/i18n/languages';
 import { haptic } from '@/lib/haptics';
+import { captureLyricOwner } from '@/lib/lyricOwner';
 import { resolveHomeTitle } from '@/lib/homeTitle';
 import { voltaDetailBackground } from '@/lib/voltaPalette';
 import { listPerf } from '@/lib/listPerf';
@@ -92,6 +98,12 @@ const SHELF_CARD_WIDE = 190;
 
 /** A presentation choice only: the same sources and user-configured shelves. */
 const AppleHomeContext = createContext(false);
+const ShelfContext = createContext<ShelfPreference | undefined>(undefined);
+function useShelfItems<T>(items: T[] | undefined): T[] | undefined {
+  const preference = useContext(ShelfContext);
+  return useMemo(() => preference ? items?.slice(0, preference.limit) : items, [items, preference]);
+}
+function useShelfRows() { const preference = useContext(ShelfContext); return preference?.layout === 'rows' || preference?.layout === 'compact'; }
 
 function HomeShelf({ children }: { children: ReactNode }) {
   const appleMusic = useContext(AppleHomeContext);
@@ -107,8 +119,9 @@ function HomeShelfTitle({ children }: { children: ReactNode }) {
 function useShelfCard(): number {
   const { width, wide } = useScreenSize();
   const appleMusic = useContext(AppleHomeContext);
-  if (appleMusic) return wide ? 200 : Math.min(176, Math.round(width * 0.42));
-  return wide ? SHELF_CARD_WIDE : SHELF_CARD;
+  const preference = useContext(ShelfContext);
+  const base = appleMusic ? (wide ? 200 : Math.min(176, Math.round(width * 0.42))) : (wide ? SHELF_CARD_WIDE : SHELF_CARD);
+  return Math.round(base * (preference?.size === 'small' ? 0.78 : preference?.size === 'large' ? 1.22 : 1));
 }
 
 /** Volta-style cover + tinted information card. No live blur in a scrolling shelf. */
@@ -344,11 +357,14 @@ function AlbumSection({
 }) {
   const canFetch = useAuthStore((s) => !!s.auth || s.offline);
   const card = useShelfCard();
-  const { data, isLoading } = useQuery({
-    queryKey: ['albumList', type],
-    queryFn: () => getAlbumList(type),
+  const preference = useContext(ShelfContext);
+  const { data: sourceData, isLoading } = useQuery({
+    queryKey: preference ? ['albumList', type, preference.limit] : ['albumList', type],
+    queryFn: () => getAlbumList(type, preference?.limit),
     enabled: canFetch,
   });
+  const data = useShelfItems(sourceData);
+  const rows = useShelfRows();
 
   if (isLoading) {
     return (
@@ -363,7 +379,7 @@ function AlbumSection({
   return (
     <HomeShelf>
       <SectionHeader title={title} href={`/browse/albums?sort=${type}`} />
-      <FlatList
+      {rows ? <View style={{ paddingHorizontal: spacing.lg }}>{data.map((album) => <AlbumRow key={album.id} album={album} />)}</View> : preference?.layout === 'grid' ? <HomeShelfGrid items={data} rows={preference.rows} cardWidth={card} keyFor={(item) => item.id} renderCard={(item) => <AlbumCard album={item} width={card} />} /> : <FlatList
         {...listPerf}
         horizontal
         data={data}
@@ -371,7 +387,7 @@ function AlbumSection({
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.rowContent}
         renderItem={({ item }) => <AlbumCard album={item} width={card} />}
-      />
+      />}
     </HomeShelf>
   );
 }
@@ -407,13 +423,18 @@ function SongListCarousel({
   const openSongMenu = useSongMenu((s) => s.open);
   const playQueue = usePlayerStore((s) => s.playQueue);
   const showArtwork = useSettings((s) => s.showListArtwork);
+  const latest = useRef({ songs, title, owns: captureLyricOwner() });
+  useLayoutEffect(() => { latest.current = { songs, title, owns: captureLyricOwner() }; }, [songs, title]);
 
   const pageWidth = Math.min(Math.round(screenWidth * 0.85), SONG_PAGE_MAX);
   const gap = spacing.md;
-  const pages: Song[][] = [];
-  for (let i = 0; i < songs.length; i += SONG_PAGE_SIZE) {
-    pages.push(songs.slice(i, i + SONG_PAGE_SIZE));
-  }
+  const preference = useContext(ShelfContext);
+  const songRows = preference?.rows ?? SONG_PAGE_SIZE;
+  const pages = useMemo(() => {
+    const result: Song[][] = [];
+    for (let i = 0; i < songs.length; i += songRows) result.push(songs.slice(i, i + songRows));
+    return result;
+  }, [songs, songRows]);
   const onScreen = Math.ceil(screenWidth / (pageWidth + gap)) + 1;
 
   return (
@@ -435,10 +456,9 @@ function SongListCarousel({
       snapToAlignment="start"
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={{ paddingHorizontal: spacing.lg }}
-      renderItem={({ item: page, index: pi }) => (
+      renderItem={({ item: page }) => (
         <View style={[songListStyles.page, { width: pageWidth, marginRight: gap }]}>
-          {page.map((song, ri) => {
-            const globalIndex = pi * SONG_PAGE_SIZE + ri;
+          {page.map((song) => {
             return (
               <TrackRow
                 key={song.id}
@@ -447,7 +467,7 @@ function SongListCarousel({
                 showArtwork={showArtwork}
                 showFavorite={false}
                 swipeable={false}
-                onPress={() => void playQueue(songs, globalIndex, title)}
+                onPress={() => { const state = latest.current; const index = state.songs.findIndex((item) => item.id === song.id); if (state.owns() && index >= 0) void playQueue(state.songs, index, state.title); }}
                 onLongPress={() => {
                   haptic('light');
                   openSongMenu(song);
@@ -468,13 +488,16 @@ function SongListCarousel({
  * to hint that there are more pages to scroll through.
  */
 function MostPlayedSongsSection({ title }: { title: string }) {
+  const preference = useContext(ShelfContext);
+  const count = preference?.limit ?? MOST_PLAYED_SONGS;
   const canFetch = useAuthStore((s) => !!s.auth || s.offline);
   const currentId = usePlayerStore((s) => s.queue[s.index]?.id);
-  const { data, isLoading } = useQuery({
-    queryKey: ['browseSongs', 'frequent', MOST_PLAYED_SONGS],
-    queryFn: () => getSongList('frequent', MOST_PLAYED_SONGS),
+  const { data: sourceData, isLoading } = useQuery({
+    queryKey: ['browseSongs', 'frequent', count],
+    queryFn: () => getSongList('frequent', count),
     enabled: canFetch,
   });
+  const data = useShelfItems(sourceData);
 
   if (isLoading) {
     return (
@@ -502,13 +525,16 @@ const RANDOM_SONGS_COUNT = 30;
  * Each page shows 3 TrackRow items.
  */
 function RandomSongsSection({ title }: { title: string }) {
+  const preference = useContext(ShelfContext);
+  const count = preference?.limit ?? RANDOM_SONGS_COUNT;
   const canFetch = useAuthStore((s) => !!s.auth || s.offline);
   const currentId = usePlayerStore((s) => s.queue[s.index]?.id);
-  const { data, isLoading } = useQuery({
-    queryKey: ['randomSongs', RANDOM_SONGS_COUNT],
-    queryFn: () => getRandomSongs(RANDOM_SONGS_COUNT),
+  const { data: sourceData, isLoading } = useQuery({
+    queryKey: ['randomSongs', count],
+    queryFn: () => getRandomSongs(count),
     enabled: canFetch,
   });
+  const data = useShelfItems(sourceData);
 
   if (isLoading) {
     return (
@@ -533,11 +559,14 @@ function RandomSongsSection({ title }: { title: string }) {
 function PlaylistsSection({ title }: { title: string }) {
   const canFetch = useAuthStore((s) => !!s.auth || s.offline);
   const card = useShelfCard();
-  const { data, isLoading } = useQuery({
+  const preference = useContext(ShelfContext);
+  const { data: sourceData, isLoading } = useQuery({
     queryKey: ['playlists'],
     queryFn: () => getPlaylists(),
     enabled: canFetch,
   });
+  const data = useShelfItems(sourceData);
+  const rows = useShelfRows();
 
   if (isLoading) {
     return (
@@ -552,7 +581,7 @@ function PlaylistsSection({ title }: { title: string }) {
   return (
     <HomeShelf>
       <HomeShelfTitle>{title}</HomeShelfTitle>
-      <FlatList
+      {rows ? <View style={{ paddingHorizontal: spacing.lg }}>{data.map((item) => <Link key={item.id} href={`/playlist/${item.id}`} asChild><Pressable style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 }}><Cover uri={coverArtUrl(item.coverArt ?? item.id, COVER.thumb)} size={48} /><Text style={{ color: colors.text, flex: 1 }} numberOfLines={1}>{item.name}</Text></Pressable></Link>)}</View> : preference?.layout === 'grid' ? <HomeShelfGrid items={data} rows={preference.rows} cardWidth={card} keyFor={(item) => item.id} renderCard={(item) => <PlaylistCard playlist={item} width={card} />} /> : <FlatList
         {...listPerf}
         horizontal
         data={data}
@@ -560,7 +589,7 @@ function PlaylistsSection({ title }: { title: string }) {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.rowContent}
         renderItem={({ item }) => <PlaylistCard playlist={item} width={card} />}
-      />
+      />}
     </HomeShelf>
   );
 }
@@ -568,11 +597,14 @@ function PlaylistsSection({ title }: { title: string }) {
 /** The newest podcast episodes. Local, and nothing at all without a subscription. */
 function PodcastEpisodesSection({ title }: { title: string }) {
   const card = useShelfCard();
-  const { data, isLoading } = useQuery({
+  const preference = useContext(ShelfContext);
+  const { data: sourceData, isLoading } = useQuery({
     // Invalidated by the podcast screens.
-    queryKey: ['podcastRecentEpisodes'],
-    queryFn: () => listRecentEpisodes(),
+    queryKey: preference ? ['podcastRecentEpisodes', preference.limit] : ['podcastRecentEpisodes'],
+    queryFn: () => listRecentEpisodes(preference?.limit),
   });
+  const data = useShelfItems(sourceData);
+  const rows = useShelfRows();
 
   if (isLoading) {
     return (
@@ -587,7 +619,7 @@ function PodcastEpisodesSection({ title }: { title: string }) {
   return (
     <HomeShelf>
       <HomeShelfTitle>{title}</HomeShelfTitle>
-      <FlatList
+      {rows ? <View style={{ paddingHorizontal: spacing.lg }}>{data.map((item) => <Pressable key={item.episode.id} onPress={() => usePlayerStore.getState().playQueue([episodeToSong(item.episode, item.channel)], 0, item.channel.title, `/podcast/${item.channel.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 }}><Cover uri={coverArtUrl(podcastCover(item.channel), COVER.thumb)} size={48} placeholderIcon="headset-outline" /><View style={{ flex: 1 }}><Text style={{ color: colors.text }} numberOfLines={1}>{item.episode.title}</Text><Text style={{ color: colors.textSecondary }} numberOfLines={1}>{item.channel.title}</Text></View></Pressable>)}</View> : preference?.layout === 'grid' ? <HomeShelfGrid items={data} rows={preference.rows} cardWidth={card} keyFor={(item) => item.episode.id} renderCard={(item) => <PodcastEpisodeCard item={item} width={card} />} /> : <FlatList
         {...listPerf}
         horizontal
         data={data}
@@ -595,7 +627,7 @@ function PodcastEpisodesSection({ title }: { title: string }) {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.rowContent}
         renderItem={({ item }) => <PodcastEpisodeCard item={item} width={card} />}
-      />
+      />}
     </HomeShelf>
   );
 }
@@ -629,7 +661,9 @@ const ARTISTS_DELAY_MS = 4000;
 function ArtistSection({ title, reshuffleKey }: { title: string; reshuffleKey: number }) {
   const canFetch = useAuthStore((s) => !!s.auth || s.offline);
   const { wide } = useScreenSize();
-  const artistSize = wide ? ARTIST_SIZE_WIDE : ARTIST_SIZE;
+  const preference = useContext(ShelfContext);
+  const rows = useShelfRows();
+  const artistSize = Math.round((wide ? ARTIST_SIZE_WIDE : ARTIST_SIZE) * (preference?.size === 'small' ? 0.78 : preference?.size === 'large' ? 1.22 : 1));
   // Offline the list comes off the device, so there is nothing to keep out of
   // the way of and no reason to wait.
   const [ready, setReady] = useState(() => useAuthStore.getState().offline);
@@ -648,8 +682,8 @@ function ArtistSection({ title, reshuffleKey }: { title: string; reshuffleKey: n
   // reference (structural sharing) and the memo would always return the same
   // 10 artists.
   const artists = useMemo(
-    () => (data ? shuffled(data).slice(0, 10) : []),
-    [data, reshuffleKey],
+    () => (data ? shuffled(data).slice(0, preference?.limit ?? 10) : []),
+    [data, reshuffleKey, preference?.limit],
   );
 
   // The skeleton covers the wait as well as the request, so the shelf holds
@@ -667,7 +701,7 @@ function ArtistSection({ title, reshuffleKey }: { title: string; reshuffleKey: n
   return (
     <HomeShelf>
       <SectionHeader title={title} href="/browse/artists?sort=random" />
-      <FlatList
+      {rows ? <View style={{ paddingHorizontal: spacing.lg }}>{artists.map((artist) => <ArtistRow key={artist.id} artist={artist} />)}</View> : preference?.layout === 'grid' ? <HomeShelfGrid items={artists} rows={preference.rows} cardWidth={artistSize} keyFor={(item) => item.id} renderCard={(item) => <ArtistCard artist={item} width={artistSize} />} /> : <FlatList
         {...listPerf}
         horizontal
         data={artists}
@@ -675,7 +709,7 @@ function ArtistSection({ title, reshuffleKey }: { title: string; reshuffleKey: n
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.rowContent}
         renderItem={({ item }) => <ArtistCard artist={item} width={artistSize} />}
-      />
+      />}
     </HomeShelf>
   );
 }
@@ -689,11 +723,13 @@ const DISCOVER_POOL = 50;
 function DiscoverSection({ title, reshuffleKey }: { title: string; reshuffleKey: number }) {
   const canFetch = useAuthStore((s) => !!s.auth || s.offline);
   const card = useShelfCard();
+  const preference = useContext(ShelfContext);
+  const rows = useShelfRows();
   const appleMusic = useContext(AppleHomeContext);
   const { width, wide } = useScreenSize();
   // Keep the next recommendation visible. Full-width square artwork used
   // most of a phone's available height before the next shelf could appear.
-  const featureWidth = Math.min(wide ? 280 : 240, Math.round((width - spacing.lg * 2) * 0.68));
+  const featureWidth = Math.round(Math.min(wide ? 280 : 240, (width - spacing.lg * 2) * 0.68) * (preference?.size === 'small' ? 0.78 : preference?.size === 'large' ? 1.15 : 1));
   const { data, isLoading } = useQuery({
     queryKey: ['albumList', 'discover'],
     queryFn: () => getAlbumList('recent', DISCOVER_POOL, DISCOVER_OFFSET),
@@ -702,8 +738,8 @@ function DiscoverSection({ title, reshuffleKey }: { title: string; reshuffleKey:
   // Reshuffles when changing the list or on pull-to-refresh (`reshuffleKey`);
   // see the note in ArtistSection about react-query's structural sharing.
   const albums = useMemo(
-    () => (data ? shuffled(data).slice(0, 10) : []),
-    [data, reshuffleKey],
+    () => (data ? shuffled(data).slice(0, preference?.limit ?? 10) : []),
+    [data, reshuffleKey, preference?.limit],
   );
 
   if (isLoading) {
@@ -721,7 +757,7 @@ function DiscoverSection({ title, reshuffleKey }: { title: string; reshuffleKey:
   return (
     <HomeShelf>
       <HomeShelfTitle>{title}</HomeShelfTitle>
-      <FlatList
+      {rows ? <View style={{ paddingHorizontal: spacing.lg }}>{albums.map((album) => <AlbumRow key={album.id} album={album} />)}</View> : preference?.layout === 'grid' ? <HomeShelfGrid items={albums} rows={preference.rows} cardWidth={card} keyFor={(item) => item.id} renderCard={(item) => <AlbumCard album={item} width={card} />} /> : <FlatList
         {...listPerf}
         horizontal
         data={albums}
@@ -737,7 +773,7 @@ function DiscoverSection({ title, reshuffleKey }: { title: string; reshuffleKey:
           <VoltaQuickCard href={`/album/${item.id}`} name={item.name} subtitle={item.artist}
             cover={coverArtUrl(item.coverArt ?? item.id, COVER.card)} width={featureWidth} compact />
         ) : <AlbumCard album={item} width={card} />}
-      />
+      />}
     </HomeShelf>
   );
 }
@@ -986,6 +1022,7 @@ export default function HomeScreen() {
   const customHomeTitle = useSettings((s) => s.customHomeTitle);
   const language = useSettings((s) => s.language);
   const homeSections = useSettings((s) => s.homeSections);
+  const presentation = useDiscoveryPreferences();
   useSettings((s) => s.appFont); // re-render when font changes
   // Four slots, and when each one starts comes from the language rather than
   // from here: at 6pm English is in the evening and Spanish is still in the
@@ -1126,17 +1163,18 @@ export default function HomeScreen() {
               // not applicable offline. «Recently played» does: the local
               // history records just the same in that mode.
               if (!s.enabled) return null;
+              const wrap = (child: ReactNode) => <ShelfContext.Provider key={s.key} value={presentation.data.shelves[s.key]}>{child}</ShelfContext.Provider>;
               if (s.key === 'dailyRecommendations') {
-                return <DailyRecommendationsSection key={s.key} appleMusic={appleMusic} />;
+                return wrap(<DailyRecommendationsSection key={s.key} appleMusic={appleMusic} />);
               }
               if (s.key === 'discover' && offline) return null;
               if (s.key === 'discover') {
-                return (
+                return wrap(
                   <DiscoverSection key={s.key} title={t('Discover')} reshuffleKey={reshuffleKey} />
                 );
               }
               if (s.key === 'randomArtists') {
-                return (
+                return wrap(
                   <ArtistSection
                     key={s.key}
                     title={t('Random artists')}
@@ -1145,20 +1183,20 @@ export default function HomeScreen() {
                 );
               }
               if (s.key === 'playlists') {
-                return <PlaylistsSection key={s.key} title={t('Playlists')} />;
+                return wrap(<PlaylistsSection key={s.key} title={t('Playlists')} />);
               }
               // Not gated on the server: the episodes are local.
               if (s.key === 'podcasts') {
-                return <PodcastEpisodesSection key={s.key} title={t('Recent episodes')} />;
+                return wrap(<PodcastEpisodesSection key={s.key} title={t('Recent episodes')} />);
               }
               if (s.key === 'mostPlayedSongs') {
-                return <MostPlayedSongsSection key={s.key} title={t('Most played songs')} />;
+                return wrap(<MostPlayedSongsSection key={s.key} title={t('Most played songs')} />);
               }
               if (s.key === 'randomSongs') {
-                return <RandomSongsSection key={s.key} title={t('Random songs')} />;
+                return wrap(<RandomSongsSection key={s.key} title={t('Random songs')} />);
               }
               const cfg = HOME_ALBUM_CONFIG[s.key];
-              return <AlbumSection key={s.key} title={t(cfg.title)} type={cfg.type} />;
+              return wrap(<AlbumSection key={s.key} title={t(cfg.title)} type={cfg.type} />);
             })}
           </>
         )}

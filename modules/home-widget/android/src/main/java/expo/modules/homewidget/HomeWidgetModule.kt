@@ -36,6 +36,9 @@ class HomeWidgetModule : Module() {
 
   override fun definition() = ModuleDefinition {
     Name("HomeWidget")
+    Function("getInstalledExtras") { ListeningExtrasWidget.installed(context) }
+    Function("pinExtraWidget") { kind: String -> ListeningExtrasWidget.pin(context, kind) }
+    Function("updateExtras") { value: String -> ListeningExtrasWidget.update(context, value) }
 
     Function("update") { state: NowPlayingRecord ->
       NowPlaying.update(

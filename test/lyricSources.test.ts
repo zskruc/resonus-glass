@@ -30,7 +30,7 @@ function harness() {
     '@/lib/lyricAudioUri': { ownedLyricAudioUri: (_profile: string, downloaded?: string) => downloaded },
   };
   const api: Record<string, any> = {};
-  runInNewContext(code, { exports: api, require(name: string) { assert.ok(Object.hasOwn(imports, name), name); return imports[name]; } });
+  runInNewContext(code, { exports: api, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization; assert.ok(Object.hasOwn(imports, name), name); return imports[name]; } });
   return { state, lyrics, saved, api, requests: () => serverRequests };
 }
 
@@ -46,3 +46,4 @@ test('manual offline blocks the explicit server refresh before any server/provid
   await assert.rejects(h.api.getLyricCandidates({ id: 'server-song', title: 'Song', localUri: 'file:///downloads/A/song.flac' }, 'A', { server: true }), /Offline mode/);
   assert.equal(h.requests(), 0); assert.equal(h.saved.length, 0);
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

@@ -2,7 +2,7 @@
 import * as SQLite from 'expo-sqlite';
 import { create } from 'zustand';
 import type { Song } from '@/api/subsonic';
-import { LongAudioRepository, longAudioEntry, canRememberLongAudio, LONG_AUDIO_BOOKMARK_LIMIT } from '@/lib/longAudio';
+import { LongAudioRepository, parseLongAudioEntries, longAudioEntry, canRememberLongAudio, LONG_AUDIO_BOOKMARK_LIMIT } from '@/lib/longAudio';
 import { audiobookProfileScope } from './albumProgress';
 
 export const longAudioScope = audiobookProfileScope;
@@ -45,4 +45,24 @@ export async function clearLongAudioProfile(rawProfile: string) {
   const scopes = new Set(rows.map((row) => row.profile));
   for (const profile of repository.knownProfiles()) if (profile === rawProfile || profile.startsWith(prefix)) scopes.add(profile);
   for (const profile of scopes) await repository.removeProfile(profile);
+}
+
+/** Portable bookmarks/progress for the active source, without playable URLs. */
+export async function exportLongAudio() {
+  const profile = longAudioScope(); await repository.load(profile);
+  const state = repository.getSnapshot();
+  if (profile !== longAudioScope() || !state.hydrated || state.profile !== profile) throw new Error('Long-audio data unavailable');
+  return parseLongAudioEntries(JSON.stringify(state.entries));
+}
+export async function importLongAudio(value: unknown, current: () => boolean) {
+  const entries = parseLongAudioEntries(JSON.stringify(value));
+  const profile = longAudioScope(); await repository.load(profile);
+  for (const [id, entry] of Object.entries(entries)) {
+    if (!current() || profile !== longAudioScope()) throw new Error('Library changed');
+    const old = repository.getSnapshot().entries[id];
+    // Existing newer bookmarks win on conflict, instead of silently replacing them.
+    if (!old || old.updatedAt < entry.updatedAt) {
+      if (!(await repository.change(profile, id, () => entry))) throw new Error('Could not restore bookmarks');
+    }
+  }
 }

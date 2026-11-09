@@ -1,5 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <application>
+    <receiver android:name="expo.modules.homewidget.PodcastContinueWidget" android:exported="true" android:label="@string/widget_podcast_name">
+      <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/podcast_continue_widget" />
+    </receiver>
+    <receiver android:name="expo.modules.homewidget.ListeningStatsWidget" android:exported="true" android:label="@string/widget_stats_name">
+      <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/listening_stats_widget" />
+    </receiver>
+    <receiver android:name="expo.modules.homewidget.CurrentLyricsWidget" android:exported="true" android:label="@string/widget_lyrics_name">
+      <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/current_lyrics_widget" />
+    </receiver>
     <receiver
       android:name="expo.modules.homewidget.ResonusWidgetProvider"
       android:exported="true"

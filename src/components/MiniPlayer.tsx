@@ -24,6 +24,7 @@ import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 
 import { COVER, songCoverUrl } from '@/api/data';
 import { useFavoriteIds } from '@/hooks/useFavoriteIds';
+import { useDisplaySong } from '@/hooks/useLocalMetadata';
 import { COMPACT_DOCK_GAP, COMPACT_DOCK_SIZE, useLiquidDock } from '@/hooks/useLiquidDock';
 import { useT } from '@/i18n';
 import { haptic } from '@/lib/haptics';
@@ -138,6 +139,7 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
   // second edge, especially with Android's system bold-text adjustment.
   const foreground = dark ? '#FFFFFF' : '#111113';
   const song = usePlayerStore(currentSong);
+  const displayed = useDisplaySong(song);
   const queueIndex = usePlayerStore((s) => s.index);
   // Radio metadata follows the current track title here; full details stay in the player.
   const live = useLiveInfo(song);
@@ -484,12 +486,12 @@ export function MiniPlayer(props: MiniPlayerProps = {}) {
               <Animated.View style={[styles.titleFrame, { start: targetInfoStart, width: targetInfoWidth, top: (miniHeight - 20) / 2 }, titleMotion]}>
                 <Animated.View style={[styles.titleContent, titleSwipeStyle]}>
                   {marqueeTitles ? <MarqueeText
-                    text={live?.title ?? song.title}
+                    text={live?.title ?? displayed?.title ?? song.title}
                     style={[styles.title, { color: foreground }]}
                     enabled={expandedControls}
                     active={props.active ?? true}
                   /> : <Text style={[styles.title, { color: foreground }]} numberOfLines={1}>
-                    {live?.title ?? song.title}
+                    {live?.title ?? displayed?.title ?? song.title}
                   </Text>}
                 </Animated.View>
               </Animated.View>

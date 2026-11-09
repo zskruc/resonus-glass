@@ -89,7 +89,7 @@ function load(path: string, react: object, imports: Record<string, unknown>) {
   } });
   const exports: Record<string, any> = {};
   runInNewContext(compiled.outputText, { exports, queueMicrotask,
-    require(name: string) {
+    require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
       if (name === 'react') return react;
       if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: 'Fragment' };
       assert.ok(Object.hasOwn(imports, name), `Unexpected ${path} import ${name}`);
@@ -355,7 +355,7 @@ function nativeAnimatedObject() {
   ] });
   const exports: Record<string, any> = {};
   class Node {}
-  runInNewContext(compiled!.code!, { exports, Object, require(name: string) {
+  runInNewContext(compiled!.code!, { exports, Object, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
     if (name === './AnimatedNode' || name === './AnimatedWithChildren') return { __esModule: true, default: Node };
     if (name === 'react') return { isValidElement };
     throw new Error(`Unexpected RN AnimatedObject dependency ${name}`);
@@ -1224,3 +1224,4 @@ describe('production recycled row and press feedback ownership', () => {
     assert.deepEqual(h.menus, ['A']);
   });
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

@@ -11,11 +11,13 @@ import { songsByIds } from '@/lib/downloadsDb';
 import { cachedUri } from '@/store/songCache';
 import { ownedLyricAudioUri } from '@/lib/lyricAudioUri';
 import type { LyricCandidate } from '@/lib/lyricDocuments';
+import { sourceSong } from '@/lib/sourceSongMetadata';
 
 /** Opening the picker only reads local data. Network work requires its buttons. */
 export async function getLyricCandidates(song: Song, profile: string, options: {
   server?: boolean; provider?: boolean; signal?: AbortSignal; current?: () => boolean;
 } = {}): Promise<LyricCandidate[]> {
+  song = sourceSong(song);
   const owns = captureLyricOwner(profile), owner = useAuthStore.getState().auth;
   const current = () => owns() && !options.signal?.aborted && (!options.current || options.current());
   const check = () => { if (!current()) throw new Error('Lyrics profile changed'); };

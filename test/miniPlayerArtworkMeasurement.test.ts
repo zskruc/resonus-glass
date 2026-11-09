@@ -97,7 +97,7 @@ function harness(options: { amPlus?: boolean; rtl?: boolean; progress?: number; 
       module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
     } }).outputText;
     const exported: Record<string, any> = {};
-    runInNewContext(output, { exports: exported, require(name: string) {
+    runInNewContext(output, { exports: exported, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
       assert.ok(Object.hasOwn(dependencies, name), `Unexpected mini artwork dependency ${name}`);
       return dependencies[name];
     } });
@@ -233,3 +233,4 @@ test('missing, detached and zero-size resting leaves retain actual entry geometr
   assert.doesNotThrow(() => h.tree.props.onLayout());
   assert.equal(h.bus.miniArtworkMetrics.get().restingArtwork, undefined);
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

@@ -42,6 +42,10 @@ export default function LyricsToolsSettings() {
     <DockScrollView contentContainerStyle={settingsStyles.content}>
       {song ? <>
         <SettingsGroup>
+          <SettingRow label={t('Edit and export lyrics')} chevron onPress={() => {
+            useLyricToolTarget.getState().open(song); router.push('/lyric-editor');
+          }} />
+          <SettingRow label={t('Lyric fonts')} chevron onPress={() => router.push('/settings/lyric-fonts')} />
           <SettingRow label={t('Lyric sources')} chevron onPress={() => {
             useLyricToolTarget.getState().open(song); router.push('/settings/lyric-sources');
           }} />

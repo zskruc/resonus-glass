@@ -29,6 +29,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { COVER, songCoverUrl } from '@/api/data';
 import { useCoverRadius } from '@/components/Cover';
 import { KaraokeWords } from '@/components/KaraokeWords';
+import { LyricFontText } from '@/components/LyricsTypography';
 import { PlainLyrics } from '@/components/PlainLyrics';
 import { useLyricDisplayMode } from '@/hooks/useLyricDisplay';
 import { lyricCompanions, type LyricDisplayMode } from '@/lib/lyricDocuments';
@@ -613,11 +614,11 @@ const LyricRow = memo(({
             paddingVertical={paddingVertical}
           />
         ) : (
-          <Text style={lineStyle}>{text}</Text>
+          <Text style={lineStyle}><LyricFontText text={text} /></Text>
         )}
         {companions.map((value, at) => <Text key={at} style={{ color: amll ? '#FFFFFFD9' : colors.textSecondary,
           fontSize: companionSize, lineHeight: Math.round(companionSize * 1.45), fontWeight: '400',
-          textAlign: centered ? 'center' : 'left', paddingBottom: at === companions.length - 1 ? paddingVertical : 2 }}>{value}</Text>)}
+          textAlign: centered ? 'center' : 'left', paddingBottom: at === companions.length - 1 ? paddingVertical : 2 }}><LyricFontText text={value} /></Text>)}
       </Animated.View>
     </View>
   );

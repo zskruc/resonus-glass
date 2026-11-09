@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 import { hashKey, folderSetKey } from '@/lib/localLibrary';
 import { createShufflePreference, type ShufflePreferenceSnapshot } from '@/lib/shufflePreference';
-import { getItem, setItemStrict } from '@/lib/storage';
+import { deleteItem, getItem, setItemStrict } from '@/lib/storage';
 import type { ShuffleMode } from '@/lib/weightedShuffle';
 import { profileScopeId, useAuthStore } from './auth';
 
@@ -11,7 +11,7 @@ export function recommendationProfileScope(): string {
   const raw = profileScopeId(), source = useAuthStore.getState().offlineSource;
   return hashKey(raw === 'local' && source?.mode === 'folder' ? `${raw}:${folderSetKey(source.uris)}` : raw);
 }
-const controller = createShufflePreference({ profile: recommendationProfileScope, read: getItem, write: setItemStrict,
+const controller = createShufflePreference({ profile: recommendationProfileScope, read: getItem, write: setItemStrict, remove: deleteItem,
   publish: (snapshot) => useShufflePreferences.setState(snapshot) });
 export const useShufflePreferences = create<ShufflePreferenceSnapshot & { hydrate(): Promise<void>; setMode(mode: ShuffleMode): Promise<void> }>(() => ({
   profile: '', mode: 'uniform', hydrated: false, error: false, hydrate: controller.hydrate, setMode: controller.setMode,
@@ -29,3 +29,7 @@ export function initShufflePreferences(): void {
   });
   void controller.hydrate();
 }
+
+export const exportShufflePreference = (current: () => boolean) => { initShufflePreferences(); return controller.exportMode(current); };
+export const importShufflePreference = (mode: ShuffleMode, current: () => boolean) => { initShufflePreferences(); return controller.importMode(mode, current); };
+export const clearShufflePreferenceProfile = (profile: string) => controller.clear(hashKey(profile));

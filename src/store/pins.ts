@@ -12,7 +12,7 @@ import { hashKey } from '@/lib/localLibrary';
 import type { Remap } from '@/lib/navidromeRemap';
 import { remapPinKey } from '@/lib/navidromeRemap';
 import { profileScopeGuard } from '@/lib/profileScope';
-import { getItem, setItem } from '@/lib/storage';
+import { getItem, setItemStrict } from '@/lib/storage';
 import { profileScopeId } from '@/store/auth';
 
 // Pins are PER PROFILE (each account/profile has its own): a pinned local
@@ -49,17 +49,28 @@ interface PinsState {
 const scope = profileScopeGuard();
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingSave: { key: string; pins: Record<string, number>; version: number } | undefined;
+let pinWrites: Promise<unknown> = Promise.resolve();
+const pinVersions = new Map<string, number>();
+function writePins(key: string, pins: Record<string, number>, version: number): Promise<void> {
+  const task = pinWrites.catch(() => {}).then(async () => {
+    if ((pinVersions.get(key) ?? 0) !== version) return;
+    await setItemStrict(key, JSON.stringify(pins));
+  }); pinWrites = task; return task;
+}
+function flushPendingPins() {
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  const pending = pendingSave; pendingSave = undefined;
+  if (pending) return writePins(pending.key, pending.pins, pending.version);
+  // An earlier failed action is observable by its caller, but must not poison a later explicit retry.
+  return pinWrites.then(() => {}, () => {});
+}
 function scheduleSave(pins: Record<string, number>) {
-  // The key is resolved NOW, not when the timer fires: switching profile within
-  // the second of debounce used to save these pins under the new profile's key,
-  // wiping its own. And if what's in memory isn't this key's, don't save at all
-  // (see `profileScopeGuard`).
-  const key = pinsKey();
-  if (!scope.owns(key)) return;
+  const key = pinsKey(); if (!scope.owns(key)) return;
+  if (pendingSave && pendingSave.key !== key) void flushPendingPins().catch(() => {});
   if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    void setItem(key, JSON.stringify(pins));
-  }, 1000);
+  pendingSave = { key, pins, version: pinVersions.get(key) ?? 0 };
+  saveTimer = setTimeout(() => { void flushPendingPins().catch(() => {}); }, 1000);
 }
 
 export const usePins = create<PinsState>((set, get) => ({
@@ -110,3 +121,43 @@ export const usePins = create<PinsState>((set, get) => ({
     }
   },
 }));
+
+/** Backups share the store's pending-write barrier and never copy another account. */
+export async function exportPins(profile: string): Promise<Record<string, number>> {
+  if (profile !== profileScopeId()) throw new Error('Profile changed');
+  await flushPendingPins();
+  if (profile !== profileScopeId()) throw new Error('Profile changed');
+  if (scope.owns(pinsKey())) return { ...usePins.getState().pins };
+  const raw = await getItem(`${KEY}.${hashKey(profile)}`);
+  if (profile !== profileScopeId()) throw new Error('Profile changed');
+  return validPins(raw ? JSON.parse(raw) : {});
+}
+function validPins(value: unknown): Record<string, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([key, at]) => /^(?:album|playlist|radio):.{1,1024}$/.test(key)
+    && typeof at === 'number' && Number.isFinite(at) && at > 0).slice(0, MAX_PINS));
+}
+export async function importPins(profile: string, value: unknown, current: () => boolean) {
+  const incoming = validPins(value); if (!current() || profile !== profileScopeId()) throw new Error('Profile changed');
+  await flushPendingPins();
+  const key = `${KEY}.${hashKey(profile)}`, version = pinVersions.get(key) ?? 0;
+  const task = pinWrites.catch(() => {}).then(async () => {
+    if (!current() || (pinVersions.get(key) ?? 0) !== version) throw new Error('Profile changed');
+    const raw = await getItem(key);
+    if (!current()) throw new Error('Profile changed');
+    const existing = scope.owns(key) ? usePins.getState().pins : validPins(raw ? JSON.parse(raw) : {});
+    // Existing pins keep their order and the shared 50-item allowance.
+    const next = validPins(Object.fromEntries([...Object.entries(existing), ...Object.entries(incoming).filter(([id]) => !Object.hasOwn(existing, id))]));
+    if (pendingSave?.key === key) { if (saveTimer) clearTimeout(saveTimer); saveTimer = null; pendingSave = undefined; }
+    await setItemStrict(key, JSON.stringify(next));
+    if (current() && profile === profileScopeId() && scope.owns(key)) usePins.setState({ pins: next });
+  });
+  pinWrites = task; await task;
+}
+export async function clearPinsProfile(profile: string) {
+  const key = `${KEY}.${hashKey(profile)}`; pinVersions.set(key, (pinVersions.get(key) ?? 0) + 1);
+  if (pendingSave?.key === key) { if (saveTimer) clearTimeout(saveTimer); saveTimer = null; pendingSave = undefined; }
+  await pinWrites.catch(() => {});
+  const { deleteItem } = await import('@/lib/storage'); await deleteItem(key);
+  if (profile === profileScopeId()) usePins.setState({ pins: {} });
+}

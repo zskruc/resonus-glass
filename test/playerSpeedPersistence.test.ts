@@ -27,7 +27,7 @@ function harness() {
   const writes: { key: string; data: any }[] = [], nativeSpeeds: number[] = [];
   const api: Record<string, any> = {};
   runInNewContext(code, {
-    exports: api, Number, Math, Date, AppState: { currentState: 'active' },
+    exports: api, Number, Math, Date, AppState: { currentState: 'active' }, rememberListeningState: () => {}, listeningIntent: 0,
     usePlayerStore: { getState: () => state }, get: () => state,
     set: (value: Partial<typeof state>) => Object.assign(state, value),
     profileScopeId: () => scope, queueStorageKey: () => 'legacy-shared-offline-key',

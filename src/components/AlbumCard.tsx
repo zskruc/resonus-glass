@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { COVER, coverArtUrl, type Album } from '@/api/data';
 import { useMediaMenu } from '@/store/mediaMenu';
 import { useAppleMusicStyle } from '@/hooks/useAppleMusicStyle';
+import { useDisplayAlbum } from '@/hooks/useLocalMetadata';
 import { appleMusicStyles } from '@/theme/appleMusic';
 import { useArtistPagePalette } from '@/components/volta/ArtistPagePalette';
 import { haptic } from '@/lib/haptics';
@@ -24,6 +25,7 @@ interface Props {
 // Memoised: a Home render redrew every card on every shelf (a report had 77
 // card renders per Home render).
 export const AlbumCard = memo(function AlbumCard({ album, width = 150, onPress }: Props) {
+  const displayed = useDisplayAlbum(album);
   bump('render · AlbumCard');
   // Memoised, so it has to ask for a repaint on a theme change itself.
   useTheme();
@@ -48,15 +50,15 @@ export const AlbumCard = memo(function AlbumCard({ album, width = 150, onPress }
         <Cover uri={cover} size={width} style={appleMusic ? appleMusicStyles.cover : undefined} />
         <Text style={[styles.title, appleMusic && appleMusicStyles.cardTitle,
           pagePalette && { color: pagePalette.text }]} numberOfLines={appleMusic ? 2 : 1}>
-          {album.name}
+          {displayed.name}
         </Text>
-        {explicit || album.artist ? (
+        {explicit || displayed.artist ? (
           <View style={styles.subRow}>
             <ExplicitBadge status={album.explicitStatus} />
-            {album.artist ? (
+            {displayed.artist ? (
               <Text style={[styles.artist, appleMusic && appleMusicStyles.cardSubtitle,
                 pagePalette && { color: pagePalette.textSecondary }]} numberOfLines={1}>
-                {album.artist}
+                {displayed.artist}
               </Text>
             ) : null}
           </View>

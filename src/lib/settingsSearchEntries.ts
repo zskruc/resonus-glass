@@ -144,6 +144,61 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "section": "Cached songs"
   },
   {
+    "id": "/settings/chapters",
+    "route": "/settings/chapters",
+    "title": "Local chapters",
+    "chinese": "本机章节",
+    "section": "Local chapters"
+  },
+  {
+    "id": "/settings/chapters#Import TXT / JSON chapters",
+    "route": "/settings/chapters",
+    "title": "Import TXT / JSON chapters",
+    "chinese": "导入 TXT / JSON 章节",
+    "section": "Local chapters",
+    "anchor": "Import TXT / JSON chapters"
+  },
+  {
+    "id": "/settings/chapters#Restore publisher chapters",
+    "route": "/settings/chapters",
+    "title": "Restore publisher chapters",
+    "chinese": "恢复发布者提供的章节",
+    "section": "Local chapters",
+    "anchor": "Restore publisher chapters"
+  },
+  {
+    "id": "/settings/chapters#Apply chapter import",
+    "route": "/settings/chapters",
+    "title": "Apply chapter import",
+    "chinese": "应用导入的章节",
+    "section": "Local chapters",
+    "anchor": "Apply chapter import"
+  },
+  {
+    "id": "/settings/chapters#Cancel",
+    "route": "/settings/chapters",
+    "title": "Cancel",
+    "chinese": "取消",
+    "section": "Local chapters",
+    "anchor": "Cancel"
+  },
+  {
+    "id": "/settings/chapters#Stop after chapter",
+    "route": "/settings/chapters",
+    "title": "Stop after chapter",
+    "chinese": "章节结束后停止",
+    "section": "Local chapters",
+    "anchor": "Stop after chapter"
+  },
+  {
+    "id": "/settings/chapters#Stop after current chapter",
+    "route": "/settings/chapters",
+    "title": "Stop after current chapter",
+    "chinese": "当前章节结束后停止",
+    "section": "Local chapters",
+    "anchor": "Stop after current chapter"
+  },
+  {
     "id": "/settings/diagnostics",
     "route": "/settings/diagnostics",
     "title": "Diagnostics",
@@ -165,6 +220,37 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "chinese": "重新开始",
     "section": "Diagnostics",
     "anchor": "Start over"
+  },
+  {
+    "id": "/settings/discovery-layout",
+    "route": "/settings/discovery-layout",
+    "title": "Home and search layout",
+    "chinese": "首页与搜索布局",
+    "section": "Home and search layout"
+  },
+  {
+    "id": "/settings/discovery-layout#Home sections",
+    "route": "/settings/discovery-layout",
+    "title": "Home sections",
+    "chinese": "首页版块",
+    "section": "Home and search layout",
+    "anchor": "Home sections"
+  },
+  {
+    "id": "/settings/discovery-layout#Music search index",
+    "route": "/settings/discovery-layout",
+    "title": "Music search index",
+    "chinese": "音乐搜索索引",
+    "section": "Home and search layout",
+    "anchor": "Music search index"
+  },
+  {
+    "id": "/settings/discovery-layout#Listening intentions",
+    "route": "/settings/discovery-layout",
+    "title": "Listening intentions",
+    "chinese": "想听什么",
+    "section": "Home and search layout",
+    "anchor": "Listening intentions"
   },
   {
     "id": "/settings/download-manager",
@@ -507,6 +593,37 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "anchor": "Title preview"
   },
   {
+    "id": "/settings/home-widgets",
+    "route": "/settings/home-widgets",
+    "title": "Home screen widgets",
+    "chinese": "桌面小组件",
+    "section": "Home screen widgets"
+  },
+  {
+    "id": "/settings/home-widgets#Continue podcasts",
+    "route": "/settings/home-widgets",
+    "title": "Continue podcasts",
+    "chinese": "播客继续收听",
+    "section": "Home screen widgets",
+    "anchor": "Continue podcasts"
+  },
+  {
+    "id": "/settings/home-widgets#Listening statistics",
+    "route": "/settings/home-widgets",
+    "title": "Listening statistics",
+    "chinese": "听歌统计",
+    "section": "Home screen widgets",
+    "anchor": "Listening statistics"
+  },
+  {
+    "id": "/settings/home-widgets#Current lyrics",
+    "route": "/settings/home-widgets",
+    "title": "Current lyrics",
+    "chinese": "当前歌词",
+    "section": "Home screen widgets",
+    "anchor": "Current lyrics"
+  },
+  {
     "id": "/settings/language",
     "route": "/settings/language",
     "title": "Language",
@@ -663,6 +780,124 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "anchor": "All-time most played"
   },
   {
+    "id": "/settings/listening-tools",
+    "route": "/settings/listening-tools",
+    "title": "Listening tools",
+    "chinese": "收听工具",
+    "section": "Listening tools"
+  },
+  {
+    "id": "/settings/listening-tools#Retry",
+    "route": "/settings/listening-tools",
+    "title": "Retry",
+    "chinese": "重试",
+    "section": "Listening tools",
+    "anchor": "Retry"
+  },
+  {
+    "id": "/settings/listening-tools#Separate listening sessions",
+    "route": "/settings/listening-tools",
+    "title": "Separate listening sessions",
+    "chinese": "分别记住收听现场",
+    "section": "Listening tools",
+    "anchor": "Separate listening sessions"
+  },
+  {
+    "id": "/settings/listening-tools#Linked songs in shuffle",
+    "route": "/settings/listening-tools",
+    "title": "Linked songs in shuffle",
+    "chinese": "随机连播曲组",
+    "section": "Listening tools",
+    "anchor": "Linked songs in shuffle"
+  },
+  {
+    "id": "/settings/listening-tools#Local chapters",
+    "route": "/settings/listening-tools",
+    "title": "Local chapters",
+    "chinese": "本机章节",
+    "section": "Listening tools",
+    "anchor": "Local chapters"
+  },
+  {
+    "id": "/settings/listening-tools#Home screen widgets",
+    "route": "/settings/listening-tools",
+    "title": "Home screen widgets",
+    "chinese": "桌面小组件",
+    "section": "Listening tools",
+    "anchor": "Home screen widgets"
+  },
+  {
+    "id": "/settings/listening-tools#Wi-Fi music transfer",
+    "route": "/settings/listening-tools",
+    "title": "Wi-Fi music transfer",
+    "chinese": "Wi-Fi 传歌",
+    "section": "Listening tools",
+    "anchor": "Wi-Fi music transfer"
+  },
+  {
+    "id": "/settings/local-customizations",
+    "route": "/settings/local-customizations",
+    "title": "Local corrections",
+    "chinese": "本机信息修正",
+    "section": "Local corrections"
+  },
+  {
+    "id": "/settings/local-customizations#Correct current song metadata",
+    "route": "/settings/local-customizations",
+    "title": "Correct current song metadata",
+    "chinese": "修正当前歌曲信息",
+    "section": "Local corrections",
+    "anchor": "Correct current song metadata"
+  },
+  {
+    "id": "/settings/local-customizations#Lyric fonts",
+    "route": "/settings/local-customizations",
+    "title": "Lyric fonts",
+    "chinese": "歌词字体",
+    "section": "Local corrections",
+    "anchor": "Lyric fonts"
+  },
+  {
+    "id": "/settings/local-customizations#Alias preview",
+    "route": "/settings/local-customizations",
+    "title": "Alias preview",
+    "chinese": "别名预览",
+    "section": "Local corrections",
+    "anchor": "Alias preview"
+  },
+  {
+    "id": "/settings/local-customizations#Apply exact aliases",
+    "route": "/settings/local-customizations",
+    "title": "Apply exact aliases",
+    "chinese": "应用完整名称映射",
+    "section": "Local corrections",
+    "anchor": "Apply exact aliases"
+  },
+  {
+    "id": "/settings/local-customizations#Undo this alias mapping",
+    "route": "/settings/local-customizations",
+    "title": "Undo this alias mapping",
+    "chinese": "撤销此名称映射",
+    "section": "Local corrections",
+    "anchor": "Undo this alias mapping"
+  },
+  {
+    "id": "/settings/local-customizations#Preview affected loaded items",
+    "route": "/settings/local-customizations",
+    "title": "Preview affected loaded items",
+    "chinese": "预览受影响的已加载内容",
+    "section": "Local corrections",
+    "anchor": "Preview affected loaded items"
+  },
+  {
+    "id": "/settings/local-customizations#Retry",
+    "route": "/settings/local-customizations",
+    "title": "Retry",
+    "chinese": "重试",
+    "section": "Local corrections",
+    "anchor": "Retry"
+  },
+  {
     "id": "/settings/long-audio",
     "route": "/settings/long-audio",
     "title": "Long audio and bookmarks",
@@ -766,6 +1001,37 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "anchor": "Load more"
   },
   {
+    "id": "/settings/lyric-fonts",
+    "route": "/settings/lyric-fonts",
+    "title": "Lyric fonts",
+    "chinese": "歌词字体",
+    "section": "Lyric fonts"
+  },
+  {
+    "id": "/settings/lyric-fonts#Import app font",
+    "route": "/settings/lyric-fonts",
+    "title": "Import app font",
+    "chinese": "导入 App 字体",
+    "section": "Lyric fonts",
+    "anchor": "Import app font"
+  },
+  {
+    "id": "/settings/lyric-fonts#Restore default lyric fonts",
+    "route": "/settings/lyric-fonts",
+    "title": "Restore default lyric fonts",
+    "chinese": "恢复默认歌词字体",
+    "section": "Lyric fonts",
+    "anchor": "Restore default lyric fonts"
+  },
+  {
+    "id": "/settings/lyric-fonts#Retry",
+    "route": "/settings/lyric-fonts",
+    "title": "Retry",
+    "chinese": "重试",
+    "section": "Lyric fonts",
+    "anchor": "Retry"
+  },
+  {
     "id": "/settings/lyric-sources",
     "route": "/settings/lyric-sources",
     "title": "Lyric sources",
@@ -810,6 +1076,22 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "title": "Lyrics tools",
     "chinese": "歌词工具",
     "section": "Lyrics tools"
+  },
+  {
+    "id": "/settings/lyrics-tools#Edit and export lyrics",
+    "route": "/settings/lyrics-tools",
+    "title": "Edit and export lyrics",
+    "chinese": "编辑与导出歌词",
+    "section": "Lyrics tools",
+    "anchor": "Edit and export lyrics"
+  },
+  {
+    "id": "/settings/lyrics-tools#Lyric fonts",
+    "route": "/settings/lyrics-tools",
+    "title": "Lyric fonts",
+    "chinese": "歌词字体",
+    "section": "Lyrics tools",
+    "anchor": "Lyric fonts"
   },
   {
     "id": "/settings/lyrics-tools#Lyric sources",
@@ -947,6 +1229,148 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "anchor": "Cancel task"
   },
   {
+    "id": "/settings/music-search",
+    "route": "/settings/music-search",
+    "title": "Music search index",
+    "chinese": "音乐搜索索引",
+    "section": "Music search index"
+  },
+  {
+    "id": "/settings/music-search#Indexed songs",
+    "route": "/settings/music-search",
+    "title": "Indexed songs",
+    "chinese": "已索引歌曲",
+    "section": "Music search index",
+    "anchor": "Indexed songs"
+  },
+  {
+    "id": "/settings/music-search#Last indexed",
+    "route": "/settings/music-search",
+    "title": "Last indexed",
+    "chinese": "上次建立索引",
+    "section": "Music search index",
+    "anchor": "Last indexed"
+  },
+  {
+    "id": "/settings/music-tools",
+    "route": "/settings/music-tools",
+    "title": "Music tools and customization",
+    "chinese": "音乐工具与自定义",
+    "section": "Music tools and customization"
+  },
+  {
+    "id": "/settings/music-tools#Home and search layouts",
+    "route": "/settings/music-tools",
+    "title": "Home and search layouts",
+    "chinese": "首页与搜索布局",
+    "section": "Music tools and customization",
+    "anchor": "Home and search layouts"
+  },
+  {
+    "id": "/settings/music-tools#Pinyin library search",
+    "route": "/settings/music-tools",
+    "title": "Pinyin library search",
+    "chinese": "曲库拼音搜索",
+    "section": "Music tools and customization",
+    "anchor": "Pinyin library search"
+  },
+  {
+    "id": "/settings/music-tools#Listening scenes",
+    "route": "/settings/music-tools",
+    "title": "Listening scenes",
+    "chinese": "听歌情景",
+    "section": "Music tools and customization",
+    "anchor": "Listening scenes"
+  },
+  {
+    "id": "/settings/music-tools#Discover internet radio",
+    "route": "/settings/music-tools",
+    "title": "Discover internet radio",
+    "chinese": "发现网络电台",
+    "section": "Music tools and customization",
+    "anchor": "Discover internet radio"
+  },
+  {
+    "id": "/settings/music-tools#Media folders and tags",
+    "route": "/settings/music-tools",
+    "title": "Media folders and tags",
+    "chinese": "播客与电台文件夹及标签",
+    "section": "Music tools and customization",
+    "anchor": "Media folders and tags"
+  },
+  {
+    "id": "/settings/music-tools#Listening sessions, groups and chapters",
+    "route": "/settings/music-tools",
+    "title": "Listening sessions, groups and chapters",
+    "chinese": "收听会话、连续曲组与章节",
+    "section": "Music tools and customization",
+    "anchor": "Listening sessions, groups and chapters"
+  },
+  {
+    "id": "/settings/music-tools#Local edits and artist aliases",
+    "route": "/settings/music-tools",
+    "title": "Local edits and artist aliases",
+    "chinese": "本机编辑与艺人别名",
+    "section": "Music tools and customization",
+    "anchor": "Local edits and artist aliases"
+  },
+  {
+    "id": "/settings/music-tools#Lyric language fonts",
+    "route": "/settings/music-tools",
+    "title": "Lyric language fonts",
+    "chinese": "按语言设置歌词字体",
+    "section": "Music tools and customization",
+    "anchor": "Lyric language fonts"
+  },
+  {
+    "id": "/settings/music-tools#Home screen widgets",
+    "route": "/settings/music-tools",
+    "title": "Home screen widgets",
+    "chinese": "桌面小组件",
+    "section": "Music tools and customization",
+    "anchor": "Home screen widgets"
+  },
+  {
+    "id": "/settings/music-tools#Personal backup and restore",
+    "route": "/settings/music-tools",
+    "title": "Personal backup and restore",
+    "chinese": "个人资料备份与恢复",
+    "section": "Music tools and customization",
+    "anchor": "Personal backup and restore"
+  },
+  {
+    "id": "/settings/music-tools#Wi-Fi music transfer",
+    "route": "/settings/music-tools",
+    "title": "Wi-Fi music transfer",
+    "chinese": "Wi-Fi 传歌",
+    "section": "Music tools and customization",
+    "anchor": "Wi-Fi music transfer"
+  },
+  {
+    "id": "/settings/music-tools#Pending favorites and ratings",
+    "route": "/settings/music-tools",
+    "title": "Pending favorites and ratings",
+    "chinese": "待恢复的收藏与评分",
+    "section": "Music tools and customization",
+    "anchor": "Pending favorites and ratings"
+  },
+  {
+    "id": "/settings/music-tools#Playlist recovery",
+    "route": "/settings/music-tools",
+    "title": "Playlist recovery",
+    "chinese": "歌单缺曲找回",
+    "section": "Music tools and customization",
+    "anchor": "Playlist recovery"
+  },
+  {
+    "id": "/settings/music-tools#Playlist import and export",
+    "route": "/settings/music-tools",
+    "title": "Playlist import and export",
+    "chinese": "歌单导入与导出",
+    "section": "Music tools and customization",
+    "anchor": "Playlist import and export"
+  },
+  {
     "id": "/settings/navigation-bar",
     "route": "/settings/navigation-bar",
     "title": "Navigation bar",
@@ -969,11 +1393,105 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "anchor": "Automatic URL switching"
   },
   {
+    "id": "/settings/pending-marks",
+    "route": "/settings/pending-marks",
+    "title": "Pending favourites and ratings",
+    "chinese": "待找回的收藏与评分",
+    "section": "Pending favourites and ratings"
+  },
+  {
+    "id": "/settings/pending-marks#Find matching songs",
+    "route": "/settings/pending-marks",
+    "title": "Find matching songs",
+    "chinese": "查找匹配歌曲",
+    "section": "Pending favourites and ratings",
+    "anchor": "Find matching songs"
+  },
+  {
+    "id": "/settings/pending-marks#Apply selected marks",
+    "route": "/settings/pending-marks",
+    "title": "Apply selected marks",
+    "chinese": "恢复选中的收藏与评分",
+    "section": "Pending favourites and ratings",
+    "anchor": "Apply selected marks"
+  },
+  {
+    "id": "/settings/pending-marks#Keep pending",
+    "route": "/settings/pending-marks",
+    "title": "Keep pending",
+    "chinese": "继续保留为待找回",
+    "section": "Pending favourites and ratings",
+    "anchor": "Keep pending"
+  },
+  {
+    "id": "/settings/personal-backup",
+    "route": "/settings/personal-backup",
+    "title": "Personal backup and restore",
+    "chinese": "个人资料备份与恢复",
+    "section": "Personal backup and restore"
+  },
+  {
+    "id": "/settings/personal-backup#Export personal backup",
+    "route": "/settings/personal-backup",
+    "title": "Export personal backup",
+    "chinese": "导出个人资料备份",
+    "section": "Personal backup and restore",
+    "anchor": "Export personal backup"
+  },
+  {
+    "id": "/settings/personal-backup#Choose backup and preview",
+    "route": "/settings/personal-backup",
+    "title": "Choose backup and preview",
+    "chinese": "选择备份并预览",
+    "section": "Personal backup and restore",
+    "anchor": "Choose backup and preview"
+  },
+  {
+    "id": "/settings/personal-backup#Cancel",
+    "route": "/settings/personal-backup",
+    "title": "Cancel",
+    "chinese": "取消",
+    "section": "Personal backup and restore",
+    "anchor": "Cancel"
+  },
+  {
+    "id": "/settings/personal-backup#Apply restore",
+    "route": "/settings/personal-backup",
+    "title": "Apply restore",
+    "chinese": "应用恢复",
+    "section": "Personal backup and restore",
+    "anchor": "Apply restore"
+  },
+  {
+    "id": "/settings/personal-backup#Keep as missing track",
+    "route": "/settings/personal-backup",
+    "title": "Keep as missing track",
+    "chinese": "保留缺曲占位",
+    "section": "Personal backup and restore",
+    "anchor": "Keep as missing track"
+  },
+  {
     "id": "/settings/personalization",
     "route": "/settings/personalization",
     "title": "Appearance",
     "chinese": "外观",
     "section": "Appearance"
+  },
+  {
+    "id": "/settings/personalization#Home and search layouts",
+    "route": "/settings/personalization",
+    "title": "Home and search layouts",
+    "chinese": "首页与搜索布局",
+    "section": "Appearance",
+    "anchor": "Home and search layouts"
+  },
+  {
+    "id": "/settings/personalization#Lyric language fonts",
+    "route": "/settings/personalization",
+    "title": "Lyric language fonts",
+    "chinese": "按语言设置歌词字体",
+    "section": "Appearance",
+    "anchor": "Lyric language fonts"
   },
   {
     "id": "/settings/personalization#Apple Music style",
@@ -1700,12 +2218,12 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "anchor": "Choose playlist file"
   },
   {
-    "id": "/settings/playlist-exchange#Import matched tracks into a new playlist",
+    "id": "/settings/playlist-exchange#Import with missing-track placeholders",
     "route": "/settings/playlist-exchange",
-    "title": "Import matched tracks into a new playlist",
-    "chinese": "将匹配歌曲导入新歌单",
+    "title": "Import with missing-track placeholders",
+    "chinese": "导入歌单并保留缺曲占位",
     "section": "Playlist import and export",
-    "anchor": "Import matched tracks into a new playlist"
+    "anchor": "Import with missing-track placeholders"
   },
   {
     "id": "/settings/playlist-exchange#Save unmatched tracks",
@@ -1722,6 +2240,53 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "chinese": "跳过这首歌曲",
     "section": "Playlist import and export",
     "anchor": "Skip this track"
+  },
+  {
+    "id": "/settings/playlist-recovery",
+    "route": "/settings/playlist-recovery",
+    "title": "Playlist recovery",
+    "chinese": "歌单缺曲找回",
+    "section": "Playlist recovery"
+  },
+  {
+    "id": "/settings/playlist-recovery#Resume interrupted recovery",
+    "route": "/settings/playlist-recovery",
+    "title": "Resume interrupted recovery",
+    "chinese": "继续中断的恢复",
+    "section": "Playlist recovery",
+    "anchor": "Resume interrupted recovery"
+  },
+  {
+    "id": "/settings/playlist-recovery#Discard recovery intent and review again",
+    "route": "/settings/playlist-recovery",
+    "title": "Discard recovery intent and review again",
+    "chinese": "清除恢复计划并重新核对",
+    "section": "Playlist recovery",
+    "anchor": "Discard recovery intent and review again"
+  },
+  {
+    "id": "/settings/playlist-recovery#Scan library for missing tracks",
+    "route": "/settings/playlist-recovery",
+    "title": "Scan library for missing tracks",
+    "chinese": "扫描曲库并查找缺曲",
+    "section": "Playlist recovery",
+    "anchor": "Scan library for missing tracks"
+  },
+  {
+    "id": "/settings/playlist-recovery#Restore selected matches in place",
+    "route": "/settings/playlist-recovery",
+    "title": "Restore selected matches in place",
+    "chinese": "按原位补回已选歌曲",
+    "section": "Playlist recovery",
+    "anchor": "Restore selected matches in place"
+  },
+  {
+    "id": "/settings/playlist-recovery#Keep as missing track",
+    "route": "/settings/playlist-recovery",
+    "title": "Keep as missing track",
+    "chinese": "保留缺曲占位",
+    "section": "Playlist recovery",
+    "anchor": "Keep as missing track"
   },
   {
     "id": "/settings/quick-grid",
@@ -1768,6 +2333,29 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "chinese": "恢复默认",
     "section": "Scrobbling",
     "anchor": "Restore defaults"
+  },
+  {
+    "id": "/settings/shuffle-links",
+    "route": "/settings/shuffle-links",
+    "title": "Linked songs in shuffle",
+    "chinese": "随机连播曲组",
+    "section": "Linked songs in shuffle"
+  },
+  {
+    "id": "/settings/shuffle-links#Previous",
+    "route": "/settings/shuffle-links",
+    "title": "Previous",
+    "chinese": "上一首",
+    "section": "Linked songs in shuffle",
+    "anchor": "Previous"
+  },
+  {
+    "id": "/settings/shuffle-links#Next",
+    "route": "/settings/shuffle-links",
+    "title": "Next",
+    "chinese": "下一首",
+    "section": "Linked songs in shuffle",
+    "anchor": "Next"
   },
   {
     "id": "/settings/shuffle",
@@ -2083,5 +2671,36 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "chinese": "跟随专辑封面",
     "section": "Theme",
     "anchor": "Follow album artwork"
+  },
+  {
+    "id": "/settings/wifi-transfer",
+    "route": "/settings/wifi-transfer",
+    "title": "Wi-Fi music transfer",
+    "chinese": "Wi-Fi 传歌",
+    "section": "Wi-Fi music transfer"
+  },
+  {
+    "id": "/settings/wifi-transfer#Choose audio files to share",
+    "route": "/settings/wifi-transfer",
+    "title": "Choose audio files to share",
+    "chinese": "选择要分享的音频文件",
+    "section": "Wi-Fi music transfer",
+    "anchor": "Choose audio files to share"
+  },
+  {
+    "id": "/settings/wifi-transfer#Share current downloaded track",
+    "route": "/settings/wifi-transfer",
+    "title": "Share current downloaded track",
+    "chinese": "分享当前已下载曲目",
+    "section": "Wi-Fi music transfer",
+    "anchor": "Share current downloaded track"
+  },
+  {
+    "id": "/settings/wifi-transfer#Copy address",
+    "route": "/settings/wifi-transfer",
+    "title": "Copy address",
+    "chinese": "复制地址",
+    "section": "Wi-Fi music transfer",
+    "anchor": "Copy address"
   }
 ], ...SETTINGS_SEARCH_EXTRAS];

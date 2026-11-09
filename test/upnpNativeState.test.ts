@@ -24,7 +24,7 @@ function bridge() {
   const exports: Record<string, any> = {};
   runInNewContext(ts.transpileModule(readFileSync(new URL('../src/store/upnp.ts', import.meta.url), 'utf8'), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
-  }).outputText, { exports, setTimeout, clearTimeout, require(name: string) { assert.ok(Object.hasOwn(imports, name), name); return imports[name]; } });
+  }).outputText, { exports, setTimeout, clearTimeout, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization; assert.ok(Object.hasOwn(imports, name), name); return imports[name]; } });
   for (const name of ['onConnected', 'onDisconnected', 'onTrackChanged', 'onProgress', 'onPlayingChanged', 'onRepeatChanged', 'onVolumeChanged', 'onFinished', 'onLost']) {
     calls.push({ kind: 'register', args: [name] });
   }
@@ -54,3 +54,4 @@ test('unreachable polls never publish fake zero progress and lost connection ret
   assert.equal(h.exports.isUpnpConnected(), false);
   assert.deepEqual(h.calls.find((call) => call.kind === 'onDisconnected')!.args, [45]);
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

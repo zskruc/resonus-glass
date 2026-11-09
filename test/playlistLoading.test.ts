@@ -22,7 +22,7 @@ function load(path: string, dependencies: Record<string, unknown>) {
   }).outputText;
   const exported: Record<string, any> = {};
   runInNewContext(output, { exports: exported, setTimeout, clearTimeout, __DEV__: false,
-    require(name: string) {
+    require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
       assert.ok(Object.hasOwn(dependencies, name), `Unexpected ${path} import ${name}`);
       return dependencies[name];
     } });
@@ -223,3 +223,4 @@ test('the actual local playlist query asks only for this list, retaining duplica
   assert.equal(scans, 1, 'an empty list need not open or scan the catalog');
   assert.equal(requested.length, 1);
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

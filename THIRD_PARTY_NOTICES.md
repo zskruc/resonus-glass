@@ -336,3 +336,25 @@ artwork is sampled once and scrolling uses the existing recycled list.
 No Minidisc image assets, screenshots, app icons, fonts or Swift binaries
 are bundled. Spotify pages, Volta album pages, playback presentation and saved
 glass parameters remain independently selectable.
+
+## Optional library discovery and personal tools
+
+The optional discovery, personal-backup, lyric editing, metadata display correction,
+listening-session, shuffle-link and chapter workflows reference the behavior of
+[chenqi92/primuse](https://github.com/chenqi92/primuse) at
+[`1916718e0acb8706cc8a84d2495503c749d8d47d`](https://github.com/chenqi92/primuse/tree/1916718e0acb8706cc8a84d2495503c749d8d47d).
+They are independently implemented for this app's React Native, Android, Subsonic
+and local-library contracts; no SwiftUI framework, iOS binary, private Apple API,
+Primuse media asset or user library is bundled. The referenced revision identifies
+Primuse as AGPL-3.0; its current licensing is distinguished from the earlier MIT
+artwork reference documented above. Resonus Glass's own source and existing
+third-party notices remain available with the build.
+
+Chinese library search uses [pinyin-pro](https://github.com/zh-lx/pinyin-pro),
+version **3.29.5**, by zh-lx. Its MIT license is reproduced in
+[licenses/pinyin-pro-MIT.txt](./licenses/pinyin-pro-MIT.txt). Transliterations are
+built in explicit background metadata-index batches, not in list-row drawing.
+
+Online radio discovery reads [Radio Browser's public API](https://api.radio-browser.info/).
+Directory metadata and station streams remain provided by their respective
+operators; discovery does not bundle or redistribute radio audio.

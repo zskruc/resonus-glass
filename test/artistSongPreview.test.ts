@@ -20,7 +20,7 @@ function load(path: string, dependencies: Record<string, unknown>) {
   const exports: Record<string, any> = {};
   runInNewContext(ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText, { exports, setTimeout, clearTimeout, require(name: string) {
+  }).outputText, { exports, setTimeout, clearTimeout, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
     assert.ok(Object.hasOwn(dependencies, name), `Unknown ${path} dependency ${name}`); return dependencies[name];
   } }); return exports;
 }
@@ -161,3 +161,4 @@ test('the production data getAlbum remains a local-only read in offline mode', a
   });
   assert.equal((await exported.getAlbum('one')).songs[0].id, 'local'); assert.equal(local, 1);
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

@@ -97,7 +97,7 @@ function pickerHarness() {
   const exported: Record<string, any> = {};
   runInNewContext(ts.transpileModule(readFileSync(new URL('../src/components/PlaylistPickerSheet.tsx', import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
-  }).outputText, { exports: exported, require(name: string) { assert.ok(Object.hasOwn(deps, name), `Unexpected ${name}`); return deps[name]; } });
+  }).outputText, { exports: exported, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization; assert.ok(Object.hasOwn(deps, name), `Unexpected ${name}`); return deps[name]; } });
   const outer = new HookRunner(), inner = new HookRunner(); let closes = 0;
   const props = { songs: picker.songs, session: picker.session, onClose: () => { closes++; picker.session++; } };
   let component: (value: any) => Node, innerProps: any;
@@ -188,3 +188,4 @@ test('an old profile-change effect cannot close a replacement global picker sess
   assert.equal(h.renderOuter(), null); assert.equal(h.closes(), 0);
   h.inner.unmount(); h.outer.unmount();
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

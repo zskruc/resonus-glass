@@ -74,7 +74,7 @@ function harness() {
   const source = ts.transpileModule(readFileSync(new URL('../src/components/KaraokeWords.tsx', import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
-  runInNewContext(source, { exports, require(name: string) {
+  runInNewContext(source, { exports, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
     assert.ok(Object.hasOwn(dependencies, name), name); return dependencies[name];
   }, setTimeout(callback: () => void, delay: number) { const id = ++nextTimer; timers.set(id, { callback, delay }); return id; },
   clearTimeout(id: number) { timers.delete(id); } });
@@ -174,3 +174,4 @@ test('taking over before preparation settles preserves the existing fast-line pa
   assert.equal(clock.animation, undefined);
   assert.equal(h.newMasks(), 0);
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

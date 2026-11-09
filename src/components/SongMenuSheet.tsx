@@ -720,6 +720,15 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
                     <Action icon="albums-outline" label={t('Lyric sources')} onPress={() => dismissAction(() => {
                       useLyricToolTarget.getState().open(song); router.push('/settings/lyric-sources');
                     })} />
+                    <Action icon="create-outline" label={t('Edit and export lyrics')} onPress={() => dismissAction(() => {
+                      useLyricToolTarget.getState().open(song); router.push('/lyric-editor');
+                    })} />
+                    <Action icon="pencil-outline" label={t('Local song metadata')} onPress={() => dismissAction(() => {
+                      useLyricToolTarget.getState().open(song); router.push('/song-metadata');
+                    })} />
+                    <Action icon="link-outline" label={t('Linked shuffle groups')} onPress={() => dismissAction(() => {
+                      router.push({ pathname: '/settings/shuffle-links', params: { id: song.id } });
+                    })} />
                     <Action icon="image-outline" label={t('Lyric poster')} onPress={() => dismissAction(() => {
                       useLyricToolTarget.getState().open(song); router.push('/lyric-poster');
                     })} />
@@ -727,6 +736,9 @@ function SongMenuContent({ song, session }: { song: Song; session: number }) {
                   {canRememberLongAudio(song) ? <Action icon="bookmark-outline" label={t('Long audio and bookmarks')} onPress={() => dismissAction(() => {
                     useLongAudioTarget.getState().open(song); router.push('/settings/long-audio');
                   })} /> : null}
+                  <Action icon="list-outline" label={t('Chapters and chapter stop')} onPress={() => dismissAction(() => {
+                    router.push({ pathname: '/settings/chapters', params: { id: song.id } });
+                  })} />
                   {/* The player's buttons that are hidden from its bottom row,
                       so hiding them does not hide what they open (#248). */}
                   {extras.queue ? (

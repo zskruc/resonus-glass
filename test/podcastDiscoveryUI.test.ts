@@ -10,6 +10,7 @@ import { create as createStore } from 'zustand';
 import ts from 'typescript';
 import { PODCAST_DIRECTORY_GENRES } from '../src/lib/podcastDirectory';
 import * as resume from '../src/lib/episodeResume';
+import { defaultDiscoveryPreferences } from '../src/lib/discoveryPreferences';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -19,7 +20,7 @@ function load(file: string, imports: Record<string, unknown>) {
   const exports: Record<string, any> = {};
   runInNewContext(ts.transpileModule(readFileSync(new URL(file, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
-  }).outputText, { exports, AbortController, setTimeout, clearTimeout, require(name: string) {
+  }).outputText, { exports, AbortController, setTimeout, clearTimeout, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
     assert.ok(Object.hasOwn(imports, name), `Unexpected import: ${name}`); return imports[name];
   } }); return exports;
 }
@@ -58,6 +59,8 @@ function harness(offline = false) {
       podcastCover: (value: any) => value.imageUrl, episodeToSong: (value: any) => value,
     },
     '@/api/netGate': { isManualOffline: () => auth.getState().offline && !auth.getState().autoOffline },
+    '@/store/discoveryPreferences': { useDiscoveryPreferences: () => ({ profile: profile(), data: defaultDiscoveryPreferences(), loaded: true }) },
+    '@/components/discovery/MediaCollectionFilter': { MediaCollectionFilter: 'CollectionFilter', matchesMediaCollection: () => true },
     '@/components/BackChevron': { BackChevron: 'Back' }, '@/components/BackButton': { BackButton: 'Back' },
     '@/components/BrowseFrame': { BrowseFrame: 'BrowseFrame', useSearchBox: () => false }, '@/components/Cover': { Cover: 'Cover' },
     '@/components/PodcastAddSheet': { PodcastAddSheet: 'AddSheet' },
@@ -268,3 +271,4 @@ test('a canceled preview or subscribe completion cannot clear the replacement re
     } finally { await h.close(); }
   }
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

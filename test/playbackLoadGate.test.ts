@@ -129,7 +129,7 @@ test('only a current native pause releases loading priority; stale events cannot
     let released = 0, cancelledRecovery = 0, continued = false;
     const end = {};
     const context: Record<string, any> = { exports: {}, beat() {}, remoteKind: () => null,
-      stoppingFailedPlayback: false, awaitingSpeculativeSource: waiting, loadToken: 1,
+      stoppingFailedPlayback: false, awaitingSpeculativeSource: waiting, loadToken: 1, chapterStoppedLoad: -1,
       activePlayer: () => player, streamWarming: { held: true },
       useAuthStore: { getState: () => ({ auth: owner }) }, currentSong: () => ({ id: 'current' }),
       usePlayerStore: { getState: () => ({}) },

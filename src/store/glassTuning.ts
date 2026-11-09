@@ -267,3 +267,24 @@ export function exportGlassTuning(): string {
   ]));
   return JSON.stringify({ schemaVersion: 2, mode: 'amPlus', overrides, profiles }, null, 2);
 }
+
+/** Complete portable lab state. Automatic tint stays null, never the current theme's resolved color. */
+export function validateGlassBackup(value: unknown): { version: 1; mode: GlassAppearanceMode; overrides: OverridesByTarget; amPlusOverrides: OverridesByTarget } {
+  if (!isRecord(value) || value.version !== 1 || !['amPlus', 'custom', 'iphoneReference', 'kyantDefault'].includes(String(value.mode))
+    || !isRecord(value.overrides) || !isRecord(value.amPlusOverrides)) throw new Error('Invalid glass backup');
+  const read = (v: Record<string, unknown>) => Object.fromEntries(TARGETS.map((target) => [target, sanitizeGlassOverrides(v[target])])) as OverridesByTarget;
+  return { version: 1, mode: value.mode as GlassAppearanceMode, overrides: read(value.overrides), amPlusOverrides: read(value.amPlusOverrides) };
+}
+export async function exportGlassBackup() {
+  await useGlassTuning.getState().hydrate();
+  if (hydrationReadFailed) throw new Error('Saved glass appearance could not be read');
+  const { mode, overrides, amPlusOverrides } = useGlassTuning.getState();
+  return validateGlassBackup({ version: 1, mode, overrides, amPlusOverrides });
+}
+export async function importGlassBackup(value: unknown, current: () => boolean) {
+  const valid = validateGlassBackup(value); await useGlassTuning.getState().hydrate();
+  if (!current()) throw new Error('Profile changed');
+  if (hydrationReadFailed) throw new Error('Saved glass appearance could not be read');
+  useGlassTuning.setState({ mode: valid.mode, overrides: valid.overrides, amPlusOverrides: valid.amPlusOverrides });
+  await useGlassTuning.getState().save();
+}

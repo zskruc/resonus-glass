@@ -76,6 +76,7 @@ import { useArtistPicker } from '@/store/artistPicker';
 import { usePlayerStore } from '@/store/player';
 import { useSettings } from '@/store/settings';
 import { colors, fontSize, radius, spacing, themed, tracking } from '@/theme';
+import type { BackupTrack } from '@/lib/personalBackupModels';
 import { motion } from '@/theme/motion';
 import { BackChevron } from './BackChevron';
 import { TopBarBackground } from './BarBlur';
@@ -106,6 +107,7 @@ const DESCRIPTION_LINES = 2;
 
 /** A playlist occurrence has its own identity even when Song is shared. */
 interface TrackListOccurrence {
+  missing?: { key: string; track: BackupTrack };
   song: Song;
   origIndex: number;
   rowKey: string;
@@ -184,6 +186,9 @@ interface Props {
   /** Gradient/bar color if there's no cover with a dominant color. */
   accentColor?: string;
   songs: Song[];
+  /** Metadata-only occurrences: never added to the playable queue or selection. */
+  missingRows?: { key: string; before: number; track: BackupTrack }[];
+  onMissingPress?: () => void;
   currentId?: string;
   /** Numbers the tracks (useful on albums). */
   numbered?: boolean;
@@ -274,6 +279,8 @@ export function TrackListView({
   hideCover,
   accentColor,
   songs,
+  missingRows,
+  onMissingPress,
   currentId,
   numbered,
   discHeaders,
@@ -643,7 +650,23 @@ export function TrackListView({
       normQ(song.title).includes(q) || (song.artist && normQ(song.artist).includes(q)),
     );
   }, [searchable, query, occurrences]);
-  const shownRows = filtered ?? occurrences;
+  const withMissing = useMemo(() => {
+    if (!missingRows?.length) return occurrences;
+    const buckets = new Map<number, TrackListOccurrence[]>();
+    for (const row of missingRows) {
+      const before = Math.max(0, Math.min(occurrences.length, row.before));
+      const bucket = buckets.get(before) ?? [];
+      // This object is list presentation only. The render branch below bypasses
+      // TrackRow; all playback/selection still use the original `songs` array.
+      bucket.push({ song: { id: `missing:${row.key}`, title: row.track.title, artist: row.track.artist, album: row.track.album },
+        missing: row, origIndex: -1, serverIndex: -1, rowKey: `missing:${row.key}` });
+      buckets.set(before, bucket);
+    }
+    const rows: TrackListOccurrence[] = [];
+    for (let i = 0; i <= occurrences.length; i++) { rows.push(...buckets.get(i) ?? []); if (i < occurrences.length) rows.push(occurrences[i]); }
+    return rows;
+  }, [missingRows, occurrences]);
+  const shownRows = filtered ?? withMissing;
 
   function cancelSearch() {
     Keyboard.dismiss();
@@ -744,7 +767,7 @@ export function TrackListView({
         // Two bounded pools: ordinary rows and rows with a disc label. Keep
         // FlashList's default draw distance; FlatList's window knobs do not
         // describe a recycler and must not be carried over.
-        getItemType={(row) => !filtered && discHeaders?.[row.origIndex] ? 'disc' : 'track'}
+        getItemType={(row) => row.missing ? 'missing' : !filtered && discHeaders?.[row.origIndex] ? 'disc' : 'track'}
         data={shownRows}
         // The row's own key, not the song's: the same song can be in the list
         // twice and React was being handed the same key for both.
@@ -1170,6 +1193,15 @@ export function TrackListView({
         renderItem={({ item, index }) => {
           // The occurrence owns its positions; FlashList's result index is
           // irrelevant to play, remove and numbering, including while filtered.
+          if (item.missing) {
+            const content = <Pressable onPress={onMissingPress} accessibilityRole="button" style={{ minHeight: 70, paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Icon name="cloud-offline-outline" size={24} color={pagePalette?.textSecondary ?? colors.textMuted} />
+              <View style={{ flex: 1 }}><Text numberOfLines={1} style={{ color: pagePalette?.text ?? colors.text, fontSize: 15 }}>{item.missing.track.title}</Text>
+                <Text numberOfLines={1} style={{ color: pagePalette?.textSecondary ?? colors.textSecondary, fontSize: 12 }}>{t('Missing track · tap to find')} · {item.missing.track.artist}</Text></View>
+              <Icon name="chevron-forward" size={18} color={pagePalette?.textSecondary ?? colors.textSecondary} />
+            </Pressable>;
+            return primuse ? <PrimuseTrackPanelRow first={index === 0} last={index === shownRows.length - 1} divider={index < shownRows.length - 1}>{content}</PrimuseTrackPanelRow> : content;
+          }
           const { song, origIndex, rowKey, serverIndex } = item;
           // Disc header (only when not searching, where origIndex === index).
           const discLabel = filtered ? undefined : discHeaders?.[origIndex];

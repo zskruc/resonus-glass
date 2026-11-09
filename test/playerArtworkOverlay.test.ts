@@ -58,7 +58,7 @@ function harness() {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   const exports: Record<string, any> = {};
-  runInNewContext(compiled, { exports, require(id: string) {
+  runInNewContext(compiled, { exports, require(id: string) { const customization = defaultCustomizationBoundary(id); if (customization) return customization;
     assert.ok(Object.hasOwn(imports, id), `Unexpected overlay import ${id}`); return imports[id];
   } });
   const render = () => {
@@ -163,3 +163,4 @@ test('invalid metadata and progress cannot emit invalid scales or opacity', () =
   assert.equal(crop.playerArtworkCardOpacity(true, NaN), 0);
   assert.equal(crop.playerArtworkCardOpacity(false, 1), 0);
 });
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';

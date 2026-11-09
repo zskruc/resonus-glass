@@ -139,3 +139,47 @@ export function saveSmartRule(profile: string, rule: SmartRule): Promise<void> {
 export function deleteSmartRule(profile: string, id: string): Promise<void> {
   return serialized(async () => { await (await database()).runAsync('DELETE FROM smart_rules WHERE profile=? AND id=?', profile, id); });
 }
+
+export interface ListeningLedgerBackup {
+  version: 1;
+  preferences: { enabled: boolean; startedAt?: number };
+  rows: { day: string; song: Song; seconds: number; plays: number }[];
+}
+export function validateListeningLedger(raw: unknown): ListeningLedgerBackup {
+  const x = raw as ListeningLedgerBackup;
+  if (!x || x.version !== 1 || !x.preferences || typeof x.preferences.enabled !== 'boolean' || !Array.isArray(x.rows) || x.rows.length > 100000) throw new Error('Invalid listening history');
+  const seen = new Set<string>();
+  const rows = x.rows.map((r) => {
+    if (!r || !/^\d{4}-\d{2}-\d{2}$/.test(r.day) || !r.song || typeof r.song.id !== 'string' || !r.song.id || r.song.id.length > 1024
+      || typeof r.song.title !== 'string' || r.song.title.length > 500 || !Number.isFinite(r.seconds) || r.seconds < 0 || r.seconds > 86400
+      || !Number.isInteger(r.plays) || r.plays < 0 || r.plays > 100000 || seen.has(JSON.stringify([r.day, r.song.id]))) throw new Error('Invalid listening history row');
+    seen.add(JSON.stringify([r.day, r.song.id]));
+    return { day: r.day, song: safeSong(r.song), seconds: r.seconds, plays: r.plays };
+  });
+  return { version: 1, preferences: { enabled: x.preferences.enabled, startedAt: Number.isFinite(x.preferences.startedAt) ? x.preferences.startedAt : undefined }, rows };
+}
+export async function exportListeningLedger(profile: string): Promise<ListeningLedgerBackup> {
+  await flushListeningCredits();
+  return serialized(async () => {
+    const db = await database();
+    const rows = await db.getAllAsync<{ day: string; song: string; seconds: number; plays: number }>('SELECT day,song,seconds,plays FROM listening_days WHERE profile=? ORDER BY day,song_id LIMIT 100001', profile);
+    const pref = await db.getFirstAsync<{ enabled: number; started_at: number | null }>('SELECT enabled,started_at FROM listening_meta WHERE profile=?', profile);
+    return validateListeningLedger({ version: 1, preferences: { enabled: pref ? pref.enabled === 1 : true, startedAt: pref?.started_at ?? undefined }, rows: rows.map((r) => ({ ...r, song: JSON.parse(r.song) })) });
+  });
+}
+/** Merge with MAX by day/song, so importing the same file never doubles totals. */
+export function importListeningLedger(profile: string, raw: unknown, current: () => boolean): Promise<void> {
+  const value = validateListeningLedger(raw), version = profileVersions.get(profile) ?? 0;
+  return serialized(async () => {
+    const check = () => { if (!current() || version !== (profileVersions.get(profile) ?? 0)) throw new Error('Library changed'); };
+    check(); const db = await database(); check();
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      for (const r of value.rows) {
+        check(); await tx.runAsync(`INSERT INTO listening_days(profile,day,song_id,song,artist,seconds,plays) VALUES(?,?,?,?,?,?,?)
+          ON CONFLICT(profile,day,song_id) DO UPDATE SET seconds=MAX(seconds,excluded.seconds),plays=MAX(plays,excluded.plays)`, profile, r.day, r.song.id, JSON.stringify(r.song), r.song.artist ?? '', r.seconds, r.plays);
+      }
+      check(); await tx.runAsync('INSERT INTO listening_meta(profile,enabled,started_at) VALUES(?,?,?) ON CONFLICT(profile) DO NOTHING', profile, value.preferences.enabled ? 1 : 0, value.preferences.startedAt ?? null);
+      check();
+    });
+  });
+}

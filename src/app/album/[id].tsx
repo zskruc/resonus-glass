@@ -23,6 +23,7 @@ import { ArtistPagePaletteProvider, useArtistPagePalette } from '@/components/vo
 import { useDownloadMessage } from '@/hooks/useDownloadMessage';
 import { useFavoriteIds } from '@/hooks/useFavoriteIds';
 import { useMinidiscAlbumPalette } from '@/hooks/useMinidiscAlbumPalette';
+import { useDisplayAlbum } from '@/hooks/useLocalMetadata';
 import { songsLabel, useT } from '@/i18n';
 import { useAudiobookResume } from '@/hooks/useAudiobookResume';
 import { formatTotalDuration } from '@/lib/format';
@@ -189,6 +190,7 @@ export default function AlbumScreen() {
   const data = vanished ? (lastGood.current ?? fresh) : fresh;
   const resumeSongs = useMemo(() => data?.songs ?? [], [data?.songs]);
   const { resumeAction } = useAudiobookResume(data?.album, resumeSongs, `/album/${id}`);
+  const displayedAlbum = useDisplayAlbum(data?.album);
   const displayedCover = data ? coverArtUrl(data.album.coverArt ?? data.album.id, appleMusic || artistLayout || primuse ? COVER.full : COVER.card) : undefined;
   const albumPalette = useMinidiscAlbumPalette(minidisc ? displayedCover : undefined, offline);
 
@@ -295,8 +297,8 @@ export default function AlbumScreen() {
           palette: albumPalette,
           meta: [genres[0], ...yearParts].filter(Boolean).join(' · '),
         } : undefined}
-        title={data.album.name}
-        subtitle={data.album.artist}
+        title={displayedAlbum?.name ?? data.album.name}
+        subtitle={displayedAlbum?.artist ?? data.album.artist}
         description={showDescription ? description : undefined}
         artistId={data.album.artistId}
         artists={data.album.artists}
