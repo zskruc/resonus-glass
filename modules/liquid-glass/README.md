@@ -25,6 +25,10 @@ import { LiquidGlassView, isLiquidGlassAvailable } from '../../modules/liquid-gl
 
 `LiquidGlassView` is a decorative background, with no children or touch handling. Keep it directly inside a non-collapsible wrapper, behind the React Native control. Set opaque/frosted fallback styling in the wrapper for unsupported platforms, Expo Go, and Android versions below 12.
 
+`cacheStaticDecoration` is an internal opt-in used only by the bounded album-era overview. It requires an opaque `staticBackdropColor`, a noninteractive button/custom material, and API 31+. It shares exact-size, exact-style raster pairs: body/shadow use SrcOver and the separately captured highlight retains Plus blending. Foreground text, artwork and touch targets stay live. The 24 MiB cache admits the two actual Samsung card heights without rounding either key; it stores pixels and ownership tokens, never Views or drawing closures. The original renderer remains the fallback until capture succeeds and when admission, timeout or memory checks fail. Background cleanup drops unused references without recycling images held by display lists. This is independent of the live Mini Player/navigation materials and does not reduce their update rate. Hardware snapshot creation is synchronous and must be measured separately from warm scrolling.
+
+`cacheStaticDecoration` 只供有数量边界的年代总览卡片内部使用。它按实际像素尺寸和完整材质参数共享背景、阴影与独立高光，保留 Plus 高光混合；文字、封面和触摸继续实时更新。缓存上限为 24 MiB，不保留页面对象；捕获失败、超时或内存不足时使用原绘制。动态底栏不使用这份缓存。首次硬件快照为同步操作，性能验收须区分首次创建与后续滚动。
+
 The overall `radius` defaults to 0 to preserve originally square controls.
 The mini-player wrapper always passes transparent RGBA with zero tint opacity,
 independent of the current song, appearance mode or saved legacy tint. This
