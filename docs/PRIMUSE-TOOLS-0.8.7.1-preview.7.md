@@ -46,6 +46,8 @@ Full-library operations require a complete online source, not a downloaded subse
 
 本版已经进行 TypeScript、翻译完整性、生产路径与故障重试测试，以及 Android 原生编译。Wi-Fi 原生传输核心使用真实 HTTP 连接测试了上传下载字节一致性、链接、同源限制、体积及路径限制、中断清理与停止。最终测试数量、APK 摘要和签名以本机构建收据为准。
 
-尚未对本版进行三星实机安装、系统 MediaStore 实际收歌、桌面启动器小组件或长时间滚动帧率验收。不会据自动测试宣称全局持续 120 fps 或内存问题已经根治。待用户醒来连接三星后再集中测试。
+后续三星实测已推进至 `0.8.7.1-preview.9（155）`：验证了新增页面入口、拼音搜索、情景预览、字体回切、文件夹创建删除、个人备份导出、本机歌曲信息保存撤销，以及桌面统计组件的显示和跳转。其间修复了预览版小组件地址、编辑页键盘点击与旧草稿恢复问题。155 另消除了年代卡片对纯色背景的实时整页捕获，并限制年份网格每批加载的封面数量；保留现有布局与玻璃参数。
 
-Automated verification and native compilation are distinct from device acceptance. Samsung installation, actual MediaStore receipt, launcher widgets and sustained scrolling remain to be verified after reconnection.
+最终自动测试为 1,613 项通过。年代页两轮实机记录仍有少量慢帧，不能据此宣称全局持续 120 fps 或长期内存问题根治。真实 Wi-Fi 收歌、对真实账号执行备份恢复／缺曲补回，以及完整章节与会话交互仍未完成实机验收。测试临时亮屏设置已还原，测试专用桌面组件已移除，其他组件保留。新功能仍未推送或发布 Release。
+
+Samsung checks continued through preview.9 (155), covering selected new-page, search, editing, export and launcher-widget flows. Era cards now use the actual flat page colour without live full-screen capture; album-grid image batches are bounded. All 1,613 automated tests pass. Sporadic slow frames remain, and this is not a sustained 120 fps or all-feature device acceptance. Real LAN receipt, live-account restore/recovery, and complete chapter/session interactions remain unverified. Temporary power settings and the test widget were cleaned up. These experimental changes remain unpublished.
