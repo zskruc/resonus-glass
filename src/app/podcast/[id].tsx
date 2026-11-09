@@ -58,6 +58,8 @@ export default function PodcastScreen() {
   const [season, setSeason] = useState<number | 'other' | undefined>();
   const [downloadTarget, setDownloadTarget] = useState<{ channel: PodcastChannel; owner: unknown; profile: string } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [partialError, setPartialError] = useState<string>();
+  const [requestEpoch, setRequestEpoch] = useState(0);
   const [subscribingRequest, setSubscribingRequest] = useState<{ context: object; controller: AbortController } | null>(null);
   const auth = useAuthStore((state) => state.auth), profile = profileScopeId();
   const offline = useAuthStore((state) => state.offline), automaticOffline = useAuthStore((state) => state.autoOffline);
@@ -77,6 +79,7 @@ export default function PodcastScreen() {
     mounted.current = true;
     const unsubscribe = useAuthStore.subscribe((next, previous) => {
       if (next.auth !== previous.auth || next.offline !== previous.offline || next.autoOffline !== previous.autoOffline) {
+        setRequestEpoch((value) => value + 1);
         const canceled = subscribeRequest.current; canceled?.abort(); finishSubscription(canceled);
       }
     });
@@ -109,10 +112,15 @@ export default function PodcastScreen() {
   }, [preview.channel, current, id, profile]);
   const realChannel = channel.data ?? preview.channel;
   const { order, openSort, sortSheet } = usePodcastEpisodeSort(EMPTY_EPISODES, realChannel?.id ?? params.id, lang, realChannel?.showType === 'serial');
+  const partial = realChannel?.syncComplete === false;
+  // A feed prefix is not the whole show's alphabetical/oldest-first result.
+  // Keep the saved preference intact and restore it after the full snapshot.
+  const pageOrder = partial ? 'recent' : order;
+  const pageFilter = partial ? 'all' : filter, pageSeason = partial ? undefined : season;
   const episodes = useInfiniteQuery({
-    queryKey: ['podcastEpisodes', id, profile, 'pages', order, lang, filter, season ?? 'all'],
+    queryKey: ['podcastEpisodes', id, profile, 'pages', pageOrder, lang, pageFilter, pageSeason ?? 'all'],
     queryFn: ({ pageParam, signal }) => listEpisodePage(id, { offset: pageParam, limit: pageParam === 0 ? 7 : 20,
-      order, language: lang, filter, season }, { expectedProfile: profile, signal, current }),
+      order: pageOrder, language: lang, filter: pageFilter, season: pageSeason }, { expectedProfile: profile, signal, current }),
     initialPageParam: 0, getNextPageParam: (page) => page.nextOffset ?? undefined,
     enabled: !!id, staleTime: 60_000, retry: false,
   });
@@ -121,19 +129,36 @@ export default function PodcastScreen() {
     const value = await addedChannelIds(); if (!current() || !owns()) throw new Error('Podcast profile changed'); return value;
   } });
   const subscribed = !!added.data?.has(id);
+  const partialFeedUrl = realChannel?.feedUrl;
+  // A partially cached feed can also be reopened from the local podcast list,
+  // without a Discovery handoff. Resume its full read under this screen owner.
+  useFocusEffect(useCallback(() => {
+    if (previewToken || !partial || !partialFeedUrl || isManualOffline()) return;
+    const controller = new AbortController(), owns = captureLyricOwner(profile);
+    const valid = () => current() && owns() && !controller.signal.aborted;
+    setPartialError(undefined); setRefreshing(true);
+    void refreshChannel(partialFeedUrl, { expectedProfile: profile, signal: controller.signal, current: valid,
+      onPreview: (value) => { if (valid()) queryClient.setQueryData(['podcastChannel', id, profile], value); },
+    }).then((value) => {
+      if (!valid()) return;
+      queryClient.setQueryData(['podcastChannel', id, profile], value);
+      void queryClient.invalidateQueries({ queryKey: ['podcastEpisodes', id, profile] });
+    }).catch(() => { if (valid()) setPartialError(id); }).finally(() => { if (valid()) setRefreshing(false); });
+    return () => { controller.abort(); setRefreshing(false); };
+  }, [previewToken, partial, partialFeedUrl, profile, current, id, requestEpoch]));
   const savedProgress = progress.data ?? EMPTY_PROGRESS;
   const shown = useMemo(() => {
     const seen = new Set<string>();
     return episodes.data?.pages.flatMap((page) => page.items).filter((episode) => !seen.has(episode.id) && !!seen.add(episode.id)) ?? EMPTY_EPISODES;
   }, [episodes.data]);
   const seasons = episodes.data?.pages[0]?.seasons ?? [];
-  const resumeId = episodes.data?.pages[0]?.resumeId;
+  const resumeId = partial ? undefined : episodes.data?.pages[0]?.resumeId;
   const playingEpisode = useQuery({ queryKey: ['podcastCurrentEpisode', playingId, profile],
     queryFn: async () => {
       const owns = captureLyricOwner(profile); if (!current() || !owns()) throw new Error('Podcast profile changed');
       const value = await getPodcastEpisode(playingId!); if (!current() || !owns()) throw new Error('Podcast profile changed'); return value ?? null;
-    }, enabled: !!id && !!playingId && playingChannelId === id && (filter !== 'all' || season !== undefined) });
-  const showingCurrent = !!playingId && playingChannelId === id && (filter === 'all' && season === undefined
+    }, enabled: !!id && !!playingId && playingChannelId === id && (pageFilter !== 'all' || pageSeason !== undefined) });
+  const showingCurrent = !!playingId && playingChannelId === id && (pageFilter === 'all' && pageSeason === undefined
     || shown.some((episode) => episode.id === playingId)
     || !!playingEpisode.data && filterPodcastEpisodes([playingEpisode.data], filter, savedProgress, files, season).length > 0);
   useEffect(() => {
@@ -150,7 +175,7 @@ export default function PodcastScreen() {
 
   const refresh = useCallback(async () => {
     const feedUrl = realChannel?.feedUrl;
-    if (!feedUrl || !current() || isManualOffline()) return;
+    if (!feedUrl || !current() || isManualOffline() || preview.pending || refreshing) return;
     setRefreshing(true);
     try {
       await refreshChannel(feedUrl);
@@ -160,11 +185,11 @@ export default function PodcastScreen() {
     } finally {
       if (current()) setRefreshing(false);
     }
-  }, [realChannel?.feedUrl, current, reload, clearPreviewError, t, toast]);
+  }, [realChannel?.feedUrl, current, reload, clearPreviewError, t, toast, preview.pending, refreshing]);
 
   const keepShow = async () => {
     const feed = realChannel?.feedUrl;
-    if (!feed || !current() || subscribed || subscribing || isManualOffline()) return;
+    if (!feed || !current() || partial || subscribed || subscribing || isManualOffline()) return;
     const controller = new AbortController();
     subscribeRequest.current?.abort(); subscribeRequest.current = controller;
     const valid = () => current() && !controller.signal.aborted && subscribeRequest.current === controller;
@@ -179,7 +204,8 @@ export default function PodcastScreen() {
     } finally { finishSubscription(controller); }
   };
 
-  /** Build the complete queue only after an explicit play; pagination never truncates it. */
+  /** Read the available queue only after explicit play; paging never truncates it.
+   * During the labeled feed preview, only verified episodes are available. */
   const play = useCallback(
     async (fromId?: string) => {
       const ch = realChannel;
@@ -188,14 +214,14 @@ export default function PodcastScreen() {
       try {
         const [all, currentProgress] = await Promise.all([listEpisodes(ch.id), readPodcastShowProgress(ch.id, profile)]);
         if (!current() || !owns() || serial !== playRequest.current) return;
-        const list = filterPodcastEpisodes(sortPodcastEpisodes(all, order, lang), filter, currentProgress, files, season);
+        const list = filterPodcastEpisodes(sortPodcastEpisodes(all, pageOrder, lang), pageFilter, currentProgress, files, pageSeason);
         const playable = list.filter((e) => (e.url || files[e.id]) && (!isManualOffline() || files[e.id]));
         const start = fromId ? playable.findIndex((episode) => episode.id === fromId) : 0;
         if (!playable.length || start < 0) { toast(t('Not available offline')); return; }
         void playQueue(playable.map((episode) => episodeToSong(episode, ch)), start, ch.title, `/podcast/${ch.id}`, { ordered: true });
       } catch { if (current() && owns() && serial === playRequest.current) toast(t("Couldn't load this podcast.")); }
     },
-    [realChannel, current, playQueue, profile, order, lang, filter, files, season, toast, t],
+    [realChannel, current, playQueue, profile, pageOrder, lang, pageFilter, files, pageSeason, toast, t],
   );
 
   if (!realChannel && !preview.metadata && channel.isLoading) {
@@ -226,15 +252,19 @@ export default function PodcastScreen() {
   </GlassPressable>;
   return <>
     <PodcastDetailView channel={ch} episodes={shown} offline={offline && !automaticOffline} refreshing={refreshing}
-      loadingMeta={!ready && ch.episodeCount === undefined}
-      pagingIdentity={JSON.stringify([id, profile, order, lang, filter, season ?? 'all'])}
-      onRefresh={() => { if (ready) void refresh(); else preview.retry(); }}
-      onEndReached={() => { if (episodes.hasNextPage && !episodes.isFetching && !episodes.isError) void episodes.fetchNextPage(); }}
+      loadingMeta={partial || !ready && ch.episodeCount === undefined}
+      pagingIdentity={JSON.stringify([id, profile, partial, pageOrder, lang, pageFilter, pageSeason ?? 'all'])}
+      onRefresh={() => { if (preview.pending || refreshing) return; if (partial && previewToken || !ready) preview.retry(); else void refresh(); }}
+      onEndReached={() => { if (!partial && episodes.hasNextPage && !episodes.isFetching && !episodes.isError) void episodes.fetchNextPage(); }}
       footer={episodes.isFetchingNextPage ? <ActivityIndicator color="#FFFFFF" style={{ padding: 20 }} />
         : episodes.isError && shown.length ? <PodcastStatus text={t("Couldn't load this podcast.")}
           onRetry={() => { if (episodes.isFetchNextPageError) void episodes.fetchNextPage(); else void episodes.refetch(); }} />
-          : preview.error && ready ? <PodcastStatus text={t("This podcast's feed could not be read, so these episodes may be out of date.")}
-            onRetry={() => { void refresh(); }} /> : null}
+          : partial ? preview.error || partialError === id ? <PodcastStatus text={t('The rest of this feed could not be loaded. The available episodes can still be played.')}
+            onRetry={() => { if (previewToken) preview.retry(); else void refresh(); }} />
+              : <View style={styles.status}>{isManualOffline() ? null : <ActivityIndicator color="#FFFFFF" />}<Text style={styles.statusText}>{t(isManualOffline()
+                ? 'Only part of this feed is available offline.' : 'You can play these episodes while the rest of the feed loads.')}</Text></View>
+            : preview.error && ready ? <PodcastStatus text={t("This podcast's feed could not be read, so these episodes may be out of date.")}
+              onRetry={() => { void refresh(); }} /> : null}
       actions={(palette) => <>
         <GlassPressable accessibilityRole="button" accessibilityLabel={t(showingCurrent && isPlaying ? 'Pause' : resumeId ? 'Continue playing' : 'Play')}
           disabled={!ready || !shown.length} onPress={() => { if (!ready) return; if (showingCurrent) void toggle(); else if (shown.length) void play(resumeId ?? undefined); }}
@@ -243,31 +273,31 @@ export default function PodcastScreen() {
           <Text style={[styles.actionText, { color: palette.playLabel }]}>{t(showingCurrent && isPlaying ? 'Pause' : resumeId ? 'Continue playing' : 'Play')}</Text>
         </GlassPressable>
         {ch.feedUrl ? <GlassPressable accessibilityRole="button" accessibilityState={{ selected: subscribed, busy: subscribing }}
-          disabled={!ready || added.isPending || subscribing || (!subscribed && offline && !automaticOffline)}
+          disabled={!ready || partial || added.isPending || subscribing || (!subscribed && offline && !automaticOffline)}
           style={[styles.action, { backgroundColor: palette.controlFill }, !subscribed && offline && !automaticOffline && { opacity: .45 }]}
-          onPress={() => { if (ready && current()) { if (subscribed) openPodcastMenu(ch); else void keepShow(); } }}>
+          onPress={() => { if (ready && !partial && current()) { if (subscribed) openPodcastMenu(ch); else void keepShow(); } }}>
           {subscribing || added.isPending ? <ActivityIndicator size="small" color={palette.text} /> : <Icon name={subscribed ? 'checkmark' : 'add'} size={18} color={palette.text} />}
           <Text style={[styles.actionText, { color: palette.text }]}>{t(subscribed ? 'Subscribed' : 'Subscribe')}</Text>
         </GlassPressable> : null}
       </>}
       toolbar={(palette) => <>
-        <GlassPressable style={styles.tool} disabled={!ready} onPress={openSort} accessibilityLabel={t('Sort by')}><Icon name="swap-vertical" size={22} color={palette.text} /></GlassPressable>
-        <GlassPressable style={[styles.tool, offline && { opacity: .45 }]} disabled={!ready || offline} accessibilityLabel={t('Download episodes')}
-          onPress={() => { if (ready && current()) setDownloadTarget({ channel: ch, owner: auth, profile }); }}>
+        <GlassPressable style={styles.tool} disabled={!ready || partial} onPress={openSort} accessibilityLabel={t('Sort by')}><Icon name="swap-vertical" size={22} color={palette.text} /></GlassPressable>
+        <GlassPressable style={[styles.tool, offline && { opacity: .45 }]} disabled={!ready || partial || offline} accessibilityLabel={t('Download episodes')}
+          onPress={() => { if (ready && !partial && current()) setDownloadTarget({ channel: ch, owner: auth, profile }); }}>
           <Icon name="arrow-down-circle-outline" size={23} color={palette.text} />
         </GlassPressable>
-        <GlassPressable style={styles.tool} disabled={!ready} onPress={() => { if (ready && current()) openPodcastMenu(ch); }} accessibilityLabel={t('More')}>
+        <GlassPressable style={styles.tool} disabled={!ready || partial} onPress={() => { if (ready && !partial && current()) openPodcastMenu(ch); }} accessibilityLabel={t('More')}>
           <Icon name="ellipsis-horizontal" size={23} color={palette.text} />
         </GlassPressable>
       </>}
       filters={(palette) => <View style={styles.filters}>
         {ch.error ? <Text style={{ color: palette.textSecondary, fontSize: 13 }}>{t("This podcast's feed could not be read, so these episodes may be out of date.")}</Text> : null}
-        <Text style={{ color: palette.text, fontSize: 20, fontWeight: '700' }}>{t('Episodes')}</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+        <Text style={{ color: palette.text, fontSize: 20, fontWeight: '700' }}>{t(partial ? 'First episodes' : 'Episodes')}</Text>
+        {!partial ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
           {([['all', 'All episodes'], ['unplayed', 'Unplayed'], ['progress', 'In progress'], ['downloaded', 'Downloaded']] as const)
             .map(([value, label]) => chip(t(label), filter === value, () => setFilter(value), palette))}
-        </ScrollView>
-        {seasons.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+        </ScrollView> : null}
+        {!partial && seasons.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
           {chip(t('All seasons'), season === undefined, () => setSeason(undefined), palette)}
           {seasons.map((value) => chip(t('Season {n}', { n: value }), season === value, () => setSeason(value), palette))}
           {chip(t('Other episodes'), season === 'other', () => setSeason('other'), palette)}

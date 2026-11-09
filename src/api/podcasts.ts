@@ -19,7 +19,8 @@ import { hashKey } from '@/lib/localLibrary';
 import { queryClient } from '@/lib/query';
 import * as Db from '@/lib/podcastDb';
 import type { RecentEpisode } from '@/lib/podcastDb';
-import { parseFeedAsync, sortEpisodes, type ParsedItem } from '@/lib/podcastFeed';
+import { parseFeedAsync, sortEpisodes, type ParsedFeed, type ParsedItem } from '@/lib/podcastFeed';
+import { createPodcastFeedPreview } from '@/lib/podcastFeedStream';
 import { decodePodcastDirectoryChart, decodePodcastDirectorySearch, podcastAppleDirectoryId,
   podcastDirectoryChartUrl, podcastDirectoryLookupUrl, podcastDirectorySearchUrl,
   PodcastDirectoryError, type PodcastDirectoryShow } from '@/lib/podcastDirectory';
@@ -73,6 +74,8 @@ export interface PodcastOperationOptions {
   signal?: AbortSignal;
   current?: () => boolean;
   expectedProfile?: string;
+  /** A committed, merge-only prefix; the same request continues to full sync. */
+  onPreview?: (channel: PodcastChannel) => void;
 }
 const pendingReads = new Set<{ auth: unknown; profile: string; controller: AbortController }>();
 let accountEpoch = 0;
@@ -88,7 +91,7 @@ function requestOwner(options: PodcastOperationOptions = {}) {
     && auth === useAuthStore.getState().auth && profile === profileScopeId()
     && (options.expectedProfile === undefined || profile === options.expectedProfile)
     && (!options.current || options.current());
-  return { scope: hashKey(profile), epoch, signal: controller.signal, current,
+  return { scope: hashKey(profile), profile, epoch, signal: controller.signal, current,
     check() { if (!current()) throw new FeedError('stopped'); },
     dispose() { pendingReads.delete(ticket); options.signal?.removeEventListener('abort', abort); },
   };
@@ -119,7 +122,9 @@ interface FeedValidators {
   lastModified?: string;
 }
 
-async function get(url: string, accept: string, since?: FeedValidators, existingOwner?: RequestOwner): Promise<FeedRead> {
+type FeedPreview = (feed: ParsedFeed, url: string, current: () => boolean) => Promise<void>;
+const MAX_FEED_BYTES = 40 * 1024 * 1024;
+async function get(url: string, accept: string, since?: FeedValidators, existingOwner?: RequestOwner, preview?: FeedPreview): Promise<FeedRead> {
   if (!/^https?:\/\//i.test(url)) throw new FeedError('notFeed');
   // Podcast hosts are nobody's server: the publisher's feed and the iTunes
   // directory are as reachable when the app fell offline because the server
@@ -127,11 +132,13 @@ async function get(url: string, accept: string, since?: FeedValidators, existing
   // no — the same split `netGate` draws for LRCLIB.
   const ctl = new AbortController();
   const owner = existingOwner ?? requestOwner();
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  const cancelBody = () => { try { void reader?.cancel().catch(() => {}); } catch { /* Already released. */ } };
   const abort = () => ctl.abort(); owner.signal.addEventListener('abort', abort, { once: true });
   const check = () => { owner.check(); if (ctl.signal.aborted) throw new FeedError('http'); };
   let rejectStop!: (error: FeedError) => void;
   const stopped = new Promise<never>((_resolve, reject) => { rejectStop = reject; });
-  const stop = () => rejectStop(new FeedError(owner.current() ? 'http' : 'stopped'));
+  const stop = () => { cancelBody(); rejectStop(new FeedError(owner.current() ? 'http' : 'stopped')); };
   ctl.signal.addEventListener('abort', stop, { once: true });
   const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
   const work = async (): Promise<FeedRead> => {
@@ -151,11 +158,48 @@ async function get(url: string, accept: string, since?: FeedValidators, existing
     check();
     // Before `ok`: 304 is not a success code, and it is exactly the cheap
     // answer a conditional read exists to get — no body, nothing to parse.
-    if (res.status === 304) return { url, body: '', notModified: true };
+    if (res.status === 304) {
+      // A prefix has no validators. An unsolicited empty response must never
+      // promote those first episodes to an empty, supposedly complete feed.
+      if (!since?.etag && !since?.lastModified) throw new FeedError('http');
+      return { url, body: '', notModified: true };
+    }
     if (!res.ok) throw new FeedError('http');
     const etag = res.headers.get('etag');
     const modified = res.headers.get('last-modified');
-    const body = await res.text(); check();
+    const contentLength = Number(res.headers.get('content-length'));
+    if (Number.isFinite(contentLength) && contentLength > MAX_FEED_BYTES) throw new FeedError('http');
+    const prefix = preview ? createPodcastFeedPreview(feedId(url), url, 7) : undefined;
+    const publish = async (feed: ParsedFeed | undefined) => {
+      if (!feed || !preview) return;
+      check(); await preview(feed, url, () => owner.current() && !ctl.signal.aborted); check();
+    };
+    let body: string;
+    if (res.body?.getReader) {
+      const activeReader = res.body.getReader(); reader = activeReader;
+      const decoder = new TextDecoder(), parts: string[] = []; let bytes = 0;
+      try {
+        while (true) {
+          check(); const part = await activeReader.read(); check(); if (part.done) break;
+          if (!part.value) continue;
+          bytes += part.value.byteLength; if (bytes > MAX_FEED_BYTES) throw new FeedError('http');
+          const text = decoder.decode(part.value, { stream: true }); parts.push(text);
+          if (prefix) await publish(prefix.push(text));
+        }
+        const tail = decoder.decode(); if (tail) { parts.push(tail); if (prefix) await publish(prefix.push(tail)); }
+        if (prefix) await publish(prefix.finish());
+        body = parts.join('');
+      } catch (error) { cancelBody(); throw error; }
+      finally { try { activeReader.releaseLock(); } catch { /* Pending native read is being cancelled. */ } }
+    } else {
+      // Older/test transports have no stream. Bound their completed result and
+      // retain the same full-feed path; it cannot promise an early network prefix.
+      body = await res.text(); check();
+      if (body.length > MAX_FEED_BYTES || typeof TextEncoder !== 'undefined' && new TextEncoder().encode(body).byteLength > MAX_FEED_BYTES)
+        throw new FeedError('http');
+      if (prefix) { await publish(prefix.push(body)); await publish(prefix.finish()); }
+    }
+    check();
     return {
       url,
       body,
@@ -175,6 +219,7 @@ async function get(url: string, accept: string, since?: FeedValidators, existing
   } finally {
     clearTimeout(timer);
     ctl.signal.removeEventListener('abort', stop);
+    cancelBody(); ctl.abort();
     owner.signal.removeEventListener('abort', abort);
     if (!existingOwner) owner.dispose();
   }
@@ -200,7 +245,7 @@ function normalized(feedUrl: string): string {
  */
 const MAX_FEED_HOPS = 2;
 
-async function resolveFeed(read: FeedRead, hops = 0, owner?: RequestOwner): Promise<FeedRead> {
+async function resolveFeed(read: FeedRead, hops = 0, owner?: RequestOwner, preview?: FeedPreview): Promise<FeedRead> {
   if (read.notModified || looksLikeFeed(read.body)) return read;
   if (hops >= MAX_FEED_HOPS) throw new FeedError('notFeed');
 
@@ -212,7 +257,7 @@ async function resolveFeed(read: FeedRead, hops = 0, owner?: RequestOwner): Prom
     const href = attrs.match(/href\s*=\s*["']([^"']+)["']/i)?.[1];
     if (!href) continue;
     const next = new URL(href, read.url).toString();
-    return resolveFeed(await get(next, FEED_ACCEPT, undefined, owner), hops + 1, owner);
+    return resolveFeed(await get(next, FEED_ACCEPT, undefined, owner, preview), hops + 1, owner, preview);
   }
 
   throw new FeedError('notFeed');
@@ -258,9 +303,9 @@ const feedReads = new Map<string, { owner: RequestOwner; work: Promise<PodcastCh
 export async function refreshChannel(input: string, options: PodcastOperationOptions = {}): Promise<PodcastChannel> {
   // A route's abort belongs to that consumer, not another screen sharing a
   // legacy refresh. Caller-owned reads carry their cancellation to disk.
-  if (options.signal || options.current || options.expectedProfile !== undefined) {
+  if (options.signal || options.current || options.expectedProfile !== undefined || options.onPreview) {
     const owner = requestOwner(options);
-    try { owner.check(); return await refreshChannelOwned(input, owner); }
+    try { owner.check(); return await refreshChannelOwned(input, owner, options.onPreview); }
     finally { owner.dispose(); }
   }
   const url = normalized(input), key = `${scope()}|${url}`;
@@ -274,7 +319,7 @@ export async function refreshChannel(input: string, options: PodcastOperationOpt
   });
   return ticket.work;
 }
-async function refreshChannelOwned(input: string, owner: RequestOwner): Promise<PodcastChannel> {
+async function refreshChannelOwned(input: string, owner: RequestOwner, onPreview?: PodcastOperationOptions['onPreview']): Promise<PodcastChannel> {
   const url = normalized(input);
   const s = owner.scope;
 
@@ -283,22 +328,44 @@ async function refreshChannelOwned(input: string, owner: RequestOwner): Promise<
   // is the fallback when the feed has none.
   const stored = await Db.getChannel(s, feedId(url));
   owner.check();
-  const since = stored && stored.feedUrl === url
+  const since = stored && stored.syncComplete !== false && stored.feedUrl === url
     ? { etag: stored.etag, lastModified: stored.lastModified }
     : undefined;
 
   let read: FeedRead;
+  let published = false;
+  const preview: FeedPreview | undefined = onPreview && (!stored || stored.syncComplete === false) ? async (feed, feedUrl, streamCurrent) => {
+    const current = () => owner.current() && streamCurrent();
+    if (published || !current() || !feed.items.length) return;
+    const id = feedId(feedUrl), landedAt = Date.now();
+    const channel: PodcastChannel = { id, title: feed.title?.trim() || stored?.title || feedUrl, feedUrl, syncComplete: false };
+    if (feed.author) channel.author = feed.author;
+    if (feed.description) channel.description = feed.description;
+    if (feed.descriptionHtml) channel.descriptionHtml = feed.descriptionHtml;
+    if (feed.showType) channel.showType = feed.showType;
+    if (feed.imageUrl) channel.imageUrl = feed.imageUrl;
+    if (feed.siteUrl) channel.siteUrl = feed.siteUrl;
+    const identities = new Set<string>();
+    const episodes = feed.items.filter((item) => !identities.has(item.id) && !!identities.add(item.id)).slice(0, 7)
+      .map((item) => ({ ...toEpisode(id, item), firstSeenAt: landedAt }));
+    const merged = await Db.mergePreview(s, channel, episodes, current);
+    if (merged && current()) {
+      published = true;
+      try { onPreview(merged); } catch { /* A view callback does not own synchronization. */ }
+    }
+  } : undefined;
   try {
-    read = await resolveFeed(await get(url, FEED_ACCEPT, since, owner), 0, owner);
+    read = await resolveFeed(await get(url, FEED_ACCEPT, since, owner, preview), 0, owner, preview);
   } catch (e) {
     owner.check();
     // Keyed by the stored feed, or a refresh would file the show twice.
-    if (!stored) throw e;
+    const failed = stored ?? await Db.getChannel(s, feedId(url)); owner.check();
+    if (!failed) throw e;
     await Db.saveChannel(s, {
-      ...stored,
+      ...failed,
       feedUrl: url,
       error: e instanceof FeedError ? e.code : 'http',
-      refreshedAt: Date.now(),
+      ...(failed.syncComplete === false ? {} : { refreshedAt: Date.now() }),
     }, owner.current);
     // The lists show the error a feed read wrote down, so they ask again —
     // the show's own screen is the query that is running and answers itself.
@@ -309,7 +376,7 @@ async function refreshChannelOwned(input: string, owner: RequestOwner): Promise<
   // The publisher answered "unchanged": what is stored is what it lists now, so
   // the episodes, the downloads and the picture stay and only the clock moves.
   // Only reachable when a row under this address was read conditionally.
-  if (read.notModified && stored) {
+  if (read.notModified && stored && stored.syncComplete !== false) {
     const kept: PodcastChannel = { ...stored, refreshedAt: Date.now() };
     delete kept.error;
     owner.check();
@@ -322,7 +389,7 @@ async function refreshChannelOwned(input: string, owner: RequestOwner): Promise<
   const id = feedId(read.url);
   const existing = read.url === url ? stored : await Db.getChannel(s, id);
   owner.check();
-  const feed = await parseFeedAsync(read.body, id, read.url, { check: owner.check, signal: owner.signal });
+  const feed = await parseFeedAsync(read.body, id, read.url, { check: owner.check, signal: owner.signal, requireComplete: true });
   owner.check();
   // Which of these the device already had: an episode that was there keeps the
   // moment it first came over, one that was not gets this read's. A feed's `pubDate`
@@ -353,6 +420,7 @@ async function refreshChannelOwned(input: string, owner: RequestOwner): Promise<
     feedUrl: read.url,
     refreshedAt: Date.now(),
     episodeCount: episodes.length,
+    syncComplete: true,
     lastPublishedAt: dates.length > 0 ? Math.max(...dates) : existing?.lastPublishedAt,
   };
   // The episodes that came over with this read, and only when a read had
@@ -361,7 +429,8 @@ async function refreshChannelOwned(input: string, owner: RequestOwner): Promise<
   // nothing — the same for a feed that moved address, which reads as a first
   // time. The mark stays until the next read that lands something.
   const landed = episodes.filter((e) => !had.has(e.id)).length;
-  if (landed > 0 && had.size > 0) channel.newSinceAt = landedAt;
+  const previousComplete = !!existing && existing.syncComplete !== false;
+  if (landed > 0 && had.size > 0 && previousComplete) channel.newSinceAt = landedAt;
   else if (existing?.newSinceAt) channel.newSinceAt = existing.newSinceAt;
   if (feed.description) channel.description = feed.description;
   if (feed.descriptionHtml) channel.descriptionHtml = feed.descriptionHtml;
@@ -377,15 +446,15 @@ async function refreshChannelOwned(input: string, owner: RequestOwner): Promise<
   // keeps a kept show's art drawable when manual offline says no to fetching and
   // expo-image's cache has evicted the address. An earlier read that already
   // filed this one is not asked for its bytes again.
-  if (channel.imageUrl) channel.artFile = await Db.savePodcastArt(s, id, channel.imageUrl, existing?.artFile, owner.current, owner.signal);
+  if (existing?.artFile && existing.imageUrl === channel.imageUrl) channel.artFile = existing.artFile;
 
   owner.check();
-  await Db.saveChannel(s, channel, owner.current);
-  await Db.replaceEpisodes(s, id, episodes, owner.current);
+  await Db.saveFeedSnapshot(s, channel, episodes, owner.current);
   owner.check();
-  const automatic = landed > 0 && had.size > 0 ? await Db.autoDownloadIds(s) : NO_FAVORITES;
+  cacheChannelArt(channel, owner);
+  const automatic = landed > 0 && had.size > 0 && previousComplete ? await Db.autoDownloadIds(s) : NO_FAVORITES;
   owner.check();
-  if (landed > 0 && had.size > 0 && automatic.has(id)) {
+  if (landed > 0 && had.size > 0 && previousComplete && automatic.has(id)) {
     const newest = episodes.filter((e) => !had.has(e.id) && e.url).slice(0, AUTO_DOWNLOAD_EPISODES);
     void usePodcastDownloads.getState().download(channel, newest, true).catch(() => {});
   }
@@ -395,6 +464,30 @@ async function refreshChannelOwned(input: string, owner: RequestOwner): Promise<
   // called this, and it answers itself.
   invalidatePodcastLists();
   return channel;
+}
+
+const artworkReads = new Map<string, AbortController>();
+/** Artwork is optional post-commit work, separately owned across route disposal. */
+function cacheChannelArt(channel: PodcastChannel, accepted: RequestOwner): void {
+  if (!channel.imageUrl || !accepted.current() || isManualOffline()) return;
+  const key = `${accepted.scope}|${channel.id}`, previous = artworkReads.get(key);
+  if (!previous && artworkReads.size >= 2) return;
+  previous?.abort();
+  const controller = new AbortController(); artworkReads.set(key, controller);
+  const owner = requestOwner({ expectedProfile: accepted.profile, signal: controller.signal });
+  const work = async () => {
+    owner.check();
+    const file = await Db.savePodcastArt(owner.scope, channel.id, channel.imageUrl!, channel.artFile, owner.current, owner.signal);
+    owner.check(); if (!file || file === channel.artFile) return;
+    const updated = await Db.updateChannelArt(owner.scope, channel.id, channel.imageUrl!, channel.refreshedAt, file, owner.current);
+    owner.check(); if (updated) {
+      void queryClient.invalidateQueries({ queryKey: ['podcastChannel', channel.id, owner.profile] });
+      invalidatePodcastLists();
+    }
+  };
+  void work().catch(() => {}).finally(() => {
+    owner.dispose(); if (artworkReads.get(key) === controller) artworkReads.delete(key);
+  });
 }
 
 /** The show's picture: the file the read filed for it, else the feed's address.
@@ -822,7 +915,8 @@ export async function subscribe(input: string, options: PodcastOperationOptions 
     const added = stored ? await Db.addedIds(owner.scope) : undefined; owner.check();
     // Repeated/concurrent taps are idempotent. Offline, only a fully stored
     // preview can be kept; a directory row alone never invents a subscription.
-    const channel = stored && (added?.has(stored.id) || isManualOffline()) ? stored
+    if (isManualOffline() && stored?.syncComplete === false) throw new FeedError('offline');
+    const channel = stored && stored.syncComplete !== false && (added?.has(stored.id) || isManualOffline()) ? stored
       : await refreshChannelOwned(url, owner);
     owner.check();
     await Db.addChannel(owner.scope, channel.id, owner.current);

@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { createStore } from 'zustand/vanilla';
 import { parseFeedAsync, sortEpisodes } from '../src/lib/podcastFeed';
+import { createPodcastFeedPreview } from '../src/lib/podcastFeedStream';
 import { podcastUrlExtension } from '../src/lib/podcastMedia';
 import * as directory from '../src/lib/podcastDirectory';
 
@@ -25,11 +26,11 @@ function clock() {
       timers.delete(timer[0]); timer[1].run(); } };
 }
 const xml = '<rss><channel><title>Show</title><item><guid>one</guid><title>Episode</title><enclosure url="https://audio.test/one.mp3"/></item></channel></rss>';
-function feedHarness() {
+function feedHarness(contentLength?: string) {
   const timers = clock(), auth = createStore(() => ({ auth: { username: 'A' }, offline: false, autoOffline: false }));
   const headers = deferred<any>(), body = deferred<string>(); let bodyReads = 0, saves = 0;
   let mode: 'headers' | 'body' | 'fast' = 'headers'; const requests: AbortSignal[] = [];
-  const response = () => ({ status: 200, ok: true, headers: { get: () => null }, text: async () => {
+  const response = () => ({ status: 200, ok: true, headers: { get: (name: string) => name === 'content-length' ? contentLength ?? null : null }, text: async () => {
     bodyReads++; return mode === 'fast' ? xml : body.promise;
   } });
   const imports: Record<string, unknown> = {
@@ -41,8 +42,10 @@ function feedHarness() {
     '@/lib/localLibrary': { hashKey: (value: string) => value },
     '@/lib/query': { queryClient: { invalidateQueries: async () => {} } },
     '@/lib/podcastDb': { getChannel: async () => undefined, listAllEpisodes: async () => [],
-      saveChannel: async () => { saves++; }, replaceEpisodes: async () => { saves++; } },
+      saveChannel: async () => { saves++; }, replaceEpisodes: async () => { saves++; },
+      saveFeedSnapshot: async () => { saves += 2; } },
     '@/lib/podcastFeed': { parseFeedAsync, sortEpisodes }, '@/lib/podcastDirectory': directory,
+    '@/lib/podcastFeedStream': { createPodcastFeedPreview },
   };
   const api = compile('../src/api/podcasts.ts', imports, timers);
   return { api, timers, requests, headers, body, response, bodyReads: () => bodyReads, saves: () => saves,
@@ -75,6 +78,12 @@ test('caller abort promptly settles a stalled RSS transport or body instead of w
 test('a quick successful RSS read still stores its channel and episodes and clears its deadline', async () => {
   const h = feedHarness(); h.mode('fast'); const channel = await h.api.refreshChannel('https://feed.test/rss');
   assert.equal(channel.title, 'Show'); assert.equal(h.saves(), 2); assert.equal(h.timers.count(), 0);
+});
+
+test('an oversized advertised RSS is rejected before reading or decoding its body', async () => {
+  const h = feedHarness(String(40 * 1024 * 1024 + 1)); h.mode('fast');
+  await assert.rejects(h.api.refreshChannel('https://feed.test/rss'), (error: any) => error.code === 'http');
+  assert.equal(h.bodyReads(), 0); assert.equal(h.saves(), 0); assert.equal(h.timers.count(), 0);
 });
 
 function artHarness() {

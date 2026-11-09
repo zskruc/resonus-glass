@@ -8,6 +8,7 @@ import { create as createStore } from 'zustand';
 
 import { episodePlayed, episodeResumeAt } from '../src/lib/episodeResume';
 import { parseFeedAsync, sortEpisodes } from '../src/lib/podcastFeed';
+import { createPodcastFeedPreview } from '../src/lib/podcastFeedStream';
 import { podcastUrlExtension } from '../src/lib/podcastMedia';
 import * as podcastDirectory from '../src/lib/podcastDirectory';
 
@@ -104,6 +105,72 @@ test('queued database commits recheck the ownership predicate after waiting', as
   assert.equal(Object.keys(await h.Db.listDownloads('a')).length, 0);
 });
 
+test('a genuine RSS prefix merges at most seven without full validators, loss of rich records, or downgrading a complete feed', async () => {
+  const h = databaseHarness(), Db = h.Db;
+  const channel = { id: 'show', title: 'Preview', feedUrl: 'https://feed.test/rss', syncComplete: false,
+    etag: 'not-complete', lastModified: 'yesterday', refreshedAt: 123, lastPublishedAt: 100, newSinceAt: 99, episodeCount: 999 };
+  const episode = { id: 'show/one', channelId: 'show', title: 'Original rich episode', firstSeenAt: 10,
+    descriptionHtml: '<p>Keep original notes</p>', url: 'https://audio.test/one.mp3' };
+  const partial = await Db.mergePreview('a', channel, [episode]);
+  assert.equal(partial.syncComplete, false);
+  for (const field of ['etag', 'lastModified', 'refreshedAt', 'lastPublishedAt', 'newSinceAt', 'episodeCount'])
+    assert.equal(partial[field], undefined, field);
+  await Db.saveEpisodeProgress('a', { id: episode.id, channelId: 'show', positionSec: 50, durationSec: 400 });
+  await Db.saveDownload('a', episode, 'file:///offline.mp3', 30);
+  await Db.toggleFavorite('a', episode.id, 'episode', 'show');
+  await Db.mergePreview('a', { ...channel, title: 'Retry' }, [{ ...episode, title: 'Lesser prefix', firstSeenAt: 99, descriptionHtml: undefined }]);
+  assert.equal((await Db.getEpisode('a', episode.id)).title, episode.title);
+  assert.equal((await Db.getEpisode('a', episode.id)).descriptionHtml, episode.descriptionHtml);
+  assert.equal((await Db.getEpisodeProgress('a', episode.id)).positionSec, 50);
+  assert.equal((await Db.listDownloads('a'))[episode.id], 'file:///offline.mp3');
+  assert.equal((await Db.favoriteIds('a')).has(episode.id), true);
+  await assert.rejects(Db.mergePreview('a', channel, Array.from({ length: 8 }, (_, id) => ({ ...episode, id: `show/${id}` }))));
+  await assert.rejects(Db.mergePreview('a', channel, [{ ...episode, id: 'other/one' }]), /Invalid podcast preview/);
+  await Db.saveFeedSnapshot('a', { ...channel, title: 'Complete', etag: 'full', episodeCount: 1 }, [episode]);
+  assert.equal(await Db.mergePreview('a', channel, [{ ...episode, id: 'show/new' }]), undefined);
+  assert.equal((await Db.getChannel('a', 'show')).title, 'Complete');
+  assert.equal((await Db.getChannel('a', 'show')).etag, 'full');
+  assert.equal((await Db.listAllEpisodes('a', 'show')).length, 1);
+  assert.equal(await Db.getChannel('b', 'show'), undefined);
+});
+
+test('a cancelled or failed full snapshot rolls back episodes and completeness, then succeeds without deleting retained downloads', async () => {
+  const h = databaseHarness(), Db = h.Db;
+  const partial = { id: 'show', title: 'First episodes', feedUrl: 'https://feed.test/rss', syncComplete: false };
+  const old = { id: 'show/old', channelId: 'show', title: 'Keep', firstSeenAt: 10, url: 'https://audio.test/old.mp3' };
+  await Db.mergePreview('a', partial, [old]);
+  await Db.saveDownload('a', old, 'file:///saved.mp3', 80);
+  await Db.saveEpisodeProgress('a', { id: old.id, channelId: 'show', positionSec: 50, durationSec: 400 });
+  const complete = { ...partial, title: 'Whole feed', syncComplete: true, etag: 'fresh', episodeCount: 2, refreshedAt: 200 };
+  const rows = [old, { ...old, id: 'show/new', title: 'New', firstSeenAt: 20 }];
+  let checks = 0;
+  await assert.rejects(Db.saveFeedSnapshot('a', complete, rows, () => ++checks < 6), /scope changed/);
+  assert.equal((await Db.getChannel('a', 'show')).syncComplete, false);
+  assert.equal((await Db.getChannel('a', 'show')).etag, undefined);
+  assert.deepEqual(plain((await Db.listAllEpisodes('a', 'show')).map((value: any) => value.id)), [old.id]);
+  assert.equal((await Db.getEpisodeProgress('a', old.id)).positionSec, 50);
+  await Db.saveFeedSnapshot('a', complete, rows);
+  assert.equal((await Db.getChannel('a', 'show')).syncComplete, true);
+  assert.equal((await Db.getChannel('a', 'show')).etag, 'fresh');
+  assert.equal((await Db.getEpisode('a', old.id)).firstSeenAt, 10);
+  assert.equal((await Db.listDownloads('a'))[old.id], 'file:///saved.mp3');
+});
+
+test('late cover work only merges into its exact complete generation and cannot undo current feed fields', async () => {
+  const { Db } = databaseHarness();
+  const channel = { id: 'show', title: 'Current title', imageUrl: 'https://art.test/new.jpg', refreshedAt: 200, etag: 'current' };
+  await Db.saveFeedSnapshot('a', channel, []);
+  assert.equal(await Db.updateChannelArt('a', 'show', channel.imageUrl, 100, 'file:///stale.jpg', () => true), false);
+  assert.equal(await Db.updateChannelArt('a', 'show', 'https://art.test/old.jpg', 200, 'file:///stale.jpg', () => true), false);
+  await assert.rejects(Db.updateChannelArt('a', 'show', channel.imageUrl, 200, 'file:///cancelled.jpg', () => false));
+  assert.equal(await Db.updateChannelArt('a', 'show', channel.imageUrl, 200, 'file:///cover.jpg', () => true), true);
+  const stored = await Db.getChannel('a', 'show');
+  assert.equal(stored.title, channel.title); assert.equal(stored.etag, channel.etag);
+  assert.equal(stored.artFile, 'file:///cover.jpg');
+  await Db.mergePreview('b', { ...channel, syncComplete: false }, []);
+  assert.equal(await Db.updateChannelArt('b', 'show', channel.imageUrl, undefined, 'file:///cover.jpg', () => true), false);
+});
+
 test('bulk played marks use one transaction, retain audio, and roll back every mark on cancellation', async () => {
   const h = databaseHarness();
   await h.Db.saveChannel('a', { id: 'show', title: 'Show', feedUrl: 'https://feed.test/rss' });
@@ -158,12 +225,68 @@ function apiHarness() {
     '@/lib/query': { queryClient: { invalidateQueries: ({ queryKey }: any) => { invalidations.push(queryKey[0]); return Promise.resolve(); } } },
     '@/lib/podcastDb': h.Db,
     '@/lib/podcastFeed': { parseFeedAsync, sortEpisodes },
+    '@/lib/podcastFeedStream': { createPodcastFeedPreview },
     '@/lib/podcastDirectory': podcastDirectory,
   };
   const Api = compile('../src/api/podcasts.ts', imports);
   const feed = (ids: string[]) => `<rss><channel><title>Example show</title>${ids.map((id, i) => `<item><guid>${id}</guid><title>${id}</title><pubDate>${new Date(2026, 0, 20 - i).toUTCString()}</pubDate><enclosure url="https://audio.test/${id}.mp3" type="audio/mpeg"/></item>`).join('')}</channel></rss>`;
-  return { ...h, Api, downloaded, useAuthStore, requests, setFeed: (ids: string[]) => { xml = feed(ids); }, setStatus: (value: number) => { status = value; }, waitBody: (value?: Promise<void>) => { bodyWait = value; } };
+  return { ...h, Api, downloaded, useAuthStore, requests, setFeed: (ids: string[]) => { xml = feed(ids); },
+    setXml: (value: string) => { xml = value; }, setStatus: (value: number) => { status = value; }, waitBody: (value?: Promise<void>) => { bodyWait = value; } };
 }
+
+test('full metadata becomes usable before artwork settles, while background art keeps its own account owner', async () => {
+  for (const changedAccount of [false, true]) {
+    const h = apiHarness(), controller = new AbortController();
+    let release!: () => void, finished!: () => void;
+    const waiting = new Promise<void>((resolve) => { release = resolve; });
+    const completed = new Promise<void>((resolve) => { finished = resolve; });
+    h.Db.savePodcastArt = async () => { await waiting; return 'file:///background-cover.jpg'; };
+    const update = h.Db.updateChannelArt;
+    h.Db.updateChannelArt = async (...args: any[]) => { const result = await update(...args); finished(); return result; };
+    h.setXml('<rss><channel><title>Artwork show</title><itunes:image href="https://art.test/image.jpg"/>'
+      + '<item><guid>one</guid><title>One</title><enclosure url="https://audio.test/one.mp3"/></item></channel></rss>');
+    const channel = await h.Api.refreshChannel('https://feed.test/rss', { signal: controller.signal });
+    assert.equal(channel.syncComplete, true); assert.equal(channel.artFile, undefined);
+    assert.equal((await h.Db.listAllEpisodes(hash('one'), channel.id)).length, 1);
+    assert.equal((await h.Db.getChannel(hash('one'), channel.id)).artFile, undefined, 'art must not hold the first usable snapshot');
+    controller.abort(); // Leaving the detail does not cancel separately owned post-commit caching.
+    if (changedAccount) {
+      const original = h.useAuthStore.getState().auth;
+      h.useAuthStore.setState({ auth: { username: 'two', serverUrl: 'https://two.test' } });
+      h.useAuthStore.setState({ auth: original });
+    }
+    release();
+    if (changedAccount) {
+      await turn(); assert.equal((await h.Db.getChannel(hash('one'), channel.id)).artFile, undefined);
+    } else {
+      await completed; assert.equal((await h.Db.getChannel(hash('one'), channel.id)).artFile, 'file:///background-cover.jpg');
+    }
+  }
+});
+
+test('an unsolicited304 cannot promote or clear an incomplete first-seven cache', async () => {
+  const h = apiHarness(), id = hash('https://feed.test/rss'), profile = hash('one');
+  await h.Db.mergePreview(profile, { id, title: 'First episodes', feedUrl: 'https://feed.test/rss', syncComplete: false },
+    [{ id: `${id}/one`, channelId: id, title: 'One', url: 'https://audio.test/one.mp3' }]);
+  h.setStatus(304);
+  await assert.rejects(h.Api.refreshChannel('https://feed.test/rss'), (error: any) => error.code === 'http');
+  assert.equal(h.requests[0].headers['if-none-match'], undefined);
+  assert.equal((await h.Db.getChannel(profile, id)).syncComplete, false);
+  assert.equal((await h.Db.listAllEpisodes(profile, id)).length, 1);
+});
+
+test('a truncated RSS tail leaves its committed first seven incomplete and cannot publish full validators', async () => {
+  const h = apiHarness(), id = hash('https://feed.test/rss'), profile = hash('one');
+  h.setXml('<rss><channel><title>Truncated show</title>' + Array.from({ length: 7 }, (_, index) =>
+    `<item><guid>${index}</guid><title>Episode ${index}</title><enclosure url="https://audio.test/${index}.mp3"/></item>`).join('')
+    + '<item><guid>unfinished');
+  let partial: any;
+  await assert.rejects(h.Api.refreshChannel('https://feed.test/rss', { onPreview: (channel: any) => { partial = channel; } }));
+  assert.equal(partial.syncComplete, false);
+  assert.equal((await h.Db.getChannel(profile, id)).syncComplete, false);
+  assert.equal((await h.Db.getChannel(profile, id)).etag, undefined);
+  assert.equal((await h.Db.listAllEpisodes(profile, id)).length, 7);
+});
 
 test('automatic podcast downloads select only unique new arrivals, cap3, and never sweep initial backlog', async () => {
   const h = apiHarness(); h.setFeed(['old-a', 'old-b']);

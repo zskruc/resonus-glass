@@ -7,6 +7,7 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { createStore } from 'zustand/vanilla';
 import { parseFeedAsync, sortEpisodes } from '../src/lib/podcastFeed';
+import { createPodcastFeedPreview } from '../src/lib/podcastFeedStream';
 import { podcastUrlExtension } from '../src/lib/podcastMedia';
 import * as directory from '../src/lib/podcastDirectory';
 
@@ -65,6 +66,7 @@ function harness() {
     '@/store/player': {}, '@/lib/podcastProgress': {}, '@/lib/episodeResume': {},
     '@/lib/query': { queryClient: { invalidateQueries: async ({ queryKey }: any) => { invalidated.push(queryKey[0]); } } },
     '@/lib/podcastDb': Db, '@/lib/podcastFeed': { parseFeedAsync, sortEpisodes }, '@/lib/podcastDirectory': directory,
+    '@/lib/podcastFeedStream': { createPodcastFeedPreview },
   });
   return { Api, Db, first, auth, requests, invalidated, profile: hash('A'),
     setXml: (value: string) => { xml = value; },

@@ -39,7 +39,7 @@ test('the real episode-screen play callback builds the full offline queue, prese
     },
     readPodcastShowProgress: async (id: string, profile: string) => { assert.equal(id, 'show'); assert.equal(profile, 'one'); return new Map(); },
     sortPodcastEpisodes, filterPodcastEpisodes: (episodes: unknown[]) => episodes,
-    order: 'recent', lang: 'en', filter: 'all', season: undefined,
+    pageOrder: 'recent', lang: 'en', pageFilter: 'all', pageSeason: undefined,
     isManualOffline: () => true, toast() { throw Error('Unexpected offline toast'); }, t: (key: string) => key,
     playQueue: async (...args: unknown[]) => calls.push(args), episodeToSong: (episode: any) => episode,
   });

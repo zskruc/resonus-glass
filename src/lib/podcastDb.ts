@@ -227,7 +227,12 @@ export async function saveChannel(scope: string, channel: PodcastChannel, curren
   const db = await podcastDb(scope);
   await serialized(() => {
     if (!current()) throw new Error('Podcast scope changed');
-    return db.runAsync(
+    return writeChannel(db, channel);
+  });
+}
+
+function writeChannel(db: SQLite.SQLiteDatabase, channel: PodcastChannel) {
+  return db.runAsync(
       `INSERT OR REPLACE INTO podcast_channels
          (id, feed_url, title, last_published_at, refreshed_at, data)
        VALUES (?, ?, ?, ?, ?, ?)`,
@@ -239,8 +244,7 @@ export async function saveChannel(scope: string, channel: PodcastChannel, curren
         channel.refreshedAt ?? null,
         JSON.stringify(channel),
       ],
-    );
-  });
+  );
 }
 
 /**
@@ -260,8 +264,18 @@ export async function replaceEpisodes(
 ): Promise<void> {
   const db = await podcastDb(scope);
   const orphans: string[] = [];
-  await serialized(() =>
-    db.withTransactionAsync(async () => {
+  await serialized(async () => {
+    await db.withTransactionAsync(async () => {
+      await replaceEpisodeRows(db, channelId, episodes, current, orphans);
+    });
+    clearEpisodePageOrder(scope, channelId);
+  });
+  for (const file of orphans) await FileSystem.deleteAsync(file, { idempotent: true }).catch(() => {});
+}
+
+async function replaceEpisodeRows(
+  db: SQLite.SQLiteDatabase, channelId: string, episodes: PodcastEpisode[], current: () => boolean, orphans: string[],
+): Promise<void> {
       if (!current()) throw new Error('Podcast scope changed');
       // The publisher can trim a feed; an explicitly downloaded episode is
       // still the listener's audio and remains reachable until they delete it.
@@ -298,20 +312,88 @@ export async function replaceEpisodes(
          AND NOT EXISTS (SELECT 1 FROM podcast_episodes AS e WHERE e.id = episode_id)`,
         [channelId],
       );
-      clearEpisodePageOrder(scope, channelId);
-    }),
-  );
-  // Outside the transaction: the rows are gone, the files follow them.
+      if (!current()) throw new Error('Podcast scope changed');
+}
+
+/** Prefixes never replace a feed or validators, and never downgrade a full cache. */
+export async function mergePreview(
+  scope: string, channel: PodcastChannel, episodes: PodcastEpisode[], current: () => boolean = () => true,
+): Promise<PodcastChannel | undefined> {
+  if (episodes.length > 7 || episodes.some((episode) => episode.channelId !== channel.id || !episode.id.startsWith(`${channel.id}/`)))
+    throw new Error('Invalid podcast preview');
+  if (!current()) throw new Error('Podcast scope changed');
+  const db = await podcastDb(scope); let merged: PodcastChannel | undefined;
+  await serialized(async () => {
+    await db.withTransactionAsync(async () => {
+      if (!current()) throw new Error('Podcast scope changed');
+      const row = await db.getFirstAsync<{ data: string }>('SELECT data FROM podcast_channels WHERE id=?', [channel.id]);
+      if (!current()) throw new Error('Podcast scope changed');
+      const existing = row ? JSON.parse(row.data) as PodcastChannel : undefined;
+      if (existing && existing.syncComplete !== false) return;
+      const preview: PodcastChannel = { ...existing, ...channel, syncComplete: false };
+      delete preview.refreshedAt; delete preview.etag; delete preview.lastModified;
+      delete preview.episodeCount; delete preview.lastPublishedAt; delete preview.newSinceAt; delete preview.error;
+      await writeChannel(db, preview);
+      for (const episode of episodes) {
+        if (!current()) throw new Error('Podcast scope changed');
+        // Existing richer records, firstSeenAt, downloads and progress are
+        // untouched. Only the full snapshot may replace an existing episode.
+        await db.runAsync(`INSERT OR IGNORE INTO podcast_episodes(id,channel_id,published_at,url,data) VALUES(?,?,?,?,?)`,
+          [episode.id, episode.channelId, episode.publishedAt ?? null, episode.url ?? null, JSON.stringify(episode)]);
+      }
+      if (!current()) throw new Error('Podcast scope changed');
+      merged = preview;
+    });
+    if (merged) clearEpisodePageOrder(scope, channel.id);
+  });
+  return merged;
+}
+
+/** Completeness, validators and the whole episode set land or roll back together. */
+export async function saveFeedSnapshot(
+  scope: string, channel: PodcastChannel, episodes: PodcastEpisode[], current: () => boolean = () => true,
+): Promise<void> {
+  if (episodes.some((episode) => episode.channelId !== channel.id)) throw new Error('Invalid podcast snapshot');
+  if (!current()) throw new Error('Podcast scope changed');
+  const db = await podcastDb(scope), orphans: string[] = [];
+  await serialized(async () => {
+    await db.withTransactionAsync(async () => {
+      if (!current()) throw new Error('Podcast scope changed');
+      await replaceEpisodeRows(db, channel.id, episodes, current, orphans);
+      await writeChannel(db, { ...channel, syncComplete: true });
+      if (!current()) throw new Error('Podcast scope changed');
+    });
+    clearEpisodePageOrder(scope, channel.id);
+  });
   for (const file of orphans) await FileSystem.deleteAsync(file, { idempotent: true }).catch(() => {});
+}
+
+/** Artwork only merges into the exact full generation that requested it. */
+export async function updateChannelArt(
+  scope: string, id: string, imageUrl: string, refreshedAt: number | undefined, artFile: string, current: () => boolean,
+): Promise<boolean> {
+  const db = await podcastDb(scope); let updated = false;
+  await serialized(() => db.withTransactionAsync(async () => {
+    if (!current()) throw new Error('Podcast scope changed');
+    const row = await db.getFirstAsync<{ data: string }>('SELECT data FROM podcast_channels WHERE id=?', [id]);
+    if (!current()) throw new Error('Podcast scope changed');
+    const channel = row ? JSON.parse(row.data) as PodcastChannel : undefined;
+    if (!channel || channel.syncComplete === false || channel.imageUrl !== imageUrl || channel.refreshedAt !== refreshedAt) return;
+    await writeChannel(db, { ...channel, artFile });
+    if (!current()) throw new Error('Podcast scope changed'); updated = true;
+  }));
+  return updated;
 }
 
 export async function listChannels(scope: string): Promise<PodcastChannel[]> {
   const db = await podcastDb(scope);
-  const rows = await db.getAllAsync<{ data: string }>(
+  return serialized(async () => {
+    const rows = await db.getAllAsync<{ data: string }>(
     `SELECT data FROM podcast_channels
      ORDER BY COALESCE(last_published_at, 0) DESC, title COLLATE NOCASE ASC`,
   );
-  return rows.map((r) => JSON.parse(r.data) as PodcastChannel);
+    return rows.map((r) => JSON.parse(r.data) as PodcastChannel);
+  });
 }
 
 export async function addChannel(scope: string, id: string, current: () => boolean = () => true): Promise<void> {
@@ -354,11 +436,13 @@ export async function getChannel(
   id: string,
 ): Promise<PodcastChannel | undefined> {
   const db = await podcastDb(scope);
-  const row = await db.getFirstAsync<{ data: string }>(
+  return serialized(async () => {
+    const row = await db.getFirstAsync<{ data: string }>(
     'SELECT data FROM podcast_channels WHERE id = ?',
     [id],
   );
-  return row ? (JSON.parse(row.data) as PodcastChannel) : undefined;
+    return row ? (JSON.parse(row.data) as PodcastChannel) : undefined;
+  });
 }
 
 /** One page of a channel's episodes, newest first: old feeds list thousands,
@@ -385,12 +469,16 @@ async function listEpisodes(
 /** Every episode of a channel, pages read to the end: a screen shows the
  *  whole show, and old feeds list thousands. */
 export async function listAllEpisodes(scope: string, channelId: string): Promise<PodcastEpisode[]> {
-  const all: PodcastEpisode[] = [];
-  for (let offset = 0; ; offset += MAX_EPISODES) {
-    const page = await listEpisodes(scope, channelId, MAX_EPISODES, offset);
-    all.push(...page);
-    if (page.length < MAX_EPISODES) return all;
-  }
+  // One read owns all its pages. It cannot join another task's half-written
+  // snapshot on the cached connection between DELETE and the final INSERT.
+  return serialized(async () => {
+    const all: PodcastEpisode[] = [];
+    for (let offset = 0; ; offset += MAX_EPISODES) {
+      const page = await listEpisodes(scope, channelId, MAX_EPISODES, offset);
+      all.push(...page);
+      if (page.length < MAX_EPISODES) return all;
+    }
+  });
 }
 
 export interface PodcastEpisodePageOptions {
@@ -521,8 +609,10 @@ export async function listEpisodePage(
 
 export async function getEpisode(scope: string, id: string): Promise<PodcastEpisode | undefined> {
   const db = await podcastDb(scope);
-  const row = await db.getFirstAsync<{ data: string }>('SELECT data FROM podcast_episodes WHERE id = ?', [id]);
-  return row ? JSON.parse(row.data) as PodcastEpisode : undefined;
+  return serialized(async () => {
+    const row = await db.getFirstAsync<{ data: string }>('SELECT data FROM podcast_episodes WHERE id = ?', [id]);
+    return row ? JSON.parse(row.data) as PodcastEpisode : undefined;
+  });
 }
 
 /** One episode together with the show it belongs to, for a row that shows both. */
@@ -540,7 +630,8 @@ export interface FavoriteTimes {
 /** The newest playable episodes across every channel, each with its channel. */
 export async function listRecentEpisodes(scope: string, limit = 20): Promise<RecentEpisode[]> {
   const db = await podcastDb(scope);
-  const rows = await db.getAllAsync<{ episode: string; channel: string }>(
+  return serialized(async () => {
+    const rows = await db.getAllAsync<{ episode: string; channel: string }>(
     `SELECT e.data AS episode, c.data AS channel
      FROM podcast_episodes e
      JOIN podcast_channels c ON c.id = e.channel_id
@@ -550,10 +641,11 @@ export async function listRecentEpisodes(scope: string, limit = 20): Promise<Rec
      LIMIT ?`,
     [limit],
   );
-  return rows.map((r) => ({
+    return rows.map((r) => ({
     episode: JSON.parse(r.episode) as PodcastEpisode,
     channel: JSON.parse(r.channel) as PodcastChannel,
-  }));
+    }));
+  });
 }
 
 export type PodcastLibraryFilter = 'continue' | 'unplayed' | 'downloaded';
@@ -664,7 +756,8 @@ export async function listFavoriteChannels(
   scope: string,
 ): Promise<(PodcastChannel & FavoriteTimes)[]> {
   const db = await podcastDb(scope);
-  const rows = await db.getAllAsync<{ data: string; favorited_at: number; listened_at: number | null }>(
+  return serialized(async () => {
+    const rows = await db.getAllAsync<{ data: string; favorited_at: number; listened_at: number | null }>(
     `SELECT c.data, f.favorited_at,
        (SELECT MAX(p.updated_at) FROM podcast_progress p WHERE p.channel_id = c.id) AS listened_at
      FROM podcast_favorites f
@@ -672,11 +765,12 @@ export async function listFavoriteChannels(
      WHERE f.kind = 'channel'
      ORDER BY f.favorited_at DESC`,
   );
-  return rows.map((r) => ({
+    return rows.map((r) => ({
     ...(JSON.parse(r.data) as PodcastChannel),
     favoritedAt: r.favorited_at,
     listenedAt: r.listened_at ?? 0,
-  }));
+    }));
+  });
 }
 
 /** The favorited episodes, each with its show, most recently hearted first. */
@@ -685,7 +779,8 @@ export async function listFavoriteEpisodes(
   limit = 100,
 ): Promise<(RecentEpisode & FavoriteTimes)[]> {
   const db = await podcastDb(scope);
-  const rows = await db.getAllAsync<{
+  return serialized(async () => {
+    const rows = await db.getAllAsync<{
     episode: string;
     channel: string;
     favorited_at: number;
@@ -701,12 +796,13 @@ export async function listFavoriteEpisodes(
      LIMIT ?`,
     [limit],
   );
-  return rows.map((r) => ({
+    return rows.map((r) => ({
     episode: JSON.parse(r.episode) as PodcastEpisode,
     channel: JSON.parse(r.channel) as PodcastChannel,
     favoritedAt: r.favorited_at,
     listenedAt: r.listened_at ?? 0,
-  }));
+    }));
+  });
 }
 
 /** Where an episode was left. Its own table: a feed read replaces the episodes. */

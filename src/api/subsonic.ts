@@ -2020,6 +2020,8 @@ export interface PodcastChannel {
   lastPublishedAt?: number;
   /** When the feed was last read. */
   refreshedAt?: number;
+  /** false is a merge-only RSS prefix; absent is a legacy complete snapshot. */
+  syncComplete?: boolean;
   newSinceAt?: number;
   etag?: string;
   lastModified?: string;

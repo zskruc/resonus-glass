@@ -1643,5 +1643,9 @@
   "Wi-Fi transfer stopped.": "Wi-Fi 传输已停止。",
   "hours": "小时",
   "min remaining": "分钟剩余",
-  "Pending favorites and ratings": "待恢复的收藏与评分"
+  "Pending favorites and ratings": "待恢复的收藏与评分",
+  "First episodes": "首批单集",
+  "You can play these episodes while the rest of the feed loads.": "这些单集已经可以播放，其余节目正在后台加载。",
+  "The rest of this feed could not be loaded. The available episodes can still be played.": "其余节目暂时加载失败，已加载的单集仍可播放。",
+  "Only part of this feed is available offline.": "离线时仅可查看已加载的部分节目。"
 }

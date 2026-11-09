@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { createStore } from 'zustand/vanilla';
 import { parseFeed, parseFeedAsync, sortEpisodes } from '../src/lib/podcastFeed';
+import { createPodcastFeedPreview } from '../src/lib/podcastFeedStream';
 import * as directory from '../src/lib/podcastDirectory';
 
 const rss = `<rss xmlns:itunes="urn:itunes" xmlns:podcast="urn:podcast"><channel><title>A &amp; B</title><itunes:type>serial</itunes:type>
@@ -90,9 +91,11 @@ test('the actual feed refresh cancels while parsing a large response without wri
     '@/store/podcastDownloads': {}, '@/store/player': {}, '@/lib/podcastProgress': {}, '@/lib/episodeResume': {},
     '@/lib/localLibrary': { hashKey: (value: string) => value }, '@/lib/query': { queryClient: { invalidateQueries() {} } },
     '@/lib/podcastFeed': { parseFeedAsync, sortEpisodes }, '@/lib/podcastDirectory': directory,
+    '@/lib/podcastFeedStream': { createPodcastFeedPreview },
     '@/lib/podcastDb': { getChannel: async () => undefined,
       listAllEpisodes: async () => { previousEpisodeReads++; return []; },
-      saveChannel: async () => { writes++; }, replaceEpisodes: async () => { writes++; } },
+      saveChannel: async () => { writes++; }, replaceEpisodes: async () => { writes++; },
+      saveFeedSnapshot: async () => { writes++; } },
   };
   runInNewContext(ts.transpileModule(readFileSync(new URL('../src/api/podcasts.ts', import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },

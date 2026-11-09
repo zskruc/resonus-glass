@@ -7,6 +7,7 @@
 import type { PodcastChapter, PodcastTranscript } from '@/api/subsonic';
 import { normalizePodcastChapters } from './podcastChapters';
 import { MAX_PODCAST_NOTES_CHARS, safePodcastUrl } from './podcastShowNotes';
+import { podcastXmlHeaderEnd, podcastXmlItems } from './podcastXml';
 
 /** A channel as the feed describes itself, before anything is stored. */
 export interface ParsedFeed {
@@ -339,9 +340,9 @@ function siteLink(header: string): string | undefined {
 }
 
 /** Both entry points use the same item parser and retain the feed's order. */
-function* feedItems(body: string, channelId: string, baseUrl?: string): Generator<ParsedItem> {
-  for (const m of body.matchAll(/<(item|entry)(?:\s[^>]*)?>([\s\S]*?)<\/\1\s*>/gi)) {
-    const block = m[2];
+function* feedItems(body: string, channelId: string, baseUrl?: string, requireComplete = false): Generator<ParsedItem> {
+  for (const itemRange of podcastXmlItems(body, requireComplete)) {
+    const block = body.slice(itemRange.contentStart, itemRange.contentEnd);
     // Empty, not a placeholder: the screen translates that.
     const title = text(block, 'title') ?? '';
     const publishedAt = parseFeedDate(text(block, 'pubDate', 'published', 'updated', 'date'));
@@ -370,8 +371,7 @@ function* feedItems(body: string, channelId: string, baseUrl?: string): Generato
 
 function feedHeader(body: string, items: ParsedItem[]): ParsedFeed {
   // The channel's own fields come before its first item, in RSS and Atom alike.
-  const firstItem = body.search(/<(item|entry)\b/i);
-  const header = firstItem === -1 ? body : body.slice(0, firstItem);
+  const header = body.slice(0, podcastXmlHeaderEnd(body));
 
   const feed: ParsedFeed = { items };
   const title = text(header, 'title');
@@ -402,6 +402,8 @@ export interface PodcastFeedParseOptions {
   signal?: AbortSignal;
   /** Injectable scheduler for controlled tests; production yields to the JS event loop. */
   yieldControl?: () => Promise<void>;
+  /** Network promotion may replace the catalog only after a complete XML root. */
+  requireComplete?: boolean;
 }
 
 /** Full-feed parsing with cooperative scheduling, never a partial snapshot.
@@ -419,7 +421,7 @@ export async function parseFeedAsync(
   const clock = () => typeof performance === 'undefined' ? Date.now() : performance.now();
   const yieldControl = options.yieldControl ?? (() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
   check(); const body = unwrapCdata(xml); check();
-  const source = feedItems(body, channelId, baseUrl), items: ParsedItem[] = [];
+  const source = feedItems(body, channelId, baseUrl, options.requireComplete === true), items: ParsedItem[] = [];
   let batch = 0, started = clock();
   while (true) {
     check(); const next = source.next(); if (next.done) break;

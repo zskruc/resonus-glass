@@ -1640,5 +1640,9 @@
   "Wi-Fi transfer stopped.": "Wi-Fi transfer stopped.",
   "hours": "hours",
   "min remaining": "min remaining",
-  "Pending favorites and ratings": "Pending favorites and ratings"
+  "Pending favorites and ratings": "Pending favorites and ratings",
+  "First episodes": "First episodes",
+  "You can play these episodes while the rest of the feed loads.": "You can play these episodes while the rest of the feed loads.",
+  "The rest of this feed could not be loaded. The available episodes can still be played.": "The rest of this feed could not be loaded. The available episodes can still be played.",
+  "Only part of this feed is available offline.": "Only part of this feed is available offline."
 }

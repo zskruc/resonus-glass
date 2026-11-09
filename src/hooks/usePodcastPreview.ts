@@ -61,11 +61,15 @@ export function usePodcastPreview(token: string | undefined) {
         if (!cached) throw new Error('Podcast preview is unavailable offline');
         return;
       }
-      const stale = !!cached?.error || !cached?.refreshedAt || Date.now() - cached.refreshedAt >= REVALIDATE_AFTER_MS
+      const stale = cached?.syncComplete === false || !!cached?.error || !cached?.refreshedAt || Date.now() - cached.refreshedAt >= REVALIDATE_AFTER_MS
         || (seed.show.latestReleaseAt ?? 0) > (cached.lastPublishedAt ?? 0);
       if (cached && !stale) return;
       if (samePage()) setState((before) => ({ context, channel: before?.context === context ? before.channel : undefined, pending: true, error: false }));
-      const refreshed = await refreshChannel(feed, options);
+      const refreshed = await refreshChannel(feed, { ...options, onPreview: (partial) => {
+        // Real RSS identities are already committed. The remaining transfer
+        // continues while these first episodes can be read and played.
+        if (current()) setState({ context, channel: partial, pending: true, error: false });
+      } });
       if (current()) setState({ context, channel: refreshed, pending: false, error: false });
     };
     void work().catch(() => {

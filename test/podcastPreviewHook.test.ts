@@ -155,3 +155,48 @@ test('unmount aborts an in-flight feed refresh and ignores a publisher that reso
   assert.equal(refresh.options.current(), false);
   await act(async () => { refresh.task.resolve({ id: 'too-late', title: 'Too late' }); });
 });
+
+test('verified first RSS episodes are published while the full transfer remains pending', async () => {
+  const h = harness({ feed: true });
+  try {
+    await h.mount();
+    const read = h.refreshes[0], partial = { id: 'real-rss-id', title: 'Real feed', syncComplete: false };
+    await act(async () => { read.options.onPreview(partial); });
+    assert.equal(h.latest().channel, partial);
+    assert.equal(h.latest().pending, true);
+    assert.equal(h.latest().error, false);
+    const complete = { ...partial, syncComplete: true, episodeCount: 530 };
+    await act(async () => { read.task.resolve(complete); });
+    assert.equal(h.latest().channel, complete);
+    assert.equal(h.latest().pending, false);
+  } finally { await h.unmount(); }
+});
+
+test('partial cache bypasses freshness TTL and remains usable after the rest of the transfer fails', async () => {
+  const partial = { id: 'real-rss-id', title: 'Partial cache', syncComplete: false, refreshedAt: Date.now() };
+  const h = harness({ feed: true, cached: partial });
+  try {
+    await h.mount();
+    assert.equal(h.latest().channel, partial);
+    assert.equal(h.refreshes.length, 1, 'partial cache can never suppress full synchronization');
+    await act(async () => { h.refreshes[0].task.reject(new Error('Feed transfer interrupted')); });
+    assert.equal(h.latest().channel, partial);
+    assert.equal(h.latest().pending, false);
+    assert.equal(h.latest().error, true);
+  } finally { await h.unmount(); }
+});
+
+test('a late partial callback after focus cleanup cannot replace the new page owner', async () => {
+  const h = harness({ feed: true });
+  try {
+    await h.mount(); const old = h.refreshes[0];
+    await h.focus(false); await h.focus(true);
+    assert.equal(h.refreshes.length, 2);
+    await act(async () => { old.options.onPreview({ id: 'obsolete', title: 'Obsolete', syncComplete: false }); });
+    assert.equal(h.latest().channel, undefined);
+    assert.equal(h.latest().pending, true);
+    const partial = { id: 'current', title: 'Current', syncComplete: false };
+    await act(async () => { h.refreshes[1].options.onPreview(partial); });
+    assert.equal(h.latest().channel, partial);
+  } finally { await h.unmount(); }
+});

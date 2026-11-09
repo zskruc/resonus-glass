@@ -43,7 +43,8 @@ function harness(offline = false) {
     items: allEpisodes.slice(options.offset, options.offset + options.limit), total: allEpisodes.length,
     nextOffset: options.offset + options.limit < allEpisodes.length ? options.offset + options.limit : undefined, seasons: [],
   });
-  let refresh: () => Promise<any> = async () => channel;
+  let refresh: (options?: any) => Promise<any> = async () => channel;
+  let preferredOrder = 'recent';
   let readChannel: () => Promise<any> = async () => profile() === 'A' ? channel : undefined;
   let lookup: () => Promise<any> = async () => ({ ...show, feedUrl: channel.feedUrl });
   let subscribe: () => Promise<any> = async () => { added = new Set([...added, channel.id]); return channel; };
@@ -62,7 +63,7 @@ function harness(offline = false) {
       directorySearch: async (...args: any[]) => { searches.push(args); return [{ ...show, feedUrl: channel.feedUrl }]; },
       directoryLookup: async (...args: any[]) => { lookups.push(args); return lookup(); },
       getStoredChannel: async (feed: string) => { reads.push(feed); return stored; },
-      refreshChannel: async (feed: string) => { refreshes.push(feed); return refresh(); },
+      refreshChannel: async (feed: string, options?: any) => { refreshes.push(feed); return refresh(options); },
       getChannel: async () => readChannel(),
       listEpisodes: async (id: string) => { fullReads.push(id); return allEpisodes; }, playedEpisodeIds: async () => new Set(),
       listEpisodePage: async (...args: [string, any, any]) => { pages.push(args); return pageRead(...args); },
@@ -90,7 +91,7 @@ function harness(offline = false) {
     '@/components/PodcastMenuSheet': { openPodcastMenu: (value: any) => menus.push(value), openPodcastEpisodeMenu() {} },
     '@/hooks/useLiquidDock': { useLiquidDockScrollHandler: () => undefined },
     '@/hooks/useScreenBottomPadding': { useScreenBottomPadding: () => 150 }, '@/hooks/useScreenSize': { useListPadding: () => 20 },
-    '@/hooks/usePodcastEpisodeSort': { usePodcastEpisodeSort: (episodes: any[]) => ({ episodes, order: 'recent', openSort() {}, sortSheet: null }) },
+    '@/hooks/usePodcastEpisodeSort': { usePodcastEpisodeSort: (episodes: any[]) => ({ episodes, order: preferredOrder, openSort() {}, sortSheet: null }) },
     '@/hooks/useAppleMusicStyle': { useAppleMusicStyle: () => false }, '@/theme/appleMusic': { appleMusicStyles: {} },
     '@/i18n': { useT: () => (text: string, args: Record<string, unknown> = {}) => text.replace(/\{(\w+)\}/g, (_, key) => String(args[key])),
       episodesLabel: (n: number) => `${n} episodes` },
@@ -125,7 +126,7 @@ function harness(offline = false) {
   const button = (text: string) => buttons().find((value) => value.props.accessibilityLabel === text || value.findAllByType('Text' as any).some((node) => node.props.children === text));
   return { auth, client, pushes, attempts, toasts, charts, searches, lookups, reads, refreshes, subscriptions, menus, pages, fullReads, queues, progressReads, currentEpisodeReads, mount, button,
     tree: () => root, focus: (active: boolean) => focus.setState({ active }), failNavigation: (value: boolean) => { pushFails = value; }, preview: common['@/lib/podcastPreview'] as any, lookup: (next: typeof lookup) => { lookup = next; }, stored: (next: any) => { stored = next; },
-    readChannel: (next: typeof readChannel) => { readChannel = next; }, refresh: (next: typeof refresh) => { refresh = next; },
+    readChannel: (next: typeof readChannel) => { readChannel = next; }, refresh: (next: typeof refresh) => { refresh = next; }, sort: (value: string) => { preferredOrder = value; },
     progressRead: (next: typeof progressRead) => { progressRead = next; }, playing: (song: any) => { playing = song; isPlaying = !!song; }, toggles: () => toggles,
     route: (next: typeof route) => { route = next; }, episodes: (next: any[]) => { allEpisodes = next; }, pageRead: (next: typeof pageRead) => { pageRead = next; },
     added: (ids: string[]) => { added = new Set(ids); }, subscribe: (next: typeof subscribe) => { subscribe = next; },
@@ -369,6 +370,88 @@ test('a failed directory feed request keeps its public metadata and back control
     assert.equal(h.tree().root.findAllByType('Spinner' as any).length, 0);
     assert.ok(h.button('Retry')); assert.equal(h.button('Play')!.props.disabled, true);
     assert.equal(h.pages.length, 0); assert.equal(h.fullReads.length, 0); assert.equal(h.subscriptions.length, 0);
+  } finally { await h.close(); }
+});
+
+test('a real RSS prefix is playable before the full transfer, and full promotion restores the saved ordering', async () => {
+  const h = harness(), done = deferred<any>(), all = episodes(37);
+  let callbacks: any, stored: any;
+  h.sort('alpha'); h.stored(undefined); h.readChannel(async () => stored);
+  h.refresh((options) => { callbacks = options; return done.promise; });
+  const handle = h.preview.beginPodcastPreview({ ...show, feedUrl: channel.feedUrl });
+  h.route({ id: handle.id, preview: handle.token });
+  try {
+    await h.mount(true);
+    assert.equal(h.tree().root.findByType('DetailView' as any).props.episodes.length, 0);
+    stored = { ...channel, syncComplete: false, episodeCount: 7 };
+    h.episodes(all.slice(0, 7));
+    await act(async () => { callbacks.onPreview(stored); await turn(); }); await settle();
+    const detail = () => h.tree().root.findByType('DetailView' as any);
+    assert.equal(detail().props.episodes.length, 7);
+    assert.equal(detail().props.loadingMeta, true, '7 is not presented as the complete catalog count');
+    assert.equal(visibleText(h, 'First episodes'), true);
+    assert.equal(h.pages.at(-1)[1].order, 'recent', 'partial data does not impersonate the full alphabetical result');
+    for (const action of ['Sort by', 'Download episodes', 'Subscribe', 'More']) assert.equal(h.button(action)!.props.disabled, true, action);
+    assert.equal(h.button('Play')!.props.disabled, false);
+    await act(async () => { h.tree().root.findAllByType('EpisodeRow' as any)[2].props.onPlay(); await turn(); });
+    assert.equal(h.queues[0][0].length, 7); assert.equal(h.queues[0][0][2].id, all[2].id);
+    const before = h.pages.length;
+    await act(async () => { detail().props.onEndReached(); await turn(); });
+    assert.equal(h.pages.length, before, 'prefix pagination cannot pretend to fetch the missing catalog');
+    stored = { ...channel, syncComplete: true, episodeCount: all.length };
+    h.episodes(all);
+    await act(async () => { done.resolve(stored); await turn(); }); await settle();
+    assert.equal(detail().props.loadingMeta, false);
+    assert.equal(visibleText(h, 'Episodes'), true);
+    assert.equal(visibleText(h, 'First episodes'), false);
+    assert.equal(h.pages.at(-1)[1].order, 'alpha', 'saved order is restored without changing the preference');
+    assert.equal(h.button('Sort by')!.props.disabled, false);
+    assert.equal(h.button('Download episodes')!.props.disabled, false);
+  } finally { await h.close(); }
+});
+
+test('reopening a locally stored prefix resumes synchronization and preserves usable rows if the transfer fails', async () => {
+  const h = harness(), done = deferred<any>(), partial = { ...channel, syncComplete: false, episodeCount: 7 };
+  h.episodes(episodes(7)); h.readChannel(async () => partial); h.refresh(() => done.promise);
+  try {
+    await h.mount(true); await settle();
+    assert.equal(h.refreshes.length, 1);
+    assert.equal(h.tree().root.findByType('DetailView' as any).props.episodes.length, 7);
+    await act(async () => { done.reject(new Error('Remainder unavailable')); await turn(); }); await settle();
+    assert.equal(h.refreshes.length, 1, 'a failed prefix sync does not start an automatic retry loop');
+    assert.equal(h.tree().root.findByType('DetailView' as any).props.episodes.length, 7);
+    assert.equal(visibleText(h, 'The rest of this feed could not be loaded. The available episodes can still be played.'), true);
+    assert.ok(h.button('Retry'));
+    assert.equal(h.button('Play')!.props.disabled, false);
+  } finally { await h.close(); }
+});
+
+test('a reopened partial feed resumes after offline and a batched network round trip without leaving a stale refresh spinner', async () => {
+  const h = harness(true), partial = { ...channel, syncComplete: false }, requests: { options: any; task: ReturnType<typeof deferred<any>> }[] = [];
+  h.episodes(episodes(7)); h.readChannel(async () => partial);
+  h.refresh((options) => { const task = deferred<any>(); requests.push({ options, task }); return task.promise; });
+  try {
+    await h.mount(true); await settle();
+    const detail = () => h.tree().root.findByType('DetailView' as any);
+    assert.equal(h.refreshes.length, 0); assert.equal(detail().props.refreshing, false);
+    assert.equal(visibleText(h, 'Only part of this feed is available offline.'), true);
+    await act(async () => { h.auth.setState({ offline: false }); await turn(); }); await settle();
+    assert.equal(requests.length, 1); assert.equal(detail().props.refreshing, true);
+    const first = requests[0];
+    await act(async () => { h.auth.setState({ offline: true }); await turn(); }); await settle();
+    assert.equal(first.options.signal.aborted, true); assert.equal(detail().props.refreshing, false);
+    await act(async () => { first.task.reject(new Error('Aborted')); await turn(); });
+    await act(async () => { h.auth.setState({ offline: false }); await turn(); }); await settle();
+    assert.equal(requests.length, 2);
+    const second = requests[1];
+    await act(async () => { h.auth.setState({ offline: true }); h.auth.setState({ offline: false }); await turn(); }); await settle();
+    assert.equal(second.options.signal.aborted, true); assert.equal(requests.length, 3);
+    await act(async () => { second.task.reject(new Error('Aborted ABA')); await turn(); });
+    assert.equal(detail().props.refreshing, true, 'old completion cannot clear the new owner spinner');
+    await act(async () => { requests[2].task.reject(new Error('Publisher unavailable')); await turn(); }); await settle();
+    assert.equal(detail().props.refreshing, false);
+    assert.equal(detail().props.episodes.length, 7);
+    assert.ok(h.button('Retry'));
   } finally { await h.close(); }
 });
 

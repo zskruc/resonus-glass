@@ -6,6 +6,7 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { createStore } from 'zustand/vanilla';
 import * as directory from '../src/lib/podcastDirectory';
+import { createPodcastFeedPreview } from '../src/lib/podcastFeedStream';
 
 function compile(path: string, imports: Record<string, unknown>, globals: Record<string, unknown> = {}) {
   const exports: Record<string, any> = {};
@@ -170,6 +171,7 @@ test('the actual page API rejects wrong owners, caller abort and A to B to the s
     '@/store/podcastDownloads': {}, '@/store/player': {}, '@/lib/podcastProgress': {}, '@/lib/episodeResume': {},
     '@/lib/localLibrary': { hashKey: (value: string) => value }, '@/lib/query': {},
     '@/lib/podcastFeed': {}, '@/lib/podcastDirectory': directory,
+    '@/lib/podcastFeedStream': { createPodcastFeedPreview },
     '@/lib/podcastDb': { listEpisodePage: async (_scope: string, _id: string, _options: unknown, current: () => boolean) => {
       calls++; const value = await new Promise((resolve) => { finish = resolve; }); if (!current()) throw new Error('stale'); return value;
     } },
