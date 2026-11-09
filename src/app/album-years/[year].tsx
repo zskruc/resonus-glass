@@ -1,7 +1,8 @@
 import { useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import Animated from 'react-native-reanimated';
+import type { Album } from '@/api/data';
 import { AlbumCard } from '@/components/AlbumCard';
 import { AlbumRow } from '@/components/AlbumRow';
 import { BackChevron } from '@/components/BackChevron';
@@ -20,19 +21,25 @@ import { listPerf } from '@/lib/listPerf';
 import { useSettings } from '@/store/settings';
 import { spacing, themed, useTheme } from '@/theme';
 
+const MemoAlbumRow = memo(AlbumRow);
+
 export default function AlbumYearScreen() {
   const colors = useTheme(), t = useT(), params = useLocalSearchParams<{ year?: string; downloaded?: string }>();
-  const selection = parseAlbumEra(params.year), data = useAlbumEras(params.downloaded === '1');
+  const selection = useMemo(() => parseAlbumEra(params.year), [params.year]), data = useAlbumEras(params.downloaded === '1');
   const [pickedYear, setPickedYear] = useState<number>();
-  const selected = pickedYear !== undefined && selection?.kind === 'decade' ? { kind: 'year' as const, year: pickedYear } : selection;
-  const albums = selected ? albumsInEra(data.index, selected) : [];
-  const dock = useLiquidDockScrollHandler(), bottom = useScreenBottomPadding(), { width } = useScreenSize();
+  const selected = useMemo(() => pickedYear !== undefined && selection?.kind === 'decade' ? { kind: 'year' as const, year: pickedYear } : selection, [pickedYear, selection]);
+  const albums = useMemo(() => selected ? albumsInEra(data.index, selected) : [], [data.index, selected]);
+  const dock = useLiquidDockScrollHandler(), bottom = useScreenBottomPadding(), { width, height } = useScreenSize();
   const layout = useSettings((state) => state.browseAlbumsLayout), setLayout = useSettings((state) => state.setBrowseAlbumsLayout);
   const { columns, openGridMenu, gridSheet } = useGridColumns('browseAlbums', { value: layout, set: setLayout });
   const padding = useListPadding(spacing.lg), grid = layout === 'grid', gap = spacing.sm;
   const cardWidth = (width - padding * 2 - gap * (columns - 1)) / columns;
   const title = selection?.kind === 'unknown' ? t('Unknown year') : selection?.kind === 'decade' ? t('{year}s', { year: selection.year }) : String(selection?.year ?? '');
-  const years = selection?.kind === 'decade' ? [...data.index.byYear.keys()].filter((year) => year >= selection.year && year < selection.year + 10).sort((a, b) => b - a) : [];
+  const years = useMemo(() => selection?.kind === 'decade' ? [...data.index.byYear.keys()].filter((year) => year >= selection.year && year < selection.year + 10).sort((a, b) => b - a) : [], [selection, data.index.byYear]);
+  const renderAlbum = useCallback(({ item }: { item: Album }) => grid ? <AlbumCard album={item} width={cardWidth} /> : <MemoAlbumRow album={item} />, [grid, cardWidth]);
+  // FlatList batches multi-column *rows*. Ten rows can otherwise request
+  // dozens of large covers at once. Fill the viewport first, then add two rows.
+  const initialRows = grid ? Math.max(2, Math.ceil(height / (cardWidth + 56))) : listPerf.initialNumToRender;
   if (!selection) return <BrowseFrame><BackChevron /><EmptyState icon="albums-outline" title={t('Invalid release year')} /></BrowseFrame>;
   return <BrowseFrame>
     <View style={[styles.header, { paddingHorizontal: padding }]}><BackChevron />
@@ -50,12 +57,13 @@ export default function AlbumYearScreen() {
       <Text style={[styles.note, { flex: 1 }]}>{data.isError || data.issue ? t('The release-year index is incomplete. Retry to finish counting.') : t('Reading release years. Counts update as pages arrive.')}</Text>
       {data.isError || data.issue ? <Pressable onPress={() => { void data.restart(); }}><Text style={{ color: colors.accent }}>{t('Retry')}</Text></Pressable> : null}
     </View> : null}
-    <Animated.FlatList {...listPerf} onScroll={dock} scrollEventThrottle={16} key={`${layout}-${columns}`} data={albums}
+    <Animated.FlatList {...listPerf} onScroll={dock} scrollEventThrottle={16} key={grid ? `grid-${columns}` : 'list'} data={albums}
+      initialNumToRender={initialRows} maxToRenderPerBatch={grid ? 2 : listPerf.maxToRenderPerBatch} windowSize={grid ? 5 : listPerf.windowSize}
       keyExtractor={(album) => album.id} numColumns={grid ? columns : 1}
       columnWrapperStyle={grid ? { gap } : undefined}
       contentContainerStyle={{ paddingHorizontal: padding, paddingBottom: bottom, gap: 12 }}
       ListEmptyComponent={data.complete ? <EmptyState icon="albums-outline" title={t('No albums in this year')} /> : null}
-      renderItem={({ item }) => grid ? <AlbumCard album={item} width={cardWidth} /> : <AlbumRow album={item} />} />
+      renderItem={renderAlbum} />
     {gridSheet}
   </BrowseFrame>;
 }
