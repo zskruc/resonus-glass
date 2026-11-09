@@ -383,11 +383,15 @@ test('a real RSS prefix is playable before the full transfer, and full promotion
   try {
     await h.mount(true);
     assert.equal(h.tree().root.findByType('DetailView' as any).props.episodes.length, 0);
+    const presentation = h.tree().root.findByType('DetailView' as any).props.presentationIdentity;
+    assert.equal(h.tree().root.findByType('DetailView' as any).props.initialArtworkUri, show.imageUrl);
     stored = { ...channel, syncComplete: false, episodeCount: 7 };
     h.episodes(all.slice(0, 7));
     await act(async () => { callbacks.onPreview(stored); await turn(); }); await settle();
     const detail = () => h.tree().root.findByType('DetailView' as any);
     assert.equal(detail().props.episodes.length, 7);
+    assert.equal(detail().props.presentationIdentity, presentation, 'RSS identity promotion does not start a new visual scene');
+    assert.equal(detail().props.initialArtworkUri, show.imageUrl);
     assert.equal(detail().props.loadingMeta, true, '7 is not presented as the complete catalog count');
     assert.equal(visibleText(h, 'First episodes'), true);
     assert.equal(h.pages.at(-1)[1].order, 'recent', 'partial data does not impersonate the full alphabetical result');
@@ -402,6 +406,7 @@ test('a real RSS prefix is playable before the full transfer, and full promotion
     h.episodes(all);
     await act(async () => { done.resolve(stored); await turn(); }); await settle();
     assert.equal(detail().props.loadingMeta, false);
+    assert.equal(detail().props.presentationIdentity, presentation, 'full synchronization retains the original opening');
     assert.equal(visibleText(h, 'Episodes'), true);
     assert.equal(visibleText(h, 'First episodes'), false);
     assert.equal(h.pages.at(-1)[1].order, 'alpha', 'saved order is restored without changing the preference');

@@ -145,6 +145,8 @@ export default function PodcastScreen() {
       void queryClient.invalidateQueries({ queryKey: ['podcastEpisodes', id, profile] });
     }).catch(() => { if (valid()) setPartialError(id); }).finally(() => { if (valid()) setRefreshing(false); });
     return () => { controller.abort(); setRefreshing(false); };
+  // Restart even a batched offline→online round trip whose final flags match.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewToken, partial, partialFeedUrl, profile, current, id, requestEpoch]));
   const savedProgress = progress.data ?? EMPTY_PROGRESS;
   const shown = useMemo(() => {
@@ -252,6 +254,7 @@ export default function PodcastScreen() {
   </GlassPressable>;
   return <>
     <PodcastDetailView channel={ch} episodes={shown} offline={offline && !automaticOffline} refreshing={refreshing}
+      presentationIdentity={JSON.stringify([profile, previewToken ?? params.id])} initialArtworkUri={preview.metadata?.imageUrl}
       loadingMeta={partial || !ready && ch.episodeCount === undefined}
       pagingIdentity={JSON.stringify([id, profile, partial, pageOrder, lang, pageFilter, pageSeason ?? 'all'])}
       onRefresh={() => { if (preview.pending || refreshing) return; if (partial && previewToken || !ready) preview.retry(); else void refresh(); }}

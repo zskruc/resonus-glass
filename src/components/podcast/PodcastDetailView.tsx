@@ -9,8 +9,7 @@ import { StatusBar } from 'expo-status-bar';
 import { NavigationBar } from 'expo-navigation-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import { COVER, coverArtUrl } from '@/api/data';
-import { podcastCover, type PodcastChannel, type PodcastEpisode } from '@/api/podcasts';
+import type { PodcastChannel, PodcastEpisode } from '@/api/podcasts';
 import { BackChevron } from '@/components/BackChevron';
 import { DetailHeroScene } from '@/components/DetailHeroScene';
 import { PrimuseAlbumHeader } from '@/components/primuse/PrimuseAlbumHeader';
@@ -18,6 +17,7 @@ import { PrimuseAlbumBackdrop } from '@/components/primuse/PrimuseAlbumBackdrop'
 import { PrimuseAlbumScene } from '@/components/primuse/PrimuseAlbumScene';
 import { ArtistPagePaletteProvider } from '@/components/volta/ArtistPagePalette';
 import { usePrimuseAlbumPalette } from '@/hooks/usePrimuseAlbumPalette';
+import { usePodcastArtwork } from '@/hooks/usePodcastArtwork';
 import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
 import { centredPadding, useScreenSize } from '@/hooks/useScreenSize';
@@ -42,17 +42,30 @@ interface Props {
   loadingMeta?: boolean;
   /** Reset user-driven paging when a show, account, order or filter changes. */
   pagingIdentity?: string;
+  /** A directory handoff keeps this identity when its real feed ID arrives. */
+  presentationIdentity?: string;
+  /** The catalogue photograph the user opened, independent of episode refresh. */
+  initialArtworkUri?: string;
 }
 export function PodcastDetailView({ channel, episodes, offline, refreshing, onRefresh, actions, toolbar, filters,
-  renderEpisode, empty, onEndReached, footer, loadingMeta = false, pagingIdentity }: Props) {
+  renderEpisode, empty, onEndReached, footer, loadingMeta = false, pagingIdentity, presentationIdentity, initialArtworkUri }: Props) {
   const t = useT();
   const insets = useSafeAreaInsets(), { width, height } = useScreenSize(), { fontScale } = useWindowDimensions();
   const language = useSettings((state) => state.language), focused = useIsFocused();
   const bottom = useScreenBottomPadding(), side = centredPadding(width, spacing.lg);
   const layout = useMemo(() => primuseAlbumLayout(width, height, insets.top, side, fontScale), [width, height, insets.top, side, fontScale]);
-  const uri = coverArtUrl(podcastCover(channel), COVER.card);
-  const identity = `podcast:${channel.id}:${uri ?? ''}`;
+  const visualScope = presentationIdentity ?? channel.id;
+  const selectedArtwork = usePodcastArtwork(channel, visualScope, offline, initialArtworkUri);
+  // These are already validated image URIs/cache-only keys. Sending a cache
+  // marker through the music-server cover-ID resolver would rewrite its key.
+  const uri = selectedArtwork.uri;
+  const identity = `podcast:${visualScope}:${uri ?? ''}`;
   const artwork = usePrimuseAlbumPalette(uri, offline, layout.blurRatio), palette = artwork.palette;
+  const artworkError = artwork.onArtworkError, failSelection = selectedArtwork.onError;
+  const onArtworkError = useCallback((failedUri?: string) => {
+    if (failedUri !== undefined && failedUri !== uri) return;
+    artworkError(failedUri); failSelection();
+  }, [uri, artworkError, failSelection]);
   const artworkRequest = useMemo(() => ({ identity }), [identity]);
   const [shownArtwork, setShownArtwork] = useState(() => ({ request: artworkRequest, ready: false }));
   if (shownArtwork.request !== artworkRequest) setShownArtwork({ request: artworkRequest, ready: false });
@@ -113,7 +126,7 @@ export function PodcastDetailView({ channel, episodes, offline, refreshing, onRe
             <PrimuseAlbumHeader title={channel.title} subtitle={channel.author} meta={loadingMeta ? t('Loading…') : episodesLabel(channel.episodeCount ?? episodes.length, language)}
               coverUri={uri} description={channel.description} layout={layout} palette={palette} disabled={false}
               showPause={false} shuffleActive={false} onPlay={() => {}} onShuffle={() => {}} actions={actions(palette)}
-              onArtworkLoad={artwork.onArtworkLoad} onArtworkError={artwork.onArtworkError} nameStyle={largeName} artworkStyle={artworkStyle}
+              onArtworkLoad={artwork.onArtworkLoad} onArtworkError={onArtworkError} nameStyle={largeName} artworkStyle={artworkStyle}
               onTitleLayout={(value) => { name.set(value); }}
               onCoverCenterY={(coverCenterY) => setMeasured((before) => Math.abs(before.coverCenterY - coverCenterY) < .5 ? before : { ...before, coverCenterY })}
               onLayout={(event) => { const h = event.nativeEvent.layout.height; if (h > 0) setMeasured((before) => Math.abs(before.height - h) < .5 ? before : { ...before, height: h }); }} />

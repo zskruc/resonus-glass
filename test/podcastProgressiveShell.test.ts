@@ -9,6 +9,7 @@ import ts from 'typescript';
 
 import { primuseAlbumLayout } from '../src/lib/primuseAlbumLayout';
 import { buildPrimuseAlbumPalette } from '../src/lib/primuseAlbumPalette';
+import type { PodcastChannel, PodcastEpisode } from '../src/api/subsonic';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const element = React.createElement;
@@ -19,9 +20,14 @@ const element = React.createElement;
 function harness() {
   let renderer!: ReactTestRenderer;
   let prepared = false, textureUri: string | undefined = 'file:///field-A.png';
-  let channel = { id: 'A', title: 'Show A', author: 'Author', imageUrl: 'file:///cover-A.png', episodeCount: 150 };
+  let channel: PodcastChannel = { id: 'A', title: 'Show A', author: 'Author', imageUrl: 'file:///cover-A.png', episodeCount: 150 };
+  let episodes: PodcastEpisode[] = [];
+  let presentationIdentity: string | undefined, initialArtworkUri: string | undefined;
+  let offline = false, profile = 'profile-A', auth: object | undefined = { account: 'A' };
   let loadingMeta = true, endReached = 0, actionMounts = 0, backs = 0, dockDrags = 0;
+  let rowMounts = 0, totalRowMounts = 0, totalActionMounts = 0;
   let pagingIdentity: string | undefined;
+  const paletteSources: (string | undefined)[] = [];
   const scheduledRN: (() => void)[] = [];
   const dockHandler = { onBeginDrag: () => { dockDrags++; } };
   const palette = buildPrimuseAlbumPalette('#4466aa', true);
@@ -35,20 +41,26 @@ function harness() {
     'expo-router': { useIsFocused: () => true, Link: 'Link' },
     'expo-status-bar': { StatusBar: 'StatusBar' }, 'expo-navigation-bar': { NavigationBar: 'NavigationBar' },
     'expo-linear-gradient': { LinearGradient: 'Gradient' },
-    '@/api/data': { COVER: { card: 720 }, coverArtUrl: (uri: string) => uri },
-    '@/api/podcasts': { podcastCover: (show: any) => show.imageUrl },
+    '@/api/data': { COVER: { card: 720 }, CACHED_COVER: 'cached-cover:', coverArtUrl: () => {
+      throw new Error('Podcast absolute/cache-only artwork must not pass through the Subsonic cover-ID resolver');
+    } },
+    '@/api/podcasts': { podcastCover: (show: any) => show.artFile ?? show.imageUrl },
     '@/components/Cover': { Cover: 'Cover' }, '@/components/ExplicitBadge': { ExplicitBadge: 'ExplicitBadge' },
     '@/components/Icon': { __esModule: true, default: 'Icon' },
     '@/components/BackChevron': { BackChevron: (props: any) => element('Back', { ...props, onPress: () => { backs++; } }) },
     '@/components/RouteImageResources': { useRouteImageLease: () => React.useMemo(() => ({ active: true }), []) },
     '@/components/volta/ArtistPagePalette': { ArtistPagePaletteProvider: ({ children }: any) => children },
-    '@/hooks/usePrimuseAlbumPalette': { usePrimuseAlbumPalette: () => ({ palette, ready: prepared, textureUri,
-      textureScale: 1, textureRevision: 0, onArtworkLoad() {}, onArtworkError() {}, onTextureError() {} }) },
+    '@/hooks/usePrimuseAlbumPalette': { usePrimuseAlbumPalette: (uri: string | undefined) => {
+      paletteSources.push(uri);
+      return { palette, ready: prepared, textureUri,
+        textureScale: 1, textureRevision: 0, onArtworkLoad() {}, onArtworkError() {}, onTextureError() {} };
+    } },
     '@/hooks/useLiquidDock': { useLiquidDockScrollHandler: () => dockHandler },
     '@/hooks/useScreenBottomPadding': { useScreenBottomPadding: () => 140 },
     '@/hooks/useScreenSize': { useScreenSize: () => ({ width: 400, height: 900 }), centredPadding: () => 20 },
     '@/i18n': { episodesLabel: (count: number) => `${count} episodes`, useT: () => (key: string) => key },
     '@/store/settings': { useSettings: (selector: (state: any) => any) => selector({ language: 'en' }) },
+    '@/store/auth': { profileScopeId: () => profile, useAuthStore: (selector: (state: any) => any) => selector({ auth }) },
     '@/lib/artistHeaderTransition': { artistHeaderFromLayout: () => ({ largeOpacity: 1, compactOpacity: 0, backgroundOpacity: 0 }) },
     '@/lib/listPerf': { listPerf: { initialNumToRender: 10, removeClippedSubviews: true, windowSize: 11 } },
     '@/lib/primuseAlbumLayout': { primuseAlbumLayout },
@@ -56,7 +68,10 @@ function harness() {
   };
   function FlatList(props: any) {
     return element('FlatList', props, props.ListHeaderComponent,
-      props.data.length ? props.renderItem({ item: props.data[0], index: 0 }) : props.ListEmptyComponent,
+      // This small, seven-row fixture tests React ownership, not native list
+      // virtualization. Keep actual row instances so remounts are observable.
+      props.data.length ? props.data.map((item: any, index: number) => element(React.Fragment,
+        { key: props.keyExtractor(item) }, props.renderItem({ item, index }))) : props.ListEmptyComponent,
       props.ListFooterComponent);
   }
   imports['react-native-reanimated'] = { __esModule: true,
@@ -73,11 +88,13 @@ function harness() {
     const exports: Record<string, any> = {};
     runInNewContext(ts.transpileModule(readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
-    }).outputText, { exports, setTimeout, clearTimeout, require(name: string) {
+    }).outputText, { exports, URL, setTimeout, clearTimeout, require(name: string) {
       assert.ok(Object.hasOwn(imports, name), `Unexpected progressive-shell import ${name}`); return imports[name];
     } });
     return exports;
   }
+  imports['@/lib/podcastArtwork'] = source('src/lib/podcastArtwork.ts');
+  imports['@/hooks/usePodcastArtwork'] = source('src/hooks/usePodcastArtwork.ts');
   imports['@/components/DetailHeroScene'] = source('src/components/DetailHeroScene.tsx');
   const scene = source('src/components/primuse/PrimuseAlbumScene.tsx');
   imports['@/components/primuse/PrimuseAlbumScene'] = scene;
@@ -89,14 +106,19 @@ function harness() {
   } };
   const View = source('src/components/podcast/PodcastDetailView.tsx').PodcastDetailView;
   function Actions() {
-    React.useLayoutEffect(() => { actionMounts++; return () => { actionMounts--; }; }, []);
+    React.useLayoutEffect(() => { actionMounts++; totalActionMounts++; return () => { actionMounts--; }; }, []);
     return element('ShowActions', { accessibilityRole: 'button' });
   }
+  function Episode({ episode }: { episode: PodcastEpisode }) {
+    React.useLayoutEffect(() => { rowMounts++; totalRowMounts++; return () => { rowMounts--; }; }, []);
+    return element('Episode', { id: episode.id, title: episode.title });
+  }
   const onEndReached = () => { endReached++; };
-  const render = () => element(View, { channel, episodes: [], offline: false, refreshing: false, onRefresh() {},
-    loadingMeta, onEndReached, pagingIdentity, footer: element('MoreEpisodes'), empty: element('LoadingEpisodes'),
+  const render = () => element(View, { channel, episodes, offline, refreshing: false, onRefresh() {},
+    loadingMeta, onEndReached, pagingIdentity, presentationIdentity, initialArtworkUri,
+    footer: element('MoreEpisodes'), empty: element('LoadingEpisodes'),
     actions: () => element(Actions), toolbar: () => element('ShowMenu'), filters: () => element('EpisodeFilters'),
-    renderEpisode: () => element('Episode') });
+    renderEpisode: (episode: PodcastEpisode) => element(Episode, { episode }) });
   return {
     async mount() { await act(async () => { renderer = create(render()); }); },
     async update() { await act(async () => { renderer.update(render()); }); },
@@ -105,11 +127,18 @@ function harness() {
     async measure() { await act(async () => { renderer.root.findByProps({ testID: 'primuse-album-header' }).props.onLayout({ nativeEvent: { layout: { height: 510 } } }); }); },
     async cover(error = false) { await act(async () => {
       const cover = renderer.root.findByType('Cover' as any);
-      cover.props[error ? 'onImageError' : 'onImageDisplay'](channel.imageUrl);
+      cover.props[error ? 'onImageError' : 'onImageDisplay'](cover.props.uri);
     }); },
     async field() { await act(async () => { renderer.root.findByType('Backdrop' as any).props.onDisplay(); }); },
     prepare(value: boolean, ...uris: (string | undefined)[]) { prepared = value; if (uris.length) textureUri = uris[0]; },
     show(id: string) { channel = { ...channel, id, title: `Show ${id}`, imageUrl: `file:///cover-${id}.png` }; },
+    metadata(patch: Partial<PodcastChannel>) { channel = { ...channel, ...patch }; },
+    presentation(identity: string | undefined, hint?: string) { presentationIdentity = identity; initialArtworkUri = hint; },
+    episodeCount(count: number) { episodes = Array.from({ length: count }, (_, index) => ({
+      id: `real-channel/episode-${index}`, channelId: 'real-channel', title: `Episode ${index}`, url: `https://media.example/${index}.mp3`,
+    })); },
+    account(id: string) { profile = `profile-${id}`; auth = { account: id }; },
+    offline(value: boolean) { offline = value; },
     loading(value: boolean) { loadingMeta = value; },
     paging(identity: string | undefined) { pagingIdentity = identity; },
     queueDrag() {
@@ -125,7 +154,12 @@ function harness() {
     coverOpacity: () => renderer.root.findByProps({ testID: 'primuse-album-artwork' }).props.style.at(-1).opacity,
     fieldOpacity: () => renderer.root.findByProps({ testID: 'podcast-detail-artwork-field' }).props.style.at(-1).opacity,
     readyCallback: () => renderer.root.findByType(scene.PrimuseAlbumScene).props.onReadyChange as (ready: boolean) => void,
-    mounts: () => actionMounts, ends: () => endReached, backs: () => backs, dockDrags: () => dockDrags,
+    coverUri: () => renderer.root.findByType('Cover' as any).props.uri as string | undefined,
+    imageError: () => renderer.root.findByType('Cover' as any).props.onImageError as (uri?: string) => void,
+    paletteSources: () => [...paletteSources],
+    rows: () => rowMounts, totalRowMounts: () => totalRowMounts,
+    mounts: () => actionMounts, totalActionMounts: () => totalActionMounts,
+    ends: () => endReached, backs: () => backs, dockDrags: () => dockDrags,
   };
 }
 
@@ -227,5 +261,126 @@ test('a queued old drag cannot unlock a new query identity, and the default scop
     await act(async () => { h.root().findByType('FlatList' as any).props.onEndReached(); });
     assert.equal(h.ends(), 1, 'a different channel resets the default paging gate');
     await h.drag(); assert.equal(h.ends(), 2);
+  } finally { await h.unmount(); }
+});
+
+test('one opening keeps its selected cover and prepared scene through preview, seven-item RSS, full feed and art-file enrichment', async () => {
+  const h = harness(), tappedCover = 'https://directory.example/show-600.jpg';
+  try {
+    h.presentation('profile-A:directory-token-123', tappedCover);
+    h.metadata({ id: 'preview-123', title: 'Directory show', imageUrl: tappedCover, episodeCount: undefined });
+    await h.mount(); await h.measure();
+    assert.equal(h.coverUri(), tappedCover);
+    h.prepare(true); await h.update(); await h.cover(); await h.field();
+    const readyBeforeMetadata = h.readyCallback();
+    assert.equal(h.coverOpacity(), 1);
+
+    h.metadata({ id: 'real-feed-hash', title: 'Publisher show', imageUrl: 'https://publisher.example/rss.jpg',
+      episodeCount: 7, syncComplete: false });
+    h.episodeCount(7); h.loading(false); await h.update();
+    const checkSevenRowsAndStableScene = () => {
+      assert.equal(h.coverUri(), tappedCover);
+      assert.equal(h.readyCallback(), readyBeforeMetadata, 'data enrichment must not create a new artwork scene');
+      assert.equal(h.coverOpacity(), 1); assert.equal(h.fieldOpacity(), 1);
+      assert.equal(h.rows(), 7); assert.equal(h.totalRowMounts(), 7);
+      assert.equal(h.root().findAllByType('Episode' as any).length, 7);
+      const content = h.root().findByProps({ testID: 'detail-hero-scene-content' });
+      assert.equal(content.props.style.at(-1).opacity, 1); assert.equal(content.props.pointerEvents, 'auto');
+      assert.equal(h.root().findAllByProps({ testID: 'detail-hero-loading' }).length, 0);
+      assert.equal(h.mounts(), 1);
+      assert.equal(h.totalActionMounts(), 1, 'metadata enrichment never unmounts and recreates the controls');
+    };
+    checkSevenRowsAndStableScene();
+    h.metadata({ episodeCount: 220, syncComplete: true, refreshedAt: 1234 }); await h.update();
+    checkSevenRowsAndStableScene();
+    assert.equal(h.root().findAll((node) => String(node.type) === 'Text' && node.props.children === '220 episodes').length, 1);
+    h.metadata({ artFile: 'file:///profile-A/podcasts/real-feed-hash/art.jpg' }); await h.update();
+    checkSevenRowsAndStableScene();
+    assert.deepEqual([...new Set(h.paletteSources())], [tappedCover], 'palette preparation must use the same fixed image as Cover');
+  } finally { await h.unmount(); }
+});
+
+test('a picture-less opening adopts its first RSS image without ever hiding its seven rows', async () => {
+  const h = harness();
+  try {
+    h.presentation('profile-A:feed-url'); h.metadata({ imageUrl: undefined }); h.episodeCount(7);
+    h.prepare(true, undefined); await h.mount(); await h.measure();
+    assert.equal(h.coverUri(), undefined); assert.equal(h.rows(), 7); assert.equal(h.coverOpacity(), 1);
+    h.metadata({ id: 'canonical-feed-id', imageUrl: 'https://publisher.example/first.jpg' });
+    h.prepare(false, 'file:///first-field.png'); await h.update();
+    assert.equal(h.coverUri(), 'https://publisher.example/first.jpg');
+    assert.equal(h.coverOpacity(), 0); assert.equal(h.fieldOpacity(), 0);
+    assert.equal(h.root().findByProps({ testID: 'detail-hero-scene-content' }).props.style.at(-1).opacity, 1);
+    assert.equal(h.rows(), 7); assert.equal(h.totalRowMounts(), 7); assert.equal(h.mounts(), 1);
+    h.prepare(true); await h.update(); await h.cover(); await h.field();
+    assert.equal(h.coverOpacity(), 1); assert.equal(h.fieldOpacity(), 1);
+    h.metadata({ imageUrl: 'https://publisher.example/newer.jpg', artFile: 'file:///cache/newer.jpg' }); await h.update();
+    assert.equal(h.coverUri(), 'https://publisher.example/first.jpg');
+    assert.equal(h.coverOpacity(), 1); assert.equal(h.rows(), 7); assert.equal(h.totalRowMounts(), 7);
+  } finally { await h.unmount(); }
+});
+
+test('a failed selected image may adopt one late RSS fallback, never a succession of cache aliases', async () => {
+  const h = harness(), tappedCover = 'https://directory.example/broken.jpg';
+  try {
+    h.presentation('profile-A:one-fallback', tappedCover);
+    h.metadata({ imageUrl: tappedCover }); h.episodeCount(7);
+    h.prepare(true, undefined); await h.mount(); await h.measure();
+    const staleFailure = h.imageError();
+    await h.cover(true);
+    assert.equal(h.coverUri(), tappedCover, 'a failed source waits for a distinct available alternative');
+    h.metadata({ id: 'real-show', imageUrl: 'https://publisher.example/fallback.jpg' }); await h.update();
+    assert.equal(h.coverUri(), 'https://publisher.example/fallback.jpg');
+    assert.equal(h.coverOpacity(), 0, 'the replacement cover still appears atomically with its field');
+    assert.equal(h.rows(), 7); assert.equal(h.totalRowMounts(), 7); assert.equal(h.mounts(), 1);
+    await act(async () => { staleFailure(tappedCover); });
+    assert.equal(h.coverUri(), 'https://publisher.example/fallback.jpg', 'the failed initial request cannot poison its successor');
+    await h.cover(true);
+    assert.equal(h.coverOpacity(), 1, 'an exhausted image fallback still releases the usable scene');
+    h.metadata({ artFile: 'file:///cache/third-image.jpg', imageUrl: 'https://publisher.example/fourth-image.jpg' }); await h.update();
+    assert.equal(h.coverUri(), 'https://publisher.example/fallback.jpg', 'one opening has one replacement budget');
+    assert.equal(h.coverOpacity(), 1); assert.equal(h.rows(), 7); assert.equal(h.totalRowMounts(), 7);
+  } finally { await h.unmount(); }
+});
+
+test('presentation and account ABA reject old readiness and old image failures while retaining the seven-row shell', async () => {
+  const h = harness(), artA = 'https://directory.example/A.jpg', artB = 'https://directory.example/B.jpg';
+  try {
+    h.presentation('profile-A:show-A', artA); h.metadata({ imageUrl: 'https://publisher.example/A.jpg' }); h.episodeCount(7);
+    h.prepare(true); await h.mount(); await h.measure(); await h.cover(); await h.field();
+    const firstReadyA = h.readyCallback(), firstErrorA = h.imageError();
+    h.account('B'); h.presentation('profile-B:show-B', artB);
+    h.metadata({ id: 'show-B', imageUrl: 'https://publisher.example/B.jpg' });
+    h.prepare(false, 'file:///field-B.png'); await h.update();
+    assert.equal(h.coverUri(), artB); assert.equal(h.coverOpacity(), 0);
+    await act(async () => { firstReadyA(true); firstErrorA(artA); });
+    assert.equal(h.coverUri(), artB); assert.equal(h.coverOpacity(), 0);
+    h.prepare(true); await h.update(); await h.cover(); await h.field();
+    const oldReadyB = h.readyCallback();
+    h.account('A'); h.presentation('profile-A:show-A', artA);
+    h.metadata({ id: 'show-A', imageUrl: 'https://publisher.example/A.jpg' });
+    h.prepare(false, 'file:///field-A.png'); await h.update();
+    await act(async () => { firstReadyA(true); oldReadyB(true); firstErrorA(artA); });
+    assert.equal(h.coverUri(), artA, 'an old A failure must not spend the new A opening fallback');
+    assert.equal(h.coverOpacity(), 0); assert.equal(h.fieldOpacity(), 0);
+    assert.equal(h.rows(), 7); assert.equal(h.totalRowMounts(), 7); assert.equal(h.mounts(), 1);
+    assert.equal(h.root().findByProps({ testID: 'detail-hero-scene-content' }).props.pointerEvents, 'auto');
+  } finally { await h.unmount(); }
+});
+
+test('switching to offline selects local artwork before cache-only remote keys and does not hide the shell', async () => {
+  const h = harness(), remote = 'https://directory.example/show.jpg';
+  try {
+    h.presentation('profile-A:offline-policy', remote);
+    h.metadata({ imageUrl: 'https://publisher.example/rss.jpg', artFile: 'file:///profile-A/podcasts/art.jpg' });
+    h.episodeCount(7); await h.mount(); await h.measure();
+    assert.equal(h.coverUri(), remote);
+    h.offline(true); await h.update();
+    assert.equal(h.coverUri(), 'file:///profile-A/podcasts/art.jpg');
+    assert.equal(h.rows(), 7); assert.equal(h.totalRowMounts(), 7); assert.equal(h.mounts(), 1);
+    h.presentation('profile-A:offline-no-file', remote); h.metadata({ artFile: undefined }); await h.update();
+    assert.equal(h.coverUri(), `cached-cover:${remote}`, 'offline Cover never receives an unmarked HTTP image');
+    assert.equal(h.root().findByProps({ testID: 'detail-hero-scene-content' }).props.style.at(-1).opacity, 1);
+    assert.equal(h.rows(), 7); assert.equal(h.totalRowMounts(), 7);
   } finally { await h.unmount(); }
 });
