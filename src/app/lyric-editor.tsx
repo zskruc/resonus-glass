@@ -82,7 +82,7 @@ export default function LyricEditor() {
     <Text style={styles.title}>{song?.title ?? t('Choose a song first to use lyrics tools.')}</Text>
     <Text style={styles.note}>{t('Local changes affect this app only. Apply a line, then save. Restoring returns to the original source.')}</Text>
     {error ? <Text style={styles.error}>{error}</Text> : null}
-    {draft ? <>
+    {song && draft ? <>
       <SettingsGroup><SettingRow label={t('Save local lyrics')} onPress={busy ? undefined : () => { void save(); }} />
         <SettingRow label={t('Restore original source')} onPress={busy || !lyrics.localEdit ? undefined : () => { void restore(); }} /></SettingsGroup>
       <Text style={styles.label}>{t('Line {n}', { n: index + 1 })}</Text>
@@ -107,10 +107,10 @@ export default function LyricEditor() {
         options={[{ value: 'source', label: t('Original timeline') }, { value: 'display', label: t('Include this song display offset') }]} />
       <SettingRow label={t('Export lyrics')} onPress={busy ? undefined : () => { void share(); }} />
       <Text style={styles.note}>{t('Tap a line below to edit. Untimed lyrics export as TXT only.')}</Text>
-    </> : lyrics.isError || lyrics.localEditError ? <SettingRow label={t('Retry')} onPress={() => { void lyrics.refetch(); }} />
+    </> : !song ? null : lyrics.isError || lyrics.localEditError ? <SettingRow label={t('Retry')} onPress={() => { void lyrics.refetch(); }} />
       : lyrics.isPending ? <Text style={styles.note}>{t('Loading…')}</Text> : <SettingRow label={t('Create plain lyrics')} onPress={() => { setDraft({ synced: false, lines: [{ value: '' }] }); fillLine(undefined); }} />}
   </View>;
-  return <SettingsPage title={t('Edit and export lyrics')}><Animated.FlatList data={song ? draft?.lines ?? [] : []} keyExtractor={(_, at) => String(at)} onScroll={dock} scrollEventThrottle={16}
+  return <SettingsPage title={t('Edit and export lyrics')}><Animated.FlatList data={song ? draft?.lines ?? [] : []} keyExtractor={(_, at) => String(at)} onScroll={dock} scrollEventThrottle={16} keyboardShouldPersistTaps="handled"
     initialNumToRender={10} maxToRenderPerBatch={8} windowSize={5} contentContainerStyle={settingsStyles.content} ListHeaderComponent={header}
     renderItem={({ item, index: at }) => <GlassPressable disabled={busy} onPress={() => { setIndex(at); fillLine(item); }} style={[styles.row, at === index && { backgroundColor: colors.surfaceHighlight }]}>
       <Text style={styles.note}>{item.start === undefined ? String(at + 1) : formatLyricTimestamp(item.start)}</Text><Text style={styles.label}>{item.value || '♪'}</Text>

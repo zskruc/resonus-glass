@@ -6,6 +6,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.view.View
 import android.widget.RemoteViews
@@ -18,6 +19,20 @@ open class ListeningExtrasWidget : AppWidgetProvider() {
   companion object {
     private val providers = listOf("podcast" to PodcastContinueWidget::class.java, "stats" to ListeningStatsWidget::class.java, "lyrics" to CurrentLyricsWidget::class.java)
     private const val PREFS = "resonus_widget_extras"
+    @Volatile private var schemeCache: Pair<String, String?>? = null
+    private fun registeredScheme(context: Context): String? {
+      val packageName = context.packageName
+      schemeCache?.takeIf { it.first == packageName }?.let { return it.second }
+      // Probe an implicit intent: an explicit MainActivity resolves even when
+      // the URI's scheme is absent from this installed flavour's manifest.
+      val scheme = listOf("resonus-glass", "resonus").firstOrNull { candidate ->
+        val probe = Intent(Intent.ACTION_VIEW, Uri.Builder().scheme(candidate).authority("widget-listening").build())
+          .addCategory(Intent.CATEGORY_DEFAULT).addCategory(Intent.CATEGORY_BROWSABLE).setPackage(packageName)
+        context.packageManager.resolveActivity(probe, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName == packageName
+      }
+      schemeCache = packageName to scheme
+      return scheme
+    }
     fun installed(context: Context): List<String> {
       val manager = AppWidgetManager.getInstance(context)
       return providers.filter { manager.getAppWidgetIds(ComponentName(context, it.second)).isNotEmpty() }.map { it.first }
@@ -70,10 +85,11 @@ open class ListeningExtrasWidget : AppWidgetProvider() {
     }
     private fun open(context: Context, kind: String, profile: String, id: String): PendingIntent {
       val launch = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: Intent()
-      val uri = Uri.Builder().scheme("resonus").authority("widget-listening").appendQueryParameter("kind", kind)
-        .appendQueryParameter("profile", profile).appendQueryParameter("id", id).build()
-      launch.action = Intent.ACTION_VIEW; launch.data = uri; launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-      return PendingIntent.getActivity(context, uri.toString().hashCode(), launch, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+      val uri = registeredScheme(context)?.let { scheme -> Uri.Builder().scheme(scheme).authority("widget-listening").appendQueryParameter("kind", kind)
+        .appendQueryParameter("profile", profile).appendQueryParameter("id", id).build() }
+      if (uri != null) { launch.action = Intent.ACTION_VIEW; launch.data = uri; launch.addCategory(Intent.CATEGORY_BROWSABLE) }
+      launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      return PendingIntent.getActivity(context, (uri?.toString() ?: "$kind:$profile:$id").hashCode(), launch, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
   }
 }

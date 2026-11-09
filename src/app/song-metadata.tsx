@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 import { DockScrollView } from '@/components/DockScrollView';
 import { SettingRow, SettingsGroup, SettingsPage, settingsStyles } from '@/components/SettingsUI';
@@ -21,6 +21,8 @@ export default function SongMetadataEditor() {
   const saved = raw ? state.songs[raw.id] : undefined;
   const [draft, setDraft] = useState<{ song: typeof raw; saved: typeof saved; fields: Partial<Record<MetadataField, string>> }>();
   const [busy, setBusy] = useState(false), [error, setError] = useState(false);
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const defaults = useMemo(() => raw && ready ? Object.fromEntries(METADATA_FIELDS.map((field) => [field, String(saved?.patch[field] ?? raw[field] ?? '')])) : undefined, [raw, ready, saved]);
   const fields = draft?.song === raw && draft.saved === saved ? draft.fields : defaults;
   const patch = useMemo(() => {
@@ -40,13 +42,13 @@ export default function SongMetadataEditor() {
   const preview = raw && patch ? applySongDisplay(raw, { [raw.id]: { version: 1, original: metadataFields(raw), patch } }, state.aliases) : displayed;
   const save = async (restore = false) => {
     if (!raw || !ready || busy || !restore && !patch) return;
-    const current = captureCustomizationOwner(scope); setBusy(true); setError(false);
+    const current = captureCustomizationOwner(scope, () => alive.current); setBusy(true); setError(false);
     try { await writeLocalCustomization(scope, 'song-metadata', raw.id, restore || !Object.keys(patch!).length ? undefined : {
       version: 1, patch, original: metadataFields(raw), ...(raw.albumId ? { albumId: raw.albumId } : {}), ...(raw.artistId ? { artistId: raw.artistId } : {}),
-    }, current); if (current()) { await useLocalMetadata.getState().hydrate(scope, true); useToast.getState().show(t(restore ? 'Original metadata restored' : 'Local metadata saved')); } }
-    catch { if (current()) setError(true); } finally { if (current()) setBusy(false); }
+    }, current); if (current()) { await useLocalMetadata.getState().hydrate(scope, true); if (current()) { setDraft(undefined); useToast.getState().show(t(restore ? 'Original metadata restored' : 'Local metadata saved')); } } }
+    catch { if (current()) setError(true); } finally { if (alive.current) setBusy(false); }
   };
-  return <SettingsPage title={t('Local song corrections')}><DockScrollView contentContainerStyle={settingsStyles.content}>
+  return <SettingsPage title={t('Local song corrections')}><DockScrollView contentContainerStyle={settingsStyles.content} keyboardShouldPersistTaps="handled">
     <Text style={styles.note}>{t('These display corrections stay on this device. Song IDs, audio files, server tags and download identities stay unchanged.')}</Text>
     {raw ? <>
       <SettingsGroup><SettingRow label={t('Original')} description={[raw.title, raw.artist, raw.album].filter(Boolean).join(' · ')} />

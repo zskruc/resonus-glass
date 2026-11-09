@@ -6,10 +6,13 @@ import * as React from 'react';
 import * as JSXRuntime from 'react/jsx-runtime';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import ts from 'typescript';
+import { createStore } from 'zustand/vanilla';
 import * as editing from '../src/lib/lyricEditing';
 import * as exporting from '../src/lib/lyricsExport';
 import * as fonts from '../src/lib/lyricFonts';
 import { lyricRecordingKey } from '../src/lib/lyricDocuments';
+import * as metadata from '../src/lib/localMetadata';
+import * as models from '../src/lib/localCustomizationModels';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 function load(file: string, imports: Record<string, unknown>) {
@@ -30,18 +33,19 @@ function editorHarness() {
   const source = { synced: true, lines: [{ start: 1000, value: 'Hello', translation: '你好', words: [{ start: 1000, end: 2000, value: 'Hello' }] }, { start: 3000, value: 'Next' }] };
   const scope = { profile: 'A', source: 'server' }, writes: any[] = [], files: { uri: string; body: string }[] = [], shares: string[] = [];
   let current = true;
+  let target: typeof song | null = song;
   const Screen = load('../src/app/lyric-editor.tsx', { ...shared,
-    'react-native-reanimated': { __esModule: true, default: { FlatList: ({ data, renderItem, ListHeaderComponent }: any) => React.createElement('List', {}, ListHeaderComponent, ...data.map((item: any, index: number) => React.createElement(React.Fragment, { key: index }, renderItem({ item, index })))) } },
+    'react-native-reanimated': { __esModule: true, default: { FlatList: ({ data, renderItem, ListHeaderComponent, ...props }: any) => React.createElement('List', props, ListHeaderComponent, ...data.map((item: any, index: number) => React.createElement(React.Fragment, { key: index }, renderItem({ item, index })))) } },
     'expo-file-system/legacy': { cacheDirectory: 'file:///cache/', makeDirectoryAsync: async () => {}, writeAsStringAsync: async (uri: string, body: string) => { files.push({ uri, body }); }, deleteAsync: async () => {} },
     'expo-sharing': { isAvailableAsync: async () => true, shareAsync: async (uri: string) => { shares.push(uri); } },
-    '@/hooks/useLyricToolSong': { useLyricToolSong: () => ({ song, profile: 'A' }) },
+    '@/hooks/useLyricToolSong': { useLyricToolSong: () => ({ song: target, profile: 'A' }) },
     '@/hooks/useLyrics': { useLyrics: () => ({ sourceLyrics: source, unshiftedLyrics: source, localEdit: { base: source }, localEditPending: false, customizationScope: scope }) },
     '@/hooks/useLiquidDock': { useLiquidDockScrollHandler: () => () => {} },
     '@/lib/lyricDocuments': { lyricRecordingKey }, '@/lib/lyricEditing': editing, '@/lib/lyricsExport': exporting,
     '@/lib/localCustomizations': { captureCustomizationOwner: (_scope: unknown, extra: () => boolean) => () => current && extra(), writeLocalCustomization: async (...args: any[]) => { if (args.at(-1)()) writes.push(args); } },
     '@/store/lyricOffsets': { useLyricOffsets: { getState: () => ({ offsets: { s: 500 } }) } }, '@/store/toast': { useToast: { getState: () => ({ show() {} }) } },
   }).default;
-  return { Screen, song, source, writes, files, shares, leave: () => { current = false; } };
+  return { Screen, song, source, writes, files, shares, leave: () => { current = false; }, invalidateTarget: () => { target = null; } };
 }
 function input(root: ReactTestRenderer, label: string) {
   const text = root.root.findAllByType('Text' as any).find((node) => node.props.children === label)!;
@@ -101,5 +105,95 @@ test('actual lyric typography creates only nested native text runs and preserves
     assert.equal(text[1].props.style.fontFamily, 'monospace'); assert.equal(text[2].props.style.fontFamily, 'serif');
     assert.ok(text.slice(1).every((node) => !('fontWeight' in node.props.style) && !('fontSize' in node.props.style)));
     assert.equal(JSON.stringify(root.toJSON()).includes('世界'), true);
+  } finally { await act(async () => root?.unmount()); }
+});
+
+test('the actual lyric editor retains the same input while typing and does not expose an invalidated target draft', async () => {
+  const h = editorHarness(); let root!: ReactTestRenderer;
+  try {
+    await act(async () => { root = create(React.createElement(h.Screen)); });
+    const original = input(root, 'Translation');
+    assert.equal(root.root.findByType('List' as any).props.keyboardShouldPersistTaps, 'handled');
+    for (const value of ['修', '修正', '修正译文']) {
+      await act(async () => { input(root, 'Translation').props.onChangeText(value); });
+      assert.equal(input(root, 'Translation'), original, 'the header input is reconciled, not remounted per character');
+      assert.equal(original.props.value, value);
+    }
+    h.invalidateTarget(); await act(async () => { root.update(React.createElement(h.Screen)); });
+    assert.equal(root.root.findAllByType('Input' as any).length, 0);
+    assert.equal(root.root.findAllByProps({ label: 'Save local lyrics' }).length, 0);
+  } finally { await act(async () => root?.unmount()); }
+});
+
+function metadataHarness() {
+  const song = { id: 's', title: 'Source title', artist: 'Source artist', album: 'Source album', year: 2000 };
+  const scope = { profile: 'A', source: 'server' }, writes: any[] = [], notices: string[] = [];
+  const store = createStore<any>(() => ({ scope: 'A|server', ready: true, songs: {}, aliases: [], error: false, hydrate: async () => {} }));
+  const useStore = Object.assign(() => React.useSyncExternalStore(store.subscribe, store.getState), { getState: store.getState });
+  let epoch = 0, pause: (() => Promise<void>) | undefined;
+  const Screen = load('../src/app/song-metadata.tsx', { ...shared,
+    '@/components/DockScrollView': { DockScrollView: 'Scroll' }, '@/hooks/useLyricToolSong': { useLyricToolSong: () => ({ song }) },
+    '@/hooks/useLocalMetadata': { useDisplaySong: (value: typeof song) => metadata.applySongDisplay(value, useStore().songs, []) },
+    '@/lib/localCustomizationModels': models, '@/lib/localMetadata': metadata,
+    '@/lib/localCustomizations': { customizationScope: () => scope,
+      captureCustomizationOwner: (_scope: unknown, extra: () => boolean) => { const at = epoch; return () => at === epoch && extra(); },
+      writeLocalCustomization: async (...args: any[]) => {
+        if (pause) { const pending = pause; pause = undefined; await pending(); }
+        if (!args.at(-1)()) throw new Error('Owner changed');
+        writes.push(args); store.setState({ songs: args[3] ? { [song.id]: args[3] } : {} });
+      } },
+    '@/store/localMetadata': { useLocalMetadata: useStore, scopeKey: () => 'A|server' },
+    '@/store/toast': { useToast: { getState: () => ({ show: (value: string) => { notices.push(value); } }) } },
+  }).default;
+  return { Screen, song, writes, notices, store, changeOwner: () => { epoch++; }, gate: (work: () => Promise<void>) => { pause = work; } };
+}
+test('the actual metadata editor retains focused input identity, saves a display-only patch, and restores the source', async () => {
+  const h = metadataHarness(); let root!: ReactTestRenderer;
+  try {
+    await act(async () => { root = create(React.createElement(h.Screen)); });
+    const original = input(root, 'Title');
+    assert.equal(root.root.findByType('Scroll' as any).props.keyboardShouldPersistTaps, 'handled');
+    for (const value of ['N', 'Ne', 'New title']) {
+      await act(async () => { input(root, 'Title').props.onChangeText(value); }); assert.equal(input(root, 'Title'), original);
+    }
+    await act(async () => { root.root.findByProps({ label: 'Save local corrections' }).props.onPress(); });
+    assert.equal(h.writes[0][3].patch.title, 'New title'); assert.equal(h.writes[0][3].original.title, 'Source title');
+    assert.equal(h.song.title, 'Source title'); assert.equal(h.writes[0][2], h.song.id);
+    await act(async () => { root.root.findByProps({ label: 'Restore original metadata' }).props.onPress(); });
+    assert.equal(h.writes.at(-1)[3], undefined); assert.equal(input(root, 'Title').props.value, 'Source title');
+  } finally { await act(async () => root?.unmount()); }
+});
+test('a metadata save invalidated while waiting releases busy without writing or toasting for the old owner', async () => {
+  const h = metadataHarness(); let root!: ReactTestRenderer, release!: () => void;
+  const waiting = new Promise<void>((resolve) => { release = resolve; }); h.gate(() => waiting);
+  try {
+    await act(async () => { root = create(React.createElement(h.Screen)); });
+    await act(async () => { input(root, 'Title').props.onChangeText('Local title'); });
+    await act(async () => { root.root.findByProps({ label: 'Save local corrections' }).props.onPress(); });
+    assert.equal(input(root, 'Title').props.editable, false);
+    h.changeOwner(); await act(async () => { release(); });
+    assert.equal(input(root, 'Title').props.editable, true, 'an obsolete operation must not leave the still-mounted page locked');
+    assert.equal(h.writes.length, 0); assert.equal(h.notices.length, 0);
+    await act(async () => { root.root.findByProps({ label: 'Save local corrections' }).props.onPress(); });
+    assert.equal(h.writes.length, 1); assert.equal(h.notices.length, 1);
+  } finally { await act(async () => root?.unmount()); }
+});
+
+test('the actual lyric-tool hook rejects a different local source while preserving server online/offline ownership', async () => {
+  const song = { id: 's', title: 'Song' }, auth = createStore<any>(() => ({ auth: null, offline: true, offlineSource: { mode: 'folder', uris: ['one'] } }));
+  const bound = Object.assign((selector: (value: any) => unknown) => selector(React.useSyncExternalStore(auth.subscribe, auth.getState)), { getState: auth.getState });
+  const hook = load('../src/hooks/useLyricToolSong.ts', { react: React, '@/store/auth': { useAuthStore: bound, profileScopeId: () => auth.getState().auth ? 'server-A' : 'local' },
+    '@/store/player': { currentSong: () => song, usePlayerStore: { getState: () => ({}) } },
+    '@/store/lyricToolTarget': { useLyricToolTarget: { getState: () => ({ profile: auth.getState().auth ? 'server-A' : 'local', song, session: 1, clear() {} }) } },
+  });
+  let selected: typeof song | null = null, root!: ReactTestRenderer;
+  function Probe() { selected = hook.useLyricToolSong().song; return null; }
+  try {
+    await act(async () => { root = create(React.createElement(Probe)); }); assert.equal(selected, song);
+    await act(async () => { auth.setState({ offlineSource: { mode: 'folder', uris: ['two'] } }); }); assert.equal(selected, null);
+    await act(async () => root.unmount());
+    auth.setState({ auth: {}, offline: false, offlineSource: { mode: 'folder', uris: ['old-local'] } });
+    await act(async () => { root = create(React.createElement(Probe)); }); assert.equal(selected, song);
+    await act(async () => { auth.setState({ offline: true, offlineSource: { mode: 'device' } }); }); assert.equal(selected, song);
   } finally { await act(async () => root?.unmount()); }
 });
