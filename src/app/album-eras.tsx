@@ -34,6 +34,9 @@ export default function AlbumErasScreen() {
       </GlassPressable>
     </View>
     <Animated.FlatList {...listPerf} onScroll={dock} scrollEventThrottle={16} data={rows} keyExtractor={(row) => row.key}
+      // Detaching a clipped glass host also disposes its native composition.
+      // Keep this small, bounded overview attached; large timelines still clip.
+      removeClippedSubviews={rows.length > 24 && listPerf.removeClippedSubviews}
       contentContainerStyle={{ paddingHorizontal: padding, paddingBottom: bottom, gap: 14 }}
       ListHeaderComponent={<View style={styles.summary}>
         <Text style={styles.note}>{downloaded ? t('Downloaded albums') : t('Your album library')}</Text>
