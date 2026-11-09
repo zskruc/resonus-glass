@@ -1,7 +1,6 @@
 /*
  * Backdrop 1.0.0, Copyright 2025 Kyant, Apache-2.0; see vendor LICENSE.
  * Modified by Resonus: extend the AM++ backing-capacity separation to shadows.
- * Reuse the existing shadow recording when its immutable pixel inputs are unchanged.
  * Original radius, offset, paint, outline, mask and default allocation are unchanged.
  * These host-capacity additions are distributed under GPLv3; see UPSTREAM.md.
  */
@@ -9,9 +8,7 @@ package com.kyant.backdrop.shadow
 
 import android.graphics.BlurMaskFilter
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.drawOutline
@@ -29,7 +26,6 @@ import androidx.compose.ui.node.requireGraphicsContext
 import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.LayoutDirection
 import com.kyant.backdrop.ShapeProvider
 import com.kyant.backdrop.backdropShadowSize
 import com.kyant.backdrop.backdropShadowRecordSize
@@ -78,22 +74,6 @@ internal class ShadowElement(
     }
 }
 
-/** Only value-based outlines have immutable pixels; Generic owns a mutable Path. */
-private data class ShadowRecordingKey(
-    val outline: Outline,
-    val size: Size,
-    val shadowSize: IntSize,
-    val recordSize: IntSize,
-    val minLayerSize: IntSize,
-    val radius: Float,
-    val offsetX: Float,
-    val offsetY: Float,
-    val color: Color,
-    val density: Float,
-    val fontScale: Float,
-    val layoutDirection: LayoutDirection
-)
-
 internal class ShadowNode(
     var shapeProvider: ShapeProvider,
     var shadow: () -> Shadow?,
@@ -103,7 +83,6 @@ internal class ShadowNode(
     override val shouldAutoInvalidate: Boolean = false
 
     private var shadowLayer: GraphicsLayer? = null
-    private var lastRecordingKey: ShadowRecordingKey? = null
 
     private val paint = Paint()
 
@@ -123,31 +102,20 @@ internal class ShadowNode(
             val recordSize = backdropShadowRecordSize(size, radius, offsetX, offsetY, minLayerSize)
             val outline = shapeProvider.shape.createOutline(size, layoutDirection, density)
 
-            val key = if (outline is Outline.Rectangle || outline is Outline.Rounded) {
-                ShadowRecordingKey(outline, size, shadowSize, recordSize, minLayerSize,
-                    radius, offsetX, offsetY, shadow.color, density.density, density.fontScale, layoutDirection)
-            } else null
+            configurePaint(shadow)
 
-            // Alpha and blending apply to the existing layer, not its recorded pixels.
             shadowLayer.alpha = shadow.alpha
             shadowLayer.blendMode = shadow.blendMode
-            if (key == null || key != lastRecordingKey) {
-                // Clear first: a failed record or mutable Generic path cannot leave an
-                // older value key authorising reuse of different/partial pixels.
-                lastRecordingKey = null
-                configurePaint(shadow)
-                shadowLayer.record(recordSize) {
-                    if (minLayerSize != IntSize.Zero) {
-                        withBackdropLogicalSize(shadowSize) {
-                            // The extra physical capacity remains transparent. Keep the
-                            // same asymmetric extent as the original exact-sized layer.
-                            clipRect(0f, 0f, shadowSize.width.toFloat(), shadowSize.height.toFloat()) {
-                                drawShadow(outline, radius, offsetX, offsetY)
-                            }
+            shadowLayer.record(recordSize) {
+                if (minLayerSize != IntSize.Zero) {
+                    withBackdropLogicalSize(shadowSize) {
+                        // The extra physical capacity remains transparent. Keep the
+                        // same asymmetric extent as the original exact-sized layer.
+                        clipRect(0f, 0f, shadowSize.width.toFloat(), shadowSize.height.toFloat()) {
+                            drawShadow(outline, radius, offsetX, offsetY)
                         }
-                    } else drawShadow(outline, radius, offsetX, offsetY)
-                }
-                lastRecordingKey = key
+                    }
+                } else drawShadow(outline, radius, offsetX, offsetY)
             }
 
             translate(-radius * 2f, -radius * 2f) {
@@ -169,7 +137,6 @@ internal class ShadowNode(
     }
 
     override fun onAttach() {
-        lastRecordingKey = null
         val graphicsContext = requireGraphicsContext()
         shadowLayer =
             graphicsContext.createGraphicsLayer().apply {
@@ -178,7 +145,6 @@ internal class ShadowNode(
     }
 
     override fun onDetach() {
-        lastRecordingKey = null
         val graphicsContext = requireGraphicsContext()
         shadowLayer?.let { layer ->
             graphicsContext.releaseGraphicsLayer(layer)

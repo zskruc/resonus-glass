@@ -16,6 +16,7 @@ import androidx.compose.foundation.Canvas as ComposeCanvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -620,6 +621,12 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
     val uniformButtonOptics = canFoldUniformButtonOptics(staticBackground, preset,
       glassDepthEffect, glassChromaticAberration, Build.VERSION.SDK_INT, glassBlur,
       glassRefractionHeight, glassRefraction)
+    val staticAutoClip = canUseStaticDecorationAutoClip(staticBackground, enabled, preset,
+      opacity, tabsCount, dockCompactWidth, isProgressiveBlur)
+    DisposableEffect(staticAutoClip) {
+      if (staticAutoClip) StaticDecorationClipTrace.enter()
+      onDispose { if (staticAutoClip) StaticDecorationClipTrace.leave() }
+    }
     val backdrop = rememberCanvasBackdrop {
       // Read in drawing, so a capture only invalidates drawing, not RN layout.
       @Suppress("UNUSED_VARIABLE") val version = frameVersion
@@ -735,7 +742,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
           Modifier.fillMaxSize().drawBackdrop(
             backdrop = backdrop,
             minLayerSize = surfaceCapacity,
-            clipCompositingStrategy = if (surfaceCapacity != IntSize.Zero) CompositingStrategy.Auto
+            clipCompositingStrategy = if (surfaceCapacity != IntSize.Zero || staticAutoClip) CompositingStrategy.Auto
               else CompositingStrategy.Offscreen,
             // Physical corners map to start/end for RTL, as with the RN card.
             shape = { glassShape },
