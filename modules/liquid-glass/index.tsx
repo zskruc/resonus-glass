@@ -39,6 +39,8 @@ export type LiquidGlassViewProps = Omit<ViewProps, 'children'> & {
   tintColor?: ColorValue;
   /** Explicit uniform source for plain-page cards; null resumes live sampling. */
   staticBackdropColor?: ColorValue | null;
+  /** Internal opt-in for bounded, uniform decorative cards; disabled elsewhere. */
+  cacheStaticDecoration?: boolean;
   tintOpacity?: number;
   dark?: boolean;
   enabled?: boolean;
@@ -187,6 +189,7 @@ export function LiquidGlassTabsView({ materialPreset = 'button', tintColor = 'tr
   const staticColor = props.staticBackdropColor == null ? null : processColor(props.staticBackdropColor);
   const accent = tabAccentColor == null ? undefined : processColor(tabAccentColor);
   return <NativeTabs {...props} materialPreset={materialPreset} pointerEvents="none" accessible={false}
+    cacheStaticDecoration={false}
     staticBackdropColor={typeof staticColor === 'number' ? staticColor : null}
     tabAccentColor={typeof accent === 'number' ? accent : undefined}
     tintColor={typeof color === 'number' ? color : processColor('transparent') as number} />;
@@ -215,6 +218,7 @@ export function LiquidGlassView({
   chromaticAberration = false,
   tintColor = materialPreset === 'custom' ? '#FFFFFF' : 'transparent',
   staticBackdropColor = null,
+  cacheStaticDecoration = false,
   tintOpacity = materialPreset === 'custom' ? 0.18 : 0,
   dark = false,
   enabled = true,
@@ -225,6 +229,7 @@ export function LiquidGlassView({
   }
   const color = processColor(tintColor);
   const staticColor = staticBackdropColor == null ? null : processColor(staticBackdropColor);
+  const hasStaticColor = typeof staticColor === 'number' && Number.isFinite(staticColor);
   return (
     <NativeGlass
       {...viewProps}
@@ -247,7 +252,8 @@ export function LiquidGlassView({
       depthEffect={depthEffect}
       chromaticAberration={chromaticAberration}
       tintColor={typeof color === 'number' ? color : processColor('transparent') as number}
-      staticBackdropColor={typeof staticColor === 'number' ? staticColor : null}
+      staticBackdropColor={hasStaticColor ? staticColor : null}
+      cacheStaticDecoration={cacheStaticDecoration && hasStaticColor}
       tintOpacity={tintOpacity}
       dark={dark}
       enabled={enabled}

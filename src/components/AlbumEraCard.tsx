@@ -15,15 +15,16 @@ interface Props {
   fraction: number;
   covers: readonly { id: string; uri: string | undefined }[];
   downloaded: boolean;
+  cacheStaticDecoration?: boolean;
 }
 
 /** The browse frame beneath these cards is a single solid theme colour. */
-export const AlbumEraCard = memo(function AlbumEraCard({ era, year, count, fraction, covers, downloaded }: Props) {
+export const AlbumEraCard = memo(function AlbumEraCard({ era, year, count, fraction, covers, downloaded, cacheStaticDecoration = false }: Props) {
   const colors = useTheme(), t = useT();
   return <Pressable accessibilityRole="button" onPress={() => router.push({
     pathname: `/album-years/${era}`, params: downloaded ? { downloaded: '1' } : undefined,
   })}>
-    <GlassSurface radius={22} staticBackdropColor={colors.background} style={styles.card}>
+    <GlassSurface radius={22} staticBackdropColor={colors.background} cacheStaticDecoration={cacheStaticDecoration} style={styles.card}>
       <View style={styles.heading}>
         <Text style={styles.decade}>{year === undefined ? t('Unknown year') : t('{year}s', { year })}</Text>
         <Text style={styles.note}>{t('{n} albums', { n: count })}</Text>
@@ -39,6 +40,7 @@ export const AlbumEraCard = memo(function AlbumEraCard({ era, year, count, fract
   </Pressable>;
 }, (before, after) => before.era === after.era && before.year === after.year && before.count === after.count
   && before.fraction === after.fraction && before.downloaded === after.downloaded
+  && before.cacheStaticDecoration === after.cacheStaticDecoration
   && before.covers.length === after.covers.length
   && before.covers.every((cover, i) => cover.id === after.covers[i].id && cover.uri === after.covers[i].uri));
 

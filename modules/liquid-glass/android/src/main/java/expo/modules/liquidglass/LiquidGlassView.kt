@@ -16,7 +16,6 @@ import androidx.compose.foundation.Canvas as ComposeCanvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -47,6 +46,7 @@ import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.ShapeProvider
 import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
@@ -54,6 +54,7 @@ import com.kyant.backdrop.effects.colorControls
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.highlight.HighlightElement
 import com.kyant.backdrop.highlight.HighlightStyle
 import com.kyant.backdrop.shadow.Shadow
 import com.facebook.react.uimanager.PointerEvents
@@ -97,6 +98,8 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
   internal var dark by mutableStateOf(false)
   internal var staticBackdropColor: Int? by mutableStateOf(null)
     private set
+  /** Internal opt-in for bounded static era decorations, never foreground content. */
+  internal var cacheStaticDecoration by mutableStateOf(false)
   /** Local opaque/control drawing may safely remain in another material's source. */
   protected open val suppressDuringBackdropCapture: Boolean get() = staticBackdropColor == null
   // Only the complete bottom navigation opts into this interactive material.
@@ -621,12 +624,6 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
     val uniformButtonOptics = canFoldUniformButtonOptics(staticBackground, preset,
       glassDepthEffect, glassChromaticAberration, Build.VERSION.SDK_INT, glassBlur,
       glassRefractionHeight, glassRefraction)
-    val staticAutoClip = canUseStaticDecorationAutoClip(staticBackground, enabled, preset,
-      opacity, tabsCount, dockCompactWidth, isProgressiveBlur)
-    DisposableEffect(staticAutoClip) {
-      if (staticAutoClip) StaticDecorationClipTrace.enter()
-      onDispose { if (staticAutoClip) StaticDecorationClipTrace.leave() }
-    }
     val backdrop = rememberCanvasBackdrop {
       // Read in drawing, so a capture only invalidates drawing, not RN layout.
       @Suppress("UNUSED_VARIABLE") val version = frameVersion
@@ -738,11 +735,24 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
           bottomEnd = (if (isLtr) bottomRight else bottomLeft).dp,
           bottomStart = (if (isLtr) bottomLeft else bottomRight).dp
         )
-        Box(
-          Modifier.fillMaxSize().drawBackdrop(
+        val materialHighlight: () -> Highlight? = {
+          when {
+            mediaMoreMenu -> null
+            officialMaterial -> {
+              val base = if (dialogMaterial) Highlight(style = HighlightStyle.Plain) else Highlight.Default
+              if ((tuningMask and (MaterialTuningMask.HIGHLIGHT_WIDTH or MaterialTuningMask.HIGHLIGHT_ALPHA)) != 0)
+                base.copy(width = glassHighlightWidth.dp, blurRadius = glassHighlightWidth.dp / 2f,
+                  alpha = glassHighlightOpacity)
+              else base
+            }
+            else -> Highlight(width = glassHighlightWidth.dp, alpha = glassHighlightOpacity)
+          }
+        }
+        fun materialModifier(leading: Modifier = Modifier, withHighlight: Boolean = true): Modifier =
+          leading.fillMaxSize().drawBackdrop(
             backdrop = backdrop,
             minLayerSize = surfaceCapacity,
-            clipCompositingStrategy = if (surfaceCapacity != IntSize.Zero || staticAutoClip) CompositingStrategy.Auto
+            clipCompositingStrategy = if (surfaceCapacity != IntSize.Zero) CompositingStrategy.Auto
               else CompositingStrategy.Offscreen,
             // Physical corners map to start/end for RTL, as with the RN card.
             shape = { glassShape },
@@ -771,19 +781,7 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
                 }
               }
             },
-            highlight = {
-              when {
-                mediaMoreMenu -> null
-                officialMaterial -> {
-                  val base = if (dialogMaterial) Highlight(style = HighlightStyle.Plain) else Highlight.Default
-                  if ((tuningMask and (MaterialTuningMask.HIGHLIGHT_WIDTH or MaterialTuningMask.HIGHLIGHT_ALPHA)) != 0)
-                    base.copy(width = glassHighlightWidth.dp, blurRadius = glassHighlightWidth.dp / 2f,
-                      alpha = glassHighlightOpacity)
-                  else base
-                }
-                else -> Highlight(width = glassHighlightWidth.dp, alpha = glassHighlightOpacity)
-              }
-            },
+            highlight = if (withHighlight) materialHighlight else null,
             shadow = if (officialMaterial) ({ Shadow.Default }) else null,
             onDrawSurface = {
               // API 31/32 retain true background blur, but Android's shader lens
@@ -815,7 +813,29 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
           ).then(if (mediaMoreMenu) Modifier.border(.6.dp, Brush.linearGradient(listOf(
             Color.White.copy(alpha = .28f), Color.White.copy(alpha = .07f),
             Color.White.copy(alpha = .18f))), glassShape) else Modifier)
-        )
+        val density = LocalDensity.current
+        val cacheable = cacheStaticDecoration && enabled && staticBackground != null &&
+          staticBackground ushr 24 == 0xff && !isProgressiveBlur && tabsCount == 0 &&
+          dockCompactWidth == 0f && (preset == "button" || preset == "custom") && Build.VERSION.SDK_INT >= 31
+        if (cacheable) {
+          val style = StaticDecorationStyle(
+            sourceArgb = staticBackground!!, preset = preset, tuningMask = tuningMask, dark = isDark,
+            densityBits = density.density.toRawBits(), fontScaleBits = density.fontScale.toRawBits(),
+            rtl = !isLtr, api = Build.VERSION.SDK_INT,
+            topLeftBits = topLeft.toRawBits(), topRightBits = topRight.toRawBits(),
+            bottomLeftBits = bottomLeft.toRawBits(), bottomRightBits = bottomRight.toRawBits(),
+            blurBits = glassBlur.toRawBits(), refractionBits = glassRefraction.toRawBits(),
+            refractionHeightBits = glassRefractionHeight.toRawBits(),
+            highlightWidthBits = glassHighlightWidth.toRawBits(), highlightOpacityBits = glassHighlightOpacity.toRawBits(),
+            tintArgb = tintArgb, tintOpacityBits = opacity.toRawBits(), depth = glassDepthEffect,
+            dispersion = glassChromaticAberration
+          )
+          StaticDecorationRaster(style,
+            original = { Box(materialModifier()) },
+            body = { Box(materialModifier(it, withHighlight = false)) },
+            highlight = { Box(it.fillMaxSize().then(HighlightElement(ShapeProvider { glassShape }, materialHighlight))) }
+          )
+        } else Box(materialModifier())
       }
     }
     }

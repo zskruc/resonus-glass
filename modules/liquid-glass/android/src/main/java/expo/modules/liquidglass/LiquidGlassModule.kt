@@ -16,7 +16,11 @@ class LiquidGlassModule : Module() {
     Constant("artistFocusTraceEnabled") { Log.isLoggable("ResonusArtistFocus", Log.DEBUG) }
     Constant("artistImageTraceEnabled") { Log.isLoggable("ResonusArtistImage", Log.DEBUG) }
     Function("setPlayerTransitionTrace") { enabled: Boolean -> PlayerTransitionTrace.configure(enabled) }
-    OnDestroy { PlayerTransitionTrace.configure(false) }
+    OnDestroy {
+      PlayerTransitionTrace.configure(false)
+      StaticDecorationRasters.trimUnused()
+    }
+    OnActivityEntersBackground { StaticDecorationRasters.trimUnused() }
     AsyncFunction("getDiagnostics") {
       WindowBackdrops.diagnostics() + TabsMotionHosts.diagnostics()
     }.runOnQueue(Queues.MAIN)
@@ -109,6 +113,7 @@ class LiquidGlassModule : Module() {
       Prop("tintOpacity") { view: LiquidGlassView, value: Double -> view.updateTintOpacity(value.toFloat().coerceIn(0f, 1f)) }
       Prop("dark") { view: LiquidGlassView, value: Boolean -> view.updateDark(value) }
       Prop("staticBackdropColor") { view: LiquidGlassView, value: Int? -> view.updateStaticBackdropColor(value) }
+      Prop("cacheStaticDecoration") { view: LiquidGlassView, value: Boolean -> view.cacheStaticDecoration = value }
       Prop("dockRole") { view: LiquidGlassView, value: String? ->
         view.dockRole = when (value) { "navigation", "search" -> value; else -> "mini" }
       }

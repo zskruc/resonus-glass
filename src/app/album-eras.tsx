@@ -47,6 +47,7 @@ export default function AlbumErasScreen() {
       </View>}
       ListEmptyComponent={data.complete ? <EmptyState icon="albums-outline" title={t('No albums yet')} /> : null}
       renderItem={({ item }) => <AlbumEraCard era={item.key} year={item.year} count={item.albums.length}
+        cacheStaticDecoration={rows.length <= 24}
         fraction={item.albums.length / largest} downloaded={downloaded}
         covers={item.albums.slice(0, 4).map((album) => ({ id: album.id, uri: coverArtUrl(album.coverArt ?? album.id, COVER.thumb) }))} />} />
   </BrowseFrame>;
