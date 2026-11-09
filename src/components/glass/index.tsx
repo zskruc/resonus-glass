@@ -75,8 +75,11 @@ export function GlassBackdrop({
     ? tint ?? colors.surface : profile.tintColor;
   const shape = { borderRadius: radius, borderTopLeftRadius: radiusTopLeft, borderTopRightRadius: radiusTopRight,
     borderBottomLeftRadius: radiusBottomLeft, borderBottomRightRadius: radiusBottomRight };
+  // Cache this decoration only. Native invalidation refreshes theme/material changes.
+  const rasterStaticDecoration = variant === 'regular' && staticBackdropColor != null;
   return isLiquidGlassAvailable ? (
     <LiquidGlassView pointerEvents="none" style={StyleSheet.absoluteFill}
+      renderToHardwareTextureAndroid={rasterStaticDecoration}
       materialPreset={materialPreset} materialTuningMask={tuningMask}
       staticBackdropColor={variant === 'regular' ? staticBackdropColor : null}
       radius={radius} radiusTopLeft={radiusTopLeft} radiusTopRight={radiusTopRight}
