@@ -1,3 +1,4 @@
+import * as podcastStorageLease from '../src/lib/podcastStorageLease';
 import assert from 'node:assert/strict';
 import { createPodcastFeedPreview } from '../src/lib/podcastFeedStream';
 import { readFileSync } from 'node:fs';
@@ -89,6 +90,7 @@ function apiHarness() {
     '@/store/podcastDownloads': {}, '@/store/player': {}, '@/lib/podcastProgress': {}, '@/lib/episodeResume': {},
     '@/lib/localLibrary': { hashKey: (value: string) => value }, '@/lib/query': {}, '@/lib/podcastDb': {}, '@/lib/podcastFeed': {},
     '@/lib/podcastDirectory': Directory,
+    '@/lib/podcastStorageLease': podcastStorageLease,
     '@/lib/podcastFeedStream': { createPodcastFeedPreview },
   };
   const exports: Record<string, any> = {};

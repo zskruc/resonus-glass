@@ -34,6 +34,7 @@ import { hashKey } from '@/lib/localLibrary';
 import { captureLyricOwner } from '@/lib/lyricOwner';
 import { sortPodcastEpisodes } from '@/lib/podcastPresentation';
 import { usePodcastPreview } from '@/hooks/usePodcastPreview';
+import { usePodcastStorageVisit } from '@/hooks/usePodcastStorageVisit';
 
 const EMPTY_EPISODES: PodcastEpisode[] = [];
 
@@ -47,6 +48,7 @@ export default function PodcastScreen() {
   const preview = usePodcastPreview(previewToken);
   const clearPreviewError = preview.clearError;
   const id = preview.channel?.id ?? (previewToken ? '' : params.id);
+  usePodcastStorageVisit(id);
   const t = useT(), router = useRouter();
   const lang = useSettings((s) => s.language);
   const toast = useToast((s) => s.show);

@@ -2851,6 +2851,19 @@ let longFormOwner: { songId: string; scope: string; bookScope: string; version: 
 let resumeSeekGeneration = 0;
 let longFormInitialized = false;
 let lastPodcastSample: { song: Song; position: number; duration: number; playing: boolean; scope: string; version: number } | undefined;
+/** Actual installed/selected sources only; historical queue entries may be cleaned. */
+export function getPodcastStoragePlaybackSongs(): Song[] {
+  const state = usePlayerStore.getState(), found = new Map<string, Song>();
+  const add = (song: Song | null | undefined) => { if (song?.podcastChannelId) found.set(song.id, song); };
+  add(currentSong(state));
+  if (queuedNext) add(state.queue.find((song) => song.id === queuedNext!.id));
+  if (longFormOwner?.scope === profileScopeId()) {
+    add(state.queue.find((song) => song.id === longFormOwner!.songId));
+    if (lastPodcastSample?.scope === longFormOwner.scope && lastPodcastSample.song.id === longFormOwner.songId)
+      add(lastPodcastSample.song);
+  }
+  return [...found.values()];
+}
 /** Only an accepted source may supply user bookmarks; a speculative queue's zero is not playback. */
 export function longAudioPlaybackSample() {
   const state = usePlayerStore.getState(), song = currentSong(state), owner = longFormOwner;

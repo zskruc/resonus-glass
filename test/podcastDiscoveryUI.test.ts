@@ -13,6 +13,7 @@ import * as resume from '../src/lib/episodeResume';
 import * as presentation from '../src/lib/podcastPresentation';
 import { defaultDiscoveryPreferences } from '../src/lib/discoveryPreferences';
 import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';
+import * as storageLease from '../src/lib/podcastStorageLease';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -37,6 +38,7 @@ function harness(offline = false) {
   const focus = createStore(() => ({ active: true }));
   let route: Record<string, string> = { id: channel.id };
   const pages: any[] = [], fullReads: string[] = [], queues: any[][] = [], progressReads: any[][] = [], currentEpisodeReads: string[] = [];
+  const visits: any[] = [];
   let progressRead: (...args: any[]) => Promise<any[]> = async () => [];
   let playing: any, isPlaying = false, toggles = 0;
   let allEpisodes: any[] = [], pageRead: (id: string, options: any, owner: any) => Promise<any> = async (_id, options) => ({
@@ -54,7 +56,7 @@ function harness(offline = false) {
   const palette = { text: '#161616', textSecondary: '#666', textMuted: '#777', accent: '#a81950', onAccent: '#fff', background: '#fff', surfaceHighlight: '#eee', border: '#ddd' };
   const common: Record<string, unknown> = {
     react: React, 'react/jsx-runtime': JSXRuntime, '@tanstack/react-query': Query,
-    'react-native': { View: 'View', Text: 'Text', TextInput: 'TextInput', ScrollView: 'ScrollView', Pressable: 'Pressable', ActivityIndicator: 'Spinner', RefreshControl: 'RefreshControl', Linking: { openURL() {} } },
+    'react-native': { AppState: { addEventListener: () => ({ remove() {} }) }, View: 'View', Text: 'Text', TextInput: 'TextInput', ScrollView: 'ScrollView', Pressable: 'Pressable', ActivityIndicator: 'Spinner', RefreshControl: 'RefreshControl', Linking: { openURL() {} } },
     'react-native-reanimated': { __esModule: true, default: { FlatList } },
     'expo-router': { useRouter: () => ({ push: (path: any) => { attempts.push(path); if (pushFails) throw new Error('Navigation unavailable'); pushes.push(path); } }), useLocalSearchParams: () => route, useIsFocused: () => focus((state) => state.active),
       useFocusEffect: (effect: () => (() => void) | undefined) => { const active = focus((state) => state.active); React.useEffect(() => active ? effect() : undefined, [active, effect]); } },
@@ -111,6 +113,9 @@ function harness(offline = false) {
   common['@/lib/podcastPreview'] = load('../src/lib/podcastPreview.ts', { '@/store/auth': common['@/store/auth'], '@/lib/podcastDirectory': common['@/lib/podcastDirectory'] });
   common['@/lib/lyricOwner'] = load('../src/lib/lyricOwner.ts', { '@/store/auth': common['@/store/auth'] });
   common['@/hooks/usePodcastPreview'] = load('../src/hooks/usePodcastPreview.ts', common);
+  common['@/lib/podcastStorageLease'] = storageLease;
+  common['@/lib/podcastDb'] = { touchChannel: async (...args: any[]) => { if (args[3]()) visits.push(args); } };
+  common['@/hooks/usePodcastStorageVisit'] = load('../src/hooks/usePodcastStorageVisit.ts', common);
   common['@/lib/podcastLibrary'] = load('../src/lib/podcastLibrary.ts', {
     './episodeResume': resume, './localLibrary': common['@/lib/localLibrary'], '@/store/auth': common['@/store/auth'],
     './lyricOwner': common['@/lib/lyricOwner'],
@@ -124,7 +129,7 @@ function harness(offline = false) {
   };
   const buttons = () => root.root.findAllByType('Button' as any);
   const button = (text: string) => buttons().find((value) => value.props.accessibilityLabel === text || value.findAllByType('Text' as any).some((node) => node.props.children === text));
-  return { auth, client, pushes, attempts, toasts, charts, searches, lookups, reads, refreshes, subscriptions, menus, pages, fullReads, queues, progressReads, currentEpisodeReads, mount, button,
+  return { auth, client, pushes, attempts, toasts, charts, searches, lookups, reads, refreshes, subscriptions, menus, pages, fullReads, queues, progressReads, currentEpisodeReads, visits, mount, button,
     tree: () => root, focus: (active: boolean) => focus.setState({ active }), failNavigation: (value: boolean) => { pushFails = value; }, preview: common['@/lib/podcastPreview'] as any, lookup: (next: typeof lookup) => { lookup = next; }, stored: (next: any) => { stored = next; },
     readChannel: (next: typeof readChannel) => { readChannel = next; }, refresh: (next: typeof refresh) => { refresh = next; }, sort: (value: string) => { preferredOrder = value; },
     progressRead: (next: typeof progressRead) => { progressRead = next; }, playing: (song: any) => { playing = song; isPlaying = !!song; }, toggles: () => toggles,
@@ -384,12 +389,14 @@ test('a real RSS prefix is playable before the full transfer, and full promotion
     await h.mount(true);
     assert.equal(h.tree().root.findByType('DetailView' as any).props.episodes.length, 0);
     const presentation = h.tree().root.findByType('DetailView' as any).props.presentationIdentity;
+    assert.equal(h.visits.length, 0, 'the ephemeral directory ID is not a stored feed visit');
     assert.equal(h.tree().root.findByType('DetailView' as any).props.initialArtworkUri, show.imageUrl);
     stored = { ...channel, syncComplete: false, episodeCount: 7 };
     h.episodes(all.slice(0, 7));
     await act(async () => { callbacks.onPreview(stored); await turn(); }); await settle();
     const detail = () => h.tree().root.findByType('DetailView' as any);
     assert.equal(detail().props.episodes.length, 7);
+    assert.equal(h.visits.length, 1); assert.equal(h.visits[0][1], channel.id);
     assert.equal(detail().props.presentationIdentity, presentation, 'RSS identity promotion does not start a new visual scene');
     assert.equal(detail().props.initialArtworkUri, show.imageUrl);
     assert.equal(detail().props.loadingMeta, true, '7 is not presented as the complete catalog count');
@@ -406,6 +413,7 @@ test('a real RSS prefix is playable before the full transfer, and full promotion
     h.episodes(all);
     await act(async () => { done.resolve(stored); await turn(); }); await settle();
     assert.equal(detail().props.loadingMeta, false);
+    assert.equal(h.visits.length, 1, 'background completion does not keep extending retention');
     assert.equal(detail().props.presentationIdentity, presentation, 'full synchronization retains the original opening');
     assert.equal(visibleText(h, 'Episodes'), true);
     assert.equal(visibleText(h, 'First episodes'), false);

@@ -15,6 +15,8 @@ function harness() {
   const useAuthStore = createStore<any>(() => ({ auth: one, offline: false }));
   const profileScopeId = () => useAuthStore.getState().auth?.username ?? 'local';
   const disk = new Map<string, number>(), records = new Map<string, Record<string, string>>();
+  const manual = new Set<string>(), automaticRecords = new Map<string, boolean>();
+  let storageLeases = 0;
   const transfers: { path: string; status: string; signalIgnored: boolean; finish(): void; progress(written: number, total: number): void }[] = [];
   let protectedLease = false, background = false, wifi = true, ignorePause = false;
   let networkListener: ((state: unknown) => void) | undefined;
@@ -54,8 +56,12 @@ function harness() {
     getDownload: async (scope: string, id: string) => {
       const file = records.get(scope)?.[id]; return file ? { file, bytes: disk.get(file) ?? 0 } : undefined;
     },
-    saveDownload: async (scope: string, episode: any, path: string, _bytes: number, current: () => boolean) => {
+    markDownloadsManual: async (scope: string, ids: string[], current: () => boolean) => {
+      if (!current()) throw Error('stopped'); for (const id of ids) { manual.add(`${scope}:${id}`); automaticRecords.set(`${scope}:${id}`, false); }
+    },
+    saveDownload: async (scope: string, episode: any, path: string, _bytes: number, current: () => boolean, automatic: boolean) => {
       if (!current()) throw Error('stopped'); records.set(scope, { ...(records.get(scope) ?? {}), [episode.id]: path });
+      automaticRecords.set(`${scope}:${episode.id}`, automatic && !manual.has(`${scope}:${episode.id}`));
       if (commitWait) { commitEntered = true; await commitWait; }
     }, dropDownloads: async (scope: string, ids: string[]) => { const next = { ...(records.get(scope) ?? {}) }; for (const id of ids) delete next[id]; records.set(scope, next); },
     downloadedBytes: async (scope: string) => Object.values(records.get(scope) ?? {}).reduce((sum, path) => sum + (disk.get(path) ?? 0), 0),
@@ -69,6 +75,8 @@ function harness() {
     './auth': { profileScopeId, useAuthStore }, './downloads': { useDownloads: { getState: () => downloads } },
     '@/lib/localLibrary': { hashKey: hash }, '@/lib/podcastMedia': { podcastUrlExtension }, '@/lib/podcastDb': Db,
     '@/lib/query': { queryClient: { invalidateQueries: async () => {} } },
+    '@/lib/podcastStorage': { isPodcastStorageFileRemoving: () => false },
+    '@/lib/podcastStorageLease': { protectPodcastStorageChannel: () => { storageLeases++; return () => { storageLeases--; }; } },
   };
   const exports: Record<string, any> = {};
   runInNewContext(ts.transpileModule(readFileSync(new URL('../src/store/podcastDownloads.ts', import.meta.url), 'utf8'), {
@@ -76,7 +84,7 @@ function harness() {
   }).outputText, { exports, Date, URL, require(name: string) { assert.ok(Object.hasOwn(imports, name), name); return imports[name]; } });
   const channel = { id: 'show', title: 'Example show', feedUrl: 'https://feed.test/rss' };
   const episodes = ['a', 'b', 'c'].map((id) => ({ id: `show/${id}`, channelId: 'show', title: id, url: `https://audio.test/${id}.mp3` }));
-  return { store: exports.usePodcastDownloads, podcastFile: exports.podcastFile, channel, episodes, queue, transfers, records, disk, useAuthStore,
+  return { store: exports.usePodcastDownloads, podcastFile: exports.podcastFile, channel, episodes, queue, transfers, records, disk, useAuthStore, automaticRecords, storageLeases: () => storageLeases,
     rows: () => update, paused: () => paused, setWifi: (value: boolean) => { wifi = value; networkListener?.({ type: wifi ? 'wifi' : 'cellular', isConnected: true }); },
     blockCommit: (wait: Promise<void>) => { commitWait = wait; }, commitEntered: () => commitEntered,
     background: () => { background = true; queue.sync(); }, ignorePause: () => { ignorePause = true; } };
@@ -140,6 +148,22 @@ test('automatic episodes require actual Wi-Fi and do not bypass manual offline',
   h.setWifi(true); h.useAuthStore.setState({ offline: true });
   await h.store.getState().download(h.channel, h.episodes, true);
   assert.equal(h.transfers.length, 0);
+});
+
+test('manual request permanently promotes an automatic file and an in-flight automatic transfer without downloading twice', async () => {
+  const h = harness(); await h.store.getState().hydrate();
+  const first = h.store.getState().download(h.channel, h.episodes.slice(0, 1), true);
+  await until(() => h.transfers.length === 1); assert.equal(h.storageLeases(), 1);
+  h.transfers[0].finish(); await first;
+  assert.equal(h.automaticRecords.get('one:show/a'), true);
+  await h.store.getState().download(h.channel, h.episodes.slice(0, 1));
+  assert.equal(h.transfers.length, 1); assert.equal(h.automaticRecords.get('one:show/a'), false); assert.equal(h.storageLeases(), 0);
+  const automatic = h.store.getState().download(h.channel, h.episodes.slice(1, 2), true);
+  await until(() => h.transfers.length === 2);
+  const manual = h.store.getState().download(h.channel, h.episodes.slice(1, 2));
+  await turn(); assert.equal(h.transfers.length, 2); assert.equal(h.storageLeases(), 2);
+  h.transfers[1].finish(); await Promise.all([automatic, manual]);
+  assert.equal(h.automaticRecords.get('one:show/b'), false); assert.equal(h.storageLeases(), 0);
 });
 
 test('a stale initial Wi-Fi inspection cannot override a newer cellular event', async () => {

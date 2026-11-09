@@ -73,6 +73,19 @@ CREATE TABLE IF NOT EXISTS podcast_progress (
   duration_sec REAL NOT NULL,
   updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS podcast_access (
+  channel_id TEXT PRIMARY KEY NOT NULL,
+  last_accessed_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS podcast_manual_downloads (
+  episode_id TEXT PRIMARY KEY NOT NULL,
+  requested_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS podcast_maintenance (
+  id INTEGER PRIMARY KEY CHECK(id = 1),
+  last_started_at INTEGER,
+  last_completed_at INTEGER
+);
 `;
 
 const ROOT = `${FileSystem.documentDirectory}podcasts/`;
@@ -185,6 +198,18 @@ async function openDb(dir: string): Promise<SQLite.SQLiteDatabase> {
     );
     await db.execAsync('PRAGMA user_version = 1');
   });
+  if ((migration?.user_version ?? 0) < 2) await db.withTransactionAsync(async () => {
+    // Legacy files are always protected as manual downloads. Old completion
+    // timestamps cannot be inferred from an arbitrary playback heartbeat.
+    const now = Date.now();
+    await db.execAsync('ALTER TABLE podcast_downloads ADD COLUMN automatic INTEGER NOT NULL DEFAULT 0');
+    await db.execAsync('ALTER TABLE podcast_progress ADD COLUMN finished_at INTEGER');
+    await db.runAsync(`UPDATE podcast_progress SET finished_at = ?
+      WHERE duration_sec > 0 AND position_sec >= MAX(duration_sec * .9, duration_sec - 30)`, [now]);
+    await db.runAsync(`INSERT OR IGNORE INTO podcast_access(channel_id,last_accessed_at)
+      SELECT id, ? FROM podcast_channels`, [now]);
+    await db.execAsync('PRAGMA user_version = 2');
+  });
   return db;
 }
 
@@ -231,8 +256,8 @@ export async function saveChannel(scope: string, channel: PodcastChannel, curren
   });
 }
 
-function writeChannel(db: SQLite.SQLiteDatabase, channel: PodcastChannel) {
-  return db.runAsync(
+async function writeChannel(db: SQLite.SQLiteDatabase, channel: PodcastChannel) {
+  await db.runAsync(
       `INSERT OR REPLACE INTO podcast_channels
          (id, feed_url, title, last_published_at, refreshed_at, data)
        VALUES (?, ?, ?, ?, ?, ?)`,
@@ -245,6 +270,7 @@ function writeChannel(db: SQLite.SQLiteDatabase, channel: PodcastChannel) {
         JSON.stringify(channel),
       ],
   );
+  await db.runAsync('INSERT OR IGNORE INTO podcast_access(channel_id,last_accessed_at) VALUES(?,?)', [channel.id, Date.now()]);
 }
 
 /**
@@ -812,20 +838,36 @@ export async function saveEpisodeProgress(
   current: () => boolean = () => true,
 ): Promise<void> {
   const db = await podcastDb(scope);
-  await serialized(async () => {
+  await serialized(() => db.withTransactionAsync(async () => {
     if (!current()) return;
-    await db.runAsync(
-      `INSERT OR REPLACE INTO podcast_progress
-         (episode_id, channel_id, position_sec, duration_sec, updated_at)
-       VALUES (?, ?, ?, ?, ?)`,
-      [episode.id, episode.channelId, episode.positionSec, episode.durationSec, Date.now()],
-    );
-  });
+    await writeEpisodeProgress(db, episode, Date.now());
+    if (!current()) throw new Error('Podcast scope changed');
+  }));
+}
+
+function writeEpisodeProgress(db: SQLite.SQLiteDatabase,
+  episode: { id: string; channelId: string; positionSec: number; durationSec: number }, now: number) {
+  const position = Number.isFinite(episode.positionSec) ? Math.max(0, episode.positionSec) : 0;
+  const duration = Number.isFinite(episode.durationSec) ? Math.max(0, episode.durationSec) : 0;
+  // Same threshold as episodePlayed. Completed heartbeats keep one timestamp;
+  // starting a replay resets it so its next completion gets a fresh grace day.
+  const finishedAt = duration > 0 && position >= Math.max(duration * .9, duration - 30) ? now : null;
+  return db.runAsync(`INSERT INTO podcast_progress
+    (episode_id,channel_id,position_sec,duration_sec,updated_at,finished_at) VALUES(?,?,?,?,?,?)
+    ON CONFLICT(episode_id) DO UPDATE SET channel_id=excluded.channel_id,
+      position_sec=excluded.position_sec,duration_sec=excluded.duration_sec,updated_at=excluded.updated_at,
+      finished_at=CASE WHEN excluded.finished_at IS NULL THEN NULL
+        ELSE COALESCE(podcast_progress.finished_at,excluded.finished_at) END`,
+  [episode.id, episode.channelId, position, duration, now, finishedAt]);
 }
 
 export async function clearEpisodeProgress(scope: string, id: string, current: () => boolean = () => true): Promise<void> {
   const db = await podcastDb(scope);
-  await serialized(async () => { if (current()) await db.runAsync('DELETE FROM podcast_progress WHERE episode_id = ?', [id]); });
+  await serialized(() => db.withTransactionAsync(async () => {
+    if (!current()) return;
+    await db.runAsync('DELETE FROM podcast_progress WHERE episode_id = ?', [id]);
+    if (!current()) throw new Error('Podcast scope changed');
+  }));
 }
 
 /** One atomic bulk mark, without re-reading/re-rendering the library per episode. */
@@ -836,8 +878,7 @@ export async function markManyPlayed(scope: string, episodes: { id: string; chan
     for (const episode of episodes) {
       if (!current()) throw new Error('Podcast marks superseded');
       const duration = episode.durationSec > 0 && Number.isFinite(episode.durationSec) ? episode.durationSec : 1;
-      await db.runAsync('INSERT OR REPLACE INTO podcast_progress (episode_id,channel_id,position_sec,duration_sec,updated_at) VALUES(?,?,?,?,?)',
-        [episode.id, episode.channelId, duration, duration, now]);
+      await writeEpisodeProgress(db, { ...episode, positionSec: duration, durationSec: duration }, now);
     }
     if (!current()) throw new Error('Podcast marks superseded');
   }));
@@ -877,6 +918,8 @@ export async function removeChannel(scope: string, id: string): Promise<void> {
   const db = await podcastDb(scope);
   await serialized(() =>
     db.withTransactionAsync(async () => {
+      await db.runAsync(`DELETE FROM podcast_manual_downloads WHERE episode_id IN
+        (SELECT id FROM podcast_episodes WHERE channel_id=? UNION SELECT episode_id FROM podcast_downloads WHERE channel_id=?)`, [id, id]);
       await db.runAsync('DELETE FROM podcast_channels WHERE id = ?', [id]);
       await db.runAsync('DELETE FROM podcast_episodes WHERE channel_id = ?', [id]);
       await db.runAsync('DELETE FROM podcast_favorites WHERE channel_id = ?', [id]);
@@ -884,6 +927,7 @@ export async function removeChannel(scope: string, id: string): Promise<void> {
       await db.runAsync('DELETE FROM podcast_auto_download WHERE channel_id = ?', [id]);
       await db.runAsync('DELETE FROM podcast_downloads WHERE channel_id = ?', [id]);
       await db.runAsync('DELETE FROM podcast_progress WHERE channel_id = ?', [id]);
+      await db.runAsync('DELETE FROM podcast_access WHERE channel_id = ?', [id]);
     }),
   );
   clearEpisodePageOrder(scope, id);
@@ -905,24 +949,44 @@ export async function saveDownload(
   fileUri: string,
   bytes: number | undefined,
   current: () => boolean = () => true,
+  automatic = false,
 ): Promise<void> {
   const db = await podcastDb(scope);
-  await serialized(() => {
+  await serialized(() => db.withTransactionAsync(async () => {
     if (!current()) throw new Error('Podcast download stopped');
-    return db.runAsync(
-      `INSERT OR REPLACE INTO podcast_downloads
-         (episode_id, channel_id, file, bytes, downloaded_at)
-       VALUES (?, ?, ?, ?, ?)`,
-      [episode.id, episode.channelId, fileUri, bytes ?? null, Date.now()],
+    await db.runAsync(
+      `INSERT INTO podcast_downloads
+         (episode_id,channel_id,file,bytes,downloaded_at,automatic)
+       VALUES(?,?,?,?,?, CASE WHEN ? = 0 OR EXISTS(SELECT 1 FROM podcast_manual_downloads WHERE episode_id=?) THEN 0 ELSE 1 END)
+       ON CONFLICT(episode_id) DO UPDATE SET channel_id=excluded.channel_id,file=excluded.file,
+         bytes=excluded.bytes,downloaded_at=excluded.downloaded_at,
+         automatic=CASE WHEN podcast_downloads.automatic=0 OR excluded.automatic=0 THEN 0 ELSE 1 END`,
+      [episode.id, episode.channelId, fileUri, bytes ?? null, Date.now(), automatic ? 1 : 0, episode.id],
     );
-  });
+    if (!current()) throw new Error('Podcast download stopped');
+  }));
+}
+
+/** Records a manual tap before an automatic transfer can commit its file. */
+export async function markDownloadsManual(scope: string, ids: readonly string[], current: () => boolean = () => true): Promise<void> {
+  if (!ids.length) return;
+  const db = await podcastDb(scope);
+  await serialized(() => db.withTransactionAsync(async () => {
+    const now = Date.now();
+    for (const id of new Set(ids)) {
+      if (!current()) throw new Error('Podcast scope changed');
+      await db.runAsync('INSERT OR IGNORE INTO podcast_manual_downloads(episode_id,requested_at) VALUES(?,?)', [id, now]);
+      await db.runAsync('UPDATE podcast_downloads SET automatic=0 WHERE episode_id=?', [id]);
+    }
+    if (!current()) throw new Error('Podcast scope changed');
+  }));
 }
 
 export async function getDownload(scope: string, id: string): Promise<{ file: string; bytes: number | null } | undefined> {
   const db = await podcastDb(scope);
-  return await db.getFirstAsync<{ file: string; bytes: number | null }>(
+  return serialized(async () => await db.getFirstAsync<{ file: string; bytes: number | null }>(
     'SELECT file, bytes FROM podcast_downloads WHERE episode_id = ?', [id],
-  ) ?? undefined;
+  ) ?? undefined);
 }
 
 /** Drops downloads from the record (the file itself is unlinked by the
@@ -935,12 +999,13 @@ export async function dropDownloads(scope: string, ids: string[]): Promise<void>
   const db = await podcastDb(scope);
   for (let i = 0; i < ids.length; i += PARAM_CHUNK) {
     const part = ids.slice(i, i + PARAM_CHUNK);
-    await serialized(() =>
-      db.runAsync(
+    await serialized(() => db.withTransactionAsync(async () => {
+      await db.runAsync(
         `DELETE FROM podcast_downloads WHERE episode_id IN (${part.map(() => '?').join(', ')})`,
         part,
-      ),
-    );
+      );
+      await db.runAsync(`DELETE FROM podcast_manual_downloads WHERE episode_id IN (${part.map(() => '?').join(', ')})`, part);
+    }));
   }
 }
 
@@ -984,7 +1049,10 @@ export async function clearDownloadRecords(): Promise<void> {
   for (const scope of scopes) {
     try {
       const db = await podcastDb(scope);
-      await serialized(() => db.runAsync('DELETE FROM podcast_downloads', []));
+      await serialized(() => db.withTransactionAsync(async () => {
+        await db.runAsync('DELETE FROM podcast_downloads', []);
+        await db.runAsync('DELETE FROM podcast_manual_downloads', []);
+      }));
     } catch {
       // A database that cannot be opened has no rows anyone can read.
     }
@@ -1006,4 +1074,268 @@ export async function downloadedForChannel(
   );
   const ids = rows.map((r) => r.id);
   return { ids, count: ids.length };
+}
+
+const MAINTENANCE_DAY_MS = 24 * 60 * 60 * 1000;
+const checkMaintenanceOwner = (current: () => boolean) => { if (!current()) throw new Error('Podcast scope changed'); };
+
+export interface PodcastDownloadRecord {
+  episodeId: string;
+  channelId: string;
+  file: string;
+  bytes: number | null;
+  downloadedAt: number;
+  automatic: boolean;
+  finishedAt: number | null;
+}
+
+const DOWNLOAD_RECORD_SQL = `SELECT d.episode_id AS episodeId,d.channel_id AS channelId,d.file,d.bytes,
+  d.downloaded_at AS downloadedAt,d.automatic,p.finished_at AS finishedAt
+  FROM podcast_downloads d LEFT JOIN podcast_progress p ON p.episode_id=d.episode_id`;
+const downloadRecord = (row: Omit<PodcastDownloadRecord, 'automatic'> & { automatic: number }): PodcastDownloadRecord =>
+  ({ ...row, automatic: row.automatic === 1 });
+
+/** Metadata only: never reads the audio or episode notes for a storage summary. */
+export async function listPodcastDownloadRecords(scope: string, current: () => boolean = () => true): Promise<PodcastDownloadRecord[]> {
+  checkMaintenanceOwner(current); const db = await podcastDb(scope);
+  return serialized(async () => {
+    checkMaintenanceOwner(current);
+    const rows = await db.getAllAsync<Omit<PodcastDownloadRecord, 'automatic'> & { automatic: number }>(DOWNLOAD_RECORD_SQL);
+    checkMaintenanceOwner(current); return rows.map(downloadRecord);
+  });
+}
+
+/** Only automatic, still-completed files whose first completion is a day old. */
+export async function eligibleAutoDownloads(scope: string, now: number, excludedEpisodeIds: readonly string[] = [],
+  current: () => boolean = () => true): Promise<PodcastDownloadRecord[]> {
+  checkMaintenanceOwner(current); const db = await podcastDb(scope);
+  if (!Number.isFinite(now) || now < 0) return [];
+  const excluded = new Set(excludedEpisodeIds);
+  return serialized(async () => {
+    checkMaintenanceOwner(current);
+    const rows = await db.getAllAsync<Omit<PodcastDownloadRecord, 'automatic'> & { automatic: number }>(
+      `${DOWNLOAD_RECORD_SQL} WHERE d.automatic=1 AND p.finished_at IS NOT NULL AND p.finished_at<=?
+        AND p.duration_sec>0 AND p.position_sec>=MAX(p.duration_sec*.9,p.duration_sec-30)
+        AND NOT EXISTS(SELECT 1 FROM podcast_manual_downloads m WHERE m.episode_id=d.episode_id)
+        ORDER BY p.finished_at ASC,d.episode_id ASC`, [now - MAINTENANCE_DAY_MS]);
+    checkMaintenanceOwner(current); return rows.filter((row) => !excluded.has(row.episodeId)).map(downloadRecord);
+  });
+}
+
+/** Last-moment claim; the caller reserves this identity until its unlink settles. */
+export async function claimAutoDownloadRemoval(scope: string, entry: PodcastDownloadRecord,
+  current: () => boolean = () => true, now = Date.now()): Promise<boolean> {
+  if (!Number.isFinite(now) || entry.finishedAt === null || !Number.isFinite(entry.finishedAt)) return false;
+  return claimDownloadRemoval(scope, entry, current, now);
+}
+
+/** Explicitly confirmed audio removal, including manual files, for this exact path. */
+export async function claimPodcastDownloadRemoval(scope: string, entry: PodcastDownloadRecord,
+  current: () => boolean = () => true): Promise<boolean> {
+  return claimDownloadRemoval(scope, entry, current);
+}
+
+async function claimDownloadRemoval(scope: string, entry: PodcastDownloadRecord, current: () => boolean,
+  automaticAt?: number): Promise<boolean> {
+  checkMaintenanceOwner(current); const db = await podcastDb(scope); let claimed = false;
+  await serialized(() => db.withTransactionAsync(async () => {
+    checkMaintenanceOwner(current);
+    const condition = automaticAt === undefined ? '' : ` AND automatic=1
+      AND NOT EXISTS(SELECT 1 FROM podcast_manual_downloads m WHERE m.episode_id=podcast_downloads.episode_id)
+      AND EXISTS(SELECT 1 FROM podcast_progress p WHERE p.episode_id=podcast_downloads.episode_id
+        AND p.finished_at=? AND p.finished_at<=? AND p.duration_sec>0
+        AND p.position_sec>=MAX(p.duration_sec*.9,p.duration_sec-30))`;
+    const result = await db.runAsync(`DELETE FROM podcast_downloads WHERE episode_id=? AND file=?${condition}`,
+      [entry.episodeId, entry.file, ...(automaticAt === undefined ? [] : [entry.finishedAt, automaticAt - MAINTENANCE_DAY_MS])]);
+    claimed = result.changes > 0;
+    if (claimed && automaticAt === undefined)
+      await db.runAsync('DELETE FROM podcast_manual_downloads WHERE episode_id=?', [entry.episodeId]);
+    checkMaintenanceOwner(current);
+  }));
+  return claimed;
+}
+
+/** A failed unlink may restore a still-reachable row, never undo unsubscribe or replace a newer file. */
+export async function restoreClaimedPodcastDownload(scope: string, entry: PodcastDownloadRecord,
+  current: () => boolean = () => true): Promise<void> {
+  checkMaintenanceOwner(current); const db = await podcastDb(scope);
+  await serialized(() => db.withTransactionAsync(async () => {
+    checkMaintenanceOwner(current);
+    await db.runAsync(`INSERT OR IGNORE INTO podcast_downloads(episode_id,channel_id,file,bytes,downloaded_at,automatic)
+      SELECT ?,?,?,?,?,CASE WHEN ?=0 OR EXISTS(SELECT 1 FROM podcast_manual_downloads WHERE episode_id=?) THEN 0 ELSE 1 END
+      WHERE EXISTS(SELECT 1 FROM podcast_episodes WHERE id=? AND channel_id=?)
+        AND EXISTS(SELECT 1 FROM podcast_channels WHERE id=?)`,
+    [entry.episodeId, entry.channelId, entry.file, entry.bytes, entry.downloadedAt, entry.automatic ? 1 : 0, entry.episodeId,
+      entry.episodeId, entry.channelId, entry.channelId]);
+    checkMaintenanceOwner(current);
+  }));
+}
+
+/** Browsing refreshes access; background RSS synchronization does not. */
+export async function touchChannel(scope: string, id: string, now = Date.now(), current: () => boolean = () => true): Promise<void> {
+  if (!Number.isFinite(now) || now < 0) return;
+  checkMaintenanceOwner(current); const db = await podcastDb(scope);
+  await serialized(() => db.withTransactionAsync(async () => {
+    checkMaintenanceOwner(current);
+    await db.runAsync(`INSERT INTO podcast_access(channel_id,last_accessed_at) VALUES(?,?)
+      ON CONFLICT(channel_id) DO UPDATE SET last_accessed_at=MAX(podcast_access.last_accessed_at,excluded.last_accessed_at)`, [id, now]);
+    checkMaintenanceOwner(current);
+  }));
+}
+
+export interface PodcastMaintenanceState { lastStartedAt: number | null; lastCompletedAt: number | null }
+export async function getMaintenanceState(scope: string, current: () => boolean = () => true): Promise<PodcastMaintenanceState> {
+  checkMaintenanceOwner(current); const db = await podcastDb(scope);
+  return serialized(async () => {
+    checkMaintenanceOwner(current);
+    const row = await db.getFirstAsync<PodcastMaintenanceState>(
+      'SELECT last_started_at AS lastStartedAt,last_completed_at AS lastCompletedAt FROM podcast_maintenance WHERE id=1');
+    checkMaintenanceOwner(current); return row ?? { lastStartedAt: null, lastCompletedAt: null };
+  });
+}
+
+/** One persisted start per24 hours, even when startup and refresh both request it. */
+export async function claimMaintenance(scope: string, now = Date.now(), current: () => boolean = () => true): Promise<boolean> {
+  if (!Number.isFinite(now) || now < 0) return false;
+  checkMaintenanceOwner(current); const db = await podcastDb(scope); let claimed = false;
+  await serialized(() => db.withTransactionAsync(async () => {
+    checkMaintenanceOwner(current);
+    const result = await db.runAsync(`INSERT INTO podcast_maintenance(id,last_started_at) VALUES(1,?)
+      ON CONFLICT(id) DO UPDATE SET last_started_at=excluded.last_started_at
+      WHERE podcast_maintenance.last_started_at IS NULL OR podcast_maintenance.last_started_at<=?`, [now, now - MAINTENANCE_DAY_MS]);
+    claimed = result.changes > 0; checkMaintenanceOwner(current);
+  }));
+  return claimed;
+}
+
+export async function completeMaintenance(scope: string, startedAt: number, now = Date.now(),
+  current: () => boolean = () => true): Promise<void> {
+  if (!Number.isFinite(now) || !Number.isFinite(startedAt) || now < startedAt) return;
+  checkMaintenanceOwner(current); const db = await podcastDb(scope);
+  await serialized(() => db.withTransactionAsync(async () => {
+    checkMaintenanceOwner(current);
+    await db.runAsync('UPDATE podcast_maintenance SET last_completed_at=? WHERE id=1 AND last_started_at=?', [now, startedAt]);
+    checkMaintenanceOwner(current);
+  }));
+}
+
+export async function listPodcastArtReferences(scope: string, current: () => boolean = () => true): Promise<{ channelId: string; file: string }[]> {
+  checkMaintenanceOwner(current); const db = await podcastDb(scope);
+  return serialized(async () => {
+    checkMaintenanceOwner(current);
+    const rows = await db.getAllAsync<{ channelId: string; file: string }>(`SELECT id AS channelId,json_extract(data,'$.artFile') AS file
+      FROM podcast_channels WHERE json_type(data,'$.artFile')='text' AND json_extract(data,'$.artFile')<>''`);
+    checkMaintenanceOwner(current); return rows;
+  });
+}
+
+/** Call only for files successfully removed; a concurrent new pointer survives. */
+export async function clearPodcastArtReferences(scope: string, files: readonly string[], current: () => boolean = () => true): Promise<void> {
+  if (!files.length) return;
+  checkMaintenanceOwner(current); const db = await podcastDb(scope);
+  await serialized(() => db.withTransactionAsync(async () => {
+    for (let offset = 0; offset < files.length; offset += PARAM_CHUNK) {
+      checkMaintenanceOwner(current); const part = files.slice(offset, offset + PARAM_CHUNK);
+      await db.runAsync(`UPDATE podcast_channels SET data=json_remove(data,'$.artFile')
+        WHERE json_extract(data,'$.artFile') IN (${part.map(() => '?').join(',')})`, part);
+    }
+    checkMaintenanceOwner(current);
+  }));
+}
+
+export interface PodcastCatalogPruneResult { removedChannels: number; removedEpisodes: number; removedArtFiles: string[] }
+/** Removes only rebuildable, unopened previews. User-owned references stay reachable. */
+export async function prunePreviewCatalog(scope: string, olderThan: number, protectedChannelIds: readonly string[] = [],
+  current: () => boolean = () => true): Promise<PodcastCatalogPruneResult> {
+  const result: PodcastCatalogPruneResult = { removedChannels: 0, removedEpisodes: 0, removedArtFiles: [] };
+  if (!Number.isFinite(olderThan) || olderThan < 0) return result;
+  checkMaintenanceOwner(current); const db = await podcastDb(scope), protectedIds = new Set(protectedChannelIds), changed: string[] = [];
+  await serialized(() => db.withTransactionAsync(async () => {
+    checkMaintenanceOwner(current);
+    const rows = await db.getAllAsync<{ id: string; artFile: string | null }>(`SELECT c.id,json_extract(c.data,'$.artFile') AS artFile
+      FROM podcast_channels c JOIN podcast_access x ON x.channel_id=c.id
+      WHERE x.last_accessed_at<=? AND NOT EXISTS(SELECT 1 FROM podcast_added a WHERE a.channel_id=c.id)`, [olderThan]);
+    for (const row of rows) {
+      checkMaintenanceOwner(current); if (protectedIds.has(row.id)) continue;
+      const deleted = await db.runAsync(`DELETE FROM podcast_episodes WHERE channel_id=?
+        AND NOT EXISTS(SELECT 1 FROM podcast_downloads d WHERE d.episode_id=podcast_episodes.id)
+        AND NOT EXISTS(SELECT 1 FROM podcast_progress p WHERE p.episode_id=podcast_episodes.id)
+        AND NOT EXISTS(SELECT 1 FROM podcast_favorites f WHERE f.kind='episode' AND f.id=podcast_episodes.id)
+        AND NOT EXISTS(SELECT 1 FROM podcast_manual_downloads m WHERE m.episode_id=podcast_episodes.id)`, [row.id]);
+      result.removedEpisodes += deleted.changes;
+      const retained = await db.getFirstAsync<{ keep: number }>(`SELECT (
+        EXISTS(SELECT 1 FROM podcast_episodes WHERE channel_id=?) OR
+        EXISTS(SELECT 1 FROM podcast_favorites WHERE id=? OR channel_id=?) OR
+        EXISTS(SELECT 1 FROM podcast_progress WHERE channel_id=?) OR
+        EXISTS(SELECT 1 FROM podcast_downloads WHERE channel_id=?) OR
+        EXISTS(SELECT 1 FROM podcast_auto_download WHERE channel_id=?)) AS keep`, [row.id, row.id, row.id, row.id, row.id, row.id]);
+      if (retained?.keep) {
+        await db.runAsync(`UPDATE podcast_episodes SET data=json_remove(data,'$.description','$.descriptionHtml','$.chapters','$.chaptersUrl','$.chaptersType','$.transcripts')
+          WHERE channel_id=?
+            AND NOT EXISTS(SELECT 1 FROM podcast_downloads d WHERE d.episode_id=podcast_episodes.id)
+            AND NOT EXISTS(SELECT 1 FROM podcast_manual_downloads m WHERE m.episode_id=podcast_episodes.id)`, [row.id]);
+        // An incomplete retained stub must never send validators or claim that
+        // its handful of user-referenced rows are the whole publisher feed.
+        await db.runAsync(`UPDATE podcast_channels SET refreshed_at=NULL,last_published_at=NULL,
+          data=json_set(json_remove(data,'$.description','$.descriptionHtml','$.etag','$.lastModified','$.refreshedAt',
+            '$.episodeCount','$.lastPublishedAt','$.newSinceAt','$.error'),'$.syncComplete',json('false')) WHERE id=?`, [row.id]);
+      } else {
+        await db.runAsync('DELETE FROM podcast_channels WHERE id=?', [row.id]);
+        await db.runAsync('DELETE FROM podcast_access WHERE channel_id=?', [row.id]);
+        result.removedChannels++; if (row.artFile) result.removedArtFiles.push(row.artFile);
+      }
+      changed.push(row.id);
+    }
+    checkMaintenanceOwner(current);
+  }));
+  for (const id of changed) clearEpisodePageOrder(scope, id);
+  return result;
+}
+
+export interface PodcastStorageStats {
+  databaseAllocatedBytes: number;
+  databaseFreeBytes: number;
+  /** Allocated pages minus wholly free pages, not exact JSON payload bytes. */
+  databaseLiveBytes: number;
+  channelCount: number;
+  episodeCount: number;
+  downloadsBytes: number;
+  automaticDownloadsBytes: number;
+  manualDownloadsBytes: number;
+}
+export async function podcastStorageStats(scope: string, current: () => boolean = () => true): Promise<PodcastStorageStats> {
+  checkMaintenanceOwner(current); const db = await podcastDb(scope);
+  return serialized(async () => {
+    checkMaintenanceOwner(current);
+    const size = await db.getFirstAsync<{ page_size: number }>('PRAGMA page_size');
+    const pages = await db.getFirstAsync<{ page_count: number }>('PRAGMA page_count');
+    const free = await db.getFirstAsync<{ freelist_count: number }>('PRAGMA freelist_count');
+    const counts = await db.getFirstAsync<{ channelCount: number; episodeCount: number }>(`SELECT
+      (SELECT COUNT(*) FROM podcast_channels) AS channelCount,(SELECT COUNT(*) FROM podcast_episodes) AS episodeCount`);
+    const audio = await db.getFirstAsync<{ downloadsBytes: number; automaticDownloadsBytes: number; manualDownloadsBytes: number }>(`SELECT
+      COALESCE(SUM(bytes),0) AS downloadsBytes,COALESCE(SUM(CASE WHEN automatic=1 THEN bytes ELSE 0 END),0) AS automaticDownloadsBytes,
+      COALESCE(SUM(CASE WHEN automatic=0 THEN bytes ELSE 0 END),0) AS manualDownloadsBytes FROM podcast_downloads`);
+    checkMaintenanceOwner(current); const pageSize = size?.page_size ?? 0, allocated = pages?.page_count ?? 0, available = free?.freelist_count ?? 0;
+    return { databaseAllocatedBytes: pageSize * allocated, databaseFreeBytes: pageSize * available,
+      databaseLiveBytes: pageSize * Math.max(0, allocated - available), channelCount: counts?.channelCount ?? 0, episodeCount: counts?.episodeCount ?? 0,
+      downloadsBytes: audio?.downloadsBytes ?? 0, automaticDownloadsBytes: audio?.automaticDownloadsBytes ?? 0, manualDownloadsBytes: audio?.manualDownloadsBytes ?? 0 };
+  });
+}
+
+/** Explicit manual compaction only, after the caller has released active shows. */
+export async function compactPodcastCatalog(scope: string, current: () => boolean = () => true): Promise<void> {
+  checkMaintenanceOwner(current); const db = await podcastDb(scope);
+  await serialized(async () => {
+    const checkpoint = async () => {
+      checkMaintenanceOwner(current);
+      const result = await db.getFirstAsync<{ busy: number }>('PRAGMA wal_checkpoint(TRUNCATE)');
+      checkMaintenanceOwner(current);
+      if (result?.busy) throw new Error('Podcast catalog is busy');
+    };
+    await checkpoint();
+    // SQLite owns VACUUM's atomic replacement. It must not be nested in one of
+    // our write transactions, and never changes any subscription or progress.
+    await db.execAsync('VACUUM'); checkMaintenanceOwner(current);
+    await checkpoint();
+  });
 }

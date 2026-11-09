@@ -1,3 +1,4 @@
+import * as podcastStorageLease from '../src/lib/podcastStorageLease';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -171,6 +172,7 @@ test('the actual page API rejects wrong owners, caller abort and A to B to the s
     '@/store/podcastDownloads': {}, '@/store/player': {}, '@/lib/podcastProgress': {}, '@/lib/episodeResume': {},
     '@/lib/localLibrary': { hashKey: (value: string) => value }, '@/lib/query': {},
     '@/lib/podcastFeed': {}, '@/lib/podcastDirectory': directory,
+    '@/lib/podcastStorageLease': podcastStorageLease,
     '@/lib/podcastFeedStream': { createPodcastFeedPreview },
     '@/lib/podcastDb': { listEpisodePage: async (_scope: string, _id: string, _options: unknown, current: () => boolean) => {
       calls++; const value = await new Promise((resolve) => { finish = resolve; }); if (!current()) throw new Error('stale'); return value;

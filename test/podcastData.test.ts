@@ -1,3 +1,4 @@
+import * as podcastStorageLease from '../src/lib/podcastStorageLease';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -66,7 +67,7 @@ test('legacy podcast databases migrate subscriptions atomically and isolate favo
   const { Db, databases } = databaseHarness(true);
   assert.deepEqual([...await Db.addedIds('a')], ['show']);
   assert.equal((await Db.listAllEpisodes('a', 'show'))[0].title, 'Old episode');
-  assert.equal(databases.get('/sandbox/podcasts/a/').prepare('PRAGMA user_version').get().user_version, 1);
+  assert.equal(databases.get('/sandbox/podcasts/a/').prepare('PRAGMA user_version').get().user_version, 2);
   await Db.toggleFavorite('a', 'show', 'channel', 'show');
   await Db.saveEpisodeProgress('a', { id: 'show/old', channelId: 'show', positionSec: 73, durationSec: 300 });
   assert.deepEqual([...await Db.favoriteIds('a')], ['show']);
@@ -225,6 +226,7 @@ function apiHarness() {
     '@/lib/query': { queryClient: { invalidateQueries: ({ queryKey }: any) => { invalidations.push(queryKey[0]); return Promise.resolve(); } } },
     '@/lib/podcastDb': h.Db,
     '@/lib/podcastFeed': { parseFeedAsync, sortEpisodes },
+    '@/lib/podcastStorageLease': podcastStorageLease,
     '@/lib/podcastFeedStream': { createPodcastFeedPreview },
     '@/lib/podcastDirectory': podcastDirectory,
   };

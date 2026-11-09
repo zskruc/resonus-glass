@@ -18,6 +18,7 @@ import { Message } from '@/components/Message';
 import { PodcastShowNote } from '@/components/PodcastShowNotes';
 import { useLiquidDockScrollHandler } from '@/hooks/useLiquidDock';
 import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
+import { usePodcastStorageVisit } from '@/hooks/usePodcastStorageVisit';
 import { useT } from '@/i18n';
 import { captureLyricOwner } from '@/lib/lyricOwner';
 import { hashKey } from '@/lib/localLibrary';
@@ -66,6 +67,7 @@ export default function PodcastEpisodeScreen() {
       return channel && channel.id === episode.channelId ? { episode, channel } : null;
     } });
   const episode = details.data?.episode, channel = details.data?.channel;
+  usePodcastStorageVisit(channel?.id ?? expectedChannel);
   const chapterUrl = safePodcastUrl(episode?.chaptersUrl);
   const chaptersKey = useMemo(() => ['podcastEpisodeChapters', profile, id, chapterUrl], [profile, id, chapterUrl]);
   const remote = useQuery({ queryKey: chaptersKey, enabled: false, retry: false, staleTime: Infinity, gcTime: 5 * 60_000,

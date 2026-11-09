@@ -17,6 +17,7 @@ import { markPodcastPlayed } from '@/lib/podcastProgress';
 import { episodePlayed } from '@/lib/episodeResume';
 import { hashKey } from '@/lib/localLibrary';
 import { queryClient } from '@/lib/query';
+import { protectPodcastStorageChannel } from '@/lib/podcastStorageLease';
 import * as Db from '@/lib/podcastDb';
 import type { RecentEpisode } from '@/lib/podcastDb';
 import { parseFeedAsync, sortEpisodes, type ParsedFeed, type ParsedItem } from '@/lib/podcastFeed';
@@ -320,6 +321,16 @@ export async function refreshChannel(input: string, options: PodcastOperationOpt
   return ticket.work;
 }
 async function refreshChannelOwned(input: string, owner: RequestOwner, onPreview?: PodcastOperationOptions['onPreview']): Promise<PodcastChannel> {
+  const releases = new Map<string, () => void>();
+  const hold = (url: string) => {
+    const id = feedId(url);
+    if (!releases.has(id)) releases.set(id, protectPodcastStorageChannel(owner.scope, id));
+  };
+  const url = normalized(input); hold(url);
+  try { return await readChannelOwned(url, owner, onPreview, hold); }
+  finally { for (const release of releases.values()) release(); }
+}
+async function readChannelOwned(input: string, owner: RequestOwner, onPreview: PodcastOperationOptions['onPreview'], hold: (url: string) => void): Promise<PodcastChannel> {
   const url = normalized(input);
   const s = owner.scope;
 
@@ -337,6 +348,7 @@ async function refreshChannelOwned(input: string, owner: RequestOwner, onPreview
   const preview: FeedPreview | undefined = onPreview && (!stored || stored.syncComplete === false) ? async (feed, feedUrl, streamCurrent) => {
     const current = () => owner.current() && streamCurrent();
     if (published || !current() || !feed.items.length) return;
+    hold(feedUrl);
     const id = feedId(feedUrl), landedAt = Date.now();
     const channel: PodcastChannel = { id, title: feed.title?.trim() || stored?.title || feedUrl, feedUrl, syncComplete: false };
     if (feed.author) channel.author = feed.author;
@@ -386,6 +398,7 @@ async function refreshChannelOwned(input: string, owner: RequestOwner, onPreview
   }
 
   // The feed found is what gets stored, so the next refresh skips the page.
+  hold(read.url);
   const id = feedId(read.url);
   const existing = read.url === url ? stored : await Db.getChannel(s, id);
   owner.check();
@@ -475,6 +488,7 @@ function cacheChannelArt(channel: PodcastChannel, accepted: RequestOwner): void 
   previous?.abort();
   const controller = new AbortController(); artworkReads.set(key, controller);
   const owner = requestOwner({ expectedProfile: accepted.profile, signal: controller.signal });
+  const release = protectPodcastStorageChannel(owner.scope, channel.id);
   const work = async () => {
     owner.check();
     const file = await Db.savePodcastArt(owner.scope, channel.id, channel.imageUrl!, channel.artFile, owner.current, owner.signal);
@@ -486,7 +500,7 @@ function cacheChannelArt(channel: PodcastChannel, accepted: RequestOwner): void 
     }
   };
   void work().catch(() => {}).finally(() => {
-    owner.dispose(); if (artworkReads.get(key) === controller) artworkReads.delete(key);
+    release(); owner.dispose(); if (artworkReads.get(key) === controller) artworkReads.delete(key);
   });
 }
 

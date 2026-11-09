@@ -1,3 +1,4 @@
+import * as podcastStorageLease from '../src/lib/podcastStorageLease';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -91,6 +92,7 @@ test('the actual feed refresh cancels while parsing a large response without wri
     '@/store/podcastDownloads': {}, '@/store/player': {}, '@/lib/podcastProgress': {}, '@/lib/episodeResume': {},
     '@/lib/localLibrary': { hashKey: (value: string) => value }, '@/lib/query': { queryClient: { invalidateQueries() {} } },
     '@/lib/podcastFeed': { parseFeedAsync, sortEpisodes }, '@/lib/podcastDirectory': directory,
+    '@/lib/podcastStorageLease': podcastStorageLease,
     '@/lib/podcastFeedStream': { createPodcastFeedPreview },
     '@/lib/podcastDb': { getChannel: async () => undefined,
       listAllEpisodes: async () => { previousEpisodeReads++; return []; },

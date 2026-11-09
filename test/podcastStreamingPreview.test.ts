@@ -1,3 +1,4 @@
+import * as podcastStorageLease from '../src/lib/podcastStorageLease';
 /** Real RSS reader → canonical episode parser → actual SQLite partial/full snapshots. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -97,6 +98,7 @@ function harness() {
     '@/lib/podcastDb': Db, '@/lib/podcastFeed': { parseFeed, parseFeedAsync, sortEpisodes }, '@/lib/podcastDirectory': directory,
   };
   // Run the production lexical stream reader too; transport and filesystem are the only fakes.
+  imports['@/lib/podcastStorageLease'] = podcastStorageLease;
   imports['@/lib/podcastFeedStream'] = compile('../src/lib/podcastFeedStream.ts', { '@/lib/podcastFeed': imports['@/lib/podcastFeed'], './podcastFeed': imports['@/lib/podcastFeed'], './podcastXml': compile('../src/lib/podcastXml.ts', {}) });
   const Api = compile('../src/api/podcasts.ts', imports);
   const controller = new AbortController();

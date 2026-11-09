@@ -307,6 +307,14 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "anchor": "Bulk artwork & lyrics"
   },
   {
+    "id": "/settings/downloads#Podcast storage",
+    "route": "/settings/downloads",
+    "title": "Podcast storage",
+    "chinese": "播客存储",
+    "section": "Downloads & offline",
+    "anchor": "Podcast storage"
+  },
+  {
     "id": "/settings/downloads#Download quality",
     "route": "/settings/downloads",
     "title": "Download quality",
@@ -2287,6 +2295,117 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [...[
     "chinese": "保留缺曲占位",
     "section": "Playlist recovery",
     "anchor": "Keep as missing track"
+  },
+  {
+    "id": "/settings/podcast-storage",
+    "route": "/settings/podcast-storage",
+    "title": "Podcast storage",
+    "chinese": "播客存储",
+    "section": "Podcast storage"
+  },
+  {
+    "id": "/settings/podcast-storage#Total podcast storage",
+    "route": "/settings/podcast-storage",
+    "title": "Total podcast storage",
+    "chinese": "播客总占用",
+    "section": "Podcast storage",
+    "anchor": "Total podcast storage"
+  },
+  {
+    "id": "/settings/podcast-storage#Downloaded podcast audio",
+    "route": "/settings/podcast-storage",
+    "title": "Downloaded podcast audio",
+    "chinese": "已下载的播客音频",
+    "section": "Podcast storage",
+    "anchor": "Downloaded podcast audio"
+  },
+  {
+    "id": "/settings/podcast-storage#Offline podcast covers",
+    "route": "/settings/podcast-storage",
+    "title": "Offline podcast covers",
+    "chinese": "播客离线封面",
+    "section": "Podcast storage",
+    "anchor": "Offline podcast covers"
+  },
+  {
+    "id": "/settings/podcast-storage#Cached podcast catalog",
+    "route": "/settings/podcast-storage",
+    "title": "Cached podcast catalog",
+    "chinese": "播客节目目录缓存",
+    "section": "Podcast storage",
+    "anchor": "Cached podcast catalog"
+  },
+  {
+    "id": "/settings/podcast-storage#Reusable catalog space",
+    "route": "/settings/podcast-storage",
+    "title": "Reusable catalog space",
+    "chinese": "目录内可复用空间",
+    "section": "Podcast storage",
+    "anchor": "Reusable catalog space"
+  },
+  {
+    "id": "/settings/podcast-storage#Refresh storage usage",
+    "route": "/settings/podcast-storage",
+    "title": "Refresh storage usage",
+    "chinese": "刷新存储占用",
+    "section": "Podcast storage",
+    "anchor": "Refresh storage usage"
+  },
+  {
+    "id": "/settings/podcast-storage#Clear podcast audio downloads",
+    "route": "/settings/podcast-storage",
+    "title": "Clear podcast audio downloads",
+    "chinese": "清理播客音频下载",
+    "section": "Podcast storage",
+    "anchor": "Clear podcast audio downloads"
+  },
+  {
+    "id": "/settings/podcast-storage#Clear offline podcast covers",
+    "route": "/settings/podcast-storage",
+    "title": "Clear offline podcast covers",
+    "chinese": "清理播客离线封面",
+    "section": "Podcast storage",
+    "anchor": "Clear offline podcast covers"
+  },
+  {
+    "id": "/settings/podcast-storage#Clear rebuildable podcast catalog",
+    "route": "/settings/podcast-storage",
+    "title": "Clear rebuildable podcast catalog",
+    "chinese": "清理可重建的节目目录",
+    "section": "Podcast storage",
+    "anchor": "Clear rebuildable podcast catalog"
+  },
+  {
+    "id": "/settings/podcast-storage#Finished automatic downloads",
+    "route": "/settings/podcast-storage",
+    "title": "Finished automatic downloads",
+    "chinese": "已听完的自动下载",
+    "section": "Podcast storage",
+    "anchor": "Finished automatic downloads"
+  },
+  {
+    "id": "/settings/podcast-storage#Unsubscribed cached catalog",
+    "route": "/settings/podcast-storage",
+    "title": "Unsubscribed cached catalog",
+    "chinese": "未订阅的节目缓存",
+    "section": "Podcast storage",
+    "anchor": "Unsubscribed cached catalog"
+  },
+  {
+    "id": "/settings/podcast-storage#Cleanup schedule",
+    "route": "/settings/podcast-storage",
+    "title": "Cleanup schedule",
+    "chinese": "清理时机",
+    "section": "Podcast storage",
+    "anchor": "Cleanup schedule"
+  },
+  {
+    "id": "/settings/podcast-storage#Last automatic cleanup",
+    "route": "/settings/podcast-storage",
+    "title": "Last automatic cleanup",
+    "chinese": "上次自动清理",
+    "section": "Podcast storage",
+    "anchor": "Last automatic cleanup"
   },
   {
     "id": "/settings/quick-grid",

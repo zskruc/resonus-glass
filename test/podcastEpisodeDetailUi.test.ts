@@ -12,6 +12,7 @@ import ts from 'typescript';
 import * as chapters from '../src/lib/podcastChapters';
 import * as notes from '../src/lib/podcastShowNotes';
 import * as playback from '../src/lib/podcastEpisodePlayback';
+import * as storageLease from '../src/lib/podcastStorageLease';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const turn = () => new Promise<void>((resolve) => setTimeout(resolve, 1));
@@ -63,6 +64,12 @@ function harness() {
   const common = { react: React, 'react/jsx-runtime': JSXRuntime, 'react-native': native, '@/theme': theme };
   const showNotes = load('../src/components/PodcastShowNotes.tsx', common);
   const requests: { signal: AbortSignal; url: string }[] = [];
+  const visits = load('../src/hooks/usePodcastStorageVisit.ts', { react: React,
+    'react-native': { AppState: { addEventListener: () => ({ remove() {} }) } },
+    'expo-router': { useFocusEffect: (effect: () => (() => void) | undefined) => React.useEffect(() => focused ? effect() : undefined, [effect]) },
+    '@/lib/podcastDb': { touchChannel: async () => {} }, '@/lib/localLibrary': { hashKey: (value: string) => value },
+    '@/lib/lyricOwner': owner, '@/lib/podcastStorageLease': storageLease, '@/store/auth': authModule,
+  });
   let request: (url: string, init: any) => Promise<any> = async () => ({ ok: true, headers: { get: () => null }, text: async () => '{"chapters":[{"startTime":90,"title":"Remote topic"}]}' });
   const Screen = load('../src/app/podcast-episode/[id].tsx', { ...common,
     'react-native-reanimated': { __esModule: true, default: { FlatList: AnimatedFlatList } },
@@ -75,6 +82,7 @@ function harness() {
     '@/components/glass': { GlassPressable: 'Button' }, '@/components/Icon': { __esModule: true, default: 'Icon' }, '@/components/Message': { Message: 'Message' },
     '@/components/PodcastShowNotes': showNotes, '@/hooks/useLiquidDock': { useLiquidDockScrollHandler: () => dockHandler },
     '@/hooks/useScreenBottomPadding': { useScreenBottomPadding: () => 180 }, '@/i18n': { useT: () => (key: string, args: any = {}) => key.replace(/\{(\w+)\}/g, (_: string, name: string) => String(args[name])) },
+    '@/hooks/usePodcastStorageVisit': visits,
     '@/lib/lyricOwner': owner, '@/lib/localLibrary': { hashKey: (value: string) => value }, '@/lib/podcastChapters': chapters,
     '@/lib/podcastDb': { getEpisode: async () => null, getChannel: async () => null }, '@/lib/podcastEpisodePlayback': playback,
     '@/lib/podcastShowNotes': notes, '@/lib/query': { queryClient: query }, '@/store/auth': authModule,

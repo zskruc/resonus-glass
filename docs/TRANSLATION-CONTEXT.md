@@ -5,7 +5,7 @@
      `src/i18n/context.jsonc`, and where a string shows up is read off the
      code, so both are fixed at the source and this page follows. -->
 
-Every string the app can show, under the screen it shows up on. 1642 of them.
+Every string the app can show, under the screen it shows up on. 1680 of them.
 The second column is only filled in where the English is ambiguous on its own
 If one tripped you up and the column is empty, that is worth telling us, and
 the answer goes into `src/i18n/context.jsonc` where the next translator of the
@@ -689,20 +689,24 @@ you are actually typing into, which is easier than reading it here.
 | `Download episodes` |  |
 | `Duration excludes episodes with unknown length.` |  |
 | `Episodes` |  |
+| `First episodes` |  |
 | `In progress` |  |
 | `New` |  |
 | `Newest first` |  |
 | `No episodes` |  |
 | `No episodes match this filter.` |  |
 | `Oldest first` |  |
+| `Only part of this feed is available offline.` |  |
 | `Other episodes` |  |
 | `Played` |  |
 | `Season {n}` |  |
 | `Subscribed` |  |
+| `The rest of this feed could not be loaded. The available episodes can still be played.` |  |
 | `This podcast's feed could not be read, so these episodes may be out of date.` |  |
 | `Trailer` |  |
 | `Unplayed` |  |
 | `Untitled episode` |  |
+| `You can play these episodes while the rest of the feed loads.` |  |
 
 ## Podcast discover
 
@@ -737,7 +741,6 @@ you are actually typing into, which is easier than reading it here.
 | `Society & Culture` |  |
 | `Sports` |  |
 | `Technology` |  |
-| `This podcast has no available RSS feed.` |  |
 | `Top podcasts` |  |
 | `True Crime` |  |
 | `Try another search or region.` |  |
@@ -1145,6 +1148,7 @@ you are actually typing into, which is easier than reading it here.
 | `Cache songs you play` |  |
 | `Cached songs` |  |
 | `Cover art` | Three places, one word: a section header in Settings › Player, a line of the storage bar in Settings › Downloads, and what the screen reader calls the picture in the song information sheet |
+| `Current-profile podcast downloads, covers and cached catalog.` | The line under “Podcast storage”, explaining it |
 | `Delete all downloads` |  |
 | `Delete all downloads?` |  |
 | `Download codec` |  |
@@ -1166,6 +1170,7 @@ you are actually typing into, which is easier than reading it here.
 | `Other` | Two places, and the same word does for both: in that storage bar, the space used by things other than downloads; and on an artist's page, the last shelf of the discography, holding the records that fit none of the kinds above it |
 | `Pending changes` | A line of the storage breakdown: favourites and edits made offline, waiting to go up to the server |
 | `Playlist covers` | One line of the storage breakdown in Settings › Downloads: how much room the playlist cover images take. It is a size, not a setting |
+| `Podcast storage` |  |
 | `Radio station art` | A line of the storage breakdown: the pictures of radio stations. A size, not a setting |
 | `Simultaneous downloads` |  |
 | `Song cache` | Copies of streamed songs the app keeps by itself and deletes to make room. Not the same as Downloads, which the person chose |
@@ -2028,6 +2033,45 @@ you are actually typing into, which is easier than reading it here.
 | `Restore selected matches in place` |  |
 | `Resume interrupted recovery` |  |
 | `Scan library for missing tracks` |  |
+
+## Settings › Podcast storage
+
+| String | What it is |
+| --- | --- |
+| `Automatic podcast cleanup` |  |
+| `Automatically downloaded episodes can be removed 24 hours after they are marked played. Manual and existing downloads are kept.` | The line under “Finished automatic downloads”, explaining it |
+| `Cached podcast catalog` |  |
+| `Checked on app startup or return to the foreground, at most once every 24 hours.` | The line under “Cleanup schedule”, explaining it |
+| `Cleanup schedule` |  |
+| `Clear offline podcast covers` |  |
+| `Clear podcast audio downloads` |  |
+| `Clear podcast storage` |  |
+| `Clear rebuildable podcast catalog` |  |
+| `Clearing podcast storage…` |  |
+| `Couldn't finish clearing podcast storage. Refresh the usage and try again; some items may already have been removed.` |  |
+| `Couldn't measure podcast storage. Try again.` |  |
+| `Deleted files: {files}. Database records: {records}. Freed: {size}. In-use items kept: {skipped}. Failed files: {failed}.` |  |
+| `Downloaded podcast audio` |  |
+| `Finished automatic downloads` |  |
+| `Included in catalog size. The app can reuse this space; it is released on disk only when the catalog can safely shrink.` | The line under “Reusable catalog space”, explaining it |
+| `Items currently in use are skipped. Downloads that are playing or still transferring are kept.` |  |
+| `Keep subscriptions, favorites and listening progress.` | The line under “Clear podcast audio downloads”, explaining it |
+| `Last automatic cleanup` |  |
+| `Managed offline covers only; keep the app-wide image cache.` | The line under “Clear offline podcast covers”, explaining it |
+| `Measuring podcast storage…` |  |
+| `Not yet` |  |
+| `Offline podcast covers` |  |
+| `Only the current profile is measured and cleared. Other profiles are not changed.` |  |
+| `Podcast storage` |  |
+| `Rebuildable data from unsubscribed shows can be removed after 3 days. Metadata needed for favorites, listening progress and downloads is kept.` | The line under “Unsubscribed cached catalog”, explaining it |
+| `Refresh storage usage` |  |
+| `Remove downloaded podcast audio for this profile. Files currently playing or downloading are skipped. Your subscriptions, favorites and listening progress are kept.` |  |
+| `Remove managed offline podcast covers for this profile, keeping files currently in use. This does not clear the app-wide image cache. Your subscriptions, favorites and listening progress are kept.` |  |
+| `Remove rebuildable catalog data from unsubscribed shows in this profile. Keep subscribed shows and metadata needed for favorites, listening progress and downloads. Items currently in use are skipped.` |  |
+| `Reusable catalog space` |  |
+| `Total podcast storage` |  |
+| `Unsubscribed cached catalog` |  |
+| `Unsubscribed catalog only; keep metadata needed for your saved data.` | The line under “Clear rebuildable podcast catalog”, explaining it |
 
 ## Settings › Quick grid
 

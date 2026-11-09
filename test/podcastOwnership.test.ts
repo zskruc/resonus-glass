@@ -1,3 +1,4 @@
+import * as podcastStorageLease from '../src/lib/podcastStorageLease';
 /** Production RSS + SQLite boundaries used by the discovery preview and Subscribe. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -66,6 +67,7 @@ function harness() {
     '@/store/player': {}, '@/lib/podcastProgress': {}, '@/lib/episodeResume': {},
     '@/lib/query': { queryClient: { invalidateQueries: async ({ queryKey }: any) => { invalidated.push(queryKey[0]); } } },
     '@/lib/podcastDb': Db, '@/lib/podcastFeed': { parseFeedAsync, sortEpisodes }, '@/lib/podcastDirectory': directory,
+    '@/lib/podcastStorageLease': podcastStorageLease,
     '@/lib/podcastFeedStream': { createPodcastFeedPreview },
   });
   return { Api, Db, first, auth, requests, invalidated, profile: hash('A'),

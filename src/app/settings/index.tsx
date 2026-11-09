@@ -84,6 +84,7 @@ export default function SettingsScreen({ asTab = false }: { asTab?: boolean }) {
             icon: 'download-outline' as const,
           },
         ]),
+    { key: 'podcast-storage', title: 'Podcast storage', icon: 'mic-outline' as const },
     // Library: online is the server's; in local profile, the device's music.
     // Server-offline it is greyed out and says nothing else: what is inside
     // (scanning, choosing libraries) is the server's, and what could be done

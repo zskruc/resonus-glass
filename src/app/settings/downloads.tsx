@@ -158,6 +158,9 @@ export default function DownloadsSettings() {
           <SettingRow label={t('Bulk artwork & lyrics')}
             description={t('Cache artwork and lyrics across your entire library.')}
             icon="download-outline" chevron onPress={() => router.push('/settings/media-cache')} />
+          <SettingRow label={t('Podcast storage')}
+            description={t('Current-profile podcast downloads, covers and cached catalog.')}
+            icon="mic-outline" chevron onPress={() => router.push('/settings/podcast-storage')} />
         </SettingsGroup>
         {/* The first title sticks to the header (no section margin). */}
         <Text style={[settingsStyles.sectionTitle, { marginTop: 0 }]}>{t('Downloading')}</Text>

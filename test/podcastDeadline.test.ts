@@ -1,3 +1,4 @@
+import * as podcastStorageLease from '../src/lib/podcastStorageLease';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -45,6 +46,7 @@ function feedHarness(contentLength?: string) {
       saveChannel: async () => { saves++; }, replaceEpisodes: async () => { saves++; },
       saveFeedSnapshot: async () => { saves += 2; } },
     '@/lib/podcastFeed': { parseFeedAsync, sortEpisodes }, '@/lib/podcastDirectory': directory,
+    '@/lib/podcastStorageLease': podcastStorageLease,
     '@/lib/podcastFeedStream': { createPodcastFeedPreview },
   };
   const api = compile('../src/api/podcasts.ts', imports, timers);

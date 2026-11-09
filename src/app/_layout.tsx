@@ -9,7 +9,7 @@ import { Stack } from 'expo-router';
 import { NavigationBar } from 'expo-navigation-bar';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
-import { useEffect, useLayoutEffect, useState, type ComponentProps } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState, type ComponentProps } from 'react';
 import { ActivityIndicator, AppState, Platform, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Freeze } from 'react-freeze';
@@ -53,7 +53,8 @@ import { queryClient } from '@/lib/query';
 import { primaryUrl } from '@/lib/serverUrls';
 import { playerModalAnimation } from '@/lib/amllPlayerTransition';
 import { buildPrimuseAlbumPalette } from '@/lib/primuseAlbumPalette';
-import { useAuthStore } from '@/store/auth';
+import { profileScopeId, useAuthStore } from '@/store/auth';
+import { usePodcastStorageMaintenance } from '@/hooks/usePodcastStorageMaintenance';
 import { useAutoDownloads } from '@/store/autoDownloads';
 import { checkAutoUrlNow, initAutoUrl } from '@/store/autoUrl';
 import { anyDownloads, useDownloads } from '@/store/downloads';
@@ -211,6 +212,7 @@ export default function RootLayout() {
   // With downloads, the local profile works without having chosen a music source.
   const hasDownloads = useDownloads(anyDownloads);
   const downloadsHydrated = useDownloads((s) => s.hydrated);
+  const podcastDownloadsHydrated = usePodcastDownloads((s) => s.hydrated);
   const ready = !!auth || (offline && (!!offlineSource || hasDownloads));
   // Active profile identified to reload recent searches when switching.
   // Depends on the profile's own name, not the active URL: when switching
@@ -221,6 +223,10 @@ export default function RootLayout() {
     : offline
       ? 'offline'
       : '';
+  const currentProfile = profileScopeId();
+  const queueRestore = useMemo(() => ({ profile: currentProfile, ready: ready && downloadsHydrated }),
+    [currentProfile, ready, downloadsHydrated]);
+  const [queueReadyRequest, setQueueReadyRequest] = useState<typeof queueRestore>();
 
 /**
    * Once, when the app starts, and only what belongs to the phone rather than
@@ -332,8 +338,14 @@ export default function RootLayout() {
   // soon as the session is restored, which is earlier, and offline a queue
   // loaded against an empty map looks like nothing in it was downloaded.
   useEffect(() => {
-    if (ready && downloadsHydrated) void usePlayerStore.getState().restoreQueue();
-  }, [ready, downloadsHydrated, activeProfile]);
+    let active = true;
+    if (queueRestore.ready) void usePlayerStore.getState().restoreQueue().then(() => {
+      if (active && profileScopeId() === queueRestore.profile) setQueueReadyRequest(queueRestore);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [queueRestore]);
+  usePodcastStorageMaintenance(!hydrating && ready && downloadsHydrated && podcastDownloadsHydrated
+    && queueReadyRequest === queueRestore);
 
   // Keep screen awake (setting). The native flag only acts with the app in
   // the foreground, so it doesn't waste extra battery in the background.
@@ -419,6 +431,7 @@ export default function RootLayout() {
                 <Stack.Screen name="settings/index" />
                 <Stack.Screen name="settings/search" />
                 <Stack.Screen name="settings/downloads" />
+                <Stack.Screen name="settings/podcast-storage" />
                 <Stack.Screen name="settings/download-manager" />
                 <Stack.Screen name="settings/media-cache" />
                 <Stack.Screen name="settings/cache" />

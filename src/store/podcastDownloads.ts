@@ -12,6 +12,8 @@ import { hashKey } from '@/lib/localLibrary';
 import { podcastUrlExtension as urlExtension } from '@/lib/podcastMedia';
 import * as Db from '@/lib/podcastDb';
 import { queryClient } from '@/lib/query';
+import { isPodcastStorageFileRemoving } from '@/lib/podcastStorage';
+import { protectPodcastStorageChannel } from '@/lib/podcastStorageLease';
 
 interface PodcastDownloadsState {
   scope: string;
@@ -77,13 +79,18 @@ export const usePodcastDownloads = create<PodcastDownloadsState>((set, get) => (
     if (!current()) return;
     // Manual taps enter the protected queue before any DB await. Locking just
     // after the tap cannot turn an accepted download into a silent no-op.
+    const releaseStorage = protectPodcastStorageChannel(own, channel.id);
+    const manualIds = [...new Set(episodes.filter((episode) => episode.channelId === channel.id && episode.id).map((episode) => episode.id))];
+    const manualIntent = automatic ? Promise.resolve() : Db.markDownloadsManual(own, manualIds, current);
+    void manualIntent.catch(() => {});
     const existing = get().scope === own ? get().files : {};
     const seen = new Set<string>();
     const pending = episodes.filter((episode) => episode.channelId === channel.id && /^https?:\/\//i.test(episode.url ?? '')
-      && !existing[episode.id] && !seen.has(episode.id) && !!seen.add(episode.id));
+      && (!existing[episode.id] || isPodcastStorageFileRemoving(own, episode.id)) && !seen.has(episode.id) && !!seen.add(episode.id));
     const group = `${automatic ? 'podcast-auto' : 'podcast'}:${channel.id}`;
     let ownGroups = groups.get(own); if (!ownGroups) groups.set(own, ownGroups = new Map());
     ownGroups.set(group, (ownGroups.get(group) ?? 0) + 1);
+    try {
     const work = pending.map((episode) => {
       const song: Song = { id: episode.id, title: episode.title, artist: channel.title, album: channel.title,
         podcastChannelId: channel.id, vod: true, url: episode.url, duration: episode.duration,
@@ -95,6 +102,7 @@ export const usePodcastDownloads = create<PodcastDownloadsState>((set, get) => (
         const owns = () => current() && context.current();
         const check = () => { context.check(); if (!current()) throw new Error('Podcast download stopped'); };
         check();
+        await manualIntent; check();
         if (!durable) {
           const recorded = await Db.getDownload(own, episode.id); check();
           if (recorded) durable = { uri: recorded.file, bytes: recorded.bytes ?? 0 };
@@ -128,7 +136,7 @@ export const usePodcastDownloads = create<PodcastDownloadsState>((set, get) => (
           const info = await FileSystem.getInfoAsync(part); check();
           if (!info.exists || !info.size) throw new Error('Empty podcast audio');
           await FileSystem.moveAsync({ from: part, to: final }); moved = true; check();
-          await Db.saveDownload(own, episode, final, info.size, owns); committed = true;
+          await Db.saveDownload(own, episode, final, info.size, owns, automatic); committed = true;
           durable = { uri: final, bytes: info.size };
           check();
           set((state) => state.scope === own ? { files: { ...state.files, [episode.id]: final } } : {});
@@ -139,10 +147,13 @@ export const usePodcastDownloads = create<PodcastDownloadsState>((set, get) => (
         }
       }, cleanup, automatic ? (members) => wifiAvailable || members.some((member) => member !== group) : undefined);
     });
-    await Promise.all(work);
-    const count = (ownGroups.get(group) ?? 1) - 1;
-    if (count > 0) ownGroups.set(group, count); else ownGroups.delete(group);
-    if (!ownGroups.size && groups.get(own) === ownGroups) groups.delete(own);
+    await Promise.all([manualIntent, ...work]);
+    } finally {
+      releaseStorage();
+      const count = (ownGroups.get(group) ?? 1) - 1;
+      if (count > 0) ownGroups.set(group, count); else ownGroups.delete(group);
+      if (!ownGroups.size && groups.get(own) === ownGroups) groups.delete(own);
+    }
   },
   async deleteEpisodes(ids) {
     const own = activeScope();
@@ -199,7 +210,7 @@ export const usePodcastDownloads = create<PodcastDownloadsState>((set, get) => (
 /** Purely synchronous: the player never substitutes another account's file. */
 export function podcastFile(song: Song): string | undefined {
   const state = usePodcastDownloads.getState();
-  return song.podcastChannelId && state.scope === activeScope() ? state.files[song.id] : undefined;
+  return song.podcastChannelId && state.scope === activeScope() && !isPodcastStorageFileRemoving(state.scope, song.id) ? state.files[song.id] : undefined;
 }
 
 useAuthStore.subscribe((state, previous) => {
