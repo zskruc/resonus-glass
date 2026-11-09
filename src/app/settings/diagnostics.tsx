@@ -150,7 +150,7 @@ export default function DiagnosticsSettings() {
             <Text style={settingsStyles.sectionTitle}>{t('While minimized')}</Text>
             <Text style={settingsStyles.sectionDescription}>
               {t(
-                'The player keeps beating twice a second while the app is away. Long silences here mean the app stopped following what it was playing.',
+                'Background playback uses an adaptive update interval. Only gaps longer than the expected interval are recorded.',
               )}
             </Text>
             {away.map((a) => (

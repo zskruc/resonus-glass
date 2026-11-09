@@ -40,6 +40,7 @@ function harness() {
   const state = () => store.getState();
   const host: Record<string, any> = { exports: api, useAuthStore: { getState: () => authState }, usePlayerStore: store,
     get: state, set: store.setState, getItem: () => disk.promise, primaryUrl: (auth: typeof authA) => auth.serverUrl,
+    playbackCheckpointIdentity: () => undefined, readPlaybackCheckpoint: async () => undefined,
     profileScopeId: () => authState.auth.serverUrl, attachAppState: noop, clearPlayedHere: noop, queueOrigin: null,
     isRepeatMode: () => true, seekActive: (position: number) => seeks.push(position),
     loadIndex: async (index: number) => { api.loading(); loads.push(state().queue[index].id); return loadWait ? await loadWait : true; },

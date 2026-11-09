@@ -3,11 +3,13 @@ package expo.modules.carauto
 
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.common.util.UnstableApi
 import com.google.common.collect.ImmutableList
@@ -40,9 +42,7 @@ class JsProxyPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
   // a more refined version of queue[index].
   @Volatile private var queue: List<NowPlaying> = emptyList()
   @Volatile private var currentIndex: Int = 0
-  @Volatile private var playing: Boolean = false
-  @Volatile private var positionMs: Long = 0L
-  @Volatile private var positionUpdatedAt: Long = System.currentTimeMillis()
+  private val positionClock = CarPlaybackClock(SystemClock::elapsedRealtime)
   @Volatile private var shuffle: Boolean = false
   @Volatile private var repeatMode: Int = Player.REPEAT_MODE_OFF
   // Where the slice of the queue the car was last handed starts in the whole
@@ -74,12 +74,12 @@ class JsProxyPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
   }
 
   fun applyNowPlaying(np: NowPlaying?) = runOnMain {
+    val sameTrack = nowPlaying?.id == np?.id
     nowPlaying = np
     if (np == null) {
-      playing = false
-      positionMs = 0L
-    }
-    positionUpdatedAt = System.currentTimeMillis()
+      positionClock.update(false, 0L)
+    } else if (sameTrack) positionClock.rebase()
+    else positionClock.seek(0L)
     invalidateState()
   }
 
@@ -96,9 +96,7 @@ class JsProxyPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
       artworkUrl = node.artworkUrl,
       durationMs = 0L,
     )
-    playing = true
-    positionMs = 0L
-    positionUpdatedAt = System.currentTimeMillis()
+    positionClock.update(true, 0L)
     invalidateState()
   }
 
@@ -121,10 +119,9 @@ class JsProxyPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
     invalidateState()
   }
 
-  fun applyPlaybackState(isPlaying: Boolean, posMs: Long, shuf: Boolean, repeat: Int) = runOnMain {
-    playing = isPlaying
-    positionMs = posMs.coerceAtLeast(0L)
-    positionUpdatedAt = System.currentTimeMillis()
+  fun applyPlaybackState(isPlaying: Boolean, posMs: Long, shuf: Boolean, repeat: Int,
+    speed: Double = 1.0, isBuffering: Boolean = false) = runOnMain {
+    positionClock.update(isPlaying, posMs, speed, isBuffering)
     shuffle = shuf
     repeatMode = repeat
     invalidateState()
@@ -174,11 +171,7 @@ class JsProxyPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
     }
     val items = builder.build()
 
-    val extrapolated = if (playing) {
-      positionMs + (System.currentTimeMillis() - positionUpdatedAt)
-    } else {
-      positionMs
-    }
+    val extrapolated = positionClock.position()
 
     val commands = Player.Commands.Builder()
       .add(Player.COMMAND_PLAY_PAUSE)
@@ -200,8 +193,9 @@ class JsProxyPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
 
     return State.Builder()
       .setAvailableCommands(commands)
-      .setPlayWhenReady(playing, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
-      .setPlaybackState(if (np != null) Player.STATE_READY else Player.STATE_IDLE)
+      .setPlayWhenReady(positionClock.playing, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
+      .setPlaybackState(if (np == null) Player.STATE_IDLE else if (positionClock.buffering) Player.STATE_BUFFERING else Player.STATE_READY)
+      .setPlaybackParameters(PlaybackParameters(positionClock.speed))
       .setPlaylist(items)
       .setCurrentMediaItemIndex(if (items.isEmpty()) 0 else activeIndex)
       .setContentPositionMs(extrapolated.coerceAtLeast(0L))
@@ -305,15 +299,14 @@ class JsProxyPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
    * Moves the position here too, and not only in JS.
    *
    * The car draws its bar from this player, and this player is told where
-   * playback is once a second. Between a seek and the next of those the state
+   * playback is on the engine's heartbeat. Between a seek and that next state
    * handed back was still the one from before, so the bar sprang back to where
    * it had just been dragged from. The push that follows overwrites this with
    * whatever is true, which is also what puts the bar back if the seek did not
    * take.
    */
   private fun applySeekLocally(posMs: Long) {
-    positionMs = posMs
-    positionUpdatedAt = System.currentTimeMillis()
+    positionClock.seek(posMs)
   }
 
   override fun handleSetShuffleModeEnabled(shuffleModeEnabled: Boolean): ListenableFuture<*> {

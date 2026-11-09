@@ -590,7 +590,6 @@
   "Everything asked of the server, most often first. The music itself is not here: the player opens that connection and this never sees it.": "Tudo o que foi pedido ao servidor, do mais frequente para o menos. A música em si não está aqui: o player abre essa conexão e esta tela nunca a vê.",
   "What happened, rather than how long it took.": "O que aconteceu, e não quanto tempo levou.",
   "While minimized": "Com o app minimizado",
-  "The player keeps beating twice a second while the app is away. Long silences here mean the app stopped following what it was playing.": "O player continua pulsando duas vezes por segundo enquanto o app está minimizado. Silêncios longos aqui significam que o app parou de acompanhar o que estava tocando.",
   "Measure performance": "Medir desempenho",
   "Measuring is off (Settings › About), so there is nothing to show.": "A medição está desativada (Configurações › Sobre), então não há nada para mostrar.",
   "Update available": "Atualização disponível",

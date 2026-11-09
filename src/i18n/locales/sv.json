@@ -582,7 +582,6 @@
   "Everything asked of the server, most often first. The music itself is not here: the player opens that connection and this never sees it.": "Alla förfrågningar till servern, med de vanligaste först. Själva musiken ingår inte: spelaren öppnar den anslutningen och den registreras inte här.",
   "What happened, rather than how long it took.": "Vad som hände, snarare än hur lång tid det tog.",
   "While minimized": "I bakgrunden",
-  "The player keeps beating twice a second while the app is away. Long silences here mean the app stopped following what it was playing.": "Spelaren fortsätter att skicka pulssignaler två gånger per sekund när appen är i bakgrunden. Långa uppehåll här betyder att appen slutade följa uppspelningen.",
   "Measure performance": "Mät prestanda",
   "Measuring is off (Settings › About), so there is nothing to show.": "Mätningen är avstängd (Inställningar › Om), så det finns inget att visa.",
   "Update available": "Uppdatering tillgänglig",

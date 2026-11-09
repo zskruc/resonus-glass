@@ -30,6 +30,8 @@ internal class TrackWatch(private val clock: () -> Long = System::currentTimeMil
   /** Consecutive polls that found the renderer stopped. */
   var stoppedPolls = 0
     private set
+  private var stoppedSinceMs: Long? = null
+  val stoppedForMs: Long get() = stoppedSinceMs?.let { (clock() - it).coerceAtLeast(0L) } ?: 0L
 
   private var lastSeenPositionMs = -1L
   private var lastSeenPlayback = ""
@@ -47,6 +49,7 @@ internal class TrackWatch(private val clock: () -> Long = System::currentTimeMil
     lastPositionMs = positionMs.coerceAtLeast(0)
     lastDurationMs = 0
     stoppedPolls = 0
+    stoppedSinceMs = null
     lastSeenPositionMs = -1
     lastSeenPlayback = ""
     frozenSinceMs = 0
@@ -57,7 +60,13 @@ internal class TrackWatch(private val clock: () -> Long = System::currentTimeMil
     if (positionMs > 0) lastPositionMs = positionMs
     if (durationMs > 0) lastDurationMs = durationMs
     if (playback == PLAYING) observedPlaying = true
-    if (playback == STOPPED) stoppedPolls++ else if (playback != TRANSITIONING) stoppedPolls = 0
+    if (playback == STOPPED) {
+      if (stoppedSinceMs == null) stoppedSinceMs = clock()
+      stoppedPolls++
+    } else if (playback != TRANSITIONING) {
+      stoppedPolls = 0
+      stoppedSinceMs = null
+    }
 
     // Polls can be missing for a long while (Wi-Fi napping, phone dozing), and
     // the last position seen then says nothing about where the stop happened.
@@ -82,6 +91,7 @@ internal class TrackWatch(private val clock: () -> Long = System::currentTimeMil
   fun settle() {
     observedPlaying = false
     stoppedPolls = 0
+    stoppedSinceMs = null
     frozenSinceMs = 0
     pastEndSinceMs = 0
   }
@@ -93,7 +103,7 @@ internal class TrackWatch(private val clock: () -> Long = System::currentTimeMil
         endReason = "stop near the end"
         return Verdict.ENDED
       }
-      return if (stoppedPolls >= INTERRUPTED_POLLS) Verdict.INTERRUPTED else Verdict.NONE
+      return if (stoppedForMs >= INTERRUPTED_MS) Verdict.INTERRUPTED else Verdict.NONE
     }
     // Not stopped, yet the clock has stood still near the end for longer than
     // what is left to play: whatever the renderer says, the song is over. A
@@ -144,6 +154,8 @@ internal class TrackWatch(private val clock: () -> Long = System::currentTimeMil
 
     /** Polls a stop in the middle of a song has to last before it counts. */
     const val INTERRUPTED_POLLS = 3
+    /** The old three observations at1-second spacing, independent of tap frequency. */
+    const val INTERRUPTED_MS = 2_000L
 
     /** How long a clock stuck near the end takes to count as the end. */
     const val STALLED_MS = 6_000L

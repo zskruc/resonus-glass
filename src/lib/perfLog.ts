@@ -446,8 +446,16 @@ export function formatMs(ms: number): string {
 // how the app looks, and that is the point — it is the one clock that tells
 // those two apart.
 
-/** Under this a late beat is ordinary jitter around the 500 ms it asks for. */
+/** Preserve the old jitter margin, also accounting for adaptive native ticks. */
 const BEAT_GAP_MS = 2000;
+let lastBeatIntervalMs = 500;
+let expectedBeatIntervalMs = 500, beatIntervalGraceMs = 500;
+/** Policy changes can precede the next native beat, including quick returns. */
+export function setExpectedPlaybackBeatInterval(intervalMs: number): void {
+  const next = Number.isFinite(intervalMs) ? Math.min(60_000, Math.max(16, intervalMs)) : 500;
+  beatIntervalGraceMs = Math.max(beatIntervalGraceMs, expectedBeatIntervalMs, next);
+  expectedBeatIntervalMs = next;
+}
 
 /** When the last beat arrived, whatever state the app was in. */
 let lastBeat = 0;
@@ -487,11 +495,15 @@ function recordAway(tag: string, ms: number): void {
  * only thing that keeps running while the app is away. `playing` is what that
  * status says, and it decides whether the next silence is worth anything.
  */
-export function beat(playing: boolean): void {
+export function beat(playing: boolean, expectedIntervalMs = expectedBeatIntervalMs): void {
   if (!enabled) return;
   const now = Date.now();
   const prev = lastBeat;
   const wasPlaying = beatPlaying;
+  const previousInterval = lastBeatIntervalMs;
+  const grace = beatIntervalGraceMs;
+  lastBeatIntervalMs = Number.isFinite(expectedIntervalMs) ? Math.min(60_000, Math.max(16, expectedIntervalMs)) : 500;
+  beatIntervalGraceMs = expectedBeatIntervalMs;
   lastBeat = now;
   beatPlaying = playing;
   if (!beatSeen) {
@@ -500,10 +512,11 @@ export function beat(playing: boolean): void {
   }
   if (awake || !wasPlaying) return;
   bump('away · beats');
-  // Asked for every half second. Anything past a couple of them is the player
-  // going quiet, not jitter, and the size of the silence is the whole answer.
+  // A deliberate five-second background tick is not a two-second stall. Use
+  // both sides of a policy transition so its first slower beat stays ordinary.
   const gap = now - prev;
-  if (gap >= BEAT_GAP_MS) recordAway('silence between beats', gap);
+  if (gap >= Math.max(BEAT_GAP_MS, previousInterval + 1500, lastBeatIntervalMs + 1500, grace + 1500))
+    recordAway('silence between beats', gap);
 }
 
 /**
@@ -513,7 +526,9 @@ export function beat(playing: boolean): void {
  */
 function onReturn(): void {
   if (!enabled || !beatSeen || !beatPlaying) return;
-  recordAway('on return, last beat was this old', Date.now() - lastBeat);
+  const age = Date.now() - lastBeat;
+  if (age >= Math.max(BEAT_GAP_MS, lastBeatIntervalMs + 1500, expectedBeatIntervalMs + 1500, beatIntervalGraceMs + 1500))
+    recordAway('on return, last beat was this old', age);
 }
 
 /** Worst first: one long silence is the finding, not the average. */

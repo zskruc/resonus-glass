@@ -65,6 +65,8 @@ export async function deleteProfileData(auth: SubsonicAuth): Promise<void> {
   // Stop cleanup and its compensating file/DB work before removing this scope.
   const podcastStorage = await import('./podcastStorage');
   await podcastStorage.stopPodcastStorageProfile(scope);
+  const playbackCheckpoint = await import('./playbackCheckpoint');
+  await playbackCheckpoint.clearPlaybackCheckpoint(rawScope);
 
   // These modules read active-account state; importing them eagerly here would
   // make auth -> profileData -> tools -> auth a startup dependency cycle.

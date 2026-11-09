@@ -600,7 +600,7 @@
   "Everything asked of the server, most often first. The music itself is not here: the player opens that connection and this never sees it.": "Everything asked of the server, most often first. The music itself is not here: the player opens that connection and this never sees it.",
   "What happened, rather than how long it took.": "What happened, rather than how long it took.",
   "While minimized": "While minimized",
-  "The player keeps beating twice a second while the app is away. Long silences here mean the app stopped following what it was playing.": "The player keeps beating twice a second while the app is away. Long silences here mean the app stopped following what it was playing.",
+  "Background playback uses an adaptive update interval. Only gaps longer than the expected interval are recorded.": "Background playback uses an adaptive update interval. Only gaps longer than the expected interval are recorded.",
   "Measure performance": "Measure performance",
   "Measuring is off (Settings › About), so there is nothing to show.": "Measuring is off (Settings › About), so there is nothing to show.",
   "Update available": "Update available",

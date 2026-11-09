@@ -15,7 +15,7 @@ import { useAuthStore } from '@/store/auth';
 import { anyDownloads, useDownloads } from '@/store/downloads';
 import { useJukebox } from '@/store/jukebox';
 import { enabledFolderIds } from '@/store/libraries';
-import { currentSong, usePlayerStore } from '@/store/player';
+import { backgroundPlaybackPowerDiagnostics, currentSong, playbackPowerDiagnostics, usePlayerStore } from '@/store/player';
 import { useSettings } from '@/store/settings';
 import { useUpnp } from '@/store/upnp';
 
@@ -113,6 +113,8 @@ export function stateLines(screensOpen?: number): string[] {
     // twenty seconds, so its length is a cost rather than a curiosity.
     `queue: ${p.queue.length} · at ${p.index}${p.radioMode ? ' · mix' : ''} · repeat ${p.repeat}${p.shuffle ? ' · shuffle' : ''}`,
     `output: ${useUpnp.getState().connected ? 'upnp' : useJukebox.getState().active ? 'jukebox' : 'phone'}`,
+    `audio power: ${JSON.stringify(playbackPowerDiagnostics())}`,
+    `last background audio policy: ${JSON.stringify(backgroundPlaybackPowerDiagnostics())}`,
     `downloads: ${dl.hydrated ? downloads : 'loading'}${anyDownloads(dl) && !dl.hydrated ? ' (some)' : ''}${downloading > 0 ? ` · ${downloading} running` : ''}`,
     `mirror covers: ${covers.saved} saved, ${covers.aliases} other names`,
     // How deep the stack is. Screens you left stay mounted, which is what makes

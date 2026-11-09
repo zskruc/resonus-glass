@@ -8,6 +8,7 @@
  * Renders nothing. On platforms without the native module it is a no-op.
  */
 import { useEffect } from 'react';
+import { AppState } from 'react-native';
 
 import { CACHED_COVER, COVER, songCoverUrl, type Song } from '@/api/data';
 import {
@@ -27,7 +28,7 @@ import { getItem, setItem } from '@/lib/storage';
 import { useAuthStore } from '@/store/auth';
 import { useLastPlayed } from '@/store/lastPlayed';
 import { favoriteLabel, favoriteState, onFavoritesChange, toggleFavorite } from '@/lib/remoteFavorite';
-import { currentSong, usePlayerStore, type StreamInfo } from '@/store/player';
+import { currentSong, playbackUserSeekVersion, usePlayerStore, type StreamInfo } from '@/store/player';
 
 const REBUILD_DEBOUNCE_MS = 600;
 /** How long after opening before the tree is filled in. Long enough that the
@@ -37,6 +38,7 @@ const DEEP_REBUILD_MS = 45_000;
  *  for the root more than once per drive, and each one is dozens of requests. */
 const DEEP_MIN_INTERVAL_MS = 5 * 60_000;
 const POSITION_PUSH_MS = 1000;
+const BACKGROUND_POSITION_PUSH_MS = 5000;
 /**
  * Written the first time a car asks for the tree, and never cleared. The full
  * tree is dozens of requests (a report for #221 had it at 64, a minute of
@@ -163,7 +165,10 @@ export function CarAutoSync() {
         index,
       );
     };
+    let lastPositionPushAt = Number.NEGATIVE_INFINITY, statePushes = 0;
+    let lastSeekVersion = playbackUserSeekVersion();
     const pushState = () => {
+      if (cancelled) return;
       const state = usePlayerStore.getState();
       const { isPlaying, positionSec, shuffle, repeat } = state;
       const favorite = favoriteState(currentSong(state));
@@ -172,15 +177,24 @@ export function CarAutoSync() {
         positionMs: Math.round(positionSec * 1000),
         shuffle,
         repeatMode: repeat,
+        speed: state.speed,
+        isBuffering: state.isBuffering,
         favorite,
         favoriteLabel: favorite == null ? undefined : favoriteLabel(favorite),
       });
+      lastPositionPushAt = Date.now(); statePushes++;
     };
     pushNowPlaying();
     pushQueue();
     pushState();
 
     const unsubPlayer = usePlayerStore.subscribe((state, prev) => {
+      const positionChanged = state.positionSec !== prev.positionSec;
+      const seekVersion = positionChanged ? playbackUserSeekVersion() : lastSeekVersion;
+      const userSeek = positionChanged && seekVersion !== lastSeekVersion;
+      // seekTo may publish recovery/chapter state before its new position.
+      // Only that position event consumes the intent, regardless of source.
+      if (positionChanged) lastSeekVersion = seekVersion;
       if (state.queue !== prev.queue || state.index !== prev.index) {
         pushNowPlaying();
         pushQueue();
@@ -193,14 +207,22 @@ export function CarAutoSync() {
         state.shuffle !== prev.shuffle ||
         state.repeat !== prev.repeat ||
         state.queue !== prev.queue ||
-        state.index !== prev.index
+        state.index !== prev.index ||
+        state.streamInfo !== prev.streamInfo ||
+        state.speed !== prev.speed ||
+        state.isBuffering !== prev.isBuffering ||
+        userSeek
       ) {
         pushState();
+      } else if (positionChanged) {
+        // Piggyback the audio engine's heartbeat; Android Auto extrapolates
+        // between these anchors. No second JS clock wakes an idle phone.
+        const now = Date.now(), interval = AppState.currentState === 'active' ? POSITION_PUSH_MS : BACKGROUND_POSITION_PUSH_MS;
+        if (now < lastPositionPushAt || now - lastPositionPushAt >= interval) pushState();
       }
     });
     // The heart follows a song starred anywhere in the app.
     const unsubFavorites = onFavoritesChange(pushState);
-    const interval = setInterval(pushState, POSITION_PUSH_MS);
 
     // ── Events from the car ──
     const playSub = onPlay((e) => {
@@ -211,6 +233,7 @@ export function CarAutoSync() {
       void handleBrowsePlay(e.mediaId, e.parentId);
     });
     const transportSub = onTransport((e) => {
+      const beforePush = statePushes;
       const store = usePlayerStore.getState();
       // One count per button pressed in the car, so a report says what was
       // asked for out there. Everything below this line happens with the app in
@@ -250,6 +273,10 @@ export function CarAutoSync() {
           break;
         }
       }
+      // A seek is position-only and may land inside the heartbeat throttle.
+      // Async commands are acknowledged now, then their changed state pushes
+      // again through the subscription when the real operation completes.
+      if (statePushes === beforePush) pushState();
     });
 
     return () => {
@@ -257,7 +284,6 @@ export function CarAutoSync() {
       if (rebuildTimer) clearTimeout(rebuildTimer);
       if (deepTimer) clearTimeout(deepTimer);
       if (recentTimer) clearTimeout(recentTimer);
-      clearInterval(interval);
       unsubAuth();
       unsubRecent();
       unsubPlayer();

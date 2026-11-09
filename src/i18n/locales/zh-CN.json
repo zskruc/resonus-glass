@@ -594,7 +594,6 @@
   "Start on your playlists": "默认显示播放列表",
   "With no chip pressed, Your library shows Favorites and your playlists instead of everything mixed together.": "未选中任何标签时，“你的音乐库”会显示收藏和播放列表，而不是把所有内容混在一起。",
   "While minimized": "最小化时",
-  "The player keeps beating twice a second while the app is away. Long silences here mean the app stopped following what it was playing.": "应用处于后台时，播放引擎仍会每秒跳动两次。此处若出现长时间空白，说明播放引擎已停止跟进正在播放的内容。",
   "Update available": "有可用更新",
   "{app} {new} is out. You have {old}.": "{app} {new} 已发布。你当前的版本是 {old}。",
   "{app} {new} is out. You have {old}. The download is about {mb} MB.": "{app} {new} 已发布。你当前的版本是 {old}。下载大小约 {mb} MB。",
@@ -1682,5 +1681,6 @@
   "Not yet": "尚未执行",
   "Deleted files: {files}. Database records: {records}. Freed: {size}. In-use items kept: {skipped}. Failed files: {failed}.": "已删除 {files} 个文件、{records} 条数据记录，释放 {size}；保留 {skipped} 个使用中的项目，{failed} 个文件清理失败。",
   "Reusable catalog space": "目录内可复用空间",
-  "Included in catalog size. The app can reuse this space; it is released on disk only when the catalog can safely shrink.": "已计入目录占用。App 可重复使用这部分空间，只有能安全缩减目录文件时才会释放到磁盘。"
+  "Included in catalog size. The app can reuse this space; it is released on disk only when the catalog can safely shrink.": "已计入目录占用。App 可重复使用这部分空间，只有能安全缩减目录文件时才会释放到磁盘。",
+  "Background playback uses an adaptive update interval. Only gaps longer than the expected interval are recorded.": "后台播放使用自适应的状态更新间隔。这里只记录超过预期间隔的更新空档。"
 }

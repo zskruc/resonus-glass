@@ -96,6 +96,9 @@ export function setPlaybackState(state: {
   positionMs: number;
   shuffle: boolean;
   repeatMode: 'off' | 'all' | 'one';
+  /** Optional for older senders; native defaults to1× and not buffering. */
+  speed?: number;
+  isBuffering?: boolean;
   /** The heart on the car's playback screen; null hides it. */
   favorite: boolean | null;
   /** What the heart is called, in the app's language. */

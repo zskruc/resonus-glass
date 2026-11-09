@@ -6,8 +6,13 @@ import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.records.Field
 import expo.modules.kotlin.records.Record
 import android.content.Context
+import android.content.BroadcastReceiver
+import android.content.Intent
+import android.content.IntentFilter
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,7 +22,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -39,11 +43,6 @@ class TrackInfo(
 /** Long enough for a missed poll or two; every poll renews it. */
 private const val AWAKE_TIMEOUT_MS = 60_000L
 
-private const val POLL_INTERVAL_MS = 1_000L
-
-/** Every this many polls, the repeat mode and the volume are read too. */
-private const val EXTRAS_EVERY_POLLS = 3
-
 /**
  * Loads of the next track tried at one track end before giving up. A load that
  * fails is mostly the network not being there yet, a phone waking from standby
@@ -51,41 +50,25 @@ private const val EXTRAS_EVERY_POLLS = 3
  */
 private const val MAX_ADVANCE_ATTEMPTS = 5
 
-/** Failed polls in a row before the renderer counts as not answering. */
-private const val UNREACHABLE_POLLS = 2
-
-/** Every this many failed polls, the device's description is read again. */
-private const val RECOVER_EVERY_POLLS = 3
-
-/** Failed polls before the network is searched for the device elsewhere. */
-private const val REDISCOVER_AFTER_POLLS = 6
-
 private const val REDISCOVER_MS = 3_000L
 
 /**
- * How long a renderer can go without answering before the session is given up
- * and playback comes back to the phone (#285). Long enough for a Wi-Fi hiccup
- * or a renderer restarting, short enough not to leave a dead session up.
- */
-private const val LOST_AFTER_MS = 30_000L
-
-/**
- * Polls in a row a renderer that reports what it plays has to be playing
+ * How long a renderer that reports what it plays has to be playing
  * something not in this queue before it counts as taken over by another app.
  */
-private const val FOREIGN_POLLS = 3
+private const val FOREIGN_AFTER_MS = 2_000L
 
 /**
- * Stopped polls a renderer that took the next track in advance gets to start
+ * Time a renderer that took the next track in advance gets to start
  * it on its own before the module loads it itself.
  */
-private const val HANDOFF_GRACE_POLLS = 2
+private const val HANDOFF_GRACE_MS = 1_000L
 
 /**
- * Playing polls after a load in which a renderer that reports what it plays has
+ * Time after a load in which a renderer that reports what it plays has
  * to report what it was given, before it stops being believed.
  */
-private const val ECHO_POLLS = 10
+private const val ECHO_AFTER_MS = 9_000L
 
 /** Addresses kept as this session's own, besides the queue's (see `recentUris`). */
 private const val RECENT_URIS = 8
@@ -99,11 +82,11 @@ private const val OVERDUE_NOTE_MS = 60_000L
 /**
  * Expo bridge to UPnPCast (DLNA/UPnP). Finds renderers on the local network and
  * drives playback over AVTransport. UPnP has no reliable way of pushing events,
- * so state and progress are polled once a second for as long as there is a
- * session and sent to JS as a "state" event.
+ * so state and progress are polled once a second in the foreground, every
+ * five seconds in the background, and immediately after an interaction.
  *
  * The poll is also what keeps the session honest (#285): a renderer that stops
- * answering is looked for again, and given up after `LOST_AFTER_MS` with a
+ * answering is looked for again, and given up after30 seconds with a
  * "lost" event, so playback comes back to the phone instead of hanging. The
  * same goes for one another app has taken over. The things worth knowing about
  * afterwards go to JS as "note" events, for the diagnostics report.
@@ -133,6 +116,21 @@ class UpnpCastModule : Module() {
 
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   @Volatile private var pollJob: Job? = null
+  @Volatile private var appForeground = false
+  @Volatile private var screenInteractive = true
+  @Volatile private var destroyed = false
+  private var screenContext: Context? = null
+  private val pollWake = RendererPollWake()
+  private val screenReceiver = object : BroadcastReceiver() {
+    override fun onReceive(context: Context?, intent: Intent?) {
+      when (intent?.action) {
+        Intent.ACTION_SCREEN_OFF -> screenInteractive = false
+        Intent.ACTION_SCREEN_ON -> screenInteractive = true
+        else -> return
+      }
+      requestPoll()
+    }
+  }
   private val transportMutex = Mutex()
 
   private val known = ConcurrentHashMap<String, RendererSession>()
@@ -145,7 +143,7 @@ class UpnpCastModule : Module() {
   private var nativePlayMode = "NORMAL"
   private var nativeQueueManaged = false
   private var lastPlaybackState = ""
-  private val watch = TrackWatch()
+  private val watch = TrackWatch(SystemClock::elapsedRealtime)
   private var stoppedByUs = false
   private var transitionInProgress = false
   private var advanceAttempts = 0
@@ -155,8 +153,8 @@ class UpnpCastModule : Module() {
   private var uriTrust = UriTrust.UNKNOWN
   /** What was just loaded, until the renderer is seen playing it. */
   private var expectedUri: String? = null
-  private var echoPolls = 0
-  private var foreignPolls = 0
+  private val echoConfirmation = RendererConfirmation(SystemClock::elapsedRealtime, ECHO_AFTER_MS)
+  private val foreignConfirmation = RendererConfirmation(SystemClock::elapsedRealtime, FOREIGN_AFTER_MS)
   /**
    * The last few addresses handed to the renderer. One of these playing is
    * this queue being out of step for a moment, never another app.
@@ -219,9 +217,25 @@ class UpnpCastModule : Module() {
 
     Events("state", "lost", "note")
 
+    OnCreate {
+      appForeground = appContext.currentActivity?.hasWindowFocus() == true
+      observeScreen()
+    }
+    OnActivityEntersForeground {
+      appForeground = true
+      observeScreen()
+      requestPoll()
+    }
+    OnActivityEntersBackground {
+      appForeground = false
+      requestPoll(forceExtras = false)
+    }
+
     OnDestroy {
+      stopScreenObserver()
       keepAwake(false)
       pollJob?.cancel()
+      pollWake.close()
       scope.cancel()
     }
 
@@ -289,6 +303,7 @@ class UpnpCastModule : Module() {
       scope.launch {
         val ok = device.join(target)
         if (ok) known.values.forEach(RendererSession::invalidateCoordinatorTarget)
+        requestPoll()
         promise.resolve(ok)
       }
     }
@@ -302,6 +317,7 @@ class UpnpCastModule : Module() {
       scope.launch {
         val ok = device.ungroup()
         if (ok) known.values.forEach(RendererSession::invalidateCoordinatorTarget)
+        requestPoll()
         promise.resolve(ok)
       }
     }
@@ -330,6 +346,7 @@ class UpnpCastModule : Module() {
             )
           )
         }
+        requestPoll()
         promise.resolve(ok)
       }
     }
@@ -371,6 +388,8 @@ class UpnpCastModule : Module() {
           promise.resolve(ok)
         } catch (e: Exception) {
           promise.resolve(false)
+        } finally {
+          requestPoll()
         }
       }
     }
@@ -400,12 +419,14 @@ class UpnpCastModule : Module() {
           promise.resolve(ok)
         } catch (e: Exception) {
           promise.resolve(false)
+        } finally {
+          requestPoll()
         }
       }
     }
 
     AsyncFunction("play") { promise: Promise ->
-      scope.launch { promise.resolve(transportMutex.withLock {
+      scope.launch { val ok = transportMutex.withLock {
         stoppedByUs = false
         val current = session ?: return@withLock false
         // A stopped renderer that is told Play starts its track over, or
@@ -417,19 +438,22 @@ class UpnpCastModule : Module() {
         } else {
           current.play()
         }
-      }) }
+      }; requestPoll(); promise.resolve(ok) }
     }
 
     AsyncFunction("pause") { promise: Promise ->
-      scope.launch { promise.resolve(transportMutex.withLock {
+      scope.launch { val ok = transportMutex.withLock {
         stoppedByUs = true
         watch.settle()
         session?.pause() ?: false
-      }) }
+      }; requestPoll(); promise.resolve(ok) }
     }
 
     AsyncFunction("seek") { positionMs: Double, promise: Promise ->
-      scope.launch { promise.resolve(transportMutex.withLock { session?.seek(positionMs.toLong()) ?: false }) }
+      scope.launch {
+        val ok = transportMutex.withLock { session?.seek(positionMs.toLong()) ?: false }
+        requestPoll(); promise.resolve(ok)
+      }
     }
 
     AsyncFunction("getVolume") { promise: Promise ->
@@ -437,11 +461,11 @@ class UpnpCastModule : Module() {
     }
 
     AsyncFunction("setVolume") { volume: Int, promise: Promise ->
-      scope.launch { promise.resolve(session?.setVolume(volume) ?: false) }
+      scope.launch { val ok = session?.setVolume(volume) ?: false; requestPoll(); promise.resolve(ok) }
     }
 
     AsyncFunction("setPlayMode") { playMode: String, promise: Promise ->
-      scope.launch { promise.resolve(transportMutex.withLock {
+      scope.launch { val ok = transportMutex.withLock {
         nativePlayMode = playMode
         stagedNextIndex = null
         stagedNextUrl = null
@@ -449,16 +473,16 @@ class UpnpCastModule : Module() {
         val accepted = if (current.isSonos) current.setPlayMode(playMode) else true
         if (!current.isSonos) stageNextLocked(current, clearIfNone = true)
         accepted
-      }) }
+      }; requestPoll(); promise.resolve(ok) }
     }
 
     AsyncFunction("setCrossfadeMode") { enabled: Boolean, promise: Promise ->
-      scope.launch { promise.resolve(session?.setCrossfadeMode(enabled) ?: false) }
+      scope.launch { val ok = session?.setCrossfadeMode(enabled) ?: false; requestPoll(); promise.resolve(ok) }
     }
 
     AsyncFunction("setSleepTimer") { durationSec: Double, promise: Promise ->
       val seconds = durationSec.toInt().coerceAtLeast(0)
-      scope.launch { promise.resolve(session?.setSleepTimer(seconds) ?: false) }
+      scope.launch { val ok = session?.setSleepTimer(seconds) ?: false; requestPoll(); promise.resolve(ok) }
     }
 
     AsyncFunction("disconnect") { promise: Promise ->
@@ -482,19 +506,66 @@ class UpnpCastModule : Module() {
     }
   }
 
+  /** Only system broadcasts are registered, owned by this module's lifetime. */
+  @Synchronized
+  private fun observeScreen() {
+    if (destroyed) return
+    val context = appContext.reactContext?.applicationContext ?: return
+    screenInteractive = (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive ?: true
+    if (screenContext != null) return
+    val filter = IntentFilter().apply { addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_SCREEN_OFF) }
+    try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        context.registerReceiver(screenReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+      } else {
+        @Suppress("DEPRECATION")
+        context.registerReceiver(screenReceiver, filter)
+      }
+      screenContext = context
+    } catch (error: Exception) {
+      Log.w(Soap.TAG, "Could not observe screen state for casting", error)
+    }
+  }
+
+  @Synchronized
+  private fun stopScreenObserver() {
+    destroyed = true
+    screenContext?.let { context -> runCatching { context.unregisterReceiver(screenReceiver) } }
+    screenContext = null
+  }
+
+  private fun requestPoll(forceExtras: Boolean = true) {
+    pollWake.request(forceExtras)
+  }
+
+  private suspend fun awaitPoll(timing: RendererPollTiming, confirmingTransition: Boolean = false) {
+    val wait = timing.waitMs(background = !appForeground || !screenInteractive, confirmingTransition = confirmingTransition)
+    pollWake.await(wait)
+  }
+
+  /** Resolve a pending hand-off promptly instead of waiting another background tick. */
+  private fun confirmingTransition(): Boolean = nativeQueueManaged && !stoppedByUs && !interrupted && !endedAtQueueEnd &&
+    ((expectedUri != null && echoConfirmation.pending) || foreignConfirmation.pending ||
+      (watch.observedPlaying && watch.stoppedPolls > 0) || advanceAttempts > 0 ||
+      RendererPollTiming.nearKnownTrackEnd(lastPlaybackState == TrackWatch.PLAYING, watch.lastPositionMs, watch.lastDurationMs,
+        (nativeQueue.getOrNull(nativeQueueIndex)?.durationSeconds ?: 0) * 1_000L))
+
   private fun startPolling() {
+    if (destroyed) return
     pollJob?.cancel()
+    appForeground = appContext.currentActivity?.hasWindowFocus() == true
+    observeScreen()
+    pollWake.reset()
     pollJob = scope.launch {
-      var failures = 0
-      var failingSinceMs = 0L
+      val timing = RendererPollTiming(SystemClock::elapsedRealtime)
       var lastDisplay = ""
-      var polls = 0
       while (isActive) {
         val current = session ?: break
+        // Do not begin another network request after the real loss deadline.
+        if (timing.lost()) { lose(current, "unreachable"); break }
         var display = ""
-        // The repeat mode and the volume change by hand, rarely: asked for on
-        // every third poll, which keeps the others to two calls.
-        val extras = polls++ % EXTRAS_EVERY_POLLS == 0
+        var confirming = false
+        val extras = timing.extrasDue(force = pollWake.takeExtras())
         val state = transportMutex.withLock {
           if (session !== current) return@withLock null
           val polled = current.state(extras = extras) ?: return@withLock null
@@ -503,32 +574,31 @@ class UpnpCastModule : Module() {
           } else {
             rendererDisplay(polled.playbackState)
           }
+          confirming = !current.isSonos && confirmingTransition()
           polled
         }
-        if (session !== current) break
+        if (!isActive || session !== current) break
 
         if (state == null) {
-          failures++
-          val now = System.currentTimeMillis()
-          if (failures == 1) failingSinceMs = now
+          val failure = timing.failed()
           val active = lastDisplay == "PLAYING" || lastDisplay == "BUFFERING"
           keepAwake(active)
-          if (failures == UNREACHABLE_POLLS) note("renderer not answering")
+          if (failure.announceUnreachable) note("renderer not answering")
           // Said as buffering while it was playing, so the player shows it is
           // waiting on something rather than a clock that has stopped.
-          if (failures >= UNREACHABLE_POLLS && active) {
+          if (failure.unreachable && active) {
             sendEvent("state", mapOf("playbackState" to "BUFFERING", "reachable" to false))
           }
-          if (now - failingSinceMs >= LOST_AFTER_MS) {
+          if (failure.lost) {
             lose(current, "unreachable")
             break
           }
-          if (failures % RECOVER_EVERY_POLLS == 0) recover(current, failures)
-          delay(POLL_INTERVAL_MS)
+          if (failure.recover) recover(current, failure.rediscover)
+          awaitPoll(timing)
           continue
         }
-        if (failures >= UNREACHABLE_POLLS) note("renderer answering again after $failures failed polls")
-        failures = 0
+        val failures = timing.recovered()
+        if (failures > 0) note("renderer answering again after $failures failed polls")
 
         lossReason?.let { reason ->
           lose(current, reason)
@@ -553,7 +623,7 @@ class UpnpCastModule : Module() {
             "reachable" to true,
           ),
         )
-        delay(POLL_INTERVAL_MS)
+        awaitPoll(timing, confirming)
       }
     }
   }
@@ -573,9 +643,9 @@ class UpnpCastModule : Module() {
    * again from where it was, and failing that, the device looked for on the
    * network under its own id, in case it came back somewhere else.
    */
-  private suspend fun recover(current: RendererSession, failures: Int) {
+  private suspend fun recover(current: RendererSession, rediscover: Boolean) {
     if (current.refreshDescription()) return
-    if (failures < REDISCOVER_AFTER_POLLS) return
+    if (!rediscover) return
     val udn = current.udn ?: return
     val found = Ssdp.discover(REDISCOVER_MS)
     val match = coroutineScope {
@@ -640,8 +710,8 @@ class UpnpCastModule : Module() {
     nextUriCapability = NextUriCapability.UNKNOWN
     uriTrust = UriTrust.UNKNOWN
     expectedUri = null
-    echoPolls = 0
-    foreignPolls = 0
+    echoConfirmation.reset()
+    foreignConfirmation.reset()
     recentUris.clear()
     loadedAtMs = 0
     playedSinceLoad = false
@@ -656,10 +726,10 @@ class UpnpCastModule : Module() {
     watch.reset(positionMs)
     lastPlaybackState = ""
     expectedUri = track.url
-    echoPolls = 0
-    foreignPolls = 0
+    echoConfirmation.reset()
+    foreignConfirmation.reset()
     rememberUri(track.url)
-    loadedAtMs = System.currentTimeMillis()
+    loadedAtMs = SystemClock.elapsedRealtime()
     playedSinceLoad = false
     overdueNoted = false
     interrupted = false
@@ -775,12 +845,13 @@ class UpnpCastModule : Module() {
     if (expected != null && playback == TrackWatch.PLAYING) {
       if (GenericQueueProgression.sameUri(uri, expected)) {
         expectedUri = null
+        echoConfirmation.reset()
         if (uriTrust == UriTrust.UNKNOWN) {
           uriTrust = UriTrust.TRUSTED
           note("renderer reports what it plays; next tracks are handed over in advance")
         }
         stageNextLocked(current)
-      } else if (uriTrust == UriTrust.UNKNOWN || ++echoPolls >= ECHO_POLLS) {
+      } else if (uriTrust == UriTrust.UNKNOWN || echoConfirmation.observe()) {
         expectedUri = null
         if (uriTrust != UriTrust.UNTRUSTED) {
           uriTrust = UriTrust.UNTRUSTED
@@ -788,6 +859,8 @@ class UpnpCastModule : Module() {
         }
         dropStagedLocked(current)
       }
+    } else {
+      echoConfirmation.reset()
     }
 
     // A renderer that reports what it plays says which track that is: the one
@@ -795,11 +868,11 @@ class UpnpCastModule : Module() {
     // this queue at all when another app has taken it over.
     if (uriTrust == UriTrust.TRUSTED && expectedUri == null && uri != null && !transitionInProgress) {
       if (GenericQueueProgression.sameUri(uri, nativeQueue.getOrNull(nativeQueueIndex)?.url)) {
-        foreignPolls = 0
+        foreignConfirmation.reset()
       } else {
         val found = indexOfUri(uri)
         if (found != null) {
-          foreignPolls = 0
+          foreignConfirmation.reset()
           // Only once it plays. A renderer can move on to the next address and
           // sit there stopped; following it then forgot that anything had
           // played, so nothing ever loaded the track (#285). Left alone, that
@@ -808,14 +881,16 @@ class UpnpCastModule : Module() {
         } else if (recentUris.none { GenericQueueProgression.sameUri(uri, it) } &&
           (playback == TrackWatch.PLAYING || playback == TrackWatch.PAUSED)
         ) {
-          if (++foreignPolls >= FOREIGN_POLLS) {
+          if (foreignConfirmation.observe()) {
             lossReason = "replaced"
             return "STOPPED"
           }
         } else {
-          foreignPolls = 0
+          foreignConfirmation.reset()
         }
       }
+    } else {
+      foreignConfirmation.reset()
     }
 
     watch.observe(playback, state.positionMs, state.durationMs)
@@ -831,7 +906,7 @@ class UpnpCastModule : Module() {
     // has been made of it: the one thing a report needs to tell why (#285).
     if (verdict == TrackWatch.Verdict.NONE && !overdueNoted && expectedMs > 0 &&
       !stoppedByUs && !interrupted && !endedAtQueueEnd &&
-      System.currentTimeMillis() - loadedAtMs > expectedMs + OVERDUE_NOTE_MS
+      SystemClock.elapsedRealtime() - loadedAtMs > expectedMs + OVERDUE_NOTE_MS
     ) {
       overdueNoted = true
       note("track overdue: ${describe(state, playback, uri)}")
@@ -840,7 +915,7 @@ class UpnpCastModule : Module() {
       TrackWatch.Verdict.ENDED -> {
         if (stagedNextIndex != null) {
           // Its chance to start the next track by itself first.
-          if (playback == TrackWatch.STOPPED && watch.stoppedPolls < HANDOFF_GRACE_POLLS) {
+          if (playback == TrackWatch.STOPPED && watch.stoppedForMs < HANDOFF_GRACE_MS) {
             lastPlaybackState = playback
             return "BUFFERING"
           }
@@ -895,7 +970,7 @@ class UpnpCastModule : Module() {
       endedAtQueueEnd || interrupted -> "STOPPED"
       // A stop not judged yet: between two tracks, as far as anyone knows.
       watch.observedPlaying -> "BUFFERING"
-      System.currentTimeMillis() - loadedAtMs < LOAD_GRACE_MS -> "BUFFERING"
+      SystemClock.elapsedRealtime() - loadedAtMs < LOAD_GRACE_MS -> "BUFFERING"
       else -> "STOPPED"
     }
   }
@@ -919,7 +994,7 @@ class UpnpCastModule : Module() {
     stagedNextIndex = null
     stagedNextUrl = null
     watch.reset(positionMs)
-    loadedAtMs = System.currentTimeMillis() - positionMs
+    loadedAtMs = SystemClock.elapsedRealtime() - positionMs
     playedSinceLoad = true
     overdueNoted = false
     stoppedByUs = false

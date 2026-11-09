@@ -547,7 +547,6 @@
   "With both off nothing is reported, not even to your own server.": "Оба условия на данный момент отключены, статистика прослушанного не будет вестись/отправляться на сервер.",
   "Restore defaults": "Восстановить значения по-умолчанию",
   "While minimized": "While minimized",
-  "The player keeps beating twice a second while the app is away. Long silences here mean the app stopped following what it was playing.": "The player keeps beating twice a second while the app is away. Long silences here mean the app stopped following what it was playing.",
   "Update available": "Доступно обновление",
   "{app} {new} is out. You have {old}.": "Доступен {app} версии {new}. Установленная версия - {old}.",
   "{app} {new} is out. You have {old}. The download is about {mb} MB.": "Доступен {app} версии {new}. Установленная версия - {old}. Размер загружаемого файла составит примерно {mb} MB",

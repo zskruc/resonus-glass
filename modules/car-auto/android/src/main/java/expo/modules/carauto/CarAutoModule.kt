@@ -76,7 +76,8 @@ class CarAutoModule : Module() {
         "all" -> Player.REPEAT_MODE_ALL
         else -> Player.REPEAT_MODE_OFF
       }
-      player.applyPlaybackState(isPlaying, posMs, shuf, repeat)
+      player.applyPlaybackState(isPlaying, posMs, shuf, repeat,
+        o.optDouble("speed", 1.0), o.optBoolean("isBuffering", false))
       player.applyFavorite(
         if (o.isNull("favorite")) null else o.optBoolean("favorite"),
         o.optString("favoriteLabel").takeIf { it.isNotEmpty() },

@@ -38,7 +38,7 @@ test('the actual onStatus rejects duplicate finish and late playing samples from
     const state: any = { queue: [{ id: 'a' }, { id: 'next' }], index: 0, repeat, isPlaying: true,
       chapterStop: { songId: 'a', chapterStart: 0, end: 30, title: 'Chapter' } };
     let paused = 0; const module: Record<string, any> = {};
-    const context: any = { exports: module, beat: () => {}, remoteKind: () => null, chapterStoppedLoad: -1, loadToken: 42,
+    const context: any = { exports: module, beat: () => {}, expectedAudioBeatIntervalMs: 500, remoteKind: () => null, chapterStoppedLoad: -1, loadToken: 42,
       usePlayerStore: { getState: () => state, setState: (value: object) => Object.assign(state, value) },
       currentSong: (s: any) => s.queue[s.index], chapterStopReached, cutCrossfade: () => {}, cancelPlaybackRecovery: () => {},
       activePlayer: () => ({ pause: () => { paused++; } }), scheduleNextSource: () => {} };

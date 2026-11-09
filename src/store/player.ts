@@ -65,7 +65,7 @@ import { favoriteLabel, favoriteState, onFavoritesChange, toggleFavorite } from 
 import type { Remap } from '@/lib/navidromeRemap';
 import { remapSong } from '@/lib/navidromeRemap';
 import { noteOwnReport } from '@/lib/ownReports';
-import { beat, bump, note, timed } from '@/lib/perfLog';
+import { beat, bump, note, setExpectedPlaybackBeatInterval, timed } from '@/lib/perfLog';
 import { plausibleDuration } from '@/lib/playbackDuration';
 import { queryClient } from '@/lib/query';
 import {
@@ -82,7 +82,11 @@ import {
   type RepeatMode,
 } from '@/lib/queue';
 import { primaryUrl } from '@/lib/serverUrls';
-import { getItem, setItem } from '@/lib/storage';
+import { getItem, setItemStrict } from '@/lib/storage';
+import {
+  clearPlaybackCheckpoint, newPlaybackQueueGeneration, playbackCheckpointIdentity,
+  readPlaybackCheckpoint, writePlaybackCheckpoint, type PlaybackCheckpointIdentity,
+} from '@/lib/playbackCheckpoint';
 import { StreamWarming } from '@/lib/streamWarming';
 import { playbackLoadGate } from '@/lib/playbackLoadGate';
 import { AudiobookProgressTracker, type AudiobookSample } from '@/lib/audiobookTracking';
@@ -266,6 +270,60 @@ function activePlayer(): AudioPlayer | null {
   return players[activeIdx];
 }
 
+const lastPowerPolicy = new WeakMap<AudioPlayer, string>();
+let lastBackgroundPowerStatus: AudioPlayer['powerStatus'] | null = null;
+let expectedAudioBeatIntervalMs = 500;
+/** A hint about future JS-owned sources; native also checks installed URIs. */
+function definitelyLocalPlayback(song: Song | null | undefined): boolean {
+  if (!song) return false;
+  const uri = (song.podcastChannelId ? podcastFile(song) : undefined) ?? song.url ?? localSourceFor(song);
+  // A content provider can itself fetch cloud data, so keep its network lock.
+  return typeof uri === 'string' && /^(file|asset|rawresource|android\.resource|data):/i.test(uri);
+}
+/** Update only on policy changes, rather than crossing the bridge per tick. */
+function syncPlaybackPowerPolicy() {
+  const state = usePlayerStore.getState(), settings = useSettings.getState();
+  const song = currentSong(state), ni = state.repeat === 'one' ? state.index : nextIndex(false);
+  const next = ni === null ? undefined : state.queue[ni];
+  const stoppedAtEnd = state.sleepAtSongEnd || !!state.chapterStop;
+  const canExtend = !stoppedAtEnd && state.repeat !== 'one' && ni === null && !useAuthStore.getState().offline
+    && !!useAuthStore.getState().auth && !!song && !song.url && !song.podcastChannelId
+    && !(settings.saveAudiobookProgress && isAudiobookTrack(song))
+    && (state.radioMode || settings.autoplaySimilar || !!state.sourceHref?.startsWith('/artist/'));
+  const networkRequired = !definitelyLocalPlayback(song)
+    || (!stoppedAtEnd && !!next && !definitelyLocalPlayback(next)) || canExtend;
+  // These features depend on the native heartbeat if JS timers are suspended.
+  // Keep their existing precision; ordinary background playback needs fewer ticks.
+  const precise = settings.crossfadeSec > 0 || !!state.sleepEndsAt || !!state.chapterStop
+    || useSilenceTrim.getState().enabled || !!fadeState || !!pauseFadeTimer || !!sleepFadeTimer
+    || !!(song?.podcastChannelId && getPodcastPreferences(song.podcastChannelId).outroSec);
+  const background = AppState.currentState !== 'active';
+  // Media3 1.9.0 has a known compressed-offload/gapless-playlist stall. Limit
+  // this opt-in to one finite item; native repeats these checks before mutation.
+  const allowOffload = background && !precise && !remoteKind() && state.queue.length === 1
+    && state.repeat === 'off' && !state.radioMode && !!song && (!song.url || !!song.vod)
+    && state.speed === 1 && !useEqualizer.getState().enabled && settings.replayGain === 'off';
+  for (const player of players) {
+    if (!player || typeof player.setPlaybackPowerPolicy !== 'function') continue;
+    const offload = allowOffload && player === activePlayer();
+    const key = `${background}|${precise}|${offload}|${networkRequired}`;
+    if (lastPowerPolicy.get(player) === key) continue;
+    lastPowerPolicy.set(player, key);
+    try {
+      player.setPlaybackPowerPolicy(background, precise, offload, networkRequired);
+      if (player === activePlayer()) expectedAudioBeatIntervalMs = background && !precise ? 5000 : 500;
+      if (player === activePlayer()) setExpectedPlaybackBeatInterval(expectedAudioBeatIntervalMs);
+      if (background && player === activePlayer()) lastBackgroundPowerStatus = player.powerStatus;
+    } catch { lastPowerPolicy.delete(player); }
+  }
+}
+
+/** Actual native values, without media URIs or credentials. */
+export function playbackPowerDiagnostics() {
+  try { return activePlayer()?.powerStatus ?? null; } catch { return null; }
+}
+export function backgroundPlaybackPowerDiagnostics() { return lastBackgroundPowerStatus; }
+
 /** Creates (once) the AudioPlayer at `idx` and attaches its listeners. */
 function ensurePlayer(idx: number): AudioPlayer {
   const existing = players[idx];
@@ -275,6 +333,7 @@ function ensurePlayer(idx: number): AudioPlayer {
   // Only the active player feeds state: events from the one that is powering
   // down during a crossfade (including its didJustFinish) are ignored.
   p.addListener('playbackStatusUpdate', (status) => {
+    syncPlaybackPowerPolicy();
     if (activePlayer() === p && !applySilenceBoundary(p, status)) onStatus(status);
   });
   // Skip track from notification / lock screen → JS manages the queue.
@@ -304,6 +363,7 @@ function ensurePlayer(idx: number): AudioPlayer {
   // do it on creation; the saved state is applied automatically.
   useEqualizer.getState().attach(p.audioSessionId);
   players[idx] = p;
+  syncPlaybackPowerPolicy();
   return p;
 }
 
@@ -2939,7 +2999,7 @@ function onStatus(status: AudioStatus & { playWhenReady?: boolean }, live = fals
   // Before anything can decide not to use it. This beat is the only clock that
   // survives the app being minimized, so whether it arrives is the first thing
   // worth knowing about the minutes nobody was watching (see `beat`).
-  beat(status.playing);
+  beat(status.playing, expectedAudioBeatIntervalMs);
   // With remote output (UPnP/DLNA) the local player is paused and its
   // states should not override those coming from the remote device.
   if (remoteKind()) return;
@@ -3236,6 +3296,8 @@ interface StoredQueue {
    * be handed yesterday's queue from another player on reconnecting.
    */
   savedAt?: number;
+  /** Binds a tiny position checkpoint to this exact persisted queue. */
+  checkpointId?: string;
 }
 
 /** Guards what comes back from disk: the file is ours, but an older version's
@@ -3251,11 +3313,56 @@ function isRepeatMode(v: unknown): v is RepeatMode {
  * The periodic sync runs every twenty seconds while playing, and rewriting up
  * to 500 whole songs into SecureStore, which encrypts them, to move one number
  * is exactly the kind of work that shows up as a dropped tap (#50). In the
- * foreground it now writes only when the queue itself moved; in the background
- * it writes as before, since the position does keep advancing there and nobody
- * is waiting on the JS thread.
+ * foreground it writes only when the queue itself moved. Position-only writes
+ * use a small profile-owned checkpoint in either lifecycle state.
  */
 let queueDirty = true;
+let queueContentVersion = 0;
+interface QueueSaveContext {
+  key: string; profile: string; snapshot: PlayerState; version: number;
+  identity?: PlaybackCheckpointIdentity; committed: Promise<boolean>; current(): boolean;
+}
+let queueSaveContext: QueueSaveContext | undefined;
+const queueWriteTails = new Map<string, Promise<unknown>>();
+let lastPositionCheckpointAt = 0;
+
+function queueSnapshotMatches(before: PlayerState, now: PlayerState): boolean {
+  return before.queue === now.queue && before.index === now.index && before.radioMode === now.radioMode
+    && before.radioSeed === now.radioSeed && before.source === now.source && before.sourceHref === now.sourceHref
+    && before.shuffle === now.shuffle && before.queueDealt === now.queueDealt && before.repeat === now.repeat
+    && before.speed === now.speed;
+}
+
+/** Serialize full writes too: an old native KeyStore write cannot finish last. */
+function commitQueuePayload(key: string, profile: string, payload: StoredQueue, snapshot: PlayerState) {
+  const owns = captureLyricOwner(profile), version = queueContentVersion;
+  const context: QueueSaveContext = { key, profile, snapshot, version, identity: playbackCheckpointIdentity(payload),
+    committed: Promise.resolve(false), current: () => owns() && queueSaveContext === context
+      && queueContentVersion === version && profileScopeId() === profile && queueStorageKey() === key
+      && queueSnapshotMatches(snapshot, usePlayerStore.getState()) };
+  queueSaveContext = context;
+  const work = (queueWriteTails.get(key) ?? Promise.resolve()).then(async () => {
+    if (!context.current()) return false;
+    await setItemStrict(key, JSON.stringify(payload));
+    if (!context.current()) return false;
+    localSavedAt = payload.savedAt ?? 0;
+    return true;
+  }).catch(() => { if (context.current()) queueDirty = true; return false; });
+  context.committed = work;
+  queueWriteTails.set(key, work);
+  void work.finally(() => { if (queueWriteTails.get(key) === work) queueWriteTails.delete(key); });
+  return context;
+}
+
+function savePositionCheckpoint(context: QueueSaveContext, positionSec: number) {
+  if (!context.identity || !context.current()) return;
+  lastPositionCheckpointAt = Date.now();
+  void context.committed.then(async (saved) => {
+    if (!saved || !context.identity || !context.current()) return;
+    if (await writePlaybackCheckpoint(context.profile, context.key, context.identity, positionSec, { current: context.current })
+      && context.current()) localSavedAt = Date.now();
+  }).catch(() => { if (context.current()) lastPositionCheckpointAt = 0; });
+}
 
 /** When this device's queue was last written, for the comparison in
  *  `adoptNewerServerQueue`. Zero until something is saved or restored. */
@@ -3288,6 +3395,7 @@ function saveQueueLocal(force = false) {
   if (force) rememberListeningState(usePlayerStore.getState());
   const key = queueStorageKey();
   if (!key) return;
+  const snapshot = usePlayerStore.getState();
   const {
     queue,
     index,
@@ -3300,17 +3408,21 @@ function saveQueueLocal(force = false) {
     queueDealt,
     repeat,
     speed,
-  } = usePlayerStore.getState();
+  } = snapshot;
   if (queue.length === 0) return;
-  if (!force && !queueDirty && AppState.currentState === 'active') return;
-  // Position-only writes can wait in background; track/queue edits and the
-  // exact failure position still persist immediately through dirty/force.
-  if (!force && !queueDirty && Date.now() - localSavedAt < 120_000) return;
+  const context = queueSaveContext;
+  if (!queueDirty && context?.identity && context.key === key && context.current()) {
+    const interval = AppState.currentState === 'active' ? 20_000 : 120_000;
+    if (!force && Date.now() - lastPositionCheckpointAt < interval) return;
+    savePositionCheckpoint(context, positionSec);
+    return;
+  }
   queueDirty = false;
-  // Size cap as a precaution for SecureStore; 500 songs is more than enough.
+  // Retain the current occurrence in the bounded window, even beyond song500.
+  const start = Math.max(0, index - 250);
   const payload: StoredQueue = {
-    queue: queue.slice(0, 500),
-    index: Math.min(index, 499),
+    queue: queue.slice(start, start + 500),
+    index: index - start,
     positionSec,
     radioMode,
     radioSeed,
@@ -3322,9 +3434,10 @@ function saveQueueLocal(force = false) {
     speed,
     speedScope: profileScopeId(),
     savedAt: Date.now(),
+    checkpointId: newPlaybackQueueGeneration(),
   };
-  localSavedAt = payload.savedAt ?? 0;
-  void setItem(key, JSON.stringify(payload));
+  lastPositionCheckpointAt = payload.savedAt ?? 0;
+  commitQueuePayload(key, profileScopeId(), payload, snapshot);
 }
 
 /**
@@ -3343,7 +3456,12 @@ function clearQueueLocal() {
   // cold start read them as off. Kept on while the app is open and gone after
   // a restart is the kind of difference nobody can explain to themselves
   // (reported by @ztx-lyghters).
-  const { shuffle, repeat, speed } = usePlayerStore.getState();
+  const snapshot = usePlayerStore.getState(), { shuffle, repeat, speed } = snapshot;
+  const profile = profileScopeId();
+  queueContentVersion++;
+  queueDirty = true;
+  queueSaveContext = undefined;
+  void clearPlaybackCheckpoint(profile, key).catch(() => {});
   // Dated like any other write: emptying the queue is this device's last word
   // on it, and what decides whether another player's is newer.
   const empty: StoredQueue = {
@@ -3355,9 +3473,9 @@ function clearQueueLocal() {
     speed,
     speedScope: profileScopeId(),
     savedAt: Date.now(),
+    checkpointId: newPlaybackQueueGeneration(),
   };
-  localSavedAt = empty.savedAt ?? 0;
-  void setItem(key, JSON.stringify(empty));
+  commitQueuePayload(key, profile, empty, snapshot);
 }
 
 /**
@@ -3596,6 +3714,7 @@ function attachAppState() {
     }
   });
   AppState.addEventListener('change', (st) => {
+    syncPlaybackPowerPolicy();
     if (syncWanted) armPeriodicSync();
     if (st !== 'active') {
       // A ramp started an instant ago is about to lose its timer, and with it
@@ -4860,8 +4979,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
     if (!ownsQueueRequest(owner) || queueStorageKey() !== key) return true;
     if (!saved || !Array.isArray(saved.queue)) return false;
+    let checkpoint: Awaited<ReturnType<typeof readPlaybackCheckpoint>>;
+    try {
+      checkpoint = await readPlaybackCheckpoint(owner.scope, key, playbackCheckpointIdentity(saved), {
+        current: () => ownsQueueRequest(owner) && queueStorageKey() === key,
+      });
+    } catch { /* The encrypted queue remains usable if a small checkpoint fails. */ }
+    if (!ownsQueueRequest(owner) || queueStorageKey() !== key) return true;
     // What the comparison with the server's copy is made against.
-    localSavedAt = saved.savedAt ?? 0;
+    localSavedAt = checkpoint?.savedAt ?? saved.savedAt ?? 0;
     // Saved empty queue = the user emptied it on purpose: nothing to
     // restore, but the server backup should also not enter. How they were
     // listening does come back: it outlived the queue while the app was open,
@@ -4880,10 +5006,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // If something already started playing in the meantime, don't override the queue.
     if (get().queue.length > 0) return true;
     const index = Math.min(Math.max(0, saved.index ?? 0), saved.queue.length - 1);
-    const positionSec =
+    const positionSec = checkpoint?.positionSec ?? (
       typeof saved.positionSec === 'number' && Number.isFinite(saved.positionSec)
         ? Math.max(0, saved.positionSec)
-        : 0;
+        : 0);
     attachAppState();
     queueOrigin = 'saved queue';
     set({
@@ -5050,12 +5176,18 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 // mode or opt-in setting. Preserve any currently loading tap's own hold.
 useAuthStore.subscribe((state, previous) => {
   if (state.auth !== previous.auth || state.offline !== previous.offline || state.offlineSource !== previous.offlineSource || state.autoOffline !== previous.autoOffline) {
+    lastBackgroundPowerStatus = null;
+    queueSaveContext = undefined;
+    queueContentVersion++;
+    queueDirty = true;
+    lastPositionCheckpointAt = 0;
     listeningCheckpointEnabled = !!currentListeningSource()?.separateSessions;
     if (listeningQueueScope !== `${profileScopeId()}:${listeningSourceKey()}`) listeningQueueScope = null;
     if (listeningSaveTimer) clearTimeout(listeningSaveTimer); listeningSaveTimer = null;
     cancelChapterStop();
     cancelSpeculativePriority();
     streamWarming.invalidate();
+    syncPlaybackPowerPolicy();
   }
 });
 useListeningTools.subscribe(() => { listeningCheckpointEnabled = !!currentListeningSource()?.separateSessions; });
@@ -5134,8 +5266,24 @@ usePlayerStore.subscribe((st, prev) => {
     st.speed !== prev.speed
   ) {
     queueDirty = true;
+    queueContentVersion++;
   }
+  if (st.queue !== prev.queue || st.index !== prev.index || st.speed !== prev.speed || st.repeat !== prev.repeat
+    || st.sleepEndsAt !== prev.sleepEndsAt || st.chapterStop !== prev.chapterStop || st.sleepAtSongEnd !== prev.sleepAtSongEnd)
+    syncPlaybackPowerPolicy();
 });
+
+useSettings.subscribe((next, before) => {
+  if (next.crossfadeSec !== before.crossfadeSec || next.replayGain !== before.replayGain
+    || next.preferDownloads !== before.preferDownloads || next.autoplaySimilar !== before.autoplaySimilar)
+    syncPlaybackPowerPolicy();
+});
+useEqualizer.subscribe((next, before) => { if (next.enabled !== before.enabled) syncPlaybackPowerPolicy(); });
+useDownloads.subscribe((next, before) => { if (next.files !== before.files) syncPlaybackPowerPolicy(); });
+usePodcastDownloads.subscribe((next, before) => { if (next.files !== before.files) syncPlaybackPowerPolicy(); });
+useSongCache.subscribe((next, before) => { if (next.entries !== before.entries) syncPlaybackPowerPolicy(); });
+useNetworkType.subscribe((next, before) => { if (next.cellular !== before.cellular) syncPlaybackPowerPolicy(); });
+usePodcastPreferences.subscribe(syncPlaybackPowerPolicy);
 
 // Preferences are infrequent events. Do not subscribe the analyzer to every
 // playback position update or launch one decoder per render.
@@ -5144,6 +5292,7 @@ useSilenceTrim.subscribe((state, previous) => {
     && state.thresholdDb === previous.thresholdDb && state.minimumSilenceMs === previous.minimumSilenceMs
     && state.scanSeconds === previous.scanSeconds) return;
   inspectCurrentSilence();
+  syncPlaybackPowerPolicy();
   applyLoop(activePlayer());
   scheduleNextSource(true);
 });

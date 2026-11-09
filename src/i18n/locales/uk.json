@@ -593,7 +593,6 @@
   "Everything asked of the server, most often first. The music itself is not here: the player opens that connection and this never sees it.": "Усе, що запитувалося в сервера, найчастіші спочатку. Сама музика сюди не входить: плеєр відкриває це з'єднання окремо.",
   "What happened, rather than how long it took.": "Що сталося, а не скільки часу це зайняло.",
   "While minimized": "У згорнутому стані",
-  "The player keeps beating twice a second while the app is away. Long silences here mean the app stopped following what it was playing.": "Плеєр надсилає пульс двічі на секунду, коли програма у фоні. Довгі паузи тут означають, що програма перестала стежити за відтворенням.",
   "Measure performance": "Вимірювати продуктивність",
   "Measuring is off (Settings › About), so there is nothing to show.": "Вимірювання вимкнено (Налаштування › Про програму), тому тут нічого показувати.",
   "Update available": "Доступне оновлення",

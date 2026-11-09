@@ -58,6 +58,30 @@ class TrackWatchTest {
     assertEquals(TrackWatch.Verdict.INTERRUPTED, verdict("STOPPED"))
   }
 
+  @Test fun rapidInteractionRefreshesDoNotTurnAMomentaryStopIntoAnInterruption() {
+    watch.observe("PLAYING", 60_000, 200_000)
+    watch.observe("STOPPED", 0, 0)
+    repeat(20) {
+      now += 20
+      watch.observe("STOPPED", 0, 0)
+      assertEquals(TrackWatch.Verdict.NONE, verdict("STOPPED"))
+    }
+    now += TrackWatch.INTERRUPTED_MS
+    watch.observe("STOPPED", 0, 0)
+    assertEquals(TrackWatch.Verdict.INTERRUPTED, verdict("STOPPED"))
+  }
+
+  @Test fun backgroundObservationStillRecognizesTheExistingTwentySecondOverdueRule() {
+    watch.observe("PLAYING", 170_000, 200_000)
+    now += 5_000; watch.observe("PLAYING", 170_000, 200_000)
+    now += 5_000; watch.observe("PLAYING", 170_000, 200_000)
+    assertEquals(TrackWatch.Verdict.NONE, verdict("PLAYING"))
+    // 170 seconds +55 seconds frozen >=200 seconds +20 seconds overdue.
+    now += 50_000; watch.observe("PLAYING", 170_000, 200_000)
+    assertEquals(TrackWatch.Verdict.ENDED, verdict("PLAYING"))
+    assertEquals(20_000L, TrackWatch.OVERDUE_MS)
+  }
+
   @Test fun aRendererGuessingTheLengthLongStillEnds() {
     // The renderer thinks 300 s; the song is 240 s and the stream runs out there.
     poll("PLAYING", 238_000, 300_000)
