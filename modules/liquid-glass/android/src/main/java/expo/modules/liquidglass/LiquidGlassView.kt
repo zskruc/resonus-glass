@@ -7,7 +7,6 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.os.Build
-import android.os.Trace
 import android.view.MotionEvent
 import android.view.View
 import androidx.compose.foundation.layout.Box
@@ -43,7 +42,6 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.IntSize
 import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
@@ -98,7 +96,6 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
   internal var dark by mutableStateOf(false)
   internal var staticBackdropColor: Int? by mutableStateOf(null)
     private set
-  internal var retainCompositionWhenClipped = false
   /** Local opaque/control drawing may safely remain in another material's source. */
   protected open val suppressDuringBackdropCapture: Boolean get() = staticBackdropColor == null
   // Only the complete bottom navigation opts into this interactive material.
@@ -401,42 +398,6 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
     setContent { GlassMaterial() }
   }
 
-  private val clippedCompositionLifetime by lazy {
-    ClippedCompositionLifetime(object : ClippedCompositionLifetime.Host<Lifecycle> {
-      override val attached get() = composeView.isAttachedToWindow
-      override fun retainUntilDestroyed(owner: Lifecycle) {
-        Trace.beginSection("StaticGlassComposition:retain")
-        try { composeView.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnLifecycleDestroyed(owner)) }
-        finally { Trace.endSection() }
-      }
-      override fun useDefaultDetachStrategy() {
-        Trace.beginSection("StaticGlassComposition:fallback")
-        try { composeView.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool) }
-        finally { Trace.endSection() }
-      }
-      override fun useFinalDetachStrategy() {
-        composeView.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
-      }
-      override fun dispose() { composeView.disposeComposition() }
-    })
-  }
-
-  /** Only a caller's bounded, uniform decoration opts out of clip-detach disposal. */
-  internal fun synchronizeClippedCompositionLifetime() {
-    val activity = appContext.currentActivity
-    val lifecycle = (activity as? LifecycleOwner)?.lifecycle?.takeUnless { it.currentState == Lifecycle.State.DESTROYED }
-    val eligible = retainCompositionWhenClipped && staticBackdropColor != null && glassEnabled &&
-      tabsCount == 0 && dockCompactWidth <= 0f && !progressiveBlur &&
-      (materialPreset == "button" || materialPreset == "custom") && activity is SavedStateRegistryOwner
-    clippedCompositionLifetime.update(eligible, lifecycle)
-  }
-
-  internal fun releaseClippedComposition() {
-    val traced = clippedCompositionLifetime.retaining || retainCompositionWhenClipped
-    if (traced) Trace.beginSection("StaticGlassComposition:destroy")
-    try { clippedCompositionLifetime.destroy() } finally { if (traced) Trace.endSection() }
-  }
-
   init {
     isClickable = false
     isFocusable = false
@@ -511,7 +472,6 @@ open class LiquidGlassView(context: Context, appContext: AppContext) : ExpoView(
       composeView.setViewTreeLifecycleOwner(activity)
       composeView.setViewTreeSavedStateRegistryOwner(activity)
     }
-    synchronizeClippedCompositionLifetime()
     super.onAttachedToWindow()
     appearanceCommits.attach()
     attachBackdrop()

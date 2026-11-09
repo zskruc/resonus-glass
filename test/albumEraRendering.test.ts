@@ -50,8 +50,6 @@ test('era cards use the frame colour without live backdrop capture; equivalent m
   assert.deepEqual(tree.root.findAllByType('Cover' as any).map((cover) => cover.props.uri), ['https://B/one', 'https://B/two'], 'identical album IDs from a different source must not retain old images');
   await act(async () => { tree.root.findByType('Pressable' as any).props.onPress(); });
   assert.equal(JSON.stringify(visits), JSON.stringify([{ pathname: '/album-years/1980s', params: { downloaded: '1' } }]));
-  await act(async () => { tree.update(render(dark, { ...props, retainCompositionWhenClipped: true } as typeof props)); });
-  assert.equal(surface().retainCompositionWhenClipped, true);
   await act(async () => { tree.unmount(); });
 });
 
@@ -95,41 +93,5 @@ test('the real year screen fills the viewport but batches large multi-column art
   columns = 4;
   await act(async () => { tree.update(React.createElement(Screen)); });
   assert.equal(tree.root.findByType('List' as any), list, 'an irrelevant grid-column preference must not remount a list');
-  await act(async () => { tree.unmount(); });
-});
-
-test('only a bounded era overview opts into retained compositions while native clipping always stays enabled', async () => {
-  const albums = (count: number) => eras.albumEraIndex([{ offset: 0, albums: Array.from({ length: count }, (_, i) => ({ id: `album-${i}`, name: `Album ${i}`, year: 1900 + i * 10 })) as any }]);
-  const result = { index: albums(23), complete: true, isError: false, issue: undefined, restart: async () => {} };
-  result.index.unknown.push({ id: 'unknown', name: 'Unknown' } as any);
-  const { default: Screen } = load('../src/app/album-eras.tsx', {
-    react: React, 'react/jsx-runtime': JSXRuntime,
-    'react-native': { ActivityIndicator: 'ActivityIndicator', Text: 'Text', View: 'View' },
-    'react-native-reanimated': { __esModule: true, default: { FlatList: 'List' } },
-    'expo-router': { useLocalSearchParams: () => ({ downloaded: '1' }) },
-    '@/api/data': { COVER: { thumb: 200 }, coverArtUrl: (id: string, size: number) => `${id}?size=${size}` },
-    '@/components/AlbumEraCard': { AlbumEraCard: 'EraCard' },
-    '@/components/BackChevron': { BackChevron: 'Back' }, '@/components/BrowseFrame': { BrowseFrame: 'Frame' },
-    '@/components/EmptyState': { EmptyState: 'Empty' }, '@/components/glass': { GlassPressable: 'Button' },
-    '@/components/Icon': { __esModule: true, default: 'Icon' }, '@/hooks/useAlbumEras': { useAlbumEras: (downloaded: boolean) => { assert.equal(downloaded, true); return result; } },
-    '@/hooks/useLiquidDock': { useLiquidDockScrollHandler: () => 'ui-thread-handler' },
-    '@/hooks/useScreenBottomPadding': { useScreenBottomPadding: () => 160 }, '@/hooks/useScreenSize': { useListPadding: () => 20 },
-    '@/i18n': { useT: () => translate },
-    '@/lib/listPerf': { listPerf: { initialNumToRender: 10, maxToRenderPerBatch: 10, windowSize: 11, removeClippedSubviews: true } },
-    '@/theme': { spacing: { lg: 20 }, useTheme: () => light, themed: (make: any) => make(light) },
-  });
-  let tree!: ReactTestRenderer;
-  await act(async () => { tree = create(React.createElement(Screen)); });
-  const bounded = tree.root.findByType('List' as any).props;
-  assert.equal(bounded.data.length, 24); assert.equal(bounded.removeClippedSubviews, true);
-  const first = bounded.renderItem({ item: bounded.data[0] }).props;
-  assert.equal(first.retainCompositionWhenClipped, true); assert.equal(first.downloaded, true);
-  result.index = albums(24); result.index.unknown.push({ id: 'unknown', name: 'Unknown' } as any);
-  await act(async () => { tree.update(React.createElement(Screen)); });
-  const large = tree.root.findByType('List' as any).props;
-  assert.equal(large.data.length, 25); assert.equal(large.removeClippedSubviews, true);
-  assert.equal(large.renderItem({ item: large.data[0] }).props.retainCompositionWhenClipped, false);
-  assert.equal(JSON.stringify(large.contentContainerStyle), JSON.stringify(bounded.contentContainerStyle));
-  assert.equal(large.onScroll, bounded.onScroll);
   await act(async () => { tree.unmount(); });
 });
