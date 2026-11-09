@@ -31,6 +31,8 @@ export interface GlassMaterial {
   blurred?: boolean;
   /** Explicit source for ordinary cards on a known flat page; never inferred globally. */
   staticBackdropColor?: ColorValue | null;
+  /** Internal opt-in for a small, bounded list of uniform decorative cards. */
+  retainCompositionWhenClipped?: boolean;
 }
 
 function materialFromStyle(style: StyleProp<ViewStyle>): GlassMaterial {
@@ -52,7 +54,7 @@ function clearFill(style: StyleProp<ViewStyle>): ViewStyle {
 /** Decorative material inside an existing, non-collapsible native container. */
 export function GlassBackdrop({
   radius = 0, radiusTopLeft, radiusTopRight, radiusBottomLeft, radiusBottomRight,
-  variant = 'regular', tint, enabled = true, blurred = true, staticBackdropColor = null,
+  variant = 'regular', tint, enabled = true, blurred = true, staticBackdropColor = null, retainCompositionWhenClipped = false,
 }: GlassMaterial) {
   const colors = useTheme();
   const dark = useThemeMode() === 'dark';
@@ -79,6 +81,7 @@ export function GlassBackdrop({
     <LiquidGlassView pointerEvents="none" style={StyleSheet.absoluteFill}
       materialPreset={materialPreset} materialTuningMask={tuningMask}
       staticBackdropColor={variant === 'regular' ? staticBackdropColor : null}
+      retainCompositionWhenClipped={retainCompositionWhenClipped && variant === 'regular' && staticBackdropColor != null}
       radius={radius} radiusTopLeft={radiusTopLeft} radiusTopRight={radiusTopRight}
       radiusBottomLeft={radiusBottomLeft} radiusBottomRight={radiusBottomRight}
       blur={blurred ? profile.blur : 0}
@@ -190,7 +193,7 @@ export function FloatingGlassBackdrop({ radius, tint, blurred = true, appearance
 
 export const GlassSurface = forwardRef<View, ViewProps & GlassMaterial>(function GlassSurface({
   radius, radiusTopLeft, radiusTopRight, radiusBottomLeft, radiusBottomRight, variant, tint,
-  enabled = true, blurred, staticBackdropColor, style, children, ...props
+  enabled = true, blurred, staticBackdropColor, retainCompositionWhenClipped, style, children, ...props
 }, ref) {
   const material = materialFromStyle(style);
   return (
@@ -199,7 +202,7 @@ export const GlassSurface = forwardRef<View, ViewProps & GlassMaterial>(function
         radiusTopLeft={radiusTopLeft ?? material.radiusTopLeft} radiusTopRight={radiusTopRight ?? material.radiusTopRight}
         radiusBottomLeft={radiusBottomLeft ?? material.radiusBottomLeft} radiusBottomRight={radiusBottomRight ?? material.radiusBottomRight}
         variant={variant} tint={tint ?? material.tint} enabled={enabled} blurred={blurred}
-        staticBackdropColor={staticBackdropColor} />
+        staticBackdropColor={staticBackdropColor} retainCompositionWhenClipped={retainCompositionWhenClipped} />
       {/* A card's contents are foreground, rather than the page's plain backdrop. */}
       <DynamicGlassBackdrop>{children}</DynamicGlassBackdrop>
     </View>
@@ -208,7 +211,7 @@ export const GlassSurface = forwardRef<View, ViewProps & GlassMaterial>(function
 
 const MATERIAL_PROPS: (keyof GlassMaterial)[] = [
   'radius', 'radiusTopLeft', 'radiusTopRight', 'radiusBottomLeft', 'radiusBottomRight',
-  'variant', 'tint', 'enabled', 'blurred', 'staticBackdropColor',
+  'variant', 'tint', 'enabled', 'blurred', 'staticBackdropColor', 'retainCompositionWhenClipped',
 ];
 
 type GlassPressableProps = PressableProps & GlassMaterial & {

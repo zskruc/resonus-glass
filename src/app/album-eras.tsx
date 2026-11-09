@@ -34,9 +34,6 @@ export default function AlbumErasScreen() {
       </GlassPressable>
     </View>
     <Animated.FlatList {...listPerf} onScroll={dock} scrollEventThrottle={16} data={rows} keyExtractor={(row) => row.key}
-      // Detaching a clipped glass host also disposes its native composition.
-      // Keep this small, bounded overview attached; large timelines still clip.
-      removeClippedSubviews={rows.length > 24 && listPerf.removeClippedSubviews}
       contentContainerStyle={{ paddingHorizontal: padding, paddingBottom: bottom, gap: 14 }}
       ListHeaderComponent={<View style={styles.summary}>
         <Text style={styles.note}>{downloaded ? t('Downloaded albums') : t('Your album library')}</Text>
@@ -50,6 +47,7 @@ export default function AlbumErasScreen() {
       </View>}
       ListEmptyComponent={data.complete ? <EmptyState icon="albums-outline" title={t('No albums yet')} /> : null}
       renderItem={({ item }) => <AlbumEraCard era={item.key} year={item.year} count={item.albums.length}
+        retainCompositionWhenClipped={rows.length <= 24}
         fraction={item.albums.length / largest} downloaded={downloaded}
         covers={item.albums.slice(0, 4).map((album) => ({ id: album.id, uri: coverArtUrl(album.coverArt ?? album.id, COVER.thumb) }))} />} />
   </BrowseFrame>;

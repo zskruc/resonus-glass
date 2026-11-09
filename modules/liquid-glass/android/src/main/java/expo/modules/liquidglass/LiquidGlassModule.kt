@@ -79,6 +79,8 @@ class LiquidGlassModule : Module() {
 
     View(LiquidGlassView::class) {
       Events("onMotionHostReady", "onDockCollapseIntent")
+      OnViewDidUpdateProps { view: LiquidGlassView -> view.synchronizeClippedCompositionLifetime() }
+      OnViewDestroys { view: LiquidGlassView -> view.releaseClippedComposition() }
       Prop("dockScrollEnabled") { view: LiquidGlassView, value: Boolean -> view.configureDockScrollInput(enabled = value) }
       Prop("dockScrollScope") { view: LiquidGlassView, value: String -> view.configureDockScrollInput(scope = value) }
       Prop("dockScrollCollapsed") { view: LiquidGlassView, value: Boolean -> view.configureDockScrollInput(collapsed = value) }
@@ -109,6 +111,7 @@ class LiquidGlassModule : Module() {
       Prop("tintOpacity") { view: LiquidGlassView, value: Double -> view.updateTintOpacity(value.toFloat().coerceIn(0f, 1f)) }
       Prop("dark") { view: LiquidGlassView, value: Boolean -> view.updateDark(value) }
       Prop("staticBackdropColor") { view: LiquidGlassView, value: Int? -> view.updateStaticBackdropColor(value) }
+      Prop("retainCompositionWhenClipped") { view: LiquidGlassView, value: Boolean -> view.retainCompositionWhenClipped = value }
       Prop("dockRole") { view: LiquidGlassView, value: String? ->
         view.dockRole = when (value) { "navigation", "search" -> value; else -> "mini" }
       }

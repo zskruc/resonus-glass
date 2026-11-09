@@ -39,6 +39,8 @@ export type LiquidGlassViewProps = Omit<ViewProps, 'children'> & {
   tintColor?: ColorValue;
   /** Explicit uniform source for plain-page cards; null resumes live sampling. */
   staticBackdropColor?: ColorValue | null;
+  /** Internal bounded-card opt-in; RN clipping still removes offscreen drawing. */
+  retainCompositionWhenClipped?: boolean;
   tintOpacity?: number;
   dark?: boolean;
   enabled?: boolean;
@@ -215,6 +217,7 @@ export function LiquidGlassView({
   chromaticAberration = false,
   tintColor = materialPreset === 'custom' ? '#FFFFFF' : 'transparent',
   staticBackdropColor = null,
+  retainCompositionWhenClipped = false,
   tintOpacity = materialPreset === 'custom' ? 0.18 : 0,
   dark = false,
   enabled = true,
@@ -248,6 +251,7 @@ export function LiquidGlassView({
       chromaticAberration={chromaticAberration}
       tintColor={typeof color === 'number' ? color : processColor('transparent') as number}
       staticBackdropColor={typeof staticColor === 'number' ? staticColor : null}
+      retainCompositionWhenClipped={retainCompositionWhenClipped}
       tintOpacity={tintOpacity}
       dark={dark}
       enabled={enabled}
