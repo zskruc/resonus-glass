@@ -8,8 +8,10 @@ const SceneContext = createContext(NO_EVENTS);
 export function usePrimuseAlbumScene() { return useContext(SceneContext); }
 
 /** The cover, prepared tint and static field appear/leave as one scene. */
-export function PrimuseAlbumScene({ enabled, uri, textureUri, prepared, children }: {
+export function PrimuseAlbumScene({ enabled, uri, textureUri, prepared, onReadyChange, children }: {
   enabled: boolean; uri?: string; textureUri?: string; prepared: boolean; children: ReactNode;
+  /** Optional progressive shells reveal only their artwork with this shared readiness. */
+  onReadyChange?: (ready: boolean) => void;
 }) {
   const lease = useRouteImageLease();
   const report = useDetailHeroReporter();
@@ -34,6 +36,7 @@ export function PrimuseAlbumScene({ enabled, uri, textureUri, prepared, children
   const ready = lease.active && (revealedCover === cover || complete);
   if (complete && revealedCover !== cover) setRevealedCover(cover);
   useLayoutEffect(() => { if (enabled) report?.(ready); }, [enabled, report, ready]);
+  useLayoutEffect(() => { onReadyChange?.(ready); }, [onReadyChange, ready]);
   const events = useMemo(() => ({ coverDisplayed, fieldDisplayed }), [coverDisplayed, fieldDisplayed]);
   // Always retain this provider, including other album styles. Changing a
   // presentation must not replace the parent or remount FlashList.

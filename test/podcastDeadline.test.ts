@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { createStore } from 'zustand/vanilla';
-import { parseFeed, sortEpisodes } from '../src/lib/podcastFeed';
+import { parseFeedAsync, sortEpisodes } from '../src/lib/podcastFeed';
 import { podcastUrlExtension } from '../src/lib/podcastMedia';
 import * as directory from '../src/lib/podcastDirectory';
 
@@ -42,7 +42,7 @@ function feedHarness() {
     '@/lib/query': { queryClient: { invalidateQueries: async () => {} } },
     '@/lib/podcastDb': { getChannel: async () => undefined, listAllEpisodes: async () => [],
       saveChannel: async () => { saves++; }, replaceEpisodes: async () => { saves++; } },
-    '@/lib/podcastFeed': { parseFeed, sortEpisodes }, '@/lib/podcastDirectory': directory,
+    '@/lib/podcastFeed': { parseFeedAsync, sortEpisodes }, '@/lib/podcastDirectory': directory,
   };
   const api = compile('../src/api/podcasts.ts', imports, timers);
   return { api, timers, requests, headers, body, response, bodyReads: () => bodyReads, saves: () => saves,

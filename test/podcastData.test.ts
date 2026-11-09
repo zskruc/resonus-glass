@@ -7,7 +7,7 @@ import ts from 'typescript';
 import { create as createStore } from 'zustand';
 
 import { episodePlayed, episodeResumeAt } from '../src/lib/episodeResume';
-import { parseFeed, sortEpisodes } from '../src/lib/podcastFeed';
+import { parseFeedAsync, sortEpisodes } from '../src/lib/podcastFeed';
 import { podcastUrlExtension } from '../src/lib/podcastMedia';
 import * as podcastDirectory from '../src/lib/podcastDirectory';
 
@@ -157,7 +157,7 @@ function apiHarness() {
     '@/lib/localLibrary': { hashKey: hash },
     '@/lib/query': { queryClient: { invalidateQueries: ({ queryKey }: any) => { invalidations.push(queryKey[0]); return Promise.resolve(); } } },
     '@/lib/podcastDb': h.Db,
-    '@/lib/podcastFeed': { parseFeed, sortEpisodes },
+    '@/lib/podcastFeed': { parseFeedAsync, sortEpisodes },
     '@/lib/podcastDirectory': podcastDirectory,
   };
   const Api = compile('../src/api/podcasts.ts', imports);

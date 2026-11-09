@@ -8,19 +8,21 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import * as Query from '@tanstack/react-query';
 import { create as createStore } from 'zustand';
 import ts from 'typescript';
-import { PODCAST_DIRECTORY_GENRES } from '../src/lib/podcastDirectory';
+import { PODCAST_DIRECTORY_GENRES, normalizePodcastDirectoryCountry } from '../src/lib/podcastDirectory';
 import * as resume from '../src/lib/episodeResume';
+import * as presentation from '../src/lib/podcastPresentation';
 import { defaultDiscoveryPreferences } from '../src/lib/discoveryPreferences';
+import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; }
+function deferred<T>() { let resolve!: (value: T) => void, reject!: (reason: unknown) => void; const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; }); return { promise, resolve, reject }; }
 function load(file: string, imports: Record<string, unknown>) {
   const exports: Record<string, any> = {};
   runInNewContext(ts.transpileModule(readFileSync(new URL(file, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
-  }).outputText, { exports, AbortController, setTimeout, clearTimeout, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
+  }).outputText, { exports, AbortController, URL, setTimeout, clearTimeout, require(name: string) { const customization = defaultCustomizationBoundary(name); if (customization) return customization;
     assert.ok(Object.hasOwn(imports, name), `Unexpected import: ${name}`); return imports[name];
   } }); return exports;
 }
@@ -30,8 +32,18 @@ function harness(offline = false) {
   const auth = createStore(() => ({ auth: { username: 'A' }, offline, autoOffline: false }));
   const profile = () => auth.getState().auth.username;
   const client = new Query.QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0, gcTime: Infinity } } });
-  const pushes: string[] = [], toasts: string[] = [], charts: any[] = [], searches: any[] = [], lookups: any[] = [], reads: string[] = [], refreshes: string[] = [], subscriptions: string[] = [], menus: any[] = [];
-  let stored: any = channel, added = new Set<string>();
+  const pushes: any[] = [], attempts: any[] = [], toasts: string[] = [], charts: any[] = [], searches: any[] = [], lookups: any[] = [], reads: string[] = [], refreshes: string[] = [], subscriptions: string[] = [], menus: any[] = [];
+  let stored: any = channel, added = new Set<string>(), pushFails = false;
+  const focus = createStore(() => ({ active: true }));
+  let route: Record<string, string> = { id: channel.id };
+  const pages: any[] = [], fullReads: string[] = [], queues: any[][] = [], progressReads: any[][] = [], currentEpisodeReads: string[] = [];
+  let progressRead: (...args: any[]) => Promise<any[]> = async () => [];
+  let playing: any, isPlaying = false, toggles = 0;
+  let allEpisodes: any[] = [], pageRead: (id: string, options: any, owner: any) => Promise<any> = async (_id, options) => ({
+    items: allEpisodes.slice(options.offset, options.offset + options.limit), total: allEpisodes.length,
+    nextOffset: options.offset + options.limit < allEpisodes.length ? options.offset + options.limit : undefined, seasons: [],
+  });
+  let refresh: () => Promise<any> = async () => channel;
   let readChannel: () => Promise<any> = async () => profile() === 'A' ? channel : undefined;
   let lookup: () => Promise<any> = async () => ({ ...show, feedUrl: channel.feedUrl });
   let subscribe: () => Promise<any> = async () => { added = new Set([...added, channel.id]); return channel; };
@@ -43,16 +55,18 @@ function harness(offline = false) {
     react: React, 'react/jsx-runtime': JSXRuntime, '@tanstack/react-query': Query,
     'react-native': { View: 'View', Text: 'Text', TextInput: 'TextInput', ScrollView: 'ScrollView', Pressable: 'Pressable', ActivityIndicator: 'Spinner', RefreshControl: 'RefreshControl', Linking: { openURL() {} } },
     'react-native-reanimated': { __esModule: true, default: { FlatList } },
-    'expo-router': { useRouter: () => ({ push: (path: string) => pushes.push(path) }), useLocalSearchParams: () => ({ id: channel.id }),
-      useFocusEffect: () => {} },
+    'expo-router': { useRouter: () => ({ push: (path: any) => { attempts.push(path); if (pushFails) throw new Error('Navigation unavailable'); pushes.push(path); } }), useLocalSearchParams: () => route, useIsFocused: () => focus((state) => state.active),
+      useFocusEffect: (effect: () => (() => void) | undefined) => { const active = focus((state) => state.active); React.useEffect(() => active ? effect() : undefined, [active, effect]); } },
     '@/api/podcasts': {
       directoryCharts: async (...args: any[]) => { charts.push(args); return [show]; },
       directorySearch: async (...args: any[]) => { searches.push(args); return [{ ...show, feedUrl: channel.feedUrl }]; },
       directoryLookup: async (...args: any[]) => { lookups.push(args); return lookup(); },
       getStoredChannel: async (feed: string) => { reads.push(feed); return stored; },
-      refreshChannel: async (feed: string) => { refreshes.push(feed); return channel; },
+      refreshChannel: async (feed: string) => { refreshes.push(feed); return refresh(); },
       getChannel: async () => readChannel(),
-      listEpisodes: async () => [], playedEpisodeIds: async () => new Set(),
+      listEpisodes: async (id: string) => { fullReads.push(id); return allEpisodes; }, playedEpisodeIds: async () => new Set(),
+      listEpisodePage: async (...args: [string, any, any]) => { pages.push(args); return pageRead(...args); },
+      getPodcastEpisode: async (id: string) => { currentEpisodeReads.push(id); return allEpisodes.find((episode) => episode.id === id); },
       addedChannelIds: async () => added,
       listAddedChannels: async () => [channel], refreshAll: async () => ({ failed: 0, total: 0 }),
       subscribe: async (feed: string) => { subscriptions.push(feed); return subscribe(); },
@@ -67,7 +81,8 @@ function harness(offline = false) {
     '@/components/podcast/PodcastOPMLManager': { PodcastOPMLManager: 'OPMLManager' },
     '@/components/podcast/PodcastEpisodeRow': { PodcastEpisodeRow: 'EpisodeRow' },
     '@/components/podcast/PodcastDetailView': { PodcastDetailView: (props: any) => React.createElement('DetailView', props,
-      props.actions({ ...palette, playLabel: '#222', controlFill: '#eee' }), props.toolbar(palette), props.filters({ ...palette, playLabel: '#222', controlFill: '#eee' }),
+      React.createElement('Back'), React.createElement('Text', null, props.channel.title),
+      props.episodes.length ? null : props.empty, props.footer, props.actions({ ...palette, playLabel: '#222', controlFill: '#eee' }), props.toolbar(palette), props.filters({ ...palette, playLabel: '#222', controlFill: '#eee' }),
       ...props.episodes.map((episode: any, index: number) => React.createElement(React.Fragment, { key: episode.id }, props.renderEpisode(episode, index, palette)))) },
     '@/components/PodcastDownloadDialog': { PodcastDownloadDialog: 'DownloadDialog' },
     '@/components/EmptyState': { EmptyState: 'EmptyState' }, '@/components/glass': { GlassPressable: 'Button' },
@@ -75,27 +90,30 @@ function harness(offline = false) {
     '@/components/PodcastMenuSheet': { openPodcastMenu: (value: any) => menus.push(value), openPodcastEpisodeMenu() {} },
     '@/hooks/useLiquidDock': { useLiquidDockScrollHandler: () => undefined },
     '@/hooks/useScreenBottomPadding': { useScreenBottomPadding: () => 150 }, '@/hooks/useScreenSize': { useListPadding: () => 20 },
-    '@/hooks/usePodcastEpisodeSort': { usePodcastEpisodeSort: (episodes: any[]) => ({ episodes, openSort() {}, sortSheet: null }) },
+    '@/hooks/usePodcastEpisodeSort': { usePodcastEpisodeSort: (episodes: any[]) => ({ episodes, order: 'recent', openSort() {}, sortSheet: null }) },
     '@/hooks/useAppleMusicStyle': { useAppleMusicStyle: () => false }, '@/theme/appleMusic': { appleMusicStyles: {} },
     '@/i18n': { useT: () => (text: string, args: Record<string, unknown> = {}) => text.replace(/\{(\w+)\}/g, (_, key) => String(args[key])),
       episodesLabel: (n: number) => `${n} episodes` },
-    '@/lib/podcastDirectory': { PODCAST_DIRECTORY_GENRES }, '@/lib/podcastFavorites': { usePodcastFavoriteIds: () => new Set() },
+    '@/lib/podcastDirectory': { PODCAST_DIRECTORY_GENRES, normalizePodcastDirectoryCountry }, '@/lib/podcastFavorites': { usePodcastFavoriteIds: () => new Set() },
+    '@/lib/podcastPresentation': presentation,
     '@/lib/listPerf': { listPerf: {} }, '@/lib/query': { queryClient: client }, '@/lib/format': { formatDuration: () => '' },
     '@/lib/localLibrary': { hashKey: (value: string) => value },
     '@/store/auth': { profileScopeId: profile, useAuthStore: auth },
     '@/store/toast': { useToast: (read: (value: any) => unknown) => read({ show: (text: string) => toasts.push(text) }) },
     '@/store/settings': { useSettings: (read: (value: any) => unknown) => read({ language: 'en' }) },
     '@/store/podcastDownloads': { usePodcastDownloads: (read: (value: any) => unknown) => read({ files: {}, scope: profile() }) },
-    '@/store/player': { currentSong: () => undefined, usePlayerStore: (read: (value: any) => unknown) => read({ playQueue() {} }) },
+    '@/store/player': { currentSong: () => playing, usePlayerStore: (read: (value: any) => unknown) => read({ isPlaying, toggle() { toggles++; }, playQueue(...args: any[]) { queues.push(args); } }) },
     '@/api/data': { COVER: { card: 500 }, coverArtUrl: (value: string) => value },
     '@/theme': { useTheme: () => palette, colors: palette, themed: (make: (value: any) => unknown) => make(palette),
       fontSize: { sm: 13, md: 16, lg: 20, xs: 11 }, spacing: { xs: 4, sm: 8, md: 12, lg: 20 }, radius: { pill: 100, lg: 20 }, tracking: { heading: 0 } },
   };
+  common['@/lib/podcastPreview'] = load('../src/lib/podcastPreview.ts', { '@/store/auth': common['@/store/auth'], '@/lib/podcastDirectory': common['@/lib/podcastDirectory'] });
   common['@/lib/lyricOwner'] = load('../src/lib/lyricOwner.ts', { '@/store/auth': common['@/store/auth'] });
+  common['@/hooks/usePodcastPreview'] = load('../src/hooks/usePodcastPreview.ts', common);
   common['@/lib/podcastLibrary'] = load('../src/lib/podcastLibrary.ts', {
     './episodeResume': resume, './localLibrary': common['@/lib/localLibrary'], '@/store/auth': common['@/store/auth'],
     './lyricOwner': common['@/lib/lyricOwner'],
-    './podcastDb': { listEpisodeProgress: async () => [], listLibraryEpisodes: async () => [] },
+    './podcastDb': { listEpisodeProgress: async (...args: any[]) => { progressReads.push(args); return progressRead(...args); }, listLibraryEpisodes: async () => [] },
   });
   let root!: ReactTestRenderer;
   const mount = async (detail: boolean | 'list' = false) => {
@@ -105,9 +123,11 @@ function harness(offline = false) {
   };
   const buttons = () => root.root.findAllByType('Button' as any);
   const button = (text: string) => buttons().find((value) => value.props.accessibilityLabel === text || value.findAllByType('Text' as any).some((node) => node.props.children === text));
-  return { auth, client, pushes, toasts, charts, searches, lookups, reads, refreshes, subscriptions, menus, mount, button,
-    tree: () => root, lookup: (next: typeof lookup) => { lookup = next; }, stored: (next: any) => { stored = next; },
-    readChannel: (next: typeof readChannel) => { readChannel = next; },
+  return { auth, client, pushes, attempts, toasts, charts, searches, lookups, reads, refreshes, subscriptions, menus, pages, fullReads, queues, progressReads, currentEpisodeReads, mount, button,
+    tree: () => root, focus: (active: boolean) => focus.setState({ active }), failNavigation: (value: boolean) => { pushFails = value; }, preview: common['@/lib/podcastPreview'] as any, lookup: (next: typeof lookup) => { lookup = next; }, stored: (next: any) => { stored = next; },
+    readChannel: (next: typeof readChannel) => { readChannel = next; }, refresh: (next: typeof refresh) => { refresh = next; },
+    progressRead: (next: typeof progressRead) => { progressRead = next; }, playing: (song: any) => { playing = song; isPlaying = !!song; }, toggles: () => toggles,
+    route: (next: typeof route) => { route = next; }, episodes: (next: any[]) => { allEpisodes = next; }, pageRead: (next: typeof pageRead) => { pageRead = next; },
     added: (ids: string[]) => { added = new Set(ids); }, subscribe: (next: typeof subscribe) => { subscribe = next; },
     close: async () => { await act(async () => root.unmount()); client.clear(); } };
 }
@@ -146,40 +166,51 @@ test('directory UI changes chart category and region, debounces link searches an
   assert.equal(h.searches.length, 1); assert.equal(h.searches[0][0], 'https://podcasts.apple.com/jp/podcast/example/id101');
   assert.equal(h.searches[0][1].country, 'jp');
   await act(async () => { h.button('Preview Example show')!.props.onPress(); await turn(); });
-  assert.deepEqual(h.pushes, ['/podcast/show']); assert.equal(h.refreshes.length, 0); assert.equal(h.subscriptions.length, 0);
+  assert.equal(h.pushes[0].pathname, '/podcast/[id]'); assert.equal(h.pushes[0].params.id, 'preview-101');
+  assert.equal(h.preview.readPodcastPreview(h.pushes[0].params.preview).country, 'jp');
+  assert.equal(h.lookups.length, 0); assert.equal(h.reads.length, 0); assert.equal(h.refreshes.length, 0); assert.equal(h.subscriptions.length, 0);
   await h.close();
 });
 
-test('opening a chart resolves just that show and previews the feed without subscribing', async () => {
-  const h = harness(); h.stored(undefined); await h.mount();
-  assert.equal(h.lookups.length, 0); assert.equal(h.refreshes.length, 0);
-  await act(async () => { h.button('Preview Example show')!.props.onPress(); await turn(); });
-  assert.equal(h.lookups.length, 1); assert.equal(h.lookups[0][0], 101);
-  assert.deepEqual(h.refreshes, [channel.feedUrl]); assert.deepEqual(h.pushes, ['/podcast/show']);
-  assert.equal(h.subscriptions.length, 0); await h.close();
+test('a chart tap opens its typed preview synchronously without lookup, SQLite, RSS or subscription and ignores duplicate taps', async () => {
+  const h = harness(), never = deferred<any>(); h.lookup(() => never.promise); h.stored(undefined); await h.mount();
+  const press = h.button('Preview Example show')!.props.onPress;
+  await act(async () => {
+    press();
+    assert.equal(h.pushes.length, 1, 'the same call stack must issue navigation without awaiting a promise');
+    press();
+    assert.equal(h.pushes.length, 1, 'a queued duplicate cannot create a second handoff');
+  });
+  const path = h.pushes[0]; assert.equal(path.pathname, '/podcast/[id]'); assert.equal(path.params.id, 'preview-101');
+  assert.equal(Object.keys(path.params).sort().join(','), 'id,preview', 'RSS URLs stay out of route params');
+  const seed = h.preview.readPodcastPreview(path.params.preview);
+  assert.equal(seed.show.id, 101); assert.equal(seed.show.title, show.title); assert.equal(seed.current(), true);
+  assert.equal(h.lookups.length, 0); assert.equal(h.reads.length, 0); assert.equal(h.refreshes.length, 0); assert.equal(h.subscriptions.length, 0);
+  await act(async () => { h.focus(false); });
+  await act(async () => { press(); }); assert.equal(h.pushes.length, 1, 'a departed screen cannot navigate from its old row');
+  await act(async () => { h.focus(true); });
+  assert.equal(h.button('Preview Example show')!.props.disabled, false);
+  await act(async () => { h.button('Preview Example show')!.props.onPress(); });
+  assert.equal(h.pushes.length, 2); assert.notEqual(h.pushes[1].params.preview, path.params.preview);
+  assert.equal(seed.current(), true, 'back/reopen does not dispose the original StrictMode-safe handoff');
+  await h.close();
 });
 
-test('offline discovery uses only cached metadata and stored feeds, while late lookup results cannot cross profiles or resume after offline', async () => {
-  const offline = harness(true);
-  offline.client.setQueryData(['podcastDirectory', 'A', 'us', 'all', ''], [{ ...show, feedUrl: channel.feedUrl }]);
-  await offline.mount();
-  assert.equal(offline.charts.length, 0); assert.equal(offline.searches.length, 0);
-  await act(async () => { offline.button('Preview Example show')!.props.onPress(); await turn(); });
-  assert.deepEqual(offline.pushes, ['/podcast/show']); assert.equal(offline.lookups.length, 0); assert.equal(offline.refreshes.length, 0);
-  await offline.close();
-  for (const change of ['account', 'offline', 'unmount'] as const) {
-    const h = harness(), pending = deferred<any>(); h.lookup(() => pending.promise); h.stored(undefined); await h.mount();
-    await act(async () => { h.button('Preview Example show')!.props.onPress(); await turn(); });
-    assert.equal(h.lookups.length, 1);
-    await act(async () => {
-      if (change === 'account') { const before = h.auth.getState().auth; h.auth.setState({ auth: { username: 'B' } }); h.auth.setState({ auth: before }); }
-      else if (change === 'offline') h.auth.setState({ offline: true });
-      else h.tree().unmount();
-    });
-    await act(async () => { pending.resolve({ ...show, feedUrl: channel.feedUrl }); await turn(); });
-    assert.equal(h.refreshes.length, 0); assert.equal(h.pushes.length, 0); assert.equal(h.subscriptions.length, 0);
-    if (change !== 'unmount') await h.close(); else h.client.clear();
-  }
+test('offline cached directory entries still open immediately and a synchronous navigation failure can be retried', async () => {
+  const h = harness(true);
+  h.client.setQueryData(['podcastDirectory', 'A', 'us', 'all', ''], [{ ...show, feedUrl: channel.feedUrl }]);
+  await h.mount();
+  assert.equal(h.charts.length, 0); assert.equal(h.searches.length, 0);
+  h.failNavigation(true);
+  await act(async () => { h.button('Preview Example show')!.props.onPress(); });
+  assert.equal(h.pushes.length, 0); assert.equal(h.button('Preview Example show')!.props.disabled, false);
+  assert.equal(h.preview.readPodcastPreview(h.attempts[0].params.preview), undefined, 'failed navigation releases only its own seed');
+  h.failNavigation(false);
+  await act(async () => { h.button('Preview Example show')!.props.onPress(); });
+  const seed = h.preview.readPodcastPreview(h.pushes[0].params.preview);
+  assert.equal(seed.show.feedUrl, channel.feedUrl); assert.equal(seed.current(), true);
+  assert.equal(h.lookups.length, 0); assert.equal(h.reads.length, 0); assert.equal(h.refreshes.length, 0);
+  await h.close();
 });
 
 test('podcast preview has an explicit subscription action and uses membership rather than a stored feed to show its state', async () => {
@@ -219,16 +250,15 @@ test('subscription UI refuses offline and old-account callbacks and never projec
   await h.close();
 });
 
-test('batched account and offline round trips release canceled preview and subscription busy states', async () => {
-  for (const detail of [false, true]) for (const roundTrip of ['account', 'offline'] as const) {
+test('batched account and offline round trips release canceled subscription busy states', async () => {
+  for (const roundTrip of ['account', 'offline'] as const) {
     const h = harness(), pending = deferred<any>();
     if (roundTrip === 'offline') h.auth.setState({ offline: true, autoOffline: true });
-    if (detail) h.subscribe(() => pending.promise); else h.lookup(() => pending.promise);
+    h.subscribe(() => pending.promise);
     try {
-      await h.mount(detail);
-      const label = detail ? 'Subscribe' : 'Preview Example show';
-      await act(async () => { h.button(label)!.props.onPress(); await turn(); });
-      assert.equal(h.button(label)!.props.disabled, true);
+      await h.mount(true);
+      await act(async () => { h.button('Subscribe')!.props.onPress(); await turn(); });
+      assert.equal(h.button('Subscribe')!.props.disabled, true);
       await act(async () => {
         if (roundTrip === 'account') {
           const before = h.auth.getState().auth;
@@ -237,38 +267,165 @@ test('batched account and offline round trips release canceled preview and subsc
           h.auth.setState({ autoOffline: false }); h.auth.setState({ autoOffline: true });
         }
       });
-      assert.equal(h.button(label)!.props.disabled, false, 'cancellation immediately releases busy state even if a native promise ignores abort');
-      assert.equal(h.button(label)!.findAllByType('Spinner' as any).length, 0);
-      await act(async () => { pending.resolve(detail ? channel : { ...show, feedUrl: channel.feedUrl }); await turn(); });
-      assert.equal(h.button(label)!.props.disabled, false, `${detail ? 'subscription' : 'preview'} must leave busy state after ${roundTrip} cancellation`);
-      assert.equal(h.button(label)!.findAllByType('Spinner' as any).length, 0);
+      assert.equal(h.button('Subscribe')!.props.disabled, false, 'cancellation immediately releases busy state even if a native promise ignores abort');
+      assert.equal(h.button('Subscribe')!.findAllByType('Spinner' as any).length, 0);
+      await act(async () => { pending.resolve(channel); await turn(); });
+      assert.equal(h.button('Subscribe')!.props.disabled, false, `subscription must leave busy state after ${roundTrip} cancellation`);
+      assert.equal(h.button('Subscribe')!.findAllByType('Spinner' as any).length, 0);
       assert.equal(h.pushes.length, 0); assert.equal(h.toasts.length, 0);
     } finally { await h.close(); }
   }
 });
 
-test('a canceled preview or subscribe completion cannot clear the replacement request spinner', async () => {
-  for (const detail of [false, true]) {
-    const h = harness(), first = deferred<any>(), second = deferred<any>(); let calls = 0;
-    const response = () => ++calls === 1 ? first.promise : second.promise;
-    if (detail) h.subscribe(response); else h.lookup(response);
-    try {
-      await h.mount(detail);
-      const label = detail ? 'Subscribe' : 'Preview Example show';
-      await act(async () => { h.button(label)!.props.onPress(); await turn(); });
-      await act(async () => {
-        const before = h.auth.getState().auth;
-        h.auth.setState({ auth: { username: 'B' } }); h.auth.setState({ auth: before });
-      });
-      await act(async () => { h.button(label)!.props.onPress(); await turn(); });
-      assert.equal(calls, 2); assert.equal(h.button(label)!.props.disabled, true);
-      await act(async () => { first.resolve(detail ? channel : { ...show, feedUrl: channel.feedUrl }); await turn(); });
-      assert.equal(h.button(label)!.props.disabled, true, 'the old finally must not release a newer request');
-      assert.equal(h.button(label)!.findAllByType('Spinner' as any).length, 1);
-      assert.equal(h.pushes.length, 0); assert.equal(h.toasts.length, 0);
-      await act(async () => { second.resolve(detail ? channel : { ...show, feedUrl: channel.feedUrl }); await turn(); });
-      if (detail) assert.ok(h.button('Subscribed')); else assert.deepEqual(h.pushes, ['/podcast/show']);
-    } finally { await h.close(); }
-  }
+test('a canceled subscribe completion cannot clear the replacement request spinner', async () => {
+  const h = harness(), first = deferred<any>(), second = deferred<any>(); let calls = 0;
+  h.subscribe(() => ++calls === 1 ? first.promise : second.promise);
+  try {
+    await h.mount(true);
+    await act(async () => { h.button('Subscribe')!.props.onPress(); await turn(); });
+    await act(async () => {
+      const before = h.auth.getState().auth;
+      h.auth.setState({ auth: { username: 'B' } }); h.auth.setState({ auth: before });
+    });
+    await act(async () => { h.button('Subscribe')!.props.onPress(); await turn(); });
+    assert.equal(calls, 2); assert.equal(h.button('Subscribe')!.props.disabled, true);
+    await act(async () => { first.resolve(channel); await turn(); });
+    assert.equal(h.button('Subscribe')!.props.disabled, true, 'the old finally must not release a newer request');
+    assert.equal(h.button('Subscribe')!.findAllByType('Spinner' as any).length, 1);
+    assert.equal(h.pushes.length, 0); assert.equal(h.toasts.length, 0);
+    await act(async () => { second.resolve(channel); await turn(); });
+    assert.ok(h.button('Subscribed'));
+  } finally { await h.close(); }
 });
-import { defaultCustomizationBoundary } from './helpers/defaultCustomizationBoundary';
+
+const episodes = (count: number) => Array.from({ length: count }, (_, index) => ({
+  id: `episode-${index}`, channelId: channel.id, title: `Episode ${index}`, publishedAt: 10_000 - index,
+  url: `https://audio.test/${index}.mp3`, duration: 600,
+}));
+const settle = async () => { await act(async () => { await turn(); await wait(5); }); };
+const visibleText = (h: ReturnType<typeof harness>, value: string) => h.tree().root.findAllByType('Text' as any)
+  .some((text) => text.props.children === value);
+
+test('a mounted directory detail displays the public title and back immediately while lookup is held', async () => {
+  const h = harness(), lookup = deferred<any>();
+  h.lookup(() => lookup.promise); h.stored(undefined);
+  const handle = h.preview.beginPodcastPreview(show, 'jp');
+  h.route({ id: handle.id, preview: handle.token });
+  try {
+    await h.mount(true);
+    assert.equal(visibleText(h, show.title), true);
+    assert.equal(h.tree().root.findAllByType('Back' as any).length, 1);
+    assert.equal(h.tree().root.findByType('DetailView' as any).props.episodes.length, 0);
+    assert.equal(h.lookups.length, 1); assert.equal(h.lookups[0][1].country, 'jp');
+    assert.equal(h.reads.length, 0); assert.equal(h.refreshes.length, 0); assert.equal(h.pages.length, 0);
+    assert.equal(h.fullReads.length, 0); assert.equal(h.subscriptions.length, 0);
+    assert.equal(h.button('Play')!.props.disabled, true);
+  } finally { await h.close(); }
+});
+
+test('cached first seven episodes render while feed refresh waits, pagination adds twenty, and explicit playback builds the complete queue', async () => {
+  const h = harness(), refresh = deferred<any>(), all = episodes(32);
+  h.episodes(all); h.stored({ ...channel, episodeCount: all.length, refreshedAt: 1 });
+  h.refresh(() => refresh.promise);
+  const handle = h.preview.beginPodcastPreview({ ...show, feedUrl: channel.feedUrl });
+  h.route({ id: handle.id, preview: handle.token });
+  try {
+    await h.mount(true); await settle();
+    const detail = () => h.tree().root.findByType('DetailView' as any);
+    assert.equal(h.refreshes.length, 1, 'background feed request remains pending');
+    assert.equal(visibleText(h, channel.title), true);
+    assert.equal(detail().props.episodes.length, 7);
+    assert.equal(h.pages[0][0], channel.id); assert.equal(h.pages[0][1].offset, 0); assert.equal(h.pages[0][1].limit, 7);
+    assert.equal(h.pages[0][1].order, 'recent'); assert.equal(h.fullReads.length, 0, 'opening the page never reads the full episode catalog');
+    await act(async () => { h.tree().root.findAllByType('EpisodeRow' as any)[3].props.onPlay(); await turn(); });
+    assert.deepEqual(h.fullReads, [channel.id]); assert.equal(h.queues.length, 1);
+    assert.equal(h.queues[0][0].length, 32, 'playback does not stop at the seven displayed rows');
+    assert.equal(h.queues[0][1], 3); assert.deepEqual(h.queues[0][0].map((item: any) => item.id), all.map((item) => item.id));
+    assert.equal(h.queues[0][3], '/podcast/show');
+    await act(async () => { detail().props.onEndReached(); await turn(); }); await settle();
+    assert.equal(detail().props.episodes.length, 27);
+    const more = h.pages.find(([, options]) => options.offset === 7);
+    assert.ok(more); assert.equal(more[1].limit, 20);
+    assert.deepEqual(detail().props.episodes.map((item: any) => item.id), all.slice(0, 27).map((item) => item.id));
+    assert.equal(h.fullReads.length, 1, 'pagination never rebuilds the playback queue');
+    assert.equal(h.subscriptions.length, 0);
+    await act(async () => { refresh.reject(new Error('Background refresh deadline')); await turn(); }); await settle();
+    assert.equal(detail().props.episodes.length, 27, 'a refresh failure never removes already usable cached pages');
+    assert.equal(visibleText(h, channel.title), true); assert.ok(h.button('Retry'));
+    assert.equal(h.tree().root.findAllByType('Back' as any).length, 1);
+  } finally { await h.close(); }
+});
+
+test('a failed directory feed request keeps its public metadata and back control instead of a blocking spinner', async () => {
+  const h = harness(), refresh = deferred<any>(); h.stored(undefined); h.refresh(() => refresh.promise);
+  const handle = h.preview.beginPodcastPreview({ ...show, feedUrl: channel.feedUrl });
+  h.route({ id: handle.id, preview: handle.token });
+  try {
+    await h.mount(true);
+    assert.equal(visibleText(h, show.title), true); assert.equal(h.refreshes.length, 1);
+    await act(async () => { refresh.reject(new Error('Feed deadline')); await turn(); }); await settle();
+    assert.equal(visibleText(h, show.title), true);
+    assert.equal(h.tree().root.findAllByType('Back' as any).length, 1);
+    assert.equal(h.tree().root.findAllByType('Spinner' as any).length, 0);
+    assert.ok(h.button('Retry')); assert.equal(h.button('Play')!.props.disabled, true);
+    assert.equal(h.pages.length, 0); assert.equal(h.fullReads.length, 0); assert.equal(h.subscriptions.length, 0);
+  } finally { await h.close(); }
+});
+
+test('Continue uses the page resume id outside the first seven while the initial progress query remains pending', async () => {
+  const h = harness(), pending = deferred<any[]>(), all = episodes(32); let explicit = false;
+  h.episodes(all);
+  h.progressRead(() => explicit ? Promise.resolve([{ id: 'episode-15', positionSec: 120, durationSec: 600 }]) : pending.promise);
+  h.pageRead(async (_id, options) => ({ items: all.slice(options.offset, options.offset + options.limit), total: all.length,
+    nextOffset: options.offset + options.limit < all.length ? options.offset + options.limit : undefined,
+    seasons: [], resumeId: 'episode-15' }));
+  try {
+    await h.mount(true); await settle();
+    assert.equal(h.client.getQueryState(['podcastPlayed', 'progress', channel.id, 'A'])?.status, 'pending');
+    assert.equal(h.tree().root.findAllByType('EpisodeRow' as any).length, 7);
+    assert.ok(h.button('Continue playing')); assert.equal(h.fullReads.length, 0);
+    const before = h.progressReads.length; explicit = true;
+    await act(async () => { h.button('Continue playing')!.props.onPress(); await turn(); }); await settle();
+    assert.equal(h.progressReads.length, before + 1, 'explicit play rereads progress rather than waiting on the UI query');
+    assert.equal(h.queues.length, 1); assert.equal(h.queues[0][0].length, 32); assert.equal(h.queues[0][1], 15);
+    assert.equal(h.queues[0][0][15].id, 'episode-15');
+    assert.equal(h.client.getQueryState(['podcastPlayed', 'progress', channel.id, 'A'])?.status, 'pending');
+  } finally { await h.close(); }
+});
+
+test('playing an in-progress SQL page reads current progress even when the display progress query is unresolved', async () => {
+  const h = harness(), pending = deferred<any[]>(), all = episodes(32); let explicit = false;
+  const matching = [all[15], all[22]];
+  h.episodes(all);
+  h.progressRead(() => explicit ? Promise.resolve([
+    { id: 'episode-15', positionSec: 120, durationSec: 600 },
+    { id: 'episode-22', positionSec: 200, durationSec: 600 },
+    { id: 'episode-3', positionSec: 600, durationSec: 600 },
+  ]) : pending.promise);
+  h.pageRead(async (_id, options) => ({ items: options.filter === 'progress' ? matching : all.slice(0, 7),
+    total: options.filter === 'progress' ? 2 : all.length, nextOffset: undefined, seasons: [], resumeId: 'episode-15' }));
+  try {
+    await h.mount(true); await settle();
+    await act(async () => { h.button('In progress')!.props.onPress(); await turn(); }); await settle();
+    const rows = h.tree().root.findAllByType('EpisodeRow' as any);
+    assert.deepEqual(rows.map((row) => row.props.episode.id), matching.map((episode) => episode.id));
+    assert.equal(h.client.getQueryState(['podcastPlayed', 'progress', channel.id, 'A'])?.status, 'pending');
+    assert.equal(h.fullReads.length, 0); const before = h.progressReads.length; explicit = true;
+    await act(async () => { rows[1].props.onPlay(); await turn(); }); await settle();
+    assert.equal(h.progressReads.length, before + 1);
+    assert.equal(h.queues.length, 1); assert.deepEqual(h.queues[0][0].map((episode: any) => episode.id), ['episode-15', 'episode-22']);
+    assert.equal(h.queues[0][1], 1); assert.equal(h.toasts.includes('Not available offline'), false);
+  } finally { await h.close(); }
+});
+
+test('the default show page pauses its current episode beyond the first seven without fetching another episode record', async () => {
+  const h = harness(), all = episodes(32); h.episodes(all);
+  h.playing({ ...all[15], podcastChannelId: channel.id });
+  try {
+    await h.mount(true); await settle();
+    assert.equal(h.tree().root.findAllByType('EpisodeRow' as any).length, 7);
+    assert.ok(h.button('Pause')); assert.equal(h.currentEpisodeReads.length, 0);
+    await act(async () => { h.button('Pause')!.props.onPress(); await turn(); });
+    assert.equal(h.toggles(), 1); assert.equal(h.queues.length, 0); assert.equal(h.fullReads.length, 0);
+  } finally { await h.close(); }
+});

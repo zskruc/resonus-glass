@@ -1,11 +1,11 @@
 /** Browse the directory first; keeping a show is an explicit action on its page. */
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, Text, TextInput, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 
-import { directoryCharts, directoryLookup, directorySearch, getStoredChannel, refreshChannel,
+import { directoryCharts, directorySearch,
   type PodcastDirectoryShow } from '@/api/podcasts';
 import { isManualOffline } from '@/api/netGate';
 import { BackChevron } from '@/components/BackChevron';
@@ -22,6 +22,7 @@ import { useT } from '@/i18n';
 import { listPerf } from '@/lib/listPerf';
 import { PODCAST_DIRECTORY_GENRES } from '@/lib/podcastDirectory';
 import { captureLyricOwner } from '@/lib/lyricOwner';
+import { beginPodcastPreview, disposePodcastPreview } from '@/lib/podcastPreview';
 import { profileScopeId, useAuthStore } from '@/store/auth';
 import { useToast } from '@/store/toast';
 import { fontSize, radius, spacing, themed, useTheme } from '@/theme';
@@ -41,39 +42,25 @@ export default function PodcastDiscoverScreen() {
   const bottom = useScreenBottomPadding(), padding = useListPadding(spacing.lg);
   const [country, setCountry] = useState('us'), [genreId, setGenreId] = useState<number | undefined>();
   const [regionsOpen, setRegionsOpen] = useState(false), [query, setQuery] = useState(''), [term, setTerm] = useState('');
-  const [openingRequest, setOpeningRequest] = useState<{ context: object; id: number; controller: AbortController } | null>(null);
-  const operation = useRef(0), previewRequest = useRef<AbortController | null>(null), mounted = useRef(true);
-  const finishPreview = useCallback((controller: AbortController | null) => {
-    if (!controller || previewRequest.current !== controller) return;
-    previewRequest.current = null;
-    // Cancellation rejects ownership, but still owns cleanup of this spinner.
-    // A late completion must never clear a replacement request's busy state.
-    if (mounted.current) setOpeningRequest((before) => before?.controller === controller ? null : before);
-  }, []);
+  const [openingRequest, setOpeningRequest] = useState<{ context: object; id: number; token: string } | null>(null);
+  const navigation = useRef<typeof openingRequest>(null), focused = useRef(false);
   const context = useMemo(() => ({ auth, profile, country, genreId, query, offline, automaticOffline }),
     [auth, profile, country, genreId, query, offline, automaticOffline]);
   const opening = openingRequest?.context === context ? openingRequest.id : null;
   const liveContext = useRef(context);
+  useFocusEffect(useCallback(() => {
+    focused.current = true;
+    navigation.current = null;
+    setOpeningRequest(null);
+    return () => { focused.current = false; };
+  }, []));
   useEffect(() => {
     const timer = setTimeout(() => setTerm(query.trim()), 350);
     return () => clearTimeout(timer);
   }, [query]);
   useLayoutEffect(() => {
     liveContext.current = context;
-    operation.current++;
-    previewRequest.current?.abort();
   }, [context]);
-  useEffect(() => {
-    mounted.current = true;
-    // Invalidate even an A → B → A switch between two React renders.
-    const unsubscribe = useAuthStore.subscribe((next, previous) => {
-      if (next.auth !== previous.auth || next.offline !== previous.offline || next.autoOffline !== previous.autoOffline) {
-        operation.current++;
-        const canceled = previewRequest.current; canceled?.abort(); finishPreview(canceled);
-      }
-    });
-    return () => { mounted.current = false; const canceled = previewRequest.current; canceled?.abort(); finishPreview(canceled); unsubscribe(); };
-  }, [finishPreview]);
   const directory = useQuery({
     queryKey: ['podcastDirectory', profile, country, genreId ?? 'all', term],
     queryFn: async ({ signal }) => {
@@ -87,34 +74,21 @@ export default function PodcastDiscoverScreen() {
     enabled: !manualOffline && query.trim() === term, retry: false, staleTime: 60 * 60 * 1000, gcTime: 60 * 60 * 1000,
   });
 
-  async function preview(show: PodcastDirectoryShow) {
-    if (opening !== null || query.trim() !== term || liveContext.current !== context) return;
-    const token = ++operation.current, controller = new AbortController();
-    previewRequest.current?.abort(); previewRequest.current = controller;
-    const current = () => mounted.current && operation.current === token && liveContext.current === context
-      && profileScopeId() === profile && useAuthStore.getState().auth === auth && !controller.signal.aborted;
-    setOpeningRequest({ context, id: show.id, controller });
+  function preview(show: PodcastDirectoryShow) {
+    if (!focused.current || navigation.current?.context === context || query.trim() !== term || liveContext.current !== context
+      || profileScopeId() !== profile || useAuthStore.getState().auth !== auth) return;
+    let handle: ReturnType<typeof beginPodcastPreview> | undefined;
     try {
-      let feed = show.feedUrl;
-      if (!feed) {
-        if (isManualOffline()) { toast(t('Not available offline')); return; }
-        const detail = await directoryLookup(show.id, { country, signal: controller.signal });
-        if (!current()) return;
-        feed = detail?.feedUrl;
-      }
-      if (!feed) { if (current()) toast(t('This podcast has no available RSS feed.')); return; }
-      const options = { expectedProfile: profile, signal: controller.signal, current };
-      let channel = await getStoredChannel(feed, options);
-      if (!current()) return;
-      if (!channel) {
-        if (isManualOffline()) { toast(t('Not available offline')); return; }
-        channel = await refreshChannel(feed, options);
-      }
-      if (current()) router.push(`/podcast/${channel.id}`);
+      handle = beginPodcastPreview(show, country);
+      const request = { context, id: show.id, token: handle.token };
+      navigation.current = request;
+      setOpeningRequest(request);
+      router.push({ pathname: '/podcast/[id]', params: { id: handle.id, preview: handle.token } });
     } catch {
-      if (current()) toast(t("Couldn't preview this podcast. Try again."));
-    } finally {
-      finishPreview(controller);
+      if (handle) disposePodcastPreview(handle.token);
+      navigation.current = null;
+      setOpeningRequest(null);
+      toast(t("Couldn't preview this podcast. Try again."));
     }
   }
 

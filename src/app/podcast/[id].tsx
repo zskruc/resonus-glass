@@ -1,8 +1,8 @@
 /** One podcast and its episodes, played straight from the publisher's files. */
 import { GlassPressable } from '@/components/glass';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 
-import { addedChannelIds, getChannel, listEpisodes, episodeToSong, refreshChannel, subscribe, type PodcastEpisode, type PodcastChannel } from '@/api/podcasts';
+import { addedChannelIds, getChannel, getPodcastEpisode, listEpisodePage, listEpisodes, episodeToSong, refreshChannel, subscribe, type PodcastEpisode, type PodcastChannel } from '@/api/podcasts';
 import { isManualOffline } from '@/api/netGate';
 import { openPodcastMenu, openPodcastEpisodeMenu } from '@/components/PodcastMenuSheet';
 import { usePodcastDownloads } from '@/store/podcastDownloads';
@@ -29,9 +29,11 @@ import { colors, themed, useTheme } from '@/theme';
 import { PodcastDetailView } from '@/components/podcast/PodcastDetailView';
 import { PodcastEpisodeRow } from '@/components/podcast/PodcastEpisodeRow';
 import { PodcastDownloadDialog } from '@/components/PodcastDownloadDialog';
-import { filterPodcastEpisodes, podcastListeningState, readPodcastShowProgress, type PodcastEpisodeFilter, type PodcastProgress } from '@/lib/podcastLibrary';
+import { filterPodcastEpisodes, readPodcastShowProgress, type PodcastEpisodeFilter, type PodcastProgress } from '@/lib/podcastLibrary';
 import { hashKey } from '@/lib/localLibrary';
 import { captureLyricOwner } from '@/lib/lyricOwner';
+import { sortPodcastEpisodes } from '@/lib/podcastPresentation';
+import { usePodcastPreview } from '@/hooks/usePodcastPreview';
 
 const EMPTY_EPISODES: PodcastEpisode[] = [];
 
@@ -40,12 +42,17 @@ const EMPTY_PROGRESS = new Map<string, PodcastProgress>();
 
 export default function PodcastScreen() {
   useTheme();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const params = useLocalSearchParams<{ id: string; preview?: string }>();
+  const previewToken = typeof params.preview === 'string' ? params.preview : undefined;
+  const preview = usePodcastPreview(previewToken);
+  const clearPreviewError = preview.clearError;
+  const id = preview.channel?.id ?? (previewToken ? '' : params.id);
   const t = useT(), router = useRouter();
   const lang = useSettings((s) => s.language);
   const toast = useToast((s) => s.show);
   const playQueue = usePlayerStore((s) => s.playQueue);
   const playingId = usePlayerStore((s) => currentSong(s)?.id);
+  const playingChannelId = usePlayerStore((s) => currentSong(s)?.podcastChannelId);
   const isPlaying = usePlayerStore((s) => s.isPlaying), toggle = usePlayerStore((s) => s.toggle);
   const [filter, setFilter] = useState<PodcastEpisodeFilter>('all');
   const [season, setSeason] = useState<number | 'other' | undefined>();
@@ -57,6 +64,9 @@ export default function PodcastScreen() {
   const subscriptionContext = useMemo(() => ({ auth, profile, id, offline, automaticOffline }), [auth, profile, id, offline, automaticOffline]);
   const subscribing = subscribingRequest?.context === subscriptionContext;
   const mounted = useRef(true);
+  const liveId = useRef(id);
+  useLayoutEffect(() => { liveId.current = id; }, [id]);
+  const playRequest = useRef(0);
   const subscribeRequest = useRef<AbortController | null>(null);
   const finishSubscription = useCallback((controller: AbortController | null) => {
     if (!controller || subscribeRequest.current !== controller) return;
@@ -73,13 +83,13 @@ export default function PodcastScreen() {
     return () => { mounted.current = false; const canceled = subscribeRequest.current; canceled?.abort(); finishSubscription(canceled); unsubscribe(); };
   }, [finishSubscription]);
   useEffect(() => { subscribeRequest.current?.abort(); }, [subscriptionContext]);
-  const current = useCallback(() => mounted.current && profileScopeId() === profile && useAuthStore.getState().auth === auth, [auth, profile]);
+  const current = useCallback(() => mounted.current && liveId.current === id && profileScopeId() === profile && useAuthStore.getState().auth === auth, [auth, id, profile]);
   const files = usePodcastDownloads((state) => state.scope === hashKey(profile) ? state.files : EMPTY_FILES);
   const favorites = usePodcastFavoriteIds();
   const progress = useQuery({ queryKey: ['podcastPlayed', 'progress', id, profile],
     queryFn: ({ signal }) => readPodcastShowProgress(id, profile, signal), enabled: !!id });
   const refetchProgress = progress.refetch;
-  useFocusEffect(useCallback(() => { void refetchProgress(); }, [refetchProgress]));
+  useFocusEffect(useCallback(() => { if (id) void refetchProgress(); }, [id, refetchProgress]));
 
   const channel = useQuery({
     queryKey: ['podcastChannel', id, profile],
@@ -88,29 +98,49 @@ export default function PodcastScreen() {
       const value = await getChannel(id); if (!current() || !owns()) throw new Error('Podcast profile changed'); return value ?? null;
     },
     enabled: !!id,
+    initialData: preview.channel,
   });
-
-  const episodes = useQuery({
-    queryKey: ['podcastEpisodes', id, profile],
-    queryFn: async () => {
-      const owns = captureLyricOwner(profile); if (!current() || !owns()) throw new Error('Podcast profile changed');
-      const value = await listEpisodes(id); if (!current() || !owns()) throw new Error('Podcast profile changed'); return value;
-    },
-    enabled: !!id,
+  useEffect(() => {
+    if (!preview.channel || !current()) return;
+    queryClient.setQueryData(['podcastChannel', id, profile], preview.channel);
+    const key = ['podcastEpisodes', id, profile];
+    if (queryClient.getQueriesData({ queryKey: key }).some(([, data]) => data !== undefined))
+      void queryClient.invalidateQueries({ queryKey: key });
+  }, [preview.channel, current, id, profile]);
+  const realChannel = channel.data ?? preview.channel;
+  const { order, openSort, sortSheet } = usePodcastEpisodeSort(EMPTY_EPISODES, realChannel?.id ?? params.id, lang, realChannel?.showType === 'serial');
+  const episodes = useInfiniteQuery({
+    queryKey: ['podcastEpisodes', id, profile, 'pages', order, lang, filter, season ?? 'all'],
+    queryFn: ({ pageParam, signal }) => listEpisodePage(id, { offset: pageParam, limit: pageParam === 0 ? 7 : 20,
+      order, language: lang, filter, season }, { expectedProfile: profile, signal, current }),
+    initialPageParam: 0, getNextPageParam: (page) => page.nextOffset ?? undefined,
+    enabled: !!id, staleTime: 60_000, retry: false,
   });
   const added = useQuery({ queryKey: ['podcastChannels', 'added', profile], queryFn: async () => {
     const owns = captureLyricOwner(profile); if (!current() || !owns()) throw new Error('Podcast profile changed');
     const value = await addedChannelIds(); if (!current() || !owns()) throw new Error('Podcast profile changed'); return value;
   } });
   const subscribed = !!added.data?.has(id);
-  const { episodes: sorted, openSort, sortSheet } = usePodcastEpisodeSort(episodes.data ?? EMPTY_EPISODES, channel.data?.id ?? id, lang, channel.data?.showType === 'serial');
-
   const savedProgress = progress.data ?? EMPTY_PROGRESS;
-  const shown = useMemo(() => filterPodcastEpisodes(sorted, filter, savedProgress, files, season), [sorted, filter, savedProgress, files, season]);
-  const seasons = useMemo(() => [...new Set(sorted.map((episode) => (episode as PodcastEpisode & { season?: number }).season)
-    .filter((value): value is number => value !== undefined))].sort((a, b) => b - a), [sorted]);
-  const resumeIndex = shown.findIndex((episode) => podcastListeningState(episode, savedProgress.get(episode.id)).inProgress);
-  const showingCurrent = !!playingId && shown.some((episode) => episode.id === playingId);
+  const shown = useMemo(() => {
+    const seen = new Set<string>();
+    return episodes.data?.pages.flatMap((page) => page.items).filter((episode) => !seen.has(episode.id) && !!seen.add(episode.id)) ?? EMPTY_EPISODES;
+  }, [episodes.data]);
+  const seasons = episodes.data?.pages[0]?.seasons ?? [];
+  const resumeId = episodes.data?.pages[0]?.resumeId;
+  const playingEpisode = useQuery({ queryKey: ['podcastCurrentEpisode', playingId, profile],
+    queryFn: async () => {
+      const owns = captureLyricOwner(profile); if (!current() || !owns()) throw new Error('Podcast profile changed');
+      const value = await getPodcastEpisode(playingId!); if (!current() || !owns()) throw new Error('Podcast profile changed'); return value ?? null;
+    }, enabled: !!id && !!playingId && playingChannelId === id && (filter !== 'all' || season !== undefined) });
+  const showingCurrent = !!playingId && playingChannelId === id && (filter === 'all' && season === undefined
+    || shown.some((episode) => episode.id === playingId)
+    || !!playingEpisode.data && filterPodcastEpisodes([playingEpisode.data], filter, savedProgress, files, season).length > 0);
+  useEffect(() => {
+    const key = ['podcastEpisodes', id, profile];
+    if (id && queryClient.getQueriesData({ queryKey: key }).some(([, data]) => data !== undefined))
+      void queryClient.invalidateQueries({ queryKey: key });
+  }, [id, profile, files, savedProgress]);
 
   const reload = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['podcastChannel', id] });
@@ -119,21 +149,21 @@ export default function PodcastScreen() {
   }, [id]);
 
   const refresh = useCallback(async () => {
-    const feedUrl = channel.data?.feedUrl;
+    const feedUrl = realChannel?.feedUrl;
     if (!feedUrl || !current() || isManualOffline()) return;
     setRefreshing(true);
     try {
       await refreshChannel(feedUrl);
-      if (current()) reload();
+      if (current()) { clearPreviewError(); reload(); }
     } catch {
       if (current()) toast(t("Couldn't read this feed"));
     } finally {
       if (current()) setRefreshing(false);
     }
-  }, [channel.data?.feedUrl, current, reload, t, toast]);
+  }, [realChannel?.feedUrl, current, reload, clearPreviewError, t, toast]);
 
   const keepShow = async () => {
-    const feed = channel.data?.feedUrl;
+    const feed = realChannel?.feedUrl;
     if (!feed || !current() || subscribed || subscribing || isManualOffline()) return;
     const controller = new AbortController();
     subscribeRequest.current?.abort(); subscribeRequest.current = controller;
@@ -149,26 +179,26 @@ export default function PodcastScreen() {
     } finally { finishSubscription(controller); }
   };
 
-  /** The whole playable list, starting at the one tapped. */
+  /** Build the complete queue only after an explicit play; pagination never truncates it. */
   const play = useCallback(
-    (list: PodcastEpisode[], from: number) => {
-      const ch = channel.data;
+    async (fromId?: string) => {
+      const ch = realChannel;
       if (!ch || !current()) return;
-      const playable = list.filter((e) => (e.url || files[e.id]) && (!isManualOffline() || files[e.id]));
-      if (!playable.length) { toast(t('Not available offline')); return; }
-      const start = playable.findIndex((e) => e.id === list[from]?.id);
-      void playQueue(
-        playable.map((e) => episodeToSong(e, ch)),
-        start < 0 ? 0 : start,
-        ch.title,
-        `/podcast/${ch.id}`,
-        { ordered: true },
-      );
+      const serial = ++playRequest.current, owns = captureLyricOwner(profile);
+      try {
+        const [all, currentProgress] = await Promise.all([listEpisodes(ch.id), readPodcastShowProgress(ch.id, profile)]);
+        if (!current() || !owns() || serial !== playRequest.current) return;
+        const list = filterPodcastEpisodes(sortPodcastEpisodes(all, order, lang), filter, currentProgress, files, season);
+        const playable = list.filter((e) => (e.url || files[e.id]) && (!isManualOffline() || files[e.id]));
+        const start = fromId ? playable.findIndex((episode) => episode.id === fromId) : 0;
+        if (!playable.length || start < 0) { toast(t('Not available offline')); return; }
+        void playQueue(playable.map((episode) => episodeToSong(episode, ch)), start, ch.title, `/podcast/${ch.id}`, { ordered: true });
+      } catch { if (current() && owns() && serial === playRequest.current) toast(t("Couldn't load this podcast.")); }
     },
-    [channel.data, current, playQueue, files, toast, t],
+    [realChannel, current, playQueue, profile, order, lang, filter, files, season, toast, t],
   );
 
-  if (channel.isLoading || episodes.isLoading) {
+  if (!realChannel && !preview.metadata && channel.isLoading) {
     return (
       <View style={styles.center}>
         <BackButton />
@@ -177,45 +207,56 @@ export default function PodcastScreen() {
     );
   }
 
-  if (!channel.data) {
+  if (!realChannel && !preview.metadata) {
     return (
       <View style={styles.center}>
         <BackButton />
-        <Message text={t("Couldn't load this podcast.")} onRetry={reload} />
+        <Message text={t("Couldn't load this podcast.")} onRetry={previewToken ? preview.retry : reload} />
       </View>
     );
   }
 
-  const ch = channel.data;
+  const ch = realChannel ?? preview.metadata!;
+  const ready = !!realChannel;
+  const loading = preview.pending && !ready || episodes.isPending && !!id;
   const chip = (label: string, selected: boolean, onPress: () => void, palette: { text: string; playLabel: string; controlFill: string }) => <GlassPressable
     key={label} accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress}
     style={[styles.chip, { backgroundColor: selected ? '#FFFFFF' : palette.controlFill }]}>
     <Text style={{ color: selected ? palette.playLabel : palette.text, fontSize: 12, fontWeight: '600' }}>{label}</Text>
   </GlassPressable>;
   return <>
-    <PodcastDetailView channel={ch} episodes={shown} offline={offline && !automaticOffline} refreshing={refreshing} onRefresh={() => { void refresh(); }}
+    <PodcastDetailView channel={ch} episodes={shown} offline={offline && !automaticOffline} refreshing={refreshing}
+      loadingMeta={!ready && ch.episodeCount === undefined}
+      pagingIdentity={JSON.stringify([id, profile, order, lang, filter, season ?? 'all'])}
+      onRefresh={() => { if (ready) void refresh(); else preview.retry(); }}
+      onEndReached={() => { if (episodes.hasNextPage && !episodes.isFetching && !episodes.isError) void episodes.fetchNextPage(); }}
+      footer={episodes.isFetchingNextPage ? <ActivityIndicator color="#FFFFFF" style={{ padding: 20 }} />
+        : episodes.isError && shown.length ? <PodcastStatus text={t("Couldn't load this podcast.")}
+          onRetry={() => { if (episodes.isFetchNextPageError) void episodes.fetchNextPage(); else void episodes.refetch(); }} />
+          : preview.error && ready ? <PodcastStatus text={t("This podcast's feed could not be read, so these episodes may be out of date.")}
+            onRetry={() => { void refresh(); }} /> : null}
       actions={(palette) => <>
-        <GlassPressable accessibilityRole="button" accessibilityLabel={t(showingCurrent && isPlaying ? 'Pause' : resumeIndex >= 0 ? 'Continue playing' : 'Play')}
-          disabled={!shown.length} onPress={() => { if (showingCurrent) void toggle(); else if (shown.length) play(shown, resumeIndex >= 0 ? resumeIndex : 0); }}
-          style={[styles.action, { backgroundColor: '#FFFFFF' }, !shown.length && { opacity: .5 }]}>
+        <GlassPressable accessibilityRole="button" accessibilityLabel={t(showingCurrent && isPlaying ? 'Pause' : resumeId ? 'Continue playing' : 'Play')}
+          disabled={!ready || !shown.length} onPress={() => { if (!ready) return; if (showingCurrent) void toggle(); else if (shown.length) void play(resumeId ?? undefined); }}
+          style={[styles.action, { backgroundColor: '#FFFFFF' }, (!ready || !shown.length) && { opacity: .5 }]}>
           <Icon name={showingCurrent && isPlaying ? 'pause' : 'play'} size={17} color={palette.playLabel} />
-          <Text style={[styles.actionText, { color: palette.playLabel }]}>{t(showingCurrent && isPlaying ? 'Pause' : resumeIndex >= 0 ? 'Continue playing' : 'Play')}</Text>
+          <Text style={[styles.actionText, { color: palette.playLabel }]}>{t(showingCurrent && isPlaying ? 'Pause' : resumeId ? 'Continue playing' : 'Play')}</Text>
         </GlassPressable>
         {ch.feedUrl ? <GlassPressable accessibilityRole="button" accessibilityState={{ selected: subscribed, busy: subscribing }}
-          disabled={added.isPending || subscribing || (!subscribed && offline && !automaticOffline)}
+          disabled={!ready || added.isPending || subscribing || (!subscribed && offline && !automaticOffline)}
           style={[styles.action, { backgroundColor: palette.controlFill }, !subscribed && offline && !automaticOffline && { opacity: .45 }]}
-          onPress={() => { if (current()) { if (subscribed) openPodcastMenu(ch); else void keepShow(); } }}>
+          onPress={() => { if (ready && current()) { if (subscribed) openPodcastMenu(ch); else void keepShow(); } }}>
           {subscribing || added.isPending ? <ActivityIndicator size="small" color={palette.text} /> : <Icon name={subscribed ? 'checkmark' : 'add'} size={18} color={palette.text} />}
           <Text style={[styles.actionText, { color: palette.text }]}>{t(subscribed ? 'Subscribed' : 'Subscribe')}</Text>
         </GlassPressable> : null}
       </>}
       toolbar={(palette) => <>
-        <GlassPressable style={styles.tool} onPress={openSort} accessibilityLabel={t('Sort by')}><Icon name="swap-vertical" size={22} color={palette.text} /></GlassPressable>
-        <GlassPressable style={[styles.tool, offline && { opacity: .45 }]} disabled={offline} accessibilityLabel={t('Download episodes')}
-          onPress={() => { if (current()) setDownloadTarget({ channel: ch, owner: auth, profile }); }}>
+        <GlassPressable style={styles.tool} disabled={!ready} onPress={openSort} accessibilityLabel={t('Sort by')}><Icon name="swap-vertical" size={22} color={palette.text} /></GlassPressable>
+        <GlassPressable style={[styles.tool, offline && { opacity: .45 }]} disabled={!ready || offline} accessibilityLabel={t('Download episodes')}
+          onPress={() => { if (ready && current()) setDownloadTarget({ channel: ch, owner: auth, profile }); }}>
           <Icon name="arrow-down-circle-outline" size={23} color={palette.text} />
         </GlassPressable>
-        <GlassPressable style={styles.tool} onPress={() => { if (current()) openPodcastMenu(ch); }} accessibilityLabel={t('More')}>
+        <GlassPressable style={styles.tool} disabled={!ready} onPress={() => { if (ready && current()) openPodcastMenu(ch); }} accessibilityLabel={t('More')}>
           <Icon name="ellipsis-horizontal" size={23} color={palette.text} />
         </GlassPressable>
       </>}
@@ -229,19 +270,32 @@ export default function PodcastScreen() {
         {seasons.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
           {chip(t('All seasons'), season === undefined, () => setSeason(undefined), palette)}
           {seasons.map((value) => chip(t('Season {n}', { n: value }), season === value, () => setSeason(value), palette))}
-          {sorted.some((episode) => (episode as PodcastEpisode & { season?: number }).season === undefined)
-            ? chip(t('Other episodes'), season === 'other', () => setSeason('other'), palette) : null}
+          {chip(t('Other episodes'), season === 'other', () => setSeason('other'), palette)}
         </ScrollView> : null}
       </View>}
       renderEpisode={(episode, index, palette) => <PodcastEpisodeRow episode={episode} palette={palette} saved={savedProgress.get(episode.id)}
         downloaded={!!files[episode.id]} favorite={favorites.has(episode.id)} fresh={!!ch.newSinceAt && (episode.firstSeenAt ?? 0) >= ch.newSinceAt}
         unavailable={isManualOffline() && !files[episode.id]} first={index === 0} last={index === shown.length - 1} language={lang}
-        onPlay={() => play(shown, index)} onMenu={() => { if (current()) openPodcastEpisodeMenu(ch, episode); }}
+        onPlay={() => { void play(episode.id); }} onMenu={() => { if (ready && current()) openPodcastEpisodeMenu(ch, episode); }}
         onDetails={() => { if (current()) router.push({ pathname: '/podcast-episode/[id]', params: { id: episode.id, channelId: ch.id } }); }} />}
-      empty={<Text style={styles.empty}>{t('No episodes match this filter.')}</Text>} />
+      empty={loading ? <View style={{ padding: 24, alignItems: 'center', gap: 10 }}>
+        <ActivityIndicator color="#FFFFFF" /><Text style={styles.empty}>{t('Loading…')}</Text></View>
+        : preview.error && !ready ? <PodcastStatus text={t(isManualOffline() ? 'Not available offline' : "Couldn't preview this podcast. Try again.")} onRetry={preview.retry} />
+          : episodes.isError ? <PodcastStatus text={t("Couldn't load this podcast.")} onRetry={() => { void episodes.refetch(); }} />
+            : <Text style={styles.empty}>{t('No episodes match this filter.')}</Text>} />
     {sortSheet}
     <PodcastDownloadDialog channel={downloadTarget?.owner === auth && downloadTarget.profile === profile ? downloadTarget.channel : null} onClose={() => setDownloadTarget(null)} />
   </>;
+}
+
+function PodcastStatus({ text, onRetry }: { text: string; onRetry(): void }) {
+  const t = useT();
+  return <View style={styles.status}>
+    <Text style={styles.statusText}>{text}</Text>
+    <GlassPressable variant="subtle" style={styles.retry} onPress={onRetry}>
+      <Text style={styles.retryText}>{t('Retry')}</Text>
+    </GlassPressable>
+  </View>;
 }
 
 const styles = themed((palette) => ({
@@ -252,4 +306,7 @@ const styles = themed((palette) => ({
   tool: { width: 42, height: 44, alignItems: 'center', justifyContent: 'center' },
   filters: { gap: 12, paddingBottom: 16 }, chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999 },
   empty: { color: '#FFFFFFCC', paddingVertical: 28, fontSize: 14, textAlign: 'center' },
+  status: { padding: 24, gap: 14, alignItems: 'center' }, statusText: { color: '#FFFFFFDD', fontSize: 14, textAlign: 'center' },
+  retry: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20, backgroundColor: '#FFFFFF' },
+  retryText: { color: '#222222', fontSize: 14, fontWeight: '600' },
 }));

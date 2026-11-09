@@ -15,6 +15,7 @@ export function usePodcastEpisodeSort(source: PodcastEpisode[], channelId: strin
   const episodes = useMemo(() => sortPodcastEpisodes(source, field, language), [source, field, language]);
   return {
     episodes,
+    order: field,
     openSort: () => openRef.current(),
     sortSheet: <SortSheet key={key} openRef={openRef} field={field}
       options={[{ key: 'recent', label: 'Newest first' }, { key: 'added', label: 'Oldest first' }, { key: 'alpha', label: 'Alphabetical' }]}

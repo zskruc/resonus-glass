@@ -20,26 +20,41 @@ function execute(source: string, imports: Record<string, unknown>, values: Recor
   return exports;
 }
 
-test('the real episode-screen play callback submits the visible order and correct offline index', async () => {
+test('the real episode-screen play callback builds the full offline queue, preserves its index and rejects stale owners', async () => {
   const source = ts.createSourceFile('podcast.tsx', readFileSync(new URL('../src/app/podcast/[id].tsx', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const screen = source.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === 'PodcastScreen') as ts.FunctionDeclaration;
   const play = screen.body!.statements.find((node) => ts.isVariableStatement(node) && node.declarationList.declarations.some((item) => item.name.getText(source) === 'play'))!;
   const calls: any[] = [];
-  let active = true;
+  const list = ['b', 'unavailable', 'a'].map((id) => ({ id, channelId: 'show', title: id, url: `https://audio.test/${id}` }));
+  let active = true, epoch = 0, reads = 0, delayed = false;
+  let resolvePending!: (value: typeof list) => void;
   const mod = execute(`${play.getText(source)}; exports.play = play;`, {}, {
     useCallback: (callback: unknown) => callback,
-    current: () => active,
-    channel: { data: { id: 'show', title: 'Show' } }, files: { b: 'file:///b', a: 'file:///a' },
+    current: () => active, profile: 'one', playRequest: { current: 0 },
+    realChannel: { id: 'show', title: 'Show' }, files: { b: 'file:///b', a: 'file:///a' },
+    captureLyricOwner: () => { const owner = epoch; return () => owner === epoch; },
+    listEpisodes: async (id: string) => {
+      assert.equal(id, 'show'); reads++;
+      return delayed ? new Promise<typeof list>((resolve) => { resolvePending = resolve; }) : list;
+    },
+    readPodcastShowProgress: async (id: string, profile: string) => { assert.equal(id, 'show'); assert.equal(profile, 'one'); return new Map(); },
+    sortPodcastEpisodes, filterPodcastEpisodes: (episodes: unknown[]) => episodes,
+    order: 'recent', lang: 'en', filter: 'all', season: undefined,
     isManualOffline: () => true, toast() { throw Error('Unexpected offline toast'); }, t: (key: string) => key,
     playQueue: async (...args: unknown[]) => calls.push(args), episodeToSong: (episode: any) => episode,
   });
-  const list = ['b', 'unavailable', 'a'].map((id) => ({ id, channelId: 'show', title: id, url: `https://audio.test/${id}` }));
-  mod.play(list, 2); await turn();
+  await mod.play('a');
+  assert.equal(reads, 1, 'explicit playback reads the complete catalog rather than the displayed page');
   assert.deepEqual(JSON.parse(JSON.stringify(calls)), [[
     [list[0], list[2]], 1, 'Show', '/podcast/show', { ordered: true },
   ]]);
-  active = false; mod.play(list, 0); await turn();
-  assert.equal(calls.length, 1, 'a stale page playback callback cannot admit another profile\'s queue');
+  active = false; await mod.play('b');
+  assert.equal(reads, 1, 'a stale page must not even start another catalog read');
+  assert.equal(calls.length, 1);
+  active = true; delayed = true;
+  const pending = mod.play('b'); await turn();
+  epoch++; resolvePending(list); await pending;
+  assert.equal(reads, 2); assert.equal(calls.length, 1, 'an account round trip during a pending read cannot admit the old queue');
 });
 
 test('the real sort hook restores each show choice and rejects a previous profile modal callback', () => {

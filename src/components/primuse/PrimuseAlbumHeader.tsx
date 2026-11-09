@@ -1,7 +1,7 @@
 /** AlbumDetailView presentation adapted from chenqi92/primuse (MIT).
  * Copyright (c) 2026 Welape. See licenses/PRIMUSE-MIT.txt. */
 import { useRef, useState, type ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, type LayoutChangeEvent, type ViewStyle } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { type AnimatedStyle } from 'react-native-reanimated';
 import { Link } from 'expo-router';
 
@@ -26,11 +26,13 @@ interface Props {
   onCoverCenterY?: (centerY: number) => void;
   onLayout: (event: LayoutChangeEvent) => void;
   nameStyle: AnimatedStyle<ViewStyle>;
+  /** Optional artwork-only visibility; the default album/playlist scene is unchanged. */
+  artworkStyle?: StyleProp<ViewStyle>;
 }
 
 export function PrimuseAlbumHeader({ title, subtitle, onSubtitlePress, meta, explicit, coverUri, onCoverPress,
   description, genres, layout, palette, disabled, showPause, shuffleActive, onPlay, onShuffle, favorite, actions,
-  onArtworkLoad, onArtworkError, onTitleLayout, onCoverCenterY, onLayout, nameStyle }: Props) {
+  onArtworkLoad, onArtworkError, onTitleLayout, onCoverCenterY, onLayout, nameStyle, artworkStyle }: Props) {
   const t = useT();
   const scene = usePrimuseAlbumScene();
   const [expanded, setExpanded] = useState(false);
@@ -51,8 +53,8 @@ export function PrimuseAlbumHeader({ title, subtitle, onSubtitlePress, meta, exp
     style={[styles.header, { paddingTop: layout.topPadding, paddingBottom: layout.bottomPadding, gap: layout.blockSpacing }]}>
     <View style={[styles.identity, !layout.stacked && styles.horizontal]}
       onLayout={(e) => { measured.current.groupY = e.nativeEvent.layout.y; reportTitle(); }}>
-      <View style={[styles.cover, { width: layout.coverSide, height: layout.coverSide,
-        borderRadius: layout.compact ? 10 : 14 }]} onLayout={(event) => {
+      <View testID="primuse-album-artwork" style={[styles.cover, { width: layout.coverSide, height: layout.coverSide,
+        borderRadius: layout.compact ? 10 : 14 }, artworkStyle]} onLayout={(event) => {
           measured.current.coverY = event.nativeEvent.layout.y;
           measured.current.coverHeight = event.nativeEvent.layout.height;
           reportTitle();

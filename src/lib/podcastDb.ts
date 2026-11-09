@@ -79,6 +79,29 @@ const ROOT = `${FileSystem.documentDirectory}podcasts/`;
 
 const open = new Map<string, Promise<SQLite.SQLiteDatabase>>();
 
+// Only locale-sorted identities are retained, never complete episode blobs.
+// Writes and these reads share writeQueue.
+const alphaEpisodePages = new Map<string, { scope: string; channel: string; ids: string[]; bytes: number }>();
+const ALPHA_PAGE_CACHE_BYTES = 4 * 1024 * 1024;
+function clearEpisodePageOrder(scope: string, channel?: string): void {
+  for (const [key, value] of alphaEpisodePages) {
+    if (value.scope === scope && (channel === undefined || value.channel === channel)) alphaEpisodePages.delete(key);
+  }
+}
+
+function cacheEpisodePageOrder(key: string, scope: string, channel: string, ids: string[]): void {
+  const bytes = ids.reduce((sum, id) => sum + id.length * 2 + 32, 0);
+  if (bytes > ALPHA_PAGE_CACHE_BYTES) return;
+  alphaEpisodePages.delete(key);
+  let used = [...alphaEpisodePages.values()].reduce((sum, value) => sum + value.bytes, 0);
+  while (alphaEpisodePages.size >= 8 || used + bytes > ALPHA_PAGE_CACHE_BYTES) {
+    const oldest = alphaEpisodePages.keys().next().value;
+    if (oldest === undefined) break;
+    used -= alphaEpisodePages.get(oldest)!.bytes; alphaEpisodePages.delete(oldest);
+  }
+  alphaEpisodePages.set(key, { scope, channel, ids, bytes });
+}
+
 /** Where one profile's podcasts are kept. */
 export function podcastDbDir(scope: string): string {
   return `${ROOT}${scope}/`;
@@ -192,6 +215,7 @@ function podcastDb(scope: string): Promise<SQLite.SQLiteDatabase> {
 
 /** Closes one profile's database, for when its folder is about to go. */
 export async function closePodcastDb(scope: string): Promise<void> {
+  clearEpisodePageOrder(scope);
   const dir = podcastDbDir(scope);
   const handle = open.get(dir);
   if (!handle) return;
@@ -274,6 +298,7 @@ export async function replaceEpisodes(
          AND NOT EXISTS (SELECT 1 FROM podcast_episodes AS e WHERE e.id = episode_id)`,
         [channelId],
       );
+      clearEpisodePageOrder(scope, channelId);
     }),
   );
   // Outside the transaction: the rows are gone, the files follow them.
@@ -366,6 +391,132 @@ export async function listAllEpisodes(scope: string, channelId: string): Promise
     all.push(...page);
     if (page.length < MAX_EPISODES) return all;
   }
+}
+
+export interface PodcastEpisodePageOptions {
+  limit?: number;
+  offset?: number;
+  order?: 'recent' | 'added' | 'alpha';
+  language?: string;
+  filter?: 'all' | 'unplayed' | 'progress' | 'downloaded';
+  season?: number | 'other';
+}
+export interface PodcastEpisodePage {
+  items: PodcastEpisode[];
+  total: number;
+  nextOffset: number | null;
+  /** Seasons of the complete show, not just this page or selected filter. */
+  seasons: number[];
+  /** First matching in-progress episode in full current order; first page only. */
+  resumeId: string | null;
+}
+
+/** A bounded detail page. Full notes/chapters stay available through getEpisode. */
+export async function listEpisodePage(
+  scope: string, channelId: string, options: PodcastEpisodePageOptions = {}, current: () => boolean = () => true,
+): Promise<PodcastEpisodePage> {
+  const check = () => { if (!current()) throw new Error('Podcast scope changed'); };
+  check(); const db = await podcastDb(scope); check();
+  const limit = Math.max(1, Math.min(100, Math.floor(Number.isFinite(options.limit) ? options.limit! : 7)));
+  const offset = Math.max(0, Math.min(Number.MAX_SAFE_INTEGER,
+    Math.floor(Number.isFinite(options.offset) ? options.offset! : 0)));
+  const filter = ['unplayed', 'progress', 'downloaded'].includes(options.filter ?? '') ? options.filter : 'all';
+  const order = options.order === 'added' || options.order === 'alpha' ? options.order : 'recent';
+  const season = options.season === 'other' ? 'other'
+    : Number.isSafeInteger(options.season) && Number(options.season) > 0 ? options.season : undefined;
+  const seasonSql = season === 'other' ? 'AND season IS NULL' : season !== undefined ? 'AND season = ?' : '';
+  const params = season !== undefined && season !== 'other' ? [channelId, season] : [channelId];
+  const condition = filter === 'downloaded' ? 'downloaded = 1' : filter === 'unplayed' ? 'NOT played'
+    : filter === 'progress' ? 'position_sec >= 5 AND NOT played' : '1';
+  const eligible = `WITH source AS (
+    SELECT e.id,e.data,e.published_at,
+      json_extract(e.data,'$.season') AS season,
+      CASE WHEN p.position_sec >= 0 AND p.position_sec <= 1.7976931348623157e308 THEN p.position_sec ELSE 0 END AS position_sec,
+      CASE WHEN p.duration_sec > 0 AND p.duration_sec <= 1.7976931348623157e308 THEN p.duration_sec
+        WHEN json_extract(e.data,'$.duration') > 0 THEN json_extract(e.data,'$.duration') ELSE 0 END AS duration_sec,
+      CASE WHEN d.file IS NOT NULL AND d.file <> '' THEN 1 ELSE 0 END AS downloaded
+    FROM podcast_episodes e LEFT JOIN podcast_progress p ON p.episode_id=e.id
+      LEFT JOIN podcast_downloads d ON d.episode_id=e.id WHERE e.channel_id=?
+  ), eligible AS (
+    SELECT *,duration_sec > 0 AND position_sec >= MAX(duration_sec*.9,duration_sec-30) AS played FROM source
+  )`;
+  return serialized(async () => {
+    check();
+    const seasons = await db.getAllAsync<{ season: number }>(
+      `SELECT DISTINCT json_extract(data,'$.season') AS season FROM podcast_episodes
+       WHERE channel_id=? AND json_type(data,'$.season') IN ('integer','real')
+       AND json_extract(data,'$.season') > 0 ORDER BY season DESC`, [channelId]); check();
+    let ids: string[], total: number, resumeId: string | null = null;
+    if (order === 'alpha') {
+      const cacheKey = JSON.stringify([scope, channelId, options.language ?? '']);
+      let cached = alphaEpisodePages.get(cacheKey);
+      if (!cached) {
+        // Read no episode blobs into JS. Preserve the old full-list base order
+        // when the locale regards two titles as equal.
+        const titles = await db.getAllAsync<{ id: string; title: string }>(
+          `SELECT id,COALESCE(json_extract(data,'$.title'),'') AS title FROM podcast_episodes
+           WHERE channel_id=? ORDER BY COALESCE(published_at,0) DESC,id ASC`, [channelId]); check();
+        let compare: (left: string, right: string) => number;
+        try { compare = new Intl.Collator(options.language).compare; }
+        catch { compare = new Intl.Collator().compare; }
+        // Small runs keep cancellation and UI work bounded even for very old
+        // feeds; merging yields rather than sorting a large notes array at once.
+        let runs: { id: string; title: string; index: number }[][] = [];
+        for (let start = 0; start < titles.length; start += 256) {
+          check(); runs.push(titles.slice(start, start + 256).map((row, index) => ({ ...row, index: start + index }))
+            .sort((a, b) => compare(a.title, b.title) || a.index - b.index));
+          if (start + 256 < titles.length) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        }
+        while (runs.length > 1) {
+          const next: typeof runs = [];
+          for (let part = 0; part < runs.length; part += 2) {
+            check(); const left = runs[part], right = runs[part + 1];
+            if (!right) { next.push(left); continue; }
+            const merged: typeof left = []; let a = 0, b = 0;
+            while (a < left.length || b < right.length) {
+              if (b === right.length || a < left.length && (compare(left[a].title, right[b].title) || left[a].index - right[b].index) <= 0) merged.push(left[a++]);
+              else merged.push(right[b++]);
+              if (merged.length % 512 === 0) { await new Promise<void>((resolve) => setTimeout(resolve, 0)); check(); }
+            }
+            next.push(merged);
+          }
+          runs = next;
+        }
+        const sorted = (runs[0] ?? []).map((row) => row.id); check();
+        cacheEpisodePageOrder(cacheKey, scope, channelId, sorted);
+        cached = { scope, channel: channelId, ids: sorted, bytes: 0 };
+      } else { alphaEpisodePages.delete(cacheKey); alphaEpisodePages.set(cacheKey, cached); }
+      const matches = await db.getAllAsync<{ id: string; position_sec: number; played: number }>(
+        `${eligible} SELECT id,position_sec,played FROM eligible WHERE ${condition} ${seasonSql}`, params); check();
+      const matching = new Set(matches.map((row) => row.id));
+      const sorted = cached.ids.filter((id) => matching.has(id)); total = sorted.length; ids = sorted.slice(offset, offset + limit);
+      if (offset === 0) {
+        const inProgress = new Set(matches.filter((row) => row.position_sec >= 5 && !row.played).map((row) => row.id));
+        resumeId = sorted.find((id) => inProgress.has(id)) ?? null;
+      }
+    } else {
+      const ordering = `CASE WHEN published_at > 0 THEN 0 ELSE 1 END,
+        CASE WHEN published_at > 0 THEN published_at END ${order === 'added' ? 'ASC' : 'DESC'},id ASC`;
+      const count = await db.getFirstAsync<{ total: number }>(`${eligible} SELECT COUNT(*) AS total FROM eligible WHERE ${condition} ${seasonSql}`, params); check();
+      total = count?.total ?? 0;
+      const rows = await db.getAllAsync<{ id: string }>(`${eligible} SELECT id FROM eligible WHERE ${condition} ${seasonSql}
+        ORDER BY ${ordering} LIMIT ? OFFSET ?`, [...params, limit, offset]); check();
+      ids = rows.map((row) => row.id);
+      if (offset === 0) {
+        const resume = await db.getFirstAsync<{ id: string }>(`${eligible} SELECT id FROM eligible
+          WHERE ${condition} ${seasonSql} AND position_sec >= 5 AND NOT played ORDER BY ${ordering} LIMIT 1`, params); check();
+        resumeId = resume?.id ?? null;
+      }
+    }
+    if (!ids.length) return { items: [], total, nextOffset: null, seasons: seasons.map((row) => row.season), resumeId };
+    const rows = await db.getAllAsync<{ id: string; data: string }>(
+      `SELECT id,json_set(json_remove(data,'$.descriptionHtml','$.chapters','$.transcripts','$.description'),
+        '$.description',substr(COALESCE(json_extract(data,'$.description'),''),1,512)) AS data
+       FROM podcast_episodes WHERE channel_id=? AND id IN (${ids.map(() => '?').join(',')})`, [channelId, ...ids]); check();
+    const byId = new Map(rows.map((row) => [row.id, JSON.parse(row.data) as PodcastEpisode]));
+    return { items: ids.flatMap((id) => byId.has(id) ? [byId.get(id)!] : []), total,
+      nextOffset: offset + ids.length < total ? offset + ids.length : null, seasons: seasons.map((row) => row.season), resumeId };
+  });
 }
 
 export async function getEpisode(scope: string, id: string): Promise<PodcastEpisode | undefined> {
@@ -639,6 +790,7 @@ export async function removeChannel(scope: string, id: string): Promise<void> {
       await db.runAsync('DELETE FROM podcast_progress WHERE channel_id = ?', [id]);
     }),
   );
+  clearEpisodePageOrder(scope, id);
   if (channel?.imageUrl) {
     await FileSystem.deleteAsync(podcastArtFile(scope, id, channel.imageUrl), {
       idempotent: true,

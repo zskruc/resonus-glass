@@ -19,7 +19,7 @@ import { hashKey } from '@/lib/localLibrary';
 import { queryClient } from '@/lib/query';
 import * as Db from '@/lib/podcastDb';
 import type { RecentEpisode } from '@/lib/podcastDb';
-import { parseFeed, sortEpisodes, type ParsedItem } from '@/lib/podcastFeed';
+import { parseFeedAsync, sortEpisodes, type ParsedItem } from '@/lib/podcastFeed';
 import { decodePodcastDirectoryChart, decodePodcastDirectorySearch, podcastAppleDirectoryId,
   podcastDirectoryChartUrl, podcastDirectoryLookupUrl, podcastDirectorySearchUrl,
   PodcastDirectoryError, type PodcastDirectoryShow } from '@/lib/podcastDirectory';
@@ -27,6 +27,7 @@ import type { PodcastChannel, PodcastEpisode, Song } from './subsonic';
 
 export type { PodcastChannel, PodcastEpisode } from './subsonic';
 export type { RecentEpisode } from '@/lib/podcastDb';
+export type { PodcastEpisodePage, PodcastEpisodePageOptions } from '@/lib/podcastDb';
 export type { PodcastDirectoryShow } from '@/lib/podcastDirectory';
 
 /**
@@ -321,7 +322,8 @@ async function refreshChannelOwned(input: string, owner: RequestOwner): Promise<
   const id = feedId(read.url);
   const existing = read.url === url ? stored : await Db.getChannel(s, id);
   owner.check();
-  const feed = parseFeed(read.body, id, read.url);
+  const feed = await parseFeedAsync(read.body, id, read.url, { check: owner.check, signal: owner.signal });
+  owner.check();
   // Which of these the device already had: an episode that was there keeps the
   // moment it first came over, one that was not gets this read's. A feed's `pubDate`
   // cannot carry that: a publisher re-dates an old item, back-catalogs a season
@@ -473,6 +475,19 @@ export function isFeedUrl(id: string): boolean {
 /** Every episode of a channel, pages read to the end. */
 export async function listAllEpisodes(channelId: string): Promise<PodcastEpisode[]> {
   return Db.listAllEpisodes(scope(), channelId);
+}
+
+/** Detail pages read bounded summaries; full queues and bulk operations keep
+ * using listAllEpisodes and retain their complete episode data. */
+export async function listEpisodePage(
+  channelId: string, page: Db.PodcastEpisodePageOptions = {}, options: PodcastOperationOptions = {},
+): Promise<Db.PodcastEpisodePage> {
+  const owner = requestOwner(options);
+  try {
+    owner.check();
+    const result = await Db.listEpisodePage(owner.scope, channelId, page, owner.current);
+    owner.check(); return result;
+  } finally { owner.dispose(); }
 }
 
 /** How many of a show's episodes are downloaded, and their ids. */

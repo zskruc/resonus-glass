@@ -338,11 +338,8 @@ function siteLink(header: string): string | undefined {
   return site || undefined;
 }
 
-/** Reads a feed. Episode ids are prefixed with `channelId`: guids collide across feeds. */
-export function parseFeed(xml: string, channelId: string, baseUrl?: string): ParsedFeed {
-  const body = unwrapCdata(xml);
-  const items: ParsedItem[] = [];
-
+/** Both entry points use the same item parser and retain the feed's order. */
+function* feedItems(body: string, channelId: string, baseUrl?: string): Generator<ParsedItem> {
   for (const m of body.matchAll(/<(item|entry)(?:\s[^>]*)?>([\s\S]*?)<\/\1\s*>/gi)) {
     const block = m[2];
     // Empty, not a placeholder: the screen translates that.
@@ -367,9 +364,11 @@ export function parseFeed(xml: string, channelId: string, baseUrl?: string): Par
     Object.assign(item, episodeExtras(block, baseUrl));
     const image = attr(openTag(block, 'image'), 'href');
     if (image) item.imageUrl = image;
-    items.push(item);
+    yield item;
   }
+}
 
+function feedHeader(body: string, items: ParsedItem[]): ParsedFeed {
   // The channel's own fields come before its first item, in RSS and Atom alike.
   const firstItem = body.search(/<(item|entry)\b/i);
   const header = firstItem === -1 ? body : body.slice(0, firstItem);
@@ -389,6 +388,47 @@ export function parseFeed(xml: string, channelId: string, baseUrl?: string): Par
   const siteUrl = siteLink(header);
   if (siteUrl) feed.siteUrl = siteUrl;
   return feed;
+}
+
+/** Reads a feed. Episode ids are prefixed with `channelId`: guids collide across feeds. */
+export function parseFeed(xml: string, channelId: string, baseUrl?: string): ParsedFeed {
+  const body = unwrapCdata(xml);
+  return feedHeader(body, [...feedItems(body, channelId, baseUrl)]);
+}
+
+export interface PodcastFeedParseOptions {
+  /** Called before work, between batches, and before publishing a full result. */
+  check?: () => void;
+  signal?: AbortSignal;
+  /** Injectable scheduler for controlled tests; production yields to the JS event loop. */
+  yieldControl?: () => Promise<void>;
+}
+
+/** Full-feed parsing with cooperative scheduling, never a partial snapshot.
+ * Adding async around parseFeed would still block every input/animation timer;
+ * this iterator yields after at most32 items or roughly4ms of parser work. */
+export async function parseFeedAsync(
+  xml: string, channelId: string, baseUrl?: string, options: PodcastFeedParseOptions = {},
+): Promise<ParsedFeed> {
+  const check = () => {
+    options.check?.();
+    if (options.signal?.aborted) {
+      const error = new Error('Podcast feed parsing stopped'); error.name = 'AbortError'; throw error;
+    }
+  };
+  const clock = () => typeof performance === 'undefined' ? Date.now() : performance.now();
+  const yieldControl = options.yieldControl ?? (() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
+  check(); const body = unwrapCdata(xml); check();
+  const source = feedItems(body, channelId, baseUrl), items: ParsedItem[] = [];
+  let batch = 0, started = clock();
+  while (true) {
+    check(); const next = source.next(); if (next.done) break;
+    items.push(next.value); batch++;
+    if (batch >= 32 || clock() - started >= 4) {
+      await yieldControl(); check(); batch = 0; started = clock();
+    }
+  }
+  check(); const feed = feedHeader(body, items); check(); return feed;
 }
 
 /** Newest first, undated last, the feed's own order breaking ties. */
